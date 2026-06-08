@@ -1,0 +1,6 @@
+{
+  "name": "Aviation Ticket Tracker",
+  "description": "Consolidate and audit flight ticket data from multiple sources, track REQ NUMs, and generate Excel-friendly reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
