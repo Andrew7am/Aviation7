@@ -9,6 +9,8 @@ export interface Ticket {
   reqNum: string;
   pnr?: string;
   passengerName?: string;
+  airlineCode?: string;
+  route?: string;
   status?: string;
   isDuplicate?: boolean;
   userId: string;

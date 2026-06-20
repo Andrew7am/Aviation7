@@ -1,13 +1,23 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  getAuth, signInWithPopup, GoogleAuthProvider, signOut,
+  setPersistence, browserLocalPersistence,
+} from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-export const loginWithGoogle = () => {
+// ── CRITICAL: persist session across browser restarts ──
+// Without this, closing the browser logs the user out → new userId → data appears empty
+setPersistence(auth, browserLocalPersistence).catch(err => {
+  console.error('Auth persistence error:', err);
+});
+
+export const loginWithGoogle = async () => {
+  await setPersistence(auth, browserLocalPersistence);
   const provider = new GoogleAuthProvider();
   return signInWithPopup(auth, provider);
 };
@@ -28,14 +38,3 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   console.error(`Firestore [${operationType}] ${path}: ${msg}`);
   throw new Error(msg);
 }
-
-async function testConnection() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Firebase offline — check your configuration.');
-    }
-  }
-}
-testConnection();

@@ -22,17 +22,25 @@ import { User } from 'firebase/auth';
 /* ─────────────────────────────────────────────
    Vendor → source matching helper
 ───────────────────────────────────────────── */
+// Shared alias table — same logic as VendorBalances component
+const VENDOR_ALIASES: Record<string, string[]> = {
+  'flyadeal':   ['flyadeal ksa', 'flyadeal dxb', 'flyadeal'],
+  'airarabia':  ['airarabia', 'air arabia'],
+  'gold medal': ['gold medal', 'goldmedal'],
+};
+
+function vendorTicketMatcher(vendorName: string, ticketSource: string): boolean {
+  const vn = vendorName.toLowerCase().trim();
+  const src = ticketSource.toLowerCase().trim();
+  if (!vn || !src) return false;
+  const aliases = VENDOR_ALIASES[vn];
+  if (aliases) return aliases.some(a => src.includes(a));
+  // Dynamic: source includes vendor name OR vendor name includes source
+  return src.includes(vn) || vn.includes(src);
+}
+
 function vendorMatchesSources(vendorName: string, tickets: Ticket[]): Ticket[] {
-  const vn = vendorName.toLowerCase();
-  return tickets.filter(t => {
-    const src = (t.source || '').toLowerCase();
-    if (src.includes(vn)) return true;
-    // fuzzy aliases
-    if (vn === 'flyadeal' && (src.includes('flyadeal ksa') || src.includes('flyadeal dxb'))) return true;
-    if (vn === 'airarabia' && src.includes('air arabia')) return true;
-    if (vn === 'goldmedal' && src.includes('gold medal')) return true;
-    return false;
-  });
+  return tickets.filter(t => vendorTicketMatcher(vendorName, t.source || ''));
 }
 
 /* ─────────────────────────────────────────────
@@ -145,18 +153,56 @@ function MainApp({ user }: { user: User }) {
   const handleImport = async (newTickets: Ticket[], updateTickets: Ticket[]) => {
     const batch = writeBatch(db);
 
-    // new tickets
-    newTickets.forEach(ticket => {
-      const ref = doc(db, 'tickets', ticket.id);
+    // Separate TOPUP rows from real tickets
+    const topUpRows   = newTickets.filter(t => t.status === 'TOPUP');
+    const realTickets = newTickets.filter(t => t.status !== 'TOPUP');
+
+    // Save TOPUP rows as BalanceTopUp records (credited to matching vendor)
+    topUpRows.forEach(t => {
+      const vendorMatch = vendorBalancesLive.find(v =>
+        t.source.toLowerCase().includes(v.vendorName.toLowerCase()) ||
+        v.vendorName.toLowerCase().includes(t.source.toLowerCase())
+      );
+      if (!vendorMatch) return; // no vendor found — skip
+
+      const topUpId = `topup_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const ref = doc(db, 'balanceTopUps', topUpId);
       batch.set(ref, {
-        ...ticket,
-        userId: user.uid,
-        createdAt: new Date().toISOString(),
-        _isUpdate: undefined,
+        id:         topUpId,
+        vendorId:   vendorMatch.id,
+        vendorName: vendorMatch.vendorName,
+        amount:     t.amount,
+        note:       `Auto top-up from import (${t.ticketNo || t.passengerName})`,
+        date:       t.date || new Date().toISOString().split('T')[0],
+        userId:     user.uid,
       });
     });
 
-    // req num updates on existing tickets
+    // Save real tickets — strip undefined fields (Firestore rejects them)
+    realTickets.forEach(ticket => {
+      const ref = doc(db, 'tickets', ticket.id);
+      const toWrite: Record<string, unknown> = {
+        id:            ticket.id,
+        ticketNo:      ticket.ticketNo,
+        source:        ticket.source || '',
+        date:          ticket.date || '',
+        amount:        ticket.amount ?? 0,
+        commission:    ticket.commission ?? 0,
+        totalDoc:      ticket.totalDoc ?? 0,
+        reqNum:        ticket.reqNum || '',
+        pnr:           ticket.pnr || '',
+        passengerName: ticket.passengerName || '',
+        airlineCode:   ticket.airlineCode || '',
+        route:         ticket.route || '',
+        status:        ticket.status || '',
+        isDuplicate:   false,
+        userId:        user.uid,
+        createdAt:     new Date().toISOString(),
+      };
+      batch.set(ref, toWrite);
+    });
+
+    // Req num updates on existing tickets
     for (const ticket of updateTickets) {
       const existing = tickets.find(t => t.id === ticket.id || t.ticketNo === ticket.ticketNo);
       if (existing) {
@@ -167,11 +213,14 @@ function MainApp({ user }: { user: User }) {
 
     try {
       await batch.commit();
-      // show quick toast via alert
+      const parts = [];
+      if (realTickets.length > 0)  parts.push(`${realTickets.length} tickets`);
+      if (topUpRows.length > 0)    parts.push(`${topUpRows.length} top-ups added to vendor balance`);
+      if (updateTickets.length > 0) parts.push(`${updateTickets.length} req nums updated`);
       setAlerts(prev => [...prev, {
-        id: `import_${Date.now()}`,
-        type: 'duplicate',
-        message: `✓ Imported ${newTickets.length} tickets${updateTickets.length > 0 ? ` · Updated ${updateTickets.length} req nums` : ''}`,
+        id:        `import_${Date.now()}`,
+        type:      'duplicate',
+        message:   `✓ Imported: ${parts.join(' · ')}`,
         dismissed: false,
         createdAt: new Date().toISOString(),
       }]);
@@ -352,6 +401,7 @@ function MainApp({ user }: { user: User }) {
               onImport={handleImport}
               currency={currency}
               setCurrency={setCurrency}
+              vendorNames={vendorBalancesLive.map(v => v.vendorName)}
             />
           )}
           {view === 'vendors' && (

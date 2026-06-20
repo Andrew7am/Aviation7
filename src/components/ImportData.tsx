@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { Ticket } from '../types';
 import { parseManualInput, detectDuplicates, detectDuplicatesAgainstExisting } from '../utils/parsing';
 import { Upload, AlertTriangle, CheckCircle2, RefreshCw, Info } from 'lucide-react';
@@ -9,10 +9,12 @@ interface ImportDataProps {
   onImport: (newTickets: Ticket[], updateTickets: Ticket[]) => void;
   currency?: string;
   setCurrency?: (c: 'SAR' | 'AED') => void;
+  vendorNames?: string[]; // ← live list from Firebase
 }
 
-const SOURCE_OPTIONS = [
-  'Auto-detect', 'IATA', 'FlyAdeal KSA', 'FlyAdeal DXB',
+// Built-in known sources (always available)
+const BUILTIN_SOURCES = [
+  'IATA', 'NSA', 'FlyAdeal KSA', 'FlyAdeal DXB',
   'Flynas', 'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal',
 ];
 
@@ -21,25 +23,36 @@ const STATUS_COLORS: Record<string, string> = {
   RFND: 'bg-red-100 text-red-700',
   VOID: 'bg-red-100 text-red-700',
   CANN: 'bg-slate-100 text-slate-500',
-  CNJ: 'bg-blue-100 text-blue-700',
+  CNJ:  'bg-blue-100 text-blue-700',
   EMDS: 'bg-purple-100 text-purple-700',
 };
 
 export const ImportData: React.FC<ImportDataProps> = ({
-  existingTickets, onImport, currency = 'SAR', setCurrency,
+  existingTickets, onImport, currency = 'SAR', setCurrency, vendorNames = [],
 }) => {
-  const [inputText, setInputText] = useState('');
-  const [errors, setErrors] = useState<string[]>([]);
-  const [preview, setPreview] = useState<Ticket[]>([]);
+  const [inputText, setInputText]     = useState('');
+  const [errors, setErrors]           = useState<string[]>([]);
+  const [preview, setPreview]         = useState<Ticket[]>([]);
   const [updateCount, setUpdateCount] = useState(0);
-  const [dupCount, setDupCount] = useState(0);
+  const [dupCount, setDupCount]       = useState(0);
   const [defaultSource, setDefaultSource] = useState('Auto-detect');
-  const [isUpdate, setIsUpdate] = useState(false);
+  const [isUpdate, setIsUpdate]       = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  /* ── Build source list: Auto-detect + built-ins + any custom vendors ── */
+  const sourceOptions = useMemo(() => {
+    // Merge built-ins with vendor names from Firebase, dedup (case-insensitive)
+    const builtinLower = new Set(BUILTIN_SOURCES.map(s => s.toLowerCase()));
+    const extras = vendorNames.filter(
+      vn => !builtinLower.has(vn.toLowerCase())
+    );
+    return ['Auto-detect', ...BUILTIN_SOURCES, ...extras];
+  }, [vendorNames]);
+
+  /* ── File upload ── */
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -66,6 +79,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
     }
   };
 
+  /* ── Validate / preview ── */
   const handlePreview = () => {
     if (!inputText.trim()) { setErrors(['Please enter some data to parse.']); return; }
     const src = defaultSource === 'Auto-detect' ? undefined : defaultSource;
@@ -73,7 +87,6 @@ export const ImportData: React.FC<ImportDataProps> = ({
     const batchChecked = detectDuplicates(tickets);
     const { fresh, updates, duplicates } = detectDuplicatesAgainstExisting(batchChecked, existingTickets);
 
-    // mark updates
     const allPreview = [
       ...fresh,
       ...updates.map(t => ({ ...t, _isUpdate: true } as any)),
@@ -87,9 +100,10 @@ export const ImportData: React.FC<ImportDataProps> = ({
     setIsUpdate(updates.length > 0 && fresh.length === 0);
   };
 
+  /* ── Confirm import ── */
   const handleConfirmImport = () => {
     if (preview.length === 0) return;
-    const newTickets = preview.filter((t: any) => !t.isDuplicate && !t._isUpdate);
+    const newTickets    = preview.filter((t: any) => !t.isDuplicate && !t._isUpdate);
     const updateTickets = preview.filter((t: any) => t._isUpdate);
     onImport(newTickets, updateTickets);
     setInputText('');
@@ -103,24 +117,41 @@ export const ImportData: React.FC<ImportDataProps> = ({
     .filter((t: any) => !t.isDuplicate)
     .reduce((s, t) => s + t.amount, 0);
 
+  /* ─────────────────── RENDER ─────────────────── */
   return (
     <div className="flex flex-col h-full bg-slate-100 p-4 space-y-4">
-      <div className="flex justify-between items-center shrink-0">
-        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Bulk Ticket Import</h2>
-      </div>
+      <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest shrink-0">
+        Bulk Ticket Import
+      </h2>
 
-      {/* Options bar */}
+      {/* ── Options bar ── */}
       <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm shrink-0 flex flex-wrap items-end gap-4">
+
+        {/* Source dropdown — dynamic */}
         <div>
-          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Source</label>
+          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+            Source / Vendor
+          </label>
           <select
             value={defaultSource}
             onChange={e => setDefaultSource(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-xs font-bold uppercase text-slate-700 px-3 py-1.5 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            className="bg-slate-50 border border-slate-200 text-xs font-bold uppercase text-slate-700 px-3 py-1.5 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[160px]"
           >
-            {SOURCE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            {sourceOptions.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
           </select>
+
+          {/* Badge showing it's a custom vendor */}
+          {defaultSource !== 'Auto-detect' &&
+           !BUILTIN_SOURCES.map(b => b.toLowerCase()).includes(defaultSource.toLowerCase()) && (
+            <span className="mt-1 inline-block text-[9px] font-bold uppercase px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded">
+              Custom Vendor
+            </span>
+          )}
         </div>
+
+        {/* Currency */}
         <div>
           <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Currency</label>
           <select
@@ -132,16 +163,20 @@ export const ImportData: React.FC<ImportDataProps> = ({
             <option value="AED">AED</option>
           </select>
         </div>
+
+        {/* Hint */}
         <div className="ml-auto flex items-center space-x-2 text-[10px] text-slate-400 font-mono bg-slate-50 border border-slate-200 rounded px-3 py-2">
-          <Info className="w-3 h-3 text-blue-400" />
+          <Info className="w-3 h-3 text-blue-400 shrink-0" />
           <span>Re-importing a file with Req Nums will auto-match existing tickets by Ticket No.</span>
         </div>
       </div>
 
-      {/* Paste / upload area */}
+      {/* ── Paste / upload area ── */}
       <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm shrink-0">
         <div className="flex items-center justify-between mb-2">
-          <label className="text-[10px] font-bold uppercase text-slate-500">Data Input (Paste CSV or Upload)</label>
+          <label className="text-[10px] font-bold uppercase text-slate-500">
+            Data Input (Paste CSV or Upload)
+          </label>
           <div className="flex space-x-2">
             <input
               type="file"
@@ -182,15 +217,20 @@ export const ImportData: React.FC<ImportDataProps> = ({
         </div>
       </div>
 
-      {/* Preview table */}
+      {/* ── Preview table ── */}
       {preview.length > 0 && (
         <div className="flex-1 bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm flex flex-col min-h-[280px]">
           <div className="flex justify-between items-center p-3 border-b border-slate-100 bg-slate-50 shrink-0 flex-wrap gap-2">
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-3 flex-wrap gap-y-1">
               <CheckCircle2 className="w-4 h-4 text-emerald-500" />
               <span className="text-[10px] font-bold uppercase text-slate-600">
-                Validation Passed — {preview.filter((t: any) => !t.isDuplicate).length} tickets
+                Validation Passed — {preview.filter((t: any) => !t.isDuplicate && t.status !== 'TOPUP').length} tickets
               </span>
+              {preview.filter((t: any) => t.status === 'TOPUP').length > 0 && (
+                <span className="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                  {preview.filter((t: any) => t.status === 'TOPUP').length} TOP-UPS
+                </span>
+              )}
               {updateCount > 0 && (
                 <span className="bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded">
                   {updateCount} REQ UPDATES
@@ -220,7 +260,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                 <tr>
-                  {['Ticket No.', 'Source', 'Status', 'Date', 'Total Doc', 'Comm', 'Net Amount', 'PNR', 'Passenger', 'Req Num'].map(col => (
+                  {['A/L','Ticket No.','Source','Status','Date','Route','Total Doc','Comm','Net Amount','PNR','Passenger','Req Num'].map(col => (
                     <th key={col} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap border-b border-slate-200">
                       {col}
                     </th>
@@ -234,8 +274,14 @@ export const ImportData: React.FC<ImportDataProps> = ({
                   return (
                     <tr
                       key={t.id}
-                      className={`border-b border-slate-100 ${isDup ? 'bg-amber-50 opacity-60' : isUpd ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
+                      className={`border-b border-slate-100 ${isDup ? 'bg-amber-50 opacity-60' : isUpd ? 'bg-blue-50' : t.status === 'TOPUP' ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}
                     >
+                      <td className="px-3 py-2 text-center">
+                        {(t as any).airlineCode
+                          ? <span className="font-mono font-black text-[11px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{(t as any).airlineCode}</span>
+                          : <span className="text-slate-300 text-[9px]">—</span>
+                        }
+                      </td>
                       <td className="px-3 py-2 font-bold select-all whitespace-nowrap">
                         {t.ticketNo}
                         {isDup && <span className="ml-1.5 bg-amber-400 text-black px-1 rounded text-[8px] font-bold">DUP</span>}
@@ -248,12 +294,15 @@ export const ImportData: React.FC<ImportDataProps> = ({
                         }
                       </td>
                       <td className="px-3 py-2">
-                        {t.status
+                        {t.status === 'TOPUP'
+                          ? <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-200 text-emerald-800">TOP-UP</span>
+                          : t.status
                           ? <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${STATUS_COLORS[t.status] ?? 'bg-slate-100 text-slate-600'}`}>{t.status}</span>
                           : <span className="text-slate-300">—</span>
                         }
                       </td>
                       <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{t.date}</td>
+                      <td className="px-3 py-2 text-slate-500 text-[10px]">{(t as any).route || '—'}</td>
                       <td className="px-3 py-2 text-slate-500">{t.totalDoc > 0 ? fmt(t.totalDoc) : '—'}</td>
                       <td className="px-3 py-2 text-slate-400">{t.commission > 0 ? fmt(t.commission) : '—'}</td>
                       <td className={`px-3 py-2 font-bold ${t.amount < 0 ? 'text-red-600' : 'text-slate-700'}`}>
@@ -273,12 +322,14 @@ export const ImportData: React.FC<ImportDataProps> = ({
         </div>
       )}
 
-      {/* Parser warnings */}
+      {/* ── Parser warnings ── */}
       {errors.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 shadow-sm shrink-0">
           <div className="flex items-center space-x-2 mb-2">
             <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-            <h4 className="text-[10px] font-bold uppercase text-amber-700">Parser Warnings ({errors.length})</h4>
+            <h4 className="text-[10px] font-bold uppercase text-amber-700">
+              Parser Warnings ({errors.length})
+            </h4>
           </div>
           <ul className="space-y-0.5 max-h-32 overflow-y-auto">
             {errors.map((err, i) => (

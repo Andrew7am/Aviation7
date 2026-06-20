@@ -75,6 +75,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   const exportToExcel = () => {
     const data = filtered.map(t => ({
+      'A/L': t.airlineCode || '',
+      'Route': t.route || '',
       'Ticket No.': t.ticketNo,
       'Source': t.source || 'UNKNOWN',
       'Status': t.status || '',
@@ -97,6 +99,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const exportMissingReq = () => {
     const missing = tickets.filter(t => !t.reqNum);
     const data = missing.map(t => ({
+      'A/L': t.airlineCode || '',
+      'Route': t.route || '',
       'Ticket No.': t.ticketNo,
       'Source': t.source || '',
       'Status': t.status || '',
@@ -202,7 +206,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <table className="w-full text-left border-collapse min-w-[900px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-              {['Ticket No.', 'Source', 'Status', 'Date', 'Total Doc', 'Comm', 'Net Amt', 'PNR', 'Passenger', 'Req Num', 'Recon'].map(col => (
+              {['A/L', 'Ticket No.', 'Source', 'Status', 'Date', 'Route', 'Total Doc', 'Comm', 'Net Amt', 'PNR', 'Passenger', 'Req Num', 'Recon'].map(col => (
                 <th key={col} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">{col}</th>
               ))}
               {onDelete && <th className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase text-right">Del</th>}
@@ -211,6 +215,12 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           <tbody className="text-xs font-mono">
             {filtered.map(ticket => (
               <tr key={ticket.id} className={`border-b border-slate-100 hover:bg-slate-50 ${!ticket.reqNum ? 'bg-red-50/20' : ''}`}>
+                <td className="px-3 py-2 text-center">
+                  {ticket.airlineCode
+                    ? <span className="font-mono font-black text-[11px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{ticket.airlineCode}</span>
+                    : <span className="text-slate-300 text-[9px]">—</span>
+                  }
+                </td>
                 <td className="px-3 py-2 font-bold select-all whitespace-nowrap">
                   {ticket.ticketNo}
                   {ticket.isDuplicate && (
@@ -229,6 +239,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                   }
                 </td>
                 <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{ticket.date}</td>
+                <td className="px-3 py-2 text-[10px] text-slate-400">{ticket.route || '—'}</td>
                 <td className="px-3 py-2 text-slate-500">{ticket.totalDoc > 0 ? fmt(ticket.totalDoc) : '—'}</td>
                 <td className="px-3 py-2 text-slate-400">{ticket.commission > 0 ? fmt(ticket.commission) : '—'}</td>
                 <td className={`px-3 py-2 font-bold ${ticket.amount < 0 ? 'text-red-600' : ''}`}>
