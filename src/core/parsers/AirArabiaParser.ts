@@ -27,8 +27,11 @@ export const AirArabiaParser: VendorParser = {
       }
       const tkRaw = cell(row,iTicket).replace(/[^0-9]/g,'');
       const pnr = cell(row,iPNR).replace(/\s+/g,'').toUpperCase();
-      if (!tkRaw&&!pnr) return;
-      const ticketId = tkRaw||pnr;
+      // Real debit/credit already confirmed non-zero above — don't drop real
+      // money just because the source row has no ticket/PNR (balance
+      // adjustment lines); flag it with a placeholder reference instead.
+      if (!tkRaw&&!pnr) warnings.push(`Row ${idx+2}: AirArabia - no ticket/PNR reference, using placeholder`);
+      const ticketId = tkRaw||pnr||`AIRARABIA_NOREF_${idx}`;
       const normSt = normalizeStatus(cell(row,col(headers,'Status','status')));
       const status = normSt !== 'UNKNOWN' ? normSt : (credit>0&&debit===0?'REFUND':'ISSUE');
       const amt = status==='REFUND'?-Math.abs(credit||debit):debit;

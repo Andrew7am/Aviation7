@@ -22,13 +22,18 @@ export const FlyAdealDXBParser: VendorParser = {
       const acctCurr = (row[iCurr]||'').trim().toUpperCase();
       if (acctCurr==='SAR') return;
       const pnr = cell(row,iPNR).replace(/\s+/g,'').toUpperCase();
-      if (!pnr||pnr.length<5) return;
       const amt = num(cell(row,iAmt)); if(amt===0) return;
+      // A missing/short PNR with a real amount is a balance adjustment line
+      // (fund movement), not a real booking — still real money, so keep it
+      // with a placeholder reference instead of silently dropping it.
+      const hasPnr = !!pnr && pnr.length>=5;
+      if (!hasPnr) warnings.push(`Row ${idx+2}: FlyAdeal DXB - no PNR, using placeholder`);
+      const ticketId = hasPnr ? pnr : `FLYADEAL_DXB_NOREF_${idx}`;
       // resolveCurrency reads accountCurrency col (and any other currency cols) → single source
       const currency = resolveCurrency(row, headers, defaultCurrency);
       const req = resolveReq(cell(row,iReq));
-      if (!req) warnings.push(`PNR ${pnr}: Missing Req Num`);
-      result.push({ticketNo:pnr,pnr,passengerName:cleanPax(cell(row,iPax)),date:(cell(row,iDate)||'').split('T')[0]||new Date().toISOString().split('T')[0],amount:amt<0?amt:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:amt<0?'REFUND':'ISSUE',currency});
+      if (!req) warnings.push(`PNR ${ticketId}: Missing Req Num`);
+      result.push({ticketNo:ticketId,pnr:hasPnr?pnr:'',passengerName:cleanPax(cell(row,iPax)),date:(cell(row,iDate)||'').split('T')[0]||new Date().toISOString().split('T')[0],amount:amt<0?amt:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:amt<0?'REFUND':'ISSUE',currency});
     });
     return {rows:result,errors,warnings};
   },

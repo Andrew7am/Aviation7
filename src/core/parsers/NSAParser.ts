@@ -25,9 +25,34 @@ export const NSAParser: VendorParser = {
         if (credit>0) result.push({ticketNo:`FUND_${Date.now()}${idx}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,iDate)),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
         return;
       }
-      if (!rawDoc.includes(' - ')&&!/^\d{3}[-]\d+/.test(rawDoc.replace(/\s/g,''))) { if(row.some(c=>c?.trim()))errors.push(`Row ${idx+2}: NSA - no ticket [${rawDoc}]`); return; }
-      const tkClean = cleanTk(rawDoc); const ac = airlineCode(rawDoc);
       const debit = num(cell(row,iDebit)); const credit = num(cell(row,iDebit+1));
+
+      // NSA's Doc No column mixes several real formats: the standard IATA
+      // "157 - 2899436427" / "157-2899436427" shape, a longer conjunction/
+      // coupon shape "1763000541793-794", and a bare digit run with no
+      // separator at all ("773000792129", or "125 5065584278" with the
+      // airline code space-separated instead of dash-separated).
+      const stripped = rawDoc.replace(/\s/g,'');
+      const isStandard = rawDoc.includes(' - ')||/^\d{3}[-]\d+/.test(stripped);
+      const isAltNumeric = /^\d{6,}-?\d*$/.test(stripped);
+      const hasAmount = debit !== 0 || credit !== 0;
+
+      if (!isStandard && !isAltNumeric && !hasAmount) {
+        if (row.some(c=>c?.trim())) errors.push(`Row ${idx+2}: NSA - no ticket [${rawDoc}]`);
+        return;
+      }
+
+      let tkClean: string, ac: string;
+      if (isStandard) { tkClean = cleanTk(rawDoc); ac = airlineCode(rawDoc); }
+      else if (isAltNumeric) { tkClean = stripped; ac = stripped.slice(0,3); }
+      else {
+        // Real money moved (debit/credit) but the source row has no usable
+        // document reference at all — don't silently drop the amount, flag
+        // it for manual review via a synthetic reference instead.
+        tkClean = `NSA_NOREF_${idx}`; ac = '';
+        warnings.push(`Row ${idx+2}: NSA - no document reference in source, using placeholder [${tkClean}]`);
+      }
+
       const rawDocNo = cell(row,col(headers,'Doc No'));
       const isRef = /^RFD/i.test(rawDocNo)||(credit>0&&debit===0);
       const amt = isRef ? -Math.abs(credit||debit) : debit;

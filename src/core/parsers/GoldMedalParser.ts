@@ -30,16 +30,24 @@ export const GoldMedalParser: VendorParser = {
     const REJECT_VALUES = ['DUBAI','CAIRO','RIYADH','JEDDAH','SAR','AED'];
     rows.forEach((row,idx) => {
       const rawGMTk = cell(row,iTicket).replace(/\s*\(\d+\s*PAX\)/i,'').replace(/[^0-9]/g,'');
-      if (!rawGMTk||rawGMTk.length<8) return;
+      const amt = num(cell(row,iAmt));
+      // Rows with a real passenger + amount but no ticket number yet (e.g.
+      // still pending issuance) shouldn't lose the amount — flag with a
+      // placeholder instead of dropping. Rows with neither a ticket number
+      // nor any amount are genuinely empty and stay excluded.
+      if (!rawGMTk||rawGMTk.length<8) {
+        if (amt===0) return;
+        warnings.push(`Row ${idx+2}: Gold Medal - no ticket number, using placeholder`);
+      }
+      const ticketId = (rawGMTk && rawGMTk.length>=8) ? rawGMTk : `GOLDMEDAL_NOREF_${idx}`;
       const rawReqVal = cell(row, iReq).toUpperCase();
       const looksLikeReq = rawReqVal && rawReqVal.length>=2 && !REJECT_VALUES.includes(rawReqVal) && !/^[A-Z]{9,}$/.test(rawReqVal);
       const req = looksLikeReq ? resolveReq(rawReqVal) : '';
       const normSt = normalizeStatus(cell(row,iStatus));
       const status = normSt !== 'UNKNOWN' ? normSt : 'ISSUE';
-      const amt = num(cell(row,iAmt));
       const finalAmt = status==='REFUND'?-Math.abs(amt):Math.abs(amt);
-      if (!req) warnings.push(`Ticket ${rawGMTk}: Missing Req Num`);
-      result.push({ticketNo:rawGMTk,pnr:'',passengerName:cleanPax(cell(row,iPax)),route:cell(row,iRoute),date:parseDate(cell(row,iDate)),amount:finalAmt,totalDoc:Math.abs(finalAmt),commission:0,reqNum:req,vendorReference:rawReqVal,status,currency:defaultCurrency});
+      if (!req) warnings.push(`Ticket ${ticketId}: Missing Req Num`);
+      result.push({ticketNo:ticketId,pnr:'',passengerName:cleanPax(cell(row,iPax)),route:cell(row,iRoute),date:parseDate(cell(row,iDate)),amount:finalAmt,totalDoc:Math.abs(finalAmt),commission:0,reqNum:req,vendorReference:rawReqVal,status,currency:defaultCurrency});
     });
     return {rows:result,errors,warnings};
   },

@@ -20,13 +20,17 @@ export const FlynasParser: VendorParser = {
     rows.forEach((row,idx) => {
       const pnr = cell(row,iPNR).replace(/\s+/g,'').toUpperCase();
       const pax = cell(row,iPax);
-      if (/beg\.?\s*balance/i.test(pnr)||!pnr) return;
+      if (/beg\.?\s*balance/i.test(pnr)) return;
+      // FUND rows legitimately have no PNR at all — must be checked before
+      // the empty-PNR bailout below, or a genuine top-up (e.g. "Fund" with
+      // amount -15000 and blank PNR2) gets silently dropped.
       if (/^fund$/i.test(pax.trim())) {
         const rawAmt = cell(row,iAmt).replace(/SAR|,|\s/gi,'');
         const fundAmt = Math.abs(parseFloat(rawAmt)||0);
         if (fundAmt>0) result.push({ticketNo:`FUND_${Date.now()}${idx}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,iDate)),amount:fundAmt,totalDoc:fundAmt,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
         return;
       }
+      if (!pnr) return;
       if (!isValidPNR(pnr)) return;
       const rawAmt = cell(row,iAmt).replace(/SAR|,|\s/gi,'');
       const amt = parseFloat(rawAmt)||0; if(amt===0) return;
