@@ -41,14 +41,25 @@ export class VendorReferenceService {
     if (colErr) throw new Error(colErr.message);
     if (!columns || columns.length === 0) throw new Error(`No columns found for vendor "${slug}"`);
 
-    const { data: rows, error: rowErr } = await supabase
-      .from(`${slug}_rows`)
-      .select('*')
-      .order('source_row_num');
-    if (rowErr) throw new Error(rowErr.message);
+    // PostgREST caps a single select() at its configured max-rows (1000 on
+    // Supabase by default) and returns that page silently — no error, no
+    // indication anything was cut off. Page through with .range() until a
+    // page comes back short so every row (e.g. IATA's 1568) is retrieved.
+    const PAGE_SIZE = 1000;
+    const allRows: Record<string, unknown>[] = [];
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data: page, error: rowErr } = await supabase
+        .from(`${slug}_rows`)
+        .select('*')
+        .order('source_row_num')
+        .range(from, from + PAGE_SIZE - 1);
+      if (rowErr) throw new Error(rowErr.message);
+      allRows.push(...(page ?? []));
+      if (!page || page.length < PAGE_SIZE) break;
+    }
 
     const header = columns.map(c => csvEscape(c.original || c.sql_name)).join(',');
-    const body = (rows ?? [])
+    const body = allRows
       .map(row => columns.map(c => csvEscape(String(row[c.sql_name] ?? ''))).join(','))
       .join('\n');
 
