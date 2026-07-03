@@ -1,40 +1,22 @@
 import React, { useMemo } from 'react';
-import { Ticket, VendorBalance } from '../types';
+import { Ticket, VendorBalance, BalanceTopUp } from '../types';
+import { useReports } from '../hooks/useReports';
 import { TrendingDown, TrendingUp, AlertCircle, CheckCircle2, Wallet, FileText } from 'lucide-react';
 
 interface DashboardProps {
   tickets: Ticket[];
   vendorBalances: VendorBalance[];
+  topUps?: BalanceTopUp[];
   currency?: string;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, currency = 'SAR' }) => {
-  const needsReqCount = tickets.filter(t => !t.reqNum).length;
+export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, topUps = [], currency = 'SAR' }) => {
+  // Centralized stats — single source of truth, shared with Reports.tsx
+  const { totalIssued, totalRefunds, bySource: sources, missingReq } = useReports(tickets, vendorBalances, topUps);
+
+  const needsReqCount = missingReq.length;
   const matchedCount = tickets.length - needsReqCount;
   const duplicateCount = tickets.filter(t => t.isDuplicate).length;
-
-  const totalIssued = useMemo(
-    () => tickets.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0),
-    [tickets]
-  );
-  const totalRefunds = useMemo(
-    () => tickets.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0),
-    [tickets]
-  );
-
-  const sources = useMemo(() => {
-    const map = new Map<string, { count: number; amount: number; missing: number }>();
-    tickets.forEach(t => {
-      const s = t.source || 'Unknown';
-      const prev = map.get(s) ?? { count: 0, amount: 0, missing: 0 };
-      map.set(s, {
-        count: prev.count + 1,
-        amount: prev.amount + t.amount,
-        missing: prev.missing + (t.reqNum ? 0 : 1),
-      });
-    });
-    return Array.from(map.entries()).map(([name, data]) => ({ name, ...data }));
-  }, [tickets]);
 
   const lowBalanceVendors = vendorBalances.filter(v => {
     if (v.initialBalance <= 0) return false;

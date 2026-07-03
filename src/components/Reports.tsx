@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
+import { useReports } from '../hooks/useReports';
 import { Download, FileText, TrendingDown, Wallet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -10,13 +11,16 @@ interface ReportsProps {
   currency: string;
 }
 
-type ReportTab = 'summary' | 'overdraft' | 'vendor_detail' | 'missing_req';
+type ReportTab = 'summary' | 'overdraft' | 'vendor_detail' | 'missing_req' | 'ledger';
 
 export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUps, currency }) => {
   const [tab, setTab] = useState<ReportTab>('summary');
   const [selectedVendor, setSelectedVendor] = useState<string>('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  // Centralized stats — single source of truth, no duplicated calculations
+  const { totalIssued, totalRefunds, netTotal, bySource, missingReq, duplicates } = useReports(tickets, vendorBalances, topUps);
 
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -32,7 +36,6 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   const overdraftVendors = vendorBalances.filter(v => v.currentBalance < 0);
   const lowVendors = vendorBalances.filter(v => v.currentBalance >= 0 && v.initialBalance > 0 && (v.currentBalance / v.initialBalance) < 0.2);
-  const missingReq = tickets.filter(t => !t.reqNum);
 
   const sources = useMemo(() =>
     ['ALL', ...Array.from(new Set(tickets.map(t => t.source).filter(Boolean)))],
@@ -76,15 +79,16 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   const exportVendorDetail = () => {
     const data = filteredTickets.map(t => ({
+      'A/L':        t.airlineCode || '',
       'Ticket No.': t.ticketNo,
-      'Source': t.source,
+      'Source':     t.source,
       'Status': t.status || '',
       'Date': t.date,
       'Total Doc': t.totalDoc || '',
       'Commission': t.commission || '',
       'Net Amount': t.amount,
-      'Currency': currency,
-      'PNR': t.pnr || '',
+      'Currency':   t.currency || 'SAR',   // always from ticket
+      'PNR':        t.pnr || '',
       'Passenger': t.passengerName || '',
       'Req Num': t.reqNum || '',
     }));
@@ -95,10 +99,11 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
   };
 
   const TABS: { key: ReportTab; label: string; icon: React.ReactNode }[] = [
-    { key: 'summary', label: 'Vendor Summary', icon: <Wallet className="w-3.5 h-3.5" /> },
-    { key: 'overdraft', label: 'Overdraft / Low', icon: <TrendingDown className="w-3.5 h-3.5" /> },
-    { key: 'vendor_detail', label: 'Transaction History', icon: <FileText className="w-3.5 h-3.5" /> },
-    { key: 'missing_req', label: `Missing REQ (${missingReq.length})`, icon: <FileText className="w-3.5 h-3.5" /> },
+    { key: 'summary',        label: 'Vendor Summary',       icon: <Wallet className="w-3.5 h-3.5" /> },
+    { key: 'overdraft',      label: 'Overdraft / Low',      icon: <TrendingDown className="w-3.5 h-3.5" /> },
+    { key: 'ledger',         label: 'Wallet Ledger',        icon: <Wallet className="w-3.5 h-3.5" /> },
+    { key: 'vendor_detail',  label: 'Transaction History',  icon: <FileText className="w-3.5 h-3.5" /> },
+    { key: 'missing_req',    label: `Missing REQ (${missingReq.length})`, icon: <FileText className="w-3.5 h-3.5" /> },
   ];
 
   return (
@@ -324,6 +329,90 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+
+        {/* ── WALLET LEDGER TAB ── */}
+        {tab === 'ledger' && (
+          <div className="space-y-4">
+            {vendorBalances.map(v => {
+              const vTopUps   = topUps.filter(tu => tu.vendorId === v.id);
+              const vTickets  = tickets.filter(t =>
+                (t.source || '').toLowerCase().includes(v.vendorName.toLowerCase()) ||
+                v.vendorName.toLowerCase().includes((t.source || '').toLowerCase())
+              );
+              const totalTopUp  = vTopUps.reduce((s, tu) => s + tu.amount, 0);
+              const totalIssued = vTickets.filter(t => (t.status||'').toUpperCase() === 'ISSUE' || t.amount > 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+              const totalRefund = vTickets.filter(t => (t.status||'').toUpperCase() === 'REFUND' || t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+              const balance     = v.currentBalance;
+              const isNeg       = balance < 0;
+
+              // Build ledger entries
+              const ledgerEntries = [
+                { date: '-', type: 'OPENING', desc: 'Opening Balance', debit: 0, credit: v.initialBalance, running: v.initialBalance },
+                ...vTopUps.map(tu => ({ date: tu.date, type: 'FUND', desc: tu.note, debit: 0, credit: tu.amount, running: 0 })),
+                ...vTickets.map(t => ({
+                  date: t.date, type: t.status || 'ISSUE',
+                  desc: `${t.ticketNo} — ${t.passengerName || t.pnr || ''}`,
+                  debit: t.amount > 0 ? t.amount : 0,
+                  credit: t.amount < 0 ? Math.abs(t.amount) : 0,
+                  running: 0,
+                })),
+              ].sort((a, b) => a.date.localeCompare(b.date));
+
+              // Calculate running balance
+              let running = 0;
+              ledgerEntries.forEach(e => {
+                running += e.credit - e.debit;
+                e.running = running;
+              });
+
+              return (
+                <div key={v.id} className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+                  <div className="flex justify-between items-center px-4 py-3 bg-slate-50 border-b border-slate-100">
+                    <span className="font-bold text-sm uppercase text-slate-700">{v.vendorName}</span>
+                    <span className={`font-mono font-black text-lg ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
+                      {isNeg ? '-' : ''}{currency} {fmt(Math.abs(balance))}
+                    </span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
+                        <tr>
+                          {['Date','Type','Description','Debit','Credit','Balance'].map(c => (
+                            <th key={c} className="px-3 py-2 text-[9px] font-bold uppercase text-slate-400">{c}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {ledgerEntries.map((e, i) => (
+                          <tr key={i} className={`hover:bg-slate-50 ${e.type === 'FUND' ? 'bg-emerald-50/40' : e.type === 'REFUND' ? 'bg-red-50/30' : ''}`}>
+                            <td className="px-3 py-1.5 text-slate-400 text-[10px]">{e.date}</td>
+                            <td className="px-3 py-1.5">
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                e.type === 'FUND' ? 'bg-emerald-100 text-emerald-700' :
+                                e.type === 'REFUND' ? 'bg-red-100 text-red-700' :
+                                e.type === 'OPENING' ? 'bg-blue-100 text-blue-700' :
+                                'bg-slate-100 text-slate-600'
+                              }`}>{e.type}</span>
+                            </td>
+                            <td className="px-3 py-1.5 text-slate-600 max-w-[200px] truncate text-[10px]">{e.desc}</td>
+                            <td className="px-3 py-1.5 text-red-600 text-right">{e.debit > 0 ? fmt(e.debit) : '—'}</td>
+                            <td className="px-3 py-1.5 text-emerald-600 text-right">{e.credit > 0 ? fmt(e.credit) : '—'}</td>
+                            <td className={`px-3 py-1.5 text-right font-bold ${e.running < 0 ? 'text-red-600' : 'text-slate-700'}`}>{fmt(e.running)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+            {vendorBalances.length === 0 && (
+              <div className="bg-white border border-slate-200 rounded-lg p-8 text-center shadow-sm">
+                <p className="text-slate-400 text-sm">No vendors configured yet.</p>
+              </div>
+            )}
           </div>
         )}
       </div>

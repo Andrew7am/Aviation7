@@ -1,0 +1,35 @@
+import { VendorParser, ParserResult } from './types';
+import { col, cell, num, cleanPax } from './shared';
+import { resolveReq } from '../helpers/resolveReq';
+import { parseDate } from '../helpers/parseDate';
+import { SupportedCurrency, resolveCurrency } from '../helpers/resolveCurrency';
+
+export const FlyAdealDXBParser: VendorParser = {
+  id: 'FLYADEAL_DXB', name: 'FlyAdeal DXB',
+  detect: (headers) => {
+    const hj = headers.map(c=>(c||'').toLowerCase().replace(/[^a-z0-9.]/g,'')).join('|');
+    return hj.includes('paymentdate')&&hj.includes('pnr')&&hj.includes('accountamount');
+  },
+  parse: (rows, headers, defaultCurrency): ParserResult => {
+    const errors: string[] = [], warnings: string[] = [], result = [];
+    const iPNR = col(headers,'pnr'); const iDate = col(headers,'paymentDate','paymentdate');
+    const iPax = col(headers,'passenger_Name','passenger_name','passenger');
+    const iAmt = col(headers,'accountAmount','accountamount','bookingAmount','bookingamount');
+    const iCurr = col(headers,'accountCurrency','accountcurrency'); // used for SAR-skip only
+    const iReq = col(headers,'Req number','Req Number','REQ NUMBER','req');
+    rows.forEach((row,idx) => {
+      // SAR rows = internal FlyAdeal transfers, not AED-billed ticket charges — skip
+      const acctCurr = (row[iCurr]||'').trim().toUpperCase();
+      if (acctCurr==='SAR') return;
+      const pnr = cell(row,iPNR).replace(/\s+/g,'').toUpperCase();
+      if (!pnr||pnr.length<5) return;
+      const amt = num(cell(row,iAmt)); if(amt===0) return;
+      // resolveCurrency reads accountCurrency col (and any other currency cols) → single source
+      const currency = resolveCurrency(row, headers, defaultCurrency);
+      const req = resolveReq(cell(row,iReq));
+      if (!req) warnings.push(`PNR ${pnr}: Missing Req Num`);
+      result.push({ticketNo:pnr,pnr,passengerName:cleanPax(cell(row,iPax)),date:(cell(row,iDate)||'').split('T')[0]||new Date().toISOString().split('T')[0],amount:amt<0?amt:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:amt<0?'REFUND':'ISSUE',currency});
+    });
+    return {rows:result,errors,warnings};
+  },
+};

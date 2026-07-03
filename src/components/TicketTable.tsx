@@ -26,11 +26,17 @@ const SOURCE_COLORS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  // New normalized statuses
+  ISSUE:  'bg-emerald-100 text-emerald-700',
+  REFUND: 'bg-red-100 text-red-700',
+  FUND:   'bg-emerald-200 text-emerald-800',
+  ADM:    'bg-blue-100 text-blue-700',
+  ACM:    'bg-purple-100 text-purple-700',
+  // Legacy (for old imported data)
   TKTT: 'bg-emerald-100 text-emerald-700',
   RFND: 'bg-red-100 text-red-700',
   VOID: 'bg-red-100 text-red-700',
   CANN: 'bg-slate-100 text-slate-500',
-  CNJ: 'bg-blue-100 text-blue-700',
   EMDS: 'bg-purple-100 text-purple-700',
 };
 
@@ -61,7 +67,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   const filtered = useMemo(() => {
     return tickets.filter(t => {
-      if (filterMode === 'NEED_REQ' && t.reqNum) return false;
+      if (filterMode === 'NEED_REQ' && (t.reqNum || t.status === 'FUND')) return false;
       if (filterMode === 'DUPLICATE' && !t.isDuplicate) return false;
       if (sourceFilter !== 'ALL' && t.source !== sourceFilter) return false;
       if (searchTerm) {
@@ -75,20 +81,23 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   const exportToExcel = () => {
     const data = filtered.map(t => ({
-      'A/L': t.airlineCode || '',
-      'Route': t.route || '',
-      'Ticket No.': t.ticketNo,
-      'Source': t.source || 'UNKNOWN',
-      'Status': t.status || '',
-      'Date': t.date,
-      'Total Doc': t.totalDoc || '',
-      'Commission': t.commission || '',
-      'Net Amount': t.amount,
-      'Currency': currency,
-      'PNR': t.pnr || '',
-      'Passenger': t.passengerName || '',
-      'Req Num': t.reqNum || '',
+      'A/L':         t.airlineCode || '',
+      'Route':       t.route || '',
+      'Ticket No.':  t.ticketNo,
+      'Source':      t.source || 'UNKNOWN',
+      'Type':        t.transactionType || t.status || '',
+      'Status':      t.status || '',
+      'Date':        t.date,
+      'Total Doc':   t.totalDoc || '',
+      'Commission':  t.commission || '',
+      'Net Amount':  t.amount,
+      'Currency':    t.currency || 'SAR',   // always from ticket, never from UI selection
+      'PNR':         t.pnr || '',
+      'Passenger':   t.passengerName || '',
+      'Req Num':     t.reqNum || '',
       'Recon Status': t.reqNum ? 'MATCHED' : 'NEED REQ',
+      'Import Time': t.importTime || '',
+      'Report Name': t.reportName || '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
@@ -97,18 +106,19 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   };
 
   const exportMissingReq = () => {
-    const missing = tickets.filter(t => !t.reqNum);
+    const missing = tickets.filter(t => !t.reqNum && t.status !== 'FUND');
     const data = missing.map(t => ({
-      'A/L': t.airlineCode || '',
-      'Route': t.route || '',
+      'A/L':        t.airlineCode || '',
+      'Route':      t.route || '',
       'Ticket No.': t.ticketNo,
-      'Source': t.source || '',
-      'Status': t.status || '',
-      'Date': t.date,
+      'Source':     t.source || '',
+      'Status':     t.status || '',
+      'Date':       t.date,
       'Net Amount': t.amount,
-      'PNR': t.pnr || '',
-      'Passenger': t.passengerName || '',
-      'Req Num': '',  // blank — to be filled in and re-uploaded
+      'Currency':   t.currency || 'SAR',  // from ticket, not UI
+      'PNR':        t.pnr || '',
+      'Passenger':  t.passengerName || '',
+      'Req Num':    '',  // blank — fill and re-import to auto-match
     }));
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();

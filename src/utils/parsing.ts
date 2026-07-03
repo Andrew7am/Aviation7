@@ -1,3 +1,4 @@
+import { SupportedCurrency } from '../core/helpers/resolveCurrency';
 import { v4 as uuidv4 } from 'uuid';
 import { Ticket } from '../types';
 import Papa from 'papaparse';
@@ -94,15 +95,17 @@ function cleanPassengerName(raw: string): string {
 ───────────────────────────────────────────── */
 function cleanReqNum(raw: string): string {
   if (!raw) return '';
-  const cleaned = raw.replace(/\s+/g, '').toUpperCase();
-  // Reject known non-req values
-  if (['NEEDREQ', 'ADM', '0', 'MISSING', 'PAYMENT', 'FUND', 'TOPUP'].includes(cleaned)) return '';
-  if (/^(RV|INV|RFD)\d+/i.test(cleaned)) return ''; // internal doc refs
-  // Must be letters then digits (or mixed like REQ11441)
-  if (/^[A-Z]{1,8}\d{1,6}$/i.test(cleaned)) return cleaned;
-  // Handle "REQ 11441" → "REQ11441" (already cleaned above)
-  if (/^[A-Z]{2,8}\d{3,6}$/i.test(cleaned)) return cleaned;
-  return '';
+
+  const cleaned = raw.trim();
+
+  if (
+    cleaned.toUpperCase() === 'NEEDREQ' ||
+    cleaned.toUpperCase() === 'NEED REQ'
+  ) {
+    return '';
+  }
+
+  return cleaned;
 }
 
 /* ─────────────────────────────────────────────
@@ -223,7 +226,7 @@ export function parseManualInput(
 
   /* ── Column indices per format ── */
   let iTicket = -1, iPNR = -1, iAmount = -1, iComm = -1, iTotalDoc = -1;
-  let iStatus = -1, iDate = -1, iPassenger = -1, iReq = -1, iAirline = -1, iRoute = -1;
+  let iStatus = -1, iDate = -1, iPassenger = -1, iReq = -1, iAirline = -1, iRoute = -1, iCurrency = -1;
 
   if (format === 'EXPORT') {
     iTicket    = colIdx(h, 'Ticket No.');
@@ -346,9 +349,10 @@ export function parseManualInput(
     iPNR       = colIdx(h, 'Record Locator');      // col 1
     iPassenger = colIdx(h, 'Passenger');           // col 2
     iTicket    = colIdx(h, 'No');                  // col 3: "220-5512605725"
-    iReq       = 4;                                // col 4: always req num (ksaco379, uaevp411 etc.)
+    iReq       = colIdx(h, 'REQ', 'REQ Number', 'Request Number');
     iStatus    = colIdx(h, 'Action');              // col 5
     iAmount    = colIdx(h, 'Total');               // col 6
+    iCurrency = colIdx(h, 'Total currency');
     iAirline   = -1;
   }
 
@@ -371,6 +375,7 @@ export function parseManualInput(
     let passengerName = '';
     let airlineCode   = '';
     let route         = '';
+    let currency = defaultSource || '';
 
     /* ════════════════ PER-FORMAT PARSING ════════════════ */
 
@@ -450,6 +455,7 @@ export function parseManualInput(
             passengerName: 'BALANCE TOP-UP', airlineCode: '',
             source: defaultSource || 'NSA', date: nsaDate,
             amount: creditAmt, commission: 0, totalDoc: creditAmt,
+            currency: currency as SupportedCurrency,
             reqNum: '', status: 'TOPUP', userId: 'temp',
           });
         }
@@ -497,6 +503,7 @@ export function parseManualInput(
 
       // accountCurrency col = 11: if SAR → this is a top-up/internal transfer, skip as ticket
       const acctCurrency = cell(row, 11).toUpperCase(); // accountCurrency col
+      currency = acctCurrency || currency;
       if (acctCurrency === 'SAR') {
         // Could be a top-up — check bookingAmount (col 8) for negative = refund to us
         const bookAmt = parseNum(cell(row, 8));
@@ -556,6 +563,7 @@ export function parseManualInput(
             passengerName: 'BALANCE TOP-UP', airlineCode: '',
             source: defaultSource || 'Ibtekar', date: dtUp,
             amount: depositAmt, commission: 0, totalDoc: depositAmt,
+            currency: currency as SupportedCurrency,
             reqNum: cleanReqNum(fileNo), status: 'TOPUP', userId: 'temp',
           });
         }
@@ -662,7 +670,8 @@ export function parseManualInput(
           passengerName: 'BALANCE TOP-UP', airlineCode: '',
           source: defaultSource || 'AirArabia', date,
           amount: Math.abs(arDebit), commission: 0, totalDoc: Math.abs(arDebit),
-          reqNum: '', status: 'TOPUP', userId: 'temp',
+          currency: currency as SupportedCurrency,
+            reqNum: '', status: 'TOPUP', userId: 'temp',
         });
         return;
       }
@@ -709,6 +718,7 @@ export function parseManualInput(
             passengerName: 'BALANCE TOP-UP', airlineCode: '',
             source: defaultSource || 'Flynas', date,
             amount: fundAmt, commission: 0, totalDoc: fundAmt,
+            currency: currency as SupportedCurrency,
             reqNum: '', status: 'TOPUP', userId: 'temp',
           });
         }
@@ -798,6 +808,7 @@ export function parseManualInput(
       }
 
       source = defaultSource || 'RTS';
+      currency = cell(row, iCurrency).toUpperCase() || currency;
       // Col 4 = req num: "ksaco379", "uaevp411", "SA 1161"
       reqNum = cleanReqNum(row[4] ? row[4].trim() : '');
 
@@ -849,6 +860,7 @@ export function parseManualInput(
         amount,
         commission,
         totalDoc,
+        currency: currency as SupportedCurrency,
         reqNum,
         status,
         userId:        'temp',

@@ -1,3 +1,6 @@
+import { SupportedCurrency } from './core/helpers/resolveCurrency';
+import { NormalizedStatus } from './core/helpers/normalizeStatus';
+
 export interface Ticket {
   id: string;
   ticketNo: string;
@@ -11,14 +14,20 @@ export interface Ticket {
   passengerName?: string;
   airlineCode?: string;
   route?: string;
-  status?: string;
+  status?: NormalizedStatus | string;
   isDuplicate?: boolean;
   userId: string;
   importBatchId?: string;
+  currency?: SupportedCurrency;
+  transactionType?: string;
+  reportName?: string;
+  vendorReference?: string;
+  balanceAfter?: number;
+  importTime?: string;
   createdAt?: string;
 }
 
-export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'import' | 'vendors' | 'reports';
+export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'import' | 'vendors' | 'reports' | 'history';
 
 export interface VendorBalance {
   id: string;
@@ -27,7 +36,6 @@ export interface VendorBalance {
   currentBalance: number;
   userId: string;
   createdAt?: string;
-  lowBalanceAlertSent?: boolean;
 }
 
 export interface BalanceTopUp {
