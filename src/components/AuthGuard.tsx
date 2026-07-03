@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plane, LogIn } from 'lucide-react';
-import { loginWithGoogle, auth } from '../utils/firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { loginWithGoogle, supabase } from '../utils/supabase';
+import type { User } from '@supabase/supabase-js';
 
 interface AuthGuardProps {
   children: (user: User) => React.ReactNode;
@@ -12,11 +12,15 @@ export function AuthGuard({ children }: AuthGuardProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
+    supabase.auth.getSession().then(({ data }) => {
+      setUser(data.session?.user ?? null);
       setLoading(false);
     });
-    return unsub;
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+    return () => sub.subscription.unsubscribe();
   }, []);
 
   if (loading) {
@@ -43,9 +47,9 @@ export function AuthGuard({ children }: AuthGuardProps) {
           </div>
           <h1 className="text-2xl font-bold tracking-tight uppercase text-white mb-2">Luxury Explorers</h1>
           <p className="text-slate-400 text-sm mb-8">Reconciliation & Audit Portal</p>
-          
-          <button 
-            onClick={loginWithGoogle}
+
+          <button
+            onClick={() => loginWithGoogle()}
             className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded transition-colors uppercase tracking-widest text-xs flex items-center justify-center gap-2"
           >
             <LogIn className="w-4 h-4" />

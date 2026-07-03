@@ -1,10 +1,44 @@
-import {
-  collection, doc, setDoc, deleteDoc,
-  onSnapshot, query, where, writeBatch,
-} from 'firebase/firestore';
-import { db } from '../utils/firebase';
+import { supabase } from '../utils/supabase';
 import { VendorBalance, BalanceTopUp } from '../types';
 import { VENDOR_ALIASES } from '../core/config/vendorAliases';
+
+type VendorBalanceRow = {
+  id: string;
+  user_id: string;
+  vendor_name: string;
+  initial_balance: number;
+  current_balance: number;
+  created_at: string;
+};
+
+type BalanceTopUpRow = {
+  id: string;
+  user_id: string;
+  vendor_id: string;
+  vendor_name: string;
+  amount: number;
+  note: string | null;
+  date: string | null;
+};
+
+const rowToVendor = (r: VendorBalanceRow): VendorBalance => ({
+  id: r.id,
+  vendorName: r.vendor_name,
+  initialBalance: r.initial_balance,
+  currentBalance: r.current_balance,
+  userId: r.user_id,
+  createdAt: r.created_at,
+});
+
+const rowToTopUp = (r: BalanceTopUpRow): BalanceTopUp => ({
+  id: r.id,
+  vendorId: r.vendor_id,
+  vendorName: r.vendor_name,
+  amount: r.amount,
+  note: r.note ?? '',
+  date: r.date ?? '',
+  userId: r.user_id,
+});
 
 export class WalletService {
   private userId: string;
@@ -14,25 +48,62 @@ export class WalletService {
   }
 
   subscribeVendors(onData: (v: VendorBalance[]) => void) {
-    const q = query(collection(db, 'vendorBalances'), where('userId', '==', this.userId));
-    return onSnapshot(q, snap => onData(snap.docs.map(d => d.data() as VendorBalance)));
+    let cancelled = false;
+    const fetchAll = async () => {
+      const { data, error } = await supabase.from('vendor_balances').select('*').eq('user_id', this.userId);
+      if (error) { console.error('vendor_balances error', error); return; }
+      if (!cancelled) onData((data as VendorBalanceRow[]).map(rowToVendor));
+    };
+    fetchAll();
+    const channel = supabase
+      .channel(`vendor-balances-${this.userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_balances', filter: `user_id=eq.${this.userId}` }, fetchAll)
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(channel); };
   }
 
   subscribeTopUps(onData: (tu: BalanceTopUp[]) => void) {
-    const q = query(collection(db, 'balanceTopUps'), where('userId', '==', this.userId));
-    return onSnapshot(q, snap => onData(snap.docs.map(d => d.data() as BalanceTopUp)));
+    let cancelled = false;
+    const fetchAll = async () => {
+      const { data, error } = await supabase.from('balance_topups').select('*').eq('user_id', this.userId);
+      if (error) { console.error('balance_topups error', error); return; }
+      if (!cancelled) onData((data as BalanceTopUpRow[]).map(rowToTopUp));
+    };
+    fetchAll();
+    const channel = supabase
+      .channel(`balance-topups-${this.userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'balance_topups', filter: `user_id=eq.${this.userId}` }, fetchAll)
+      .subscribe();
+    return () => { cancelled = true; supabase.removeChannel(channel); };
   }
 
   async saveVendor(vendor: VendorBalance): Promise<void> {
-    await setDoc(doc(db, 'vendorBalances', vendor.id), { ...vendor, userId: this.userId });
+    const { error } = await supabase.from('vendor_balances').upsert({
+      id: vendor.id,
+      user_id: this.userId,
+      vendor_name: vendor.vendorName,
+      initial_balance: vendor.initialBalance,
+      current_balance: vendor.currentBalance,
+    }, { onConflict: 'id' });
+    if (error) throw new Error(error.message);
   }
 
   async deleteVendor(id: string): Promise<void> {
-    await deleteDoc(doc(db, 'vendorBalances', id));
+    const { error } = await supabase.from('vendor_balances').delete().eq('id', id).eq('user_id', this.userId);
+    if (error) throw new Error(error.message);
   }
 
   async addTopUp(topUp: BalanceTopUp): Promise<void> {
-    await setDoc(doc(db, 'balanceTopUps', topUp.id), { ...topUp, userId: this.userId });
+    const { error } = await supabase.from('balance_topups').upsert({
+      id: topUp.id,
+      user_id: this.userId,
+      vendor_id: topUp.vendorId,
+      vendor_name: topUp.vendorName,
+      amount: topUp.amount,
+      note: topUp.note,
+      date: topUp.date,
+    }, { onConflict: 'id' });
+    if (error) throw new Error(error.message);
   }
 
   /** Match vendor to tickets by source name using alias table */
@@ -52,7 +123,6 @@ export class WalletService {
     topUps: BalanceTopUp[]
   ): number {
     const linked = tickets.filter(t => WalletService.vendorMatchesSource(vendor.vendorName, t.source));
-    // Sum issued tickets (positive = deduct from balance)
     const issued  = linked.filter(t => (t.status || '').toUpperCase() !== 'FUND').reduce((s, t) => s + t.amount, 0);
     const topUpTotal = topUps.filter(tu => tu.vendorId === vendor.id).reduce((s, tu) => s + tu.amount, 0);
     return vendor.initialBalance + topUpTotal - issued;

@@ -1,10 +1,85 @@
-import {
-  collection, doc, setDoc, deleteDoc,
-  writeBatch, onSnapshot, query, where, Query,
-} from 'firebase/firestore';
-import { db } from '../utils/firebase';
+import { supabase } from '../utils/supabase';
 import { Ticket } from '../types';
-import { BalanceTopUp } from '../types';
+
+type TicketRow = {
+  id: string;
+  user_id: string;
+  ticket_no: string;
+  source: string;
+  date: string;
+  amount: number;
+  commission: number;
+  total_doc: number;
+  req_num: string;
+  pnr: string | null;
+  passenger_name: string | null;
+  airline_code: string | null;
+  route: string | null;
+  status: string | null;
+  is_duplicate: boolean;
+  import_batch_id: string | null;
+  currency: string | null;
+  transaction_type: string | null;
+  report_name: string | null;
+  vendor_reference: string | null;
+  balance_after: number | null;
+  import_time: string | null;
+  created_at: string;
+};
+
+function rowToTicket(r: TicketRow): Ticket {
+  return {
+    id: r.id,
+    ticketNo: r.ticket_no,
+    source: r.source,
+    date: r.date,
+    amount: r.amount,
+    commission: r.commission,
+    totalDoc: r.total_doc,
+    reqNum: r.req_num,
+    pnr: r.pnr ?? undefined,
+    passengerName: r.passenger_name ?? undefined,
+    airlineCode: r.airline_code ?? undefined,
+    route: r.route ?? undefined,
+    status: r.status ?? undefined,
+    isDuplicate: r.is_duplicate,
+    userId: r.user_id,
+    importBatchId: r.import_batch_id ?? undefined,
+    currency: (r.currency as Ticket['currency']) ?? undefined,
+    transactionType: r.transaction_type ?? undefined,
+    reportName: r.report_name ?? undefined,
+    vendorReference: r.vendor_reference ?? undefined,
+    balanceAfter: r.balance_after ?? undefined,
+    importTime: r.import_time ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+function ticketToRow(t: Ticket, userId: string) {
+  return {
+    id: t.id,
+    user_id: userId,
+    ticket_no: t.ticketNo,
+    source: t.source || '',
+    date: t.date || '',
+    amount: t.amount ?? 0,
+    commission: t.commission ?? 0,
+    total_doc: t.totalDoc ?? 0,
+    req_num: t.reqNum || '',
+    pnr: t.pnr || '',
+    passenger_name: t.passengerName || '',
+    airline_code: t.airlineCode || '',
+    route: t.route || '',
+    status: t.status || '',
+    currency: t.currency || 'SAR',
+    transaction_type: t.transactionType || t.status || '',
+    vendor_reference: t.vendorReference || '',
+    report_name: t.reportName || '',
+    import_time: t.importTime || new Date().toISOString(),
+    is_duplicate: false,
+    balance_after: t.balanceAfter ?? null,
+  };
+}
 
 export class TicketService {
   private userId: string;
@@ -13,11 +88,35 @@ export class TicketService {
     this.userId = userId;
   }
 
+  /**
+   * Supabase realtime gives per-row change events, not a full snapshot like
+   * Firestore's onSnapshot. To keep the exact same "always hand back the full
+   * current list" contract the hooks rely on, refetch the whole table on any
+   * change instead of trying to patch the local array incrementally.
+   */
   subscribe(onData: (tickets: Ticket[]) => void, onError?: (e: Error) => void) {
-    const q = query(collection(db, 'tickets'), where('userId', '==', this.userId));
-    return onSnapshot(q, snap => {
-      onData(snap.docs.map(d => d.data() as Ticket));
-    }, err => onError?.(err as Error));
+    let cancelled = false;
+
+    const fetchAll = async () => {
+      const { data, error } = await supabase
+        .from('tickets')
+        .select('*')
+        .eq('user_id', this.userId);
+      if (error) { onError?.(new Error(error.message)); return; }
+      if (!cancelled) onData((data as TicketRow[]).map(rowToTicket));
+    };
+
+    fetchAll();
+
+    const channel = supabase
+      .channel(`tickets-${this.userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `user_id=eq.${this.userId}` }, fetchAll)
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      supabase.removeChannel(channel);
+    };
   }
 
   async saveImport(
@@ -26,74 +125,62 @@ export class TicketService {
     topUpTickets: Ticket[],
     vendorBalancesLive: { id: string; vendorName: string }[]
   ): Promise<{ saved: number; updated: number; topups: number }> {
-    const batch = writeBatch(db);
+    if (newTickets.length > 0) {
+      const rows = newTickets.map(t => ticketToRow(t, this.userId));
+      const { error } = await supabase.from('tickets').upsert(rows, { onConflict: 'id' });
+      if (error) throw new Error(error.message);
+    }
 
-    // Real tickets
-    newTickets.forEach(ticket => {
-      const ref = doc(db, 'tickets', ticket.id);
-      const toWrite: Record<string, unknown> = {
-        id:              ticket.id,
-        ticketNo:        ticket.ticketNo,
-        source:          ticket.source || '',
-        date:            ticket.date || '',
-        amount:          ticket.amount ?? 0,
-        commission:      ticket.commission ?? 0,
-        totalDoc:        ticket.totalDoc ?? 0,
-        reqNum:          ticket.reqNum || '',
-        pnr:             ticket.pnr || '',
-        passengerName:   ticket.passengerName || '',
-        airlineCode:     ticket.airlineCode || '',
-        route:           ticket.route || '',
-        status:          ticket.status || '',
-        currency:        ticket.currency || 'SAR',
-        transactionType: ticket.transactionType || ticket.status || '',
-        vendorReference: ticket.vendorReference || '',
-        reportName:      ticket.reportName || '',
-        importTime:      ticket.importTime || new Date().toISOString(),
-        isDuplicate:     false,
-        userId:          this.userId,
-        createdAt:       new Date().toISOString(),
-        // New fields from roadmap
-        balanceAfter:    ticket.balanceAfter ?? null,
-      };
-      batch.set(ref, toWrite);
-    });
+    // Req num updates — targeted column update, not a full row overwrite
+    // (matches the old Firestore `merge: true` patch semantics).
+    for (const ticket of updateTickets) {
+      const { error } = await supabase
+        .from('tickets')
+        .update({ req_num: ticket.reqNum })
+        .eq('id', ticket.id)
+        .eq('user_id', this.userId);
+      if (error) throw new Error(error.message);
+    }
 
-    // Req num updates
-    updateTickets.forEach(ticket => {
-      const ref = doc(db, 'tickets', ticket.id);
-      batch.set(ref, { reqNum: ticket.reqNum }, { merge: true });
-    });
+    // TopUp rows → save as balance_topups, matched to vendor by source name.
+    const topUpRows = topUpTickets
+      .map(t => {
+        const vendor = vendorBalancesLive.find(v =>
+          t.source.toLowerCase().includes(v.vendorName.toLowerCase()) ||
+          v.vendorName.toLowerCase().includes(t.source.toLowerCase())
+        );
+        if (!vendor) return null;
+        return {
+          id: `topup_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+          user_id: this.userId,
+          vendor_id: vendor.id,
+          vendor_name: vendor.vendorName,
+          amount: t.amount,
+          note: `Auto top-up from ${t.reportName || t.source}`,
+          date: t.date || new Date().toISOString().split('T')[0],
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
 
-    // TopUp rows → save as BalanceTopUp
-    topUpTickets.forEach(t => {
-      const vendor = vendorBalancesLive.find(v =>
-        t.source.toLowerCase().includes(v.vendorName.toLowerCase()) ||
-        v.vendorName.toLowerCase().includes(t.source.toLowerCase())
-      );
-      if (!vendor) return;
-      const id = `topup_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const ref = doc(db, 'balanceTopUps', id);
-      batch.set(ref, {
-        id,
-        vendorId:   vendor.id,
-        vendorName: vendor.vendorName,
-        amount:     t.amount,
-        note:       `Auto top-up from ${t.reportName || t.source}`,
-        date:       t.date || new Date().toISOString().split('T')[0],
-        userId:     this.userId,
-      } as BalanceTopUp);
-    });
+    if (topUpRows.length > 0) {
+      const { error } = await supabase.from('balance_topups').insert(topUpRows);
+      if (error) throw new Error(error.message);
+    }
 
-    await batch.commit();
-    return { saved: newTickets.length, updated: updateTickets.length, topups: topUpTickets.length };
+    return { saved: newTickets.length, updated: updateTickets.length, topups: topUpRows.length };
   }
 
   async delete(ticketId: string): Promise<void> {
-    await deleteDoc(doc(db, 'tickets', ticketId));
+    const { error } = await supabase.from('tickets').delete().eq('id', ticketId).eq('user_id', this.userId);
+    if (error) throw new Error(error.message);
   }
 
   async updateReqNum(ticketId: string, reqNum: string): Promise<void> {
-    await setDoc(doc(db, 'tickets', ticketId), { reqNum }, { merge: true });
+    const { error } = await supabase
+      .from('tickets')
+      .update({ req_num: reqNum })
+      .eq('id', ticketId)
+      .eq('user_id', this.userId);
+    if (error) throw new Error(error.message);
   }
 }

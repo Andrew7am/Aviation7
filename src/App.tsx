@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { ViewState, Ticket, VendorBalance, BalanceTopUp, AppAlert } from './types';
-import { logout } from './utils/firebase';
+import { logout } from './utils/supabase';
 import { AuthGuard } from './components/AuthGuard';
 import { AlertBanner } from './components/AlertBanner';
 import { Dashboard } from './components/Dashboard';
@@ -17,7 +17,7 @@ import {
   Plane, LayoutDashboard, List, AlertTriangle,
   Upload, LogOut, Wallet, BarChart2, History,
 } from 'lucide-react';
-import { User } from 'firebase/auth';
+import type { User } from '@supabase/supabase-js';
 import { SupportedCurrency } from './core/helpers/resolveCurrency';
 
 const LOW_PCT = 0.2;
@@ -28,13 +28,13 @@ function MainApp({ user }: { user: User }) {
   const [currency, setCurrency] = useState<SupportedCurrency>('SAR');
   const [importHistory, setImportHistory] = useState<ImportRecord[]>([]);
 
-  const { tickets, missingReq, deleteTicket, updateReqNum } = useTickets(user.uid);
-  const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.uid, tickets);
+  const { tickets, missingReq, deleteTicket, updateReqNum } = useTickets(user.id);
+  const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
 
-  const ticketSvc = new TicketService(user.uid);
-  const importSvc = new ImportService(user.uid);
+  const ticketSvc = new TicketService(user.id);
+  const importSvc = new ImportService(user.id);
 
-  React.useEffect(() => importSvc.subscribeHistory(setImportHistory), [user.uid]);
+  React.useEffect(() => importSvc.subscribeHistory(setImportHistory), [user.id]);
 
   /* ── Low balance alerts ── */
   React.useEffect(() => {

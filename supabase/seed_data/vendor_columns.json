@@ -1,0 +1,1283 @@
+{
+  "iata": {
+    "sheet": "IATA",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "col_1",
+        "original": ""
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "serial",
+        "original": "Serial "
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "airline_key",
+        "original": "Airline key"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "ticket_number",
+        "original": "ticket number "
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "total",
+        "original": "total "
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "tax",
+        "original": "tax "
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "comm",
+        "original": "comm"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "net",
+        "original": "NET"
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "pax_name",
+        "original": "Pax Name "
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "pnr",
+        "original": "PNR "
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "service",
+        "original": "Service "
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "req_number",
+        "original": "Req Number "
+      }
+    ],
+    "data_row_count": 1568
+  },
+  "flydubai": {
+    "sheet": "FLYDubai",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "invoice_no",
+        "original": "Invoice no."
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "payment_date",
+        "original": "Payment date"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "booking_reference",
+        "original": "Booking reference"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "master_booking_reference",
+        "original": "Master booking reference"
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "agency",
+        "original": "Agency"
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "user_id",
+        "original": "User ID"
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "amount",
+        "original": "Amount"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "deposit_date",
+        "original": "Deposit date"
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "balance",
+        "original": "Balance"
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "balance_due",
+        "original": "Balance due"
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "payment_reference",
+        "original": "Payment reference"
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "payer_id",
+        "original": "Payer ID"
+      },
+      {
+        "ordinal": 13,
+        "sql_name": "total_passengers",
+        "original": "Total passengers"
+      },
+      {
+        "ordinal": 14,
+        "sql_name": "total_segments",
+        "original": "Total segments"
+      },
+      {
+        "ordinal": 15,
+        "sql_name": "order_no",
+        "original": "Order no."
+      },
+      {
+        "ordinal": 16,
+        "sql_name": "passenger_name",
+        "original": "Passenger name"
+      },
+      {
+        "ordinal": 17,
+        "sql_name": "departure_date",
+        "original": "Departure date"
+      },
+      {
+        "ordinal": 18,
+        "sql_name": "booked_date",
+        "original": "Booked date"
+      },
+      {
+        "ordinal": 19,
+        "sql_name": "remarks",
+        "original": "Remarks"
+      },
+      {
+        "ordinal": 20,
+        "sql_name": "currency_code",
+        "original": "Currency Code"
+      },
+      {
+        "ordinal": 21,
+        "sql_name": "req_number",
+        "original": "REQ Number "
+      },
+      {
+        "ordinal": 22,
+        "sql_name": "status",
+        "original": "Status"
+      }
+    ],
+    "data_row_count": 27
+  },
+  "flyadeal_dxb": {
+    "sheet": "FlyAdeal DXB",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "paymentdate",
+        "original": "paymentDate"
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "pnr",
+        "original": "pnr"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "parentorganizationcode",
+        "original": "parentOrganizationCode"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "organizationcode",
+        "original": "organizationCode"
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "type",
+        "original": "type"
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "passenger_name",
+        "original": "passenger_Name"
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "emailaddress",
+        "original": "emailAddress"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "phone",
+        "original": "phone"
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "bookingamount",
+        "original": "bookingAmount"
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "bookingcurrency",
+        "original": "bookingCurrency"
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "accountamount",
+        "original": "accountAmount"
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "accountcurrency",
+        "original": "accountCurrency"
+      },
+      {
+        "ordinal": 13,
+        "sql_name": "balance",
+        "original": "Balance "
+      },
+      {
+        "ordinal": 14,
+        "sql_name": "promocode",
+        "original": "promoCode"
+      },
+      {
+        "ordinal": 15,
+        "sql_name": "segmentcount",
+        "original": "segmentCount"
+      },
+      {
+        "ordinal": 16,
+        "sql_name": "sourceusercode",
+        "original": "sourceUsercode"
+      },
+      {
+        "ordinal": 17,
+        "sql_name": "req_number",
+        "original": "Req number "
+      },
+      {
+        "ordinal": 18,
+        "sql_name": "column1",
+        "original": "Column1"
+      },
+      {
+        "ordinal": 19,
+        "sql_name": "col_19",
+        "original": ""
+      },
+      {
+        "ordinal": 20,
+        "sql_name": "col_20",
+        "original": ""
+      },
+      {
+        "ordinal": 21,
+        "sql_name": "status",
+        "original": "Status"
+      }
+    ],
+    "data_row_count": 90
+  },
+  "flyadeal_ksa": {
+    "sheet": "FlyAdeal KSA",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "createdusercode",
+        "original": "createdUserCode"
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "organizationcode",
+        "original": "organizationCode"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "parentorganizationcode",
+        "original": "parentorganizationcode"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "recordlocator",
+        "original": "recordLocator"
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "seat",
+        "original": "seat"
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "seatamount",
+        "original": "seatamount"
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "inft",
+        "original": "inft"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "passengername",
+        "original": "passengerName"
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "emailaddress",
+        "original": "emailAddress"
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "phone",
+        "original": "phone"
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "flightnumber",
+        "original": "flightNumber"
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "departuredate",
+        "original": "departureDate"
+      },
+      {
+        "ordinal": 13,
+        "sql_name": "legdetails",
+        "original": "legDetails"
+      },
+      {
+        "ordinal": 14,
+        "sql_name": "pnrtotal",
+        "original": "pnrTotal"
+      },
+      {
+        "ordinal": 15,
+        "sql_name": "baseyq",
+        "original": "baseyq"
+      },
+      {
+        "ordinal": 16,
+        "sql_name": "basefare",
+        "original": "baseFare"
+      },
+      {
+        "ordinal": 17,
+        "sql_name": "ssrfees",
+        "original": "ssrFees"
+      },
+      {
+        "ordinal": 18,
+        "sql_name": "cmf",
+        "original": "cmf"
+      },
+      {
+        "ordinal": 19,
+        "sql_name": "othercharge",
+        "original": "otherCharge"
+      },
+      {
+        "ordinal": 20,
+        "sql_name": "promotiondiscount",
+        "original": "promotionDiscount"
+      },
+      {
+        "ordinal": 21,
+        "sql_name": "discount",
+        "original": "discount"
+      },
+      {
+        "ordinal": 22,
+        "sql_name": "pnrcurrency",
+        "original": "pnrCurrency"
+      },
+      {
+        "ordinal": 23,
+        "sql_name": "totalinorgcurrency",
+        "original": "totalInOrgCurrency"
+      },
+      {
+        "ordinal": 24,
+        "sql_name": "status",
+        "original": "status"
+      },
+      {
+        "ordinal": 25,
+        "sql_name": "paxstatus",
+        "original": "paxStatus"
+      },
+      {
+        "ordinal": 26,
+        "sql_name": "organizationcurrency",
+        "original": "organizationCurrency"
+      },
+      {
+        "ordinal": 27,
+        "sql_name": "abca",
+        "original": "abca"
+      },
+      {
+        "ordinal": 28,
+        "sql_name": "abcd",
+        "original": "abcd"
+      },
+      {
+        "ordinal": 29,
+        "sql_name": "ae",
+        "original": "ae"
+      },
+      {
+        "ordinal": 30,
+        "sql_name": "chng",
+        "original": "chng"
+      },
+      {
+        "ordinal": 31,
+        "sql_name": "d9",
+        "original": "d9"
+      },
+      {
+        "ordinal": 32,
+        "sql_name": "e3",
+        "original": "e3"
+      },
+      {
+        "ordinal": 33,
+        "sql_name": "eg",
+        "original": "eg"
+      },
+      {
+        "ordinal": 34,
+        "sql_name": "eq",
+        "original": "eq"
+      },
+      {
+        "ordinal": 35,
+        "sql_name": "exbg",
+        "original": "exbg"
+      },
+      {
+        "ordinal": 36,
+        "sql_name": "f25",
+        "original": "f25"
+      },
+      {
+        "ordinal": 37,
+        "sql_name": "f6",
+        "original": "f6"
+      },
+      {
+        "ordinal": 38,
+        "sql_name": "f7",
+        "original": "f7"
+      },
+      {
+        "ordinal": 39,
+        "sql_name": "fare",
+        "original": "fare"
+      },
+      {
+        "ordinal": 40,
+        "sql_name": "gz",
+        "original": "gz"
+      },
+      {
+        "ordinal": 41,
+        "sql_name": "hq",
+        "original": "hq"
+      },
+      {
+        "ordinal": 42,
+        "sql_name": "io",
+        "original": "io"
+      },
+      {
+        "ordinal": 43,
+        "sql_name": "jk",
+        "original": "jk"
+      },
+      {
+        "ordinal": 44,
+        "sql_name": "k7",
+        "original": "k7"
+      },
+      {
+        "ordinal": 45,
+        "sql_name": "balamce",
+        "original": "Balamce"
+      },
+      {
+        "ordinal": 46,
+        "sql_name": "req_number",
+        "original": "Req Number "
+      }
+    ],
+    "data_row_count": 4
+  },
+  "airarabia": {
+    "sheet": "Air Arabia ",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "reference_code",
+        "original": "Reference Code"
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "transaction_date",
+        "original": "Transaction date"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "debit_amount",
+        "original": "Debit Amount"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "credit_amount",
+        "original": "Credit Amount"
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "balance",
+        "original": "balance "
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "remarks",
+        "original": "Remarks"
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "ticket_number",
+        "original": "Ticket Number "
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "custmoner_name",
+        "original": "Custmoner name "
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "user_id",
+        "original": "User ID"
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "request_number",
+        "original": "Request Number "
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "column2",
+        "original": "Column2"
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "status",
+        "original": "Status "
+      }
+    ],
+    "data_row_count": 18
+  },
+  "flynas": {
+    "sheet": "FlyNas",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "date",
+        "original": "Date"
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "pnr2",
+        "original": "PNR2"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "pax",
+        "original": "pax "
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "amount",
+        "original": "AMOUNT"
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "req_number",
+        "original": "REQ. NUMBER "
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "balance",
+        "original": "balance "
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "column6",
+        "original": "Column6"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "status",
+        "original": "Status "
+      }
+    ],
+    "data_row_count": 19
+  },
+  "rts_ibtekar": {
+    "sheet": "RTS IBTKAR ",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "col_1",
+        "original": ""
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "pnr_creation_date",
+        "original": "PNR creation date"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "record_locator",
+        "original": "Record Locator"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "officeid_bk",
+        "original": "OfficeId Bk"
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "officeid_tk",
+        "original": "OfficeId Tk"
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "signinbooking",
+        "original": "SignInBooking"
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "signinticketing",
+        "original": "SignInTicketing"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "passenger",
+        "original": "Passenger"
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "paxtype",
+        "original": "PaxType"
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "depdate",
+        "original": "DepDate"
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "arrdate",
+        "original": "ArrDate"
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "numberofsegments",
+        "original": "NumberOfSegments"
+      },
+      {
+        "ordinal": 13,
+        "sql_name": "fare_basis_es",
+        "original": "Fare basis(es)"
+      },
+      {
+        "ordinal": 14,
+        "sql_name": "booking_class_es",
+        "original": "Booking class(es)"
+      },
+      {
+        "ordinal": 15,
+        "sql_name": "service_class_es",
+        "original": "Service class(es)"
+      },
+      {
+        "ordinal": 16,
+        "sql_name": "route",
+        "original": "Route"
+      },
+      {
+        "ordinal": 17,
+        "sql_name": "flight_numbers",
+        "original": "Flight numbers"
+      },
+      {
+        "ordinal": 18,
+        "sql_name": "baggage",
+        "original": "Baggage"
+      },
+      {
+        "ordinal": 19,
+        "sql_name": "date",
+        "original": "Date"
+      },
+      {
+        "ordinal": 20,
+        "sql_name": "no",
+        "original": "No"
+      },
+      {
+        "ordinal": 21,
+        "sql_name": "carrier",
+        "original": "Carrier"
+      },
+      {
+        "ordinal": 22,
+        "sql_name": "type",
+        "original": "Type"
+      },
+      {
+        "ordinal": 23,
+        "sql_name": "action",
+        "original": "Action"
+      },
+      {
+        "ordinal": 24,
+        "sql_name": "issue_type",
+        "original": "Issue type"
+      },
+      {
+        "ordinal": 25,
+        "sql_name": "fare",
+        "original": "Fare"
+      },
+      {
+        "ordinal": 26,
+        "sql_name": "fare_currency",
+        "original": "Fare currency"
+      },
+      {
+        "ordinal": 27,
+        "sql_name": "net_fare",
+        "original": "Net fare"
+      },
+      {
+        "ordinal": 28,
+        "sql_name": "fare_equiv",
+        "original": "Fare equiv"
+      },
+      {
+        "ordinal": 29,
+        "sql_name": "fare_equiv_currency",
+        "original": "Fare equiv. currency"
+      },
+      {
+        "ordinal": 30,
+        "sql_name": "commission",
+        "original": "Commission"
+      },
+      {
+        "ordinal": 31,
+        "sql_name": "commission_equiv",
+        "original": "Commission equiv"
+      },
+      {
+        "ordinal": 32,
+        "sql_name": "taxes",
+        "original": "Taxes"
+      },
+      {
+        "ordinal": 33,
+        "sql_name": "taxes_currency",
+        "original": "Taxes currency"
+      },
+      {
+        "ordinal": 34,
+        "sql_name": "sfdiscount",
+        "original": "SFDiscount"
+      },
+      {
+        "ordinal": 35,
+        "sql_name": "hf",
+        "original": "HF"
+      },
+      {
+        "ordinal": 36,
+        "sql_name": "service_fee",
+        "original": "Service fee"
+      },
+      {
+        "ordinal": 37,
+        "sql_name": "sftotal",
+        "original": "SfTotal"
+      },
+      {
+        "ordinal": 38,
+        "sql_name": "markuptotal",
+        "original": "MarkUpTotal"
+      },
+      {
+        "ordinal": 39,
+        "sql_name": "markupvat",
+        "original": "MarkUpVat"
+      },
+      {
+        "ordinal": 40,
+        "sql_name": "markupdiscount",
+        "original": "MarkUpDiscount"
+      },
+      {
+        "ordinal": 41,
+        "sql_name": "service_fee_vat",
+        "original": "Service fee VAT"
+      },
+      {
+        "ordinal": 42,
+        "sql_name": "total",
+        "original": "Total"
+      },
+      {
+        "ordinal": 43,
+        "sql_name": "total_currency",
+        "original": "Total currency"
+      },
+      {
+        "ordinal": 44,
+        "sql_name": "national_total",
+        "original": "National total"
+      },
+      {
+        "ordinal": 45,
+        "sql_name": "national_currency",
+        "original": "National currency"
+      },
+      {
+        "ordinal": 46,
+        "sql_name": "misc_fees",
+        "original": "Misc. fees"
+      },
+      {
+        "ordinal": 47,
+        "sql_name": "grand_total",
+        "original": "Grand total"
+      },
+      {
+        "ordinal": 48,
+        "sql_name": "currency_rate",
+        "original": "Currency rate"
+      },
+      {
+        "ordinal": 49,
+        "sql_name": "fop",
+        "original": "FOP"
+      },
+      {
+        "ordinal": 50,
+        "sql_name": "document_credit_total",
+        "original": "Document credit total"
+      },
+      {
+        "ordinal": 51,
+        "sql_name": "sf_credit_total",
+        "original": "SF credit total"
+      },
+      {
+        "ordinal": 52,
+        "sql_name": "credit_currency",
+        "original": "Credit currency"
+      },
+      {
+        "ordinal": 53,
+        "sql_name": "credit_currency_rate",
+        "original": "Credit currency rate"
+      },
+      {
+        "ordinal": 54,
+        "sql_name": "booking_terminal_id",
+        "original": "Booking terminal ID"
+      },
+      {
+        "ordinal": 55,
+        "sql_name": "ticketing_terminal_id",
+        "original": "Ticketing terminal ID"
+      }
+    ],
+    "data_row_count": 8
+  },
+  "ibtekar": {
+    "sheet": "ibtekar",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "date",
+        "original": "Date"
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "file_no",
+        "original": "File No"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "doc_no",
+        "original": "Doc No"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "col_4",
+        "original": ""
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "ticket",
+        "original": "Ticket"
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "pnr",
+        "original": "PNR"
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "issue_date",
+        "original": "Issue Date"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "lpo_no",
+        "original": "LPO No"
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "passenger",
+        "original": "Passenger"
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "sector",
+        "original": "Sector"
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "debit",
+        "original": "Debit"
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "credit",
+        "original": "Credit"
+      },
+      {
+        "ordinal": 13,
+        "sql_name": "balance",
+        "original": "Balance"
+      },
+      {
+        "ordinal": 14,
+        "sql_name": "travel_date",
+        "original": "Travel Date"
+      },
+      {
+        "ordinal": 15,
+        "sql_name": "return_date",
+        "original": "Return Date"
+      },
+      {
+        "ordinal": 16,
+        "sql_name": "status",
+        "original": "Status"
+      },
+      {
+        "ordinal": 17,
+        "sql_name": "col_17",
+        "original": ""
+      },
+      {
+        "ordinal": 18,
+        "sql_name": "mm",
+        "original": "MM"
+      }
+    ],
+    "data_row_count": 265
+  },
+  "rts_dxb": {
+    "sheet": "RTS DXB",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "pnr_creation_date",
+        "original": "PNR creation date"
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "record_locator",
+        "original": "Record Locator"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "passenger",
+        "original": "Passenger"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "no",
+        "original": "No"
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "col_5",
+        "original": ""
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "action",
+        "original": "Action"
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "total",
+        "original": "Total"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "total_currency",
+        "original": "Total currency"
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "national_total",
+        "original": "National total"
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "national_currency",
+        "original": "National currency"
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "misc_fees",
+        "original": "Misc. fees"
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "grand_total",
+        "original": "Grand total"
+      },
+      {
+        "ordinal": 13,
+        "sql_name": "currency_rate",
+        "original": "Currency rate"
+      },
+      {
+        "ordinal": 14,
+        "sql_name": "fop",
+        "original": "FOP"
+      },
+      {
+        "ordinal": 15,
+        "sql_name": "document_credit_total",
+        "original": "Document credit total"
+      },
+      {
+        "ordinal": 16,
+        "sql_name": "sf_credit_total",
+        "original": "SF credit total"
+      },
+      {
+        "ordinal": 17,
+        "sql_name": "credit_currency",
+        "original": "Credit currency"
+      },
+      {
+        "ordinal": 18,
+        "sql_name": "credit_currency_rate",
+        "original": "Credit currency rate"
+      },
+      {
+        "ordinal": 19,
+        "sql_name": "booking_terminal_id",
+        "original": "Booking terminal ID"
+      },
+      {
+        "ordinal": 20,
+        "sql_name": "ticketing_terminal_id",
+        "original": "Ticketing terminal ID"
+      }
+    ],
+    "data_row_count": 249
+  },
+  "nsa": {
+    "sheet": "NSA",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "date",
+        "original": "DATE"
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "notes",
+        "original": "notes"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "event_month",
+        "original": "EVENT MONTH"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "lpo_number",
+        "original": "LPO NUMBER"
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "operator_name",
+        "original": "Operator name "
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "request_number",
+        "original": "Request Number"
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "doc_no",
+        "original": "Doc No"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "description",
+        "original": "Description"
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "pnr",
+        "original": "PNR"
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "debit_sar",
+        "original": "DEBIT (SAR)"
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "credit_sar",
+        "original": "Credit (SAR)"
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "c_0utstanding_balances",
+        "original": "0utstanding balances"
+      },
+      {
+        "ordinal": 13,
+        "sql_name": "col_13",
+        "original": ""
+      },
+      {
+        "ordinal": 14,
+        "sql_name": "event_date",
+        "original": "Event date "
+      },
+      {
+        "ordinal": 15,
+        "sql_name": "reason_for_pending",
+        "original": "Reason For pending  "
+      }
+    ],
+    "data_row_count": 2785
+  },
+  "goldmedal": {
+    "sheet": "goldmedal",
+    "columns": [
+      {
+        "ordinal": 1,
+        "sql_name": "customer_no",
+        "original": "Customer No"
+      },
+      {
+        "ordinal": 2,
+        "sql_name": "name",
+        "original": "Name"
+      },
+      {
+        "ordinal": 3,
+        "sql_name": "transaction_type",
+        "original": "Transaction_Type"
+      },
+      {
+        "ordinal": 4,
+        "sql_name": "invoice_number",
+        "original": "Invoice Number"
+      },
+      {
+        "ordinal": 5,
+        "sql_name": "invoice_date",
+        "original": "Invoice Date"
+      },
+      {
+        "ordinal": 6,
+        "sql_name": "col_6",
+        "original": ""
+      },
+      {
+        "ordinal": 7,
+        "sql_name": "passenger_name",
+        "original": "Passenger Name"
+      },
+      {
+        "ordinal": 8,
+        "sql_name": "po_number",
+        "original": "PO Number"
+      },
+      {
+        "ordinal": 9,
+        "sql_name": "curr",
+        "original": "Curr"
+      },
+      {
+        "ordinal": 10,
+        "sql_name": "original_amount",
+        "original": "Original Amount"
+      },
+      {
+        "ordinal": 11,
+        "sql_name": "balance_due",
+        "original": "Balance Due"
+      },
+      {
+        "ordinal": 12,
+        "sql_name": "status",
+        "original": "Status"
+      },
+      {
+        "ordinal": 13,
+        "sql_name": "routing",
+        "original": "Routing"
+      },
+      {
+        "ordinal": 14,
+        "sql_name": "ticket_number",
+        "original": "Ticket Number"
+      }
+    ],
+    "data_row_count": 6
+  }
+}

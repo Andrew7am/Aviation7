@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "static-viewer",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-l", "4173", ".preview-viewer"],
+      "port": 4173
+    },
+    {
+      "name": "app-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 3000
+    }
+  ]
+}
