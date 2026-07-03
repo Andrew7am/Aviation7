@@ -25,7 +25,10 @@ export const IbtekarParser: VendorParser = {
         if (credit>0) result.push({ticketNo:`FUND_${Date.now()}${idx}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,0)),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
         return;
       }
-      const hasTk = rawTk.includes(' - ')||/^\d{10,}$/.test(rawTk.replace(/\s/g,''));
+      // Same "3-digit airline code + dash + ticket digits" shape cleanTk()/airlineCode()
+      // already parse — accept the dash with or without surrounding spaces (source
+      // export is inconsistent: "065 - 123..." on some rows, "065-123..." on others).
+      const hasTk = /^\d{3}\s*[-–]\s*\d+/.test(rawTk)||/^\d{10,}$/.test(rawTk.replace(/\s/g,''));
       if (!hasTk) { if(row.some(c=>c?.trim()))errors.push(`Row ${idx+2}: Ibtekar - no ticket [${rawTk}]`); return; }
       const tkClean = cleanTk(rawTk); const ac = airlineCode(rawTk);
       const debit = num(cell(row,iDebit)); const credit = num(cell(row,iDebit+1));

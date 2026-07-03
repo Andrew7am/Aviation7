@@ -1,8 +1,11 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { Ticket } from '../types';
 import { useImport, ImportMeta } from '../hooks/useImport';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
-import { Upload, AlertTriangle, CheckCircle2, Info, Gauge } from 'lucide-react';
+import { Upload, AlertTriangle, CheckCircle2, Info, Gauge, Database } from 'lucide-react';
+import { VendorReferenceService, VendorReference } from '../services/VendorReferenceService';
+
+const vendorRefSvc = new VendorReferenceService();
 
 interface ImportDataProps {
   existingTickets: Ticket[];
@@ -29,6 +32,17 @@ export const ImportData: React.FC<ImportDataProps> = ({
   const [defaultSource, setDefaultSource] = useState('Auto-detect');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [refVendors, setRefVendors] = useState<VendorReference[]>([]);
+  const [refVendorSlug, setRefVendorSlug] = useState('');
+  const [refLoading, setRefLoading] = useState(false);
+  const [refError, setRefError] = useState('');
+
+  useEffect(() => {
+    vendorRefSvc.listVendors()
+      .then(v => { setRefVendors(v); if (v.length > 0) setRefVendorSlug(v[0].slug); })
+      .catch(e => setRefError(e.message));
+  }, []);
+
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const sourceOptions = useMemo(() => {
@@ -41,6 +55,22 @@ export const ImportData: React.FC<ImportDataProps> = ({
     if (!file) return;
     try { setInputText(await readFileAsText(file)); } catch { /* surfaced via validation errors */ }
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleLoadReference = async () => {
+    if (!refVendorSlug) return;
+    setRefLoading(true);
+    setRefError('');
+    try {
+      const csv = await vendorRefSvc.fetchVendorCsv(refVendorSlug);
+      setInputText(csv);
+      const vendor = refVendors.find(v => v.slug === refVendorSlug);
+      if (vendor) setDefaultSource('Auto-detect'); // let the parser detect from real headers
+    } catch (e) {
+      setRefError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRefLoading(false);
+    }
   };
 
   const handlePreview = () => {
@@ -95,6 +125,26 @@ export const ImportData: React.FC<ImportDataProps> = ({
           <span>Re-import with Req Nums to auto-match existing tickets by Ticket No.</span>
         </div>
       </div>
+
+      {refVendors.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 shadow-sm shrink-0 flex flex-wrap items-end gap-4">
+          <div>
+            <label className="text-[10px] font-bold uppercase text-blue-700 flex items-center gap-1 mb-1.5">
+              <Database className="w-3 h-3" /> Load Reference Data (Supabase)
+            </label>
+            <select value={refVendorSlug} onChange={e => setRefVendorSlug(e.target.value)}
+              className="bg-white border border-blue-200 text-xs font-bold uppercase text-slate-700 px-3 py-1.5 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[200px]">
+              {refVendors.map(v => <option key={v.slug} value={v.slug}>{v.displayName} ({v.seedRows} rows)</option>)}
+            </select>
+          </div>
+          <button onClick={handleLoadReference} disabled={refLoading}
+            className="px-4 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 shadow-sm disabled:opacity-50">
+            {refLoading ? 'Loading…' : 'Load into Data Input'}
+          </button>
+          {refError && <span className="text-[10px] text-red-600 font-mono">{refError}</span>}
+          <span className="text-[10px] text-blue-600 font-mono ml-auto">Loads the vendor's canonical data below — review, then Run Validation as usual.</span>
+        </div>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm shrink-0">
         <div className="flex items-center justify-between mb-2">
