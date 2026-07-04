@@ -25,3 +25,28 @@ export function handleSupabaseError(error: unknown, op: OperationType, path: str
   console.error(`Supabase [${op}] ${path}: ${msg}`);
   throw new Error(msg);
 }
+
+const PAGE_SIZE = 1000;
+
+/**
+ * PostgREST silently caps any select() at its configured max-rows (1000 on
+ * Supabase) — no error, just a truncated result. Every full-table fetch in
+ * this app must page through with .range() instead of relying on a single
+ * select(), or rows past the cap silently vanish from the UI.
+ *
+ * `query` builds everything EXCEPT .range() (filters, .eq(), .order(), ...);
+ * this helper appends .range() and keeps requesting pages until one comes
+ * back short of PAGE_SIZE.
+ */
+export async function fetchAllRows<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+): Promise<T[]> {
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await query(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    all.push(...(data ?? []));
+    if (!data || data.length < PAGE_SIZE) break;
+  }
+  return all;
+}

@@ -1,4 +1,4 @@
-import { supabase } from '../utils/supabase';
+import { supabase, fetchAllRows } from '../utils/supabase';
 
 export interface ImportRecord {
   id:          string;
@@ -133,9 +133,12 @@ export class ImportService {
   subscribeErrors(importId: string, onData: (errors: ErrorEntry[]) => void) {
     let cancelled = false;
     const fetchAll = async () => {
-      const { data, error } = await supabase.from('error_log').select('*').eq('import_id', importId);
-      if (error) { console.error('error_log error', error); return; }
-      if (!cancelled) onData((data as ErrorLogRow[]).map(rowToErrorEntry));
+      try {
+        const rows = await fetchAllRows<ErrorLogRow>((from, to) =>
+          supabase.from('error_log').select('*').eq('import_id', importId).range(from, to)
+        );
+        if (!cancelled) onData(rows.map(rowToErrorEntry));
+      } catch (e) { console.error('error_log error', e); }
     };
     fetchAll();
     const channel = supabase

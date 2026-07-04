@@ -1,4 +1,4 @@
-import { supabase } from '../utils/supabase';
+import { supabase, fetchAllRows } from '../utils/supabase';
 import { VendorBalance, BalanceTopUp } from '../types';
 import { VENDOR_ALIASES } from '../core/config/vendorAliases';
 
@@ -50,9 +50,12 @@ export class WalletService {
   subscribeVendors(onData: (v: VendorBalance[]) => void) {
     let cancelled = false;
     const fetchAll = async () => {
-      const { data, error } = await supabase.from('vendor_balances').select('*').eq('user_id', this.userId);
-      if (error) { console.error('vendor_balances error', error); return; }
-      if (!cancelled) onData((data as VendorBalanceRow[]).map(rowToVendor));
+      try {
+        const rows = await fetchAllRows<VendorBalanceRow>((from, to) =>
+          supabase.from('vendor_balances').select('*').eq('user_id', this.userId).range(from, to)
+        );
+        if (!cancelled) onData(rows.map(rowToVendor));
+      } catch (e) { console.error('vendor_balances error', e); }
     };
     fetchAll();
     const channel = supabase
@@ -65,9 +68,12 @@ export class WalletService {
   subscribeTopUps(onData: (tu: BalanceTopUp[]) => void) {
     let cancelled = false;
     const fetchAll = async () => {
-      const { data, error } = await supabase.from('balance_topups').select('*').eq('user_id', this.userId);
-      if (error) { console.error('balance_topups error', error); return; }
-      if (!cancelled) onData((data as BalanceTopUpRow[]).map(rowToTopUp));
+      try {
+        const rows = await fetchAllRows<BalanceTopUpRow>((from, to) =>
+          supabase.from('balance_topups').select('*').eq('user_id', this.userId).range(from, to)
+        );
+        if (!cancelled) onData(rows.map(rowToTopUp));
+      } catch (e) { console.error('balance_topups error', e); }
     };
     fetchAll();
     const channel = supabase

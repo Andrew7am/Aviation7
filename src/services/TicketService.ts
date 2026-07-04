@@ -1,4 +1,4 @@
-import { supabase } from '../utils/supabase';
+import { supabase, fetchAllRows } from '../utils/supabase';
 import { Ticket } from '../types';
 
 type TicketRow = {
@@ -98,12 +98,14 @@ export class TicketService {
     let cancelled = false;
 
     const fetchAll = async () => {
-      const { data, error } = await supabase
-        .from('tickets')
-        .select('*')
-        .eq('user_id', this.userId);
-      if (error) { onError?.(new Error(error.message)); return; }
-      if (!cancelled) onData((data as TicketRow[]).map(rowToTicket));
+      try {
+        const rows = await fetchAllRows<TicketRow>((from, to) =>
+          supabase.from('tickets').select('*').eq('user_id', this.userId).range(from, to)
+        );
+        if (!cancelled) onData(rows.map(rowToTicket));
+      } catch (e) {
+        onError?.(e instanceof Error ? e : new Error(String(e)));
+      }
     };
 
     fetchAll();
