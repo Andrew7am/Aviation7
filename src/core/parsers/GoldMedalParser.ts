@@ -1,6 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax } from './shared';
-import { resolveReq } from '../helpers/resolveReq';
+import { resolveReq, findExplicitReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 import { normalizeStatus } from '../helpers/normalizeStatus';
@@ -27,6 +27,9 @@ export const GoldMedalParser: VendorParser = {
     // than trusting the header search, and filter obvious non-req values
     // (city names, currency codes) at the value level.
     const iReq = 5;
+    // If the user added an explicit Req column, it overrides Gold Medal's
+    // fixed-position/city-name heuristic entirely.
+    const iExplicitReq = findExplicitReqColumn(headers);
     const REJECT_VALUES = ['DUBAI','CAIRO','RIYADH','JEDDAH','SAR','AED'];
     rows.forEach((row,idx) => {
       const rawGMTk = cell(row,iTicket).replace(/\s*\(\d+\s*PAX\)/i,'').replace(/[^0-9]/g,'');
@@ -40,9 +43,15 @@ export const GoldMedalParser: VendorParser = {
         warnings.push(`Row ${idx+2}: Gold Medal - no ticket number, using placeholder`);
       }
       const ticketId = (rawGMTk && rawGMTk.length>=8) ? rawGMTk : `GOLDMEDAL_NOREF_${idx}`;
-      const rawReqVal = cell(row, iReq).toUpperCase();
-      const looksLikeReq = rawReqVal && rawReqVal.length>=2 && !REJECT_VALUES.includes(rawReqVal) && !/^[A-Z]{9,}$/.test(rawReqVal);
-      const req = looksLikeReq ? resolveReq(rawReqVal) : '';
+      let rawReqVal: string, req: string;
+      if (iExplicitReq !== -1) {
+        rawReqVal = cell(row, iExplicitReq).toUpperCase();
+        req = resolveReq(rawReqVal);
+      } else {
+        rawReqVal = cell(row, iReq).toUpperCase();
+        const looksLikeReq = rawReqVal && rawReqVal.length>=2 && !REJECT_VALUES.includes(rawReqVal) && !/^[A-Z]{9,}$/.test(rawReqVal);
+        req = looksLikeReq ? resolveReq(rawReqVal) : '';
+      }
       const normSt = normalizeStatus(cell(row,iStatus));
       const status = normSt !== 'UNKNOWN' ? normSt : 'ISSUE';
       const finalAmt = status==='REFUND'?-Math.abs(amt):Math.abs(amt);

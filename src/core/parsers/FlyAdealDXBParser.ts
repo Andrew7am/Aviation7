@@ -1,6 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax } from './shared';
-import { resolveReq } from '../helpers/resolveReq';
+import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency, resolveCurrency } from '../helpers/resolveCurrency';
 
@@ -16,7 +16,7 @@ export const FlyAdealDXBParser: VendorParser = {
     const iPax = col(headers,'passenger_Name','passenger_name','passenger');
     const iAmt = col(headers,'accountAmount','accountamount','bookingAmount','bookingamount');
     const iCurr = col(headers,'accountCurrency','accountcurrency'); // used for SAR-skip only
-    const iReq = col(headers,'Req number','Req Number','REQ NUMBER','req');
+    const iReq = pickReqColumn(headers, col(headers,'Req number','Req Number','REQ NUMBER','req'));
     rows.forEach((row,idx) => {
       // SAR rows = internal FlyAdeal transfers, not AED-billed ticket charges — skip
       const acctCurr = (row[iCurr]||'').trim().toUpperCase();

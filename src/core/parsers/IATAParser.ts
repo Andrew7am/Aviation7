@@ -1,6 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax, airlineCode, cleanTk } from './shared';
-import { resolveReq } from '../helpers/resolveReq';
+import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency, resolveCurrency } from '../helpers/resolveCurrency';
 import { normalizeStatus } from '../helpers/normalizeStatus';
@@ -29,7 +29,7 @@ export const IATAParser: VendorParser = {
     const iComm   = col(headers, 'COMM', 'comm', 'commission');
     const iStatus = col(headers, 'TRNC', 'status', 'Status');
     const iAL     = col(headers, 'A/L', 'Airline key', 'AIRLINE');
-    const iReq    = col(headers, 'Req Number', 'REQ NUMBER', 'REQ NUM', 'Request Number');
+    const iReq    = pickReqColumn(headers, col(headers, 'Req Number', 'REQ NUMBER', 'REQ NUM', 'Request Number'));
     // currency resolved per-row via resolveCurrency() — no dedicated col index needed
 
     rows.forEach((row, idx) => {

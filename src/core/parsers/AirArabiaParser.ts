@@ -1,6 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, numNoText, cleanPax, airlineCode } from './shared';
-import { resolveReq } from '../helpers/resolveReq';
+import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 import { normalizeStatus } from '../helpers/normalizeStatus';
@@ -17,7 +17,7 @@ export const AirArabiaParser: VendorParser = {
     const iPNR = col(headers,'Remarks'); const iPax = col(headers,'Custmoner name','Customer name','customer name');
     const iDate = col(headers,'Transaction date','Transaction Date');
     const iDebit = col(headers,'Debit Amount','debit amount');
-    const iReq = col(headers,'Request Number');
+    const iReq = pickReqColumn(headers, col(headers,'Request Number'));
     rows.forEach((row,idx) => {
       const debit = numNoText(cell(row,iDebit)); const credit = numNoText(cell(row,iDebit+1));
       if (debit===0&&credit===0) return;

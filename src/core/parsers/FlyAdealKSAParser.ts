@@ -1,6 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax } from './shared';
-import { resolveReq } from '../helpers/resolveReq';
+import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 
 export const FlyAdealKSAParser: VendorParser = {
@@ -17,7 +17,7 @@ export const FlyAdealKSAParser: VendorParser = {
     const iDate = col(headers,'departureDate','departuredate');
     const iStatus = col(headers,'status','Status');
     const iRoute = col(headers,'legDetails','legdetails');
-    const iReq = col(headers,'Req Number','Req number','REQ NUMBER');
+    const iReq = pickReqColumn(headers, col(headers,'Req Number','Req number','REQ NUMBER'));
     rows.forEach((row,idx) => {
       const pnr = cell(row,iPNR).replace(/\s+/g,'').toUpperCase();
       if (!pnr||pnr.length<5) return;

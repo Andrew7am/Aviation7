@@ -1,6 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax, airlineCode, cleanTk } from './shared';
-import { resolveReq } from '../helpers/resolveReq';
+import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 
@@ -14,7 +14,7 @@ export const NSAParser: VendorParser = {
     const errors: string[] = [], warnings: string[] = [], result = [];
     const iTicket = col(headers,'Doc No'); const iPNR = col(headers,'PNR');
     const iPax = col(headers,'Description'); const iDate = col(headers,'DATE');
-    const iDebit = col(headers,'DEBIT','DEBIT (SAR)'); const iReq = col(headers,'Request Number');
+    const iDebit = col(headers,'DEBIT','DEBIT (SAR)'); const iReq = pickReqColumn(headers, col(headers,'Request Number'));
     const iRoute = col(headers,'LPO NUMBER');
     rows.forEach((row,idx) => {
       if (!row.some(c=>c?.trim())) return;

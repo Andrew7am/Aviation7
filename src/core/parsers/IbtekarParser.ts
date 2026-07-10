@@ -1,6 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax, airlineCode, cleanTk } from './shared';
-import { resolveReq } from '../helpers/resolveReq';
+import { resolveReq, findExplicitReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 
@@ -12,13 +12,16 @@ export const IbtekarParser: VendorParser = {
   },
   parse: (rows, headers, defaultCurrency): ParserResult => {
     const errors: string[] = [], warnings: string[] = [], result = [];
-    const iReq = col(headers,'File No','FileNo');
+    // File No IS Ibtekar's req AND drives its top-up detection — keep it.
+    // But an explicit user-added Req column, if present, supplies the req.
+    const iFileNo = col(headers,'File No','FileNo');
+    const iExplicitReq = findExplicitReqColumn(headers);
     const iTicket = col(headers,'Ticket'); const iPNR = col(headers,'PNR');
     const iDate = col(headers,'Issue Date'); const iPax = col(headers,'Passenger');
     const iDebit = col(headers,'Debit'); const iRoute = col(headers,'Sector');
     const iDocNo = col(headers,'Doc No');
     rows.forEach((row,idx) => {
-      const rawTk = cell(row,iTicket); const fileNo = cell(row,iReq);
+      const rawTk = cell(row,iTicket); const fileNo = cell(row,iFileNo);
       const isTopUp = /^(topup|fund|top.?up)$/i.test(fileNo)||/^RV\d+$/i.test(rawTk);
       if (isTopUp) {
         const credit = num(cell(row,iDebit+1))||num(cell(row,iDebit));
@@ -35,7 +38,7 @@ export const IbtekarParser: VendorParser = {
       const docNo = cell(row,iDocNo);
       const isRef = /^RFD/i.test(docNo)||(credit>0&&debit===0);
       const amt = isRef ? -Math.abs(credit||debit) : debit;
-      const req = resolveReq(fileNo);
+      const req = resolveReq(iExplicitReq !== -1 ? cell(row, iExplicitReq) : fileNo);
       if (!req) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
       const dp = (cell(row,iDate)||'').split('/');
       const date = dp.length===3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : parseDate(cell(row,iDate));

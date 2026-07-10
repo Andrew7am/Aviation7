@@ -1,6 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, cleanPax } from './shared';
-import { resolveReq } from '../helpers/resolveReq';
+import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { isValidPNR } from '../helpers/isValidTicket';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
@@ -15,7 +15,7 @@ export const FlynasParser: VendorParser = {
     const errors: string[] = [], warnings: string[] = [], result = [];
     const iPNR = col(headers,'PNR2'); const iPax = col(headers,'pax');
     const iDate = col(headers,'Date'); const iAmt = col(headers,'AMOUNT');
-    const iReq = col(headers,'REQ. NUMBER','REQ NUMBER','Req Number');
+    const iReq = pickReqColumn(headers, col(headers,'REQ. NUMBER','REQ NUMBER','Req Number'));
     const iRoute = col(headers,'Column6','Route');
     rows.forEach((row,idx) => {
       const pnr = cell(row,iPNR).replace(/\s+/g,'').toUpperCase();

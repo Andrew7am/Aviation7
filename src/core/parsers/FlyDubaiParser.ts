@@ -1,6 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax } from './shared';
-import { resolveReq } from '../helpers/resolveReq';
+import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { isValidPNR } from '../helpers/isValidTicket';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
@@ -16,7 +16,7 @@ export const FlyDubaiParser: VendorParser = {
     const iPNR = col(headers,'Booking reference','booking reference');
     const iPax = col(headers,'Passenger name','passenger name');
     const iDate = col(headers,'Payment date','Booked date','payment date');
-    const iAmt = col(headers,'Amount'); const iReq = col(headers,'REQ Number','REQ NUMBER','Req Number');
+    const iAmt = col(headers,'Amount'); const iReq = pickReqColumn(headers, col(headers,'REQ Number','REQ NUMBER','Req Number'));
     rows.forEach((row,idx) => {
       const rawPnr = cell(row,iPNR).replace(/\s+/g,'').toUpperCase();
       const amt = num(cell(row,iAmt)); if(amt===0) return;
