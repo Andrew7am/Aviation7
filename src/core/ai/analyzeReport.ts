@@ -62,11 +62,31 @@ ${JSON.stringify(headers)}
 SAMPLE ROWS:
 ${sample.map(r => JSON.stringify(r)).join('\n')}`;
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3.5-flash',
-    contents: prompt,
-    config: { responseMimeType: 'application/json' },
-  });
+  // 503 "high demand" spikes from Gemini are common and transient — retry
+  // with backoff before surfacing an error to the user. Model overridable
+  // via env (GEMINI_MODEL) without a code change.
+  // 'gemini-flash-latest' is Google's stable alias for the current flash
+  // model — the pinned name the original AI Studio scaffold used isn't
+  // available to standard API keys.
+  const model = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+  let response: Awaited<ReturnType<typeof ai.models.generateContent>> | undefined;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: { responseMimeType: 'application/json' },
+      });
+      break;
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/503|UNAVAILABLE|overloaded|high demand|429/i.test(msg) || attempt === 4) throw err;
+      await new Promise(r => setTimeout(r, attempt * 2000));
+    }
+  }
+  if (!response) throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 
   const text = (response.text ?? '').trim().replace(/^```json?\s*/i, '').replace(/```\s*$/, '');
   let draft: unknown;
