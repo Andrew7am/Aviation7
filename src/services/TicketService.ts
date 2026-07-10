@@ -137,11 +137,18 @@ export class TicketService {
     }
 
     // Req num updates — targeted column update, not a full row overwrite
-    // (matches the old Firestore `merge: true` patch semantics).
+    // (matches the old Firestore `merge: true` patch semantics). Also
+    // opportunistically backfills serial when the re-imported row carries
+    // one and the existing ticket is already being touched anyway — this is
+    // the only save path that runs against tickets that already exist, so
+    // it's the one chance to fill in serial for pre-existing tickets short
+    // of a one-off backfill script.
     for (const ticket of updateTickets) {
+      const patch: Record<string, unknown> = { req_num: ticket.reqNum };
+      if (ticket.serial != null) patch.serial = ticket.serial;
       const { error } = await supabase
         .from('tickets')
-        .update({ req_num: ticket.reqNum })
+        .update(patch)
         .eq('id', ticket.id)
         .eq('user_id', this.userId);
       if (error) throw new Error(error.message);

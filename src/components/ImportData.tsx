@@ -274,7 +274,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                 <tr>
-                  {['A/L','Ticket No.','Source','Type','Date','Route','Total Doc','Comm','Net Amt','Curr','PNR','Passenger','Req Num'].map(col => (
+                  {['Serial','A/L','Ticket No.','Source','Type','Date','Route','Total Doc','Comm','Net Amt','Curr','PNR','Passenger','Req Num'].map(col => (
                     <th key={col} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap border-b border-slate-200">{col}</th>
                   ))}
                 </tr>
@@ -284,6 +284,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
                   const isDup = t.isDuplicate, isUpd = t._isUpdate, isFund = t.status === 'FUND';
                   return (
                     <tr key={t.id} className={`border-b border-slate-100 ${isDup ? 'bg-amber-50 opacity-60' : isUpd ? 'bg-blue-50' : isFund ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
+                      <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{t.serial ?? <span className="text-slate-300">—</span>}</td>
                       <td className="px-3 py-2 text-center">{t.airlineCode ? <span className="font-mono font-black text-[11px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{t.airlineCode}</span> : <span className="text-slate-300 text-[9px]">—</span>}</td>
                       <td className="px-3 py-2 font-bold select-all whitespace-nowrap">
                         {t.ticketNo}
