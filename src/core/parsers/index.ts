@@ -11,6 +11,8 @@ import { FlyDubaiParser } from './FlyDubaiParser';
 import { RTSParser } from './RTSParser';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 import { findHeaderRow } from '../helpers/columnResolver';
+import { makeProfileParser } from './ProfileParser';
+import { LearnedProfile, headerFingerprint, bestHeaderRowForAI } from '../ai/learnedProfile';
 
 export const ALL_PARSERS: VendorParser[] = [
   IATAParser, NSAParser,
@@ -30,7 +32,8 @@ export interface SmartDetectResult {
 /** Detect which parser fits + confidence score */
 export function smartDetect(
   allRows: string[][],
-  defaultSource?: string
+  defaultSource?: string,
+  learnedProfiles: LearnedProfile[] = []
 ): SmartDetectResult {
   const headerRowIdx = findHeaderRow(allRows);
   const headers = allRows[headerRowIdx];
@@ -42,7 +45,23 @@ export function smartDetect(
     }
   }
 
-  // 2. Try by defaultSource name match
+  // 2. Learned AI profile — exact header fingerprint match means this exact
+  //    format was analyzed before; parsing is deterministic from here on.
+  //    Must probe the same candidate header rows the AI analysis flow uses
+  //    (signal-based pick, then density fallback), or a profile learned on a
+  //    file with title rows above the header would never match again.
+  if (learnedProfiles.length > 0) {
+    const candidates = [headerRowIdx, bestHeaderRowForAI(allRows, headerRowIdx)];
+    for (const idx of [...new Set(candidates)]) {
+      const fp = headerFingerprint(allRows[idx]);
+      const learned = learnedProfiles.find(p => p.fingerprint === fp);
+      if (learned) {
+        return { parser: makeProfileParser(learned), confidence: 90, missingCols: [], headerRowIdx: idx };
+      }
+    }
+  }
+
+  // 3. Try by defaultSource name match
   if (defaultSource) {
     const ds = defaultSource.toUpperCase().replace(/\s+/g, '');
     const found = ALL_PARSERS.find(p =>
@@ -61,13 +80,14 @@ export function runParser(
   allRows: string[][],
   defaultSource?: string,
   defaultCurrency: SupportedCurrency = 'SAR',
-  reportName?: string
+  reportName?: string,
+  learnedProfiles: LearnedProfile[] = []
 ): ParserResult & { parserName: string; confidence: number } {
-  const { parser, confidence, headerRowIdx } = smartDetect(allRows, defaultSource);
+  const { parser, confidence, headerRowIdx } = smartDetect(allRows, defaultSource, learnedProfiles);
 
   if (!parser) {
     return {
-      rows: [], errors: [`Could not detect vendor format. Please select source manually.`],
+      rows: [], errors: [`Could not detect vendor format. Use "Analyze with AI" to map this format once, or select the source manually.`],
       warnings: [], parserName: 'Unknown', confidence: 0,
     };
   }

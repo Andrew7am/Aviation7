@@ -1,11 +1,16 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
+import Papa from 'papaparse';
 import { Ticket } from '../types';
 import { useImport, ImportMeta } from '../hooks/useImport';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
-import { Upload, AlertTriangle, CheckCircle2, Info, Gauge, Database } from 'lucide-react';
+import { findHeaderRow } from '../core/helpers/columnResolver';
+import { LearnedProfile, bestHeaderRowForAI } from '../core/ai/learnedProfile';
+import { Upload, AlertTriangle, CheckCircle2, Info, Gauge, Database, Sparkles } from 'lucide-react';
 import { VendorReferenceService, VendorReference } from '../services/VendorReferenceService';
+import { AIProfileService } from '../services/AIProfileService';
 
 const vendorRefSvc = new VendorReferenceService();
+const aiProfileSvc = new AIProfileService();
 
 interface ImportDataProps {
   existingTickets: Ticket[];
@@ -37,10 +42,17 @@ export const ImportData: React.FC<ImportDataProps> = ({
   const [refLoading, setRefLoading] = useState(false);
   const [refError, setRefError] = useState('');
 
+  const [aiProfiles, setAiProfiles] = useState<LearnedProfile[]>([]);
+  const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [aiMessage, setAiMessage] = useState('');
+
   useEffect(() => {
     vendorRefSvc.listVendors()
       .then(v => { setRefVendors(v); if (v.length > 0) setRefVendorSlug(v[0].slug); })
       .catch(e => setRefError(e.message));
+    aiProfileSvc.listProfiles()
+      .then(setAiProfiles)
+      .catch(e => console.error('ai profiles load error', e));
   }, []);
 
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -73,9 +85,38 @@ export const ImportData: React.FC<ImportDataProps> = ({
     }
   };
 
-  const handlePreview = () => {
+  const handlePreview = (profiles: LearnedProfile[] = aiProfiles) => {
     const src = defaultSource === 'Auto-detect' ? undefined : defaultSource;
-    runValidation(inputText, src, currency, src);
+    runValidation(inputText, src, currency, src, profiles);
+  };
+
+  /**
+   * One-time AI mapping for an unknown format: send headers + a sample of
+   * rows to the server-side analyzer, save the returned profile, then re-run
+   * the normal validation — which now recognizes the format deterministically
+   * (and will forever, without another AI call).
+   */
+  const handleAnalyzeWithAI = async () => {
+    setAiAnalyzing(true);
+    setAiMessage('');
+    try {
+      const allRows = Papa.parse(inputText.trim(), { skipEmptyLines: true }).data as string[][];
+      if (allRows.length < 2) throw new Error('Not enough rows to analyze.');
+      const headerRowIdx = bestHeaderRowForAI(allRows, findHeaderRow(allRows));
+      const headers = allRows[headerRowIdx];
+      const sampleRows = allRows.slice(headerRowIdx + 1, headerRowIdx + 16);
+
+      const profile = await aiProfileSvc.analyzeReport(headers, sampleRows);
+      await aiProfileSvc.saveProfile(profile);
+      const updated = [...aiProfiles.filter(p => p.fingerprint !== profile.fingerprint), profile];
+      setAiProfiles(updated);
+      setAiMessage(`✓ Learned "${profile.vendorName}" — this format is now recognized permanently.`);
+      handlePreview(updated);
+    } catch (e) {
+      setAiMessage(`✗ ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAiAnalyzing(false);
+    }
   };
 
   const handleConfirm = () => {
@@ -163,12 +204,33 @@ export const ImportData: React.FC<ImportDataProps> = ({
         <div className="flex justify-end space-x-2 mt-3">
           <button onClick={clear}
             className="px-3 py-1.5 border border-slate-200 rounded text-[10px] font-bold uppercase text-slate-500 hover:bg-slate-50">Clear</button>
-          <button onClick={handlePreview}
+          <button onClick={() => handlePreview()}
             className="px-4 py-1.5 bg-slate-800 text-white rounded text-[10px] font-bold uppercase tracking-wider hover:bg-slate-700 shadow-sm">
             Run Validation
           </button>
         </div>
       </div>
+
+      {/* Unknown format → one-time AI analysis */}
+      {preview && preview.confidence === 0 && (
+        <div className="shrink-0 rounded-lg px-4 py-3 flex items-center justify-between border bg-violet-50 border-violet-200">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-violet-600" />
+            <span className="text-[10px] font-bold uppercase text-violet-800">
+              Unknown report format — let AI map it once, then it's recognized forever
+            </span>
+          </div>
+          <button onClick={handleAnalyzeWithAI} disabled={aiAnalyzing}
+            className="px-4 py-1.5 bg-violet-600 text-white rounded text-[10px] font-bold uppercase tracking-wider hover:bg-violet-700 shadow-sm disabled:opacity-50 flex items-center space-x-1.5">
+            <Sparkles className="w-3 h-3" /><span>{aiAnalyzing ? 'Analyzing…' : 'Analyze with AI'}</span>
+          </button>
+        </div>
+      )}
+      {aiMessage && (
+        <div className={`shrink-0 rounded-lg px-4 py-2 border text-[10px] font-mono ${aiMessage.startsWith('✓') ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+          {aiMessage}
+        </div>
+      )}
 
       {/* Parser confidence banner */}
       {preview && preview.parserName && (

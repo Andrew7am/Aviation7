@@ -4,6 +4,7 @@ import { Ticket } from '../types';
 import { runParser } from '../core/parsers';
 import { detectDuplicates, detectDuplicatesAgainstExisting, readFileAsText } from '../core/ImportEngine';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
+import { LearnedProfile } from '../core/ai/learnedProfile';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface ImportErrorEntry { row: number; raw: string; error: string }
@@ -43,7 +44,8 @@ export function useImport(existingTickets: Ticket[]) {
     text:            string,
     defaultSource?:  string,
     defaultCurrency: SupportedCurrency = 'SAR',
-    reportName?:     string
+    reportName?:     string,
+    learnedProfiles: LearnedProfile[] = []
   ) => {
     if (!text.trim()) {
       setPreview({
@@ -58,7 +60,7 @@ export function useImport(existingTickets: Ticket[]) {
     try {
       const allRows = Papa.parse(text.trim(), { skipEmptyLines: true }).data as string[][];
       const { rows, errors, warnings, parserName, confidence } = runParser(
-        allRows, defaultSource, defaultCurrency, reportName
+        allRows, defaultSource, defaultCurrency, reportName, learnedProfiles
       );
 
       const rawTickets: Ticket[] = rows.map(r => ({

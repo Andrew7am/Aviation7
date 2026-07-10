@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { analyzeReportWithAI } from "./src/core/ai/analyzeReport";
 
 async function startServer() {
   const app = express();
@@ -37,6 +38,24 @@ async function startServer() {
       });
       
       res.json({ text: response.text });
+    } catch (err: any) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/ai/analyze-report", async (req, res) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server" });
+    }
+    const { headers, sampleRows } = req.body ?? {};
+    if (!Array.isArray(headers) || headers.length === 0 || !Array.isArray(sampleRows)) {
+      return res.status(400).json({ error: "Body must be { headers: string[], sampleRows: string[][] }" });
+    }
+    try {
+      const result = await analyzeReportWithAI(headers, sampleRows, apiKey);
+      res.json(result);
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
