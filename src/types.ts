@@ -25,6 +25,10 @@ export interface Ticket {
   balanceAfter?: number;
   importTime?: string;
   createdAt?: string;
+  /** IATA BSP "Serial" column — a running sequence number in the vendor's own
+   *  report. Lets the user spot gaps (missing tickets) by checking for skips
+   *  in the sequence. Only populated for vendors whose report has one. */
+  serial?: number;
 }
 
 export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'import' | 'vendors' | 'reports' | 'history';

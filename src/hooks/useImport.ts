@@ -79,6 +79,7 @@ export function useImport(existingTickets: Ticket[]) {
         vendorReference: r.vendorReference || '',
         status:          r.status,
         currency:        r.currency,
+        serial:          r.serial,
         transactionType: r.status,
         reportName:      reportName || defaultSource || parserName,
         importTime:      new Date().toISOString(),

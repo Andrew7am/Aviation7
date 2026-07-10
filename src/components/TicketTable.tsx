@@ -59,6 +59,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [sourceFilter, setSourceFilter] = useState('ALL');
   const [editingCell, setEditingCell] = useState<{ id: string; field: EditableField } | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [sortKey, setSortKey] = useState<'serial' | null>(null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -69,7 +71,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   );
 
   const filtered = useMemo(() => {
-    return tickets.filter(t => {
+    const rows = tickets.filter(t => {
       if (filterMode === 'NEED_REQ' && (t.reqNum || t.status === 'FUND')) return false;
       if (filterMode === 'DUPLICATE' && !t.isDuplicate) return false;
       if (sourceFilter !== 'ALL' && t.source !== sourceFilter) return false;
@@ -80,10 +82,41 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       }
       return true;
     });
-  }, [tickets, searchTerm, filterMode, sourceFilter]);
+    if (sortKey === 'serial') {
+      rows.sort((a, b) => {
+        const av = a.serial ?? (sortDir === 'asc' ? Infinity : -Infinity);
+        const bv = b.serial ?? (sortDir === 'asc' ? Infinity : -Infinity);
+        return sortDir === 'asc' ? av - bv : bv - av;
+      });
+    }
+    return rows;
+  }, [tickets, searchTerm, filterMode, sourceFilter, sortKey, sortDir]);
+
+  const toggleSerialSort = () => {
+    if (sortKey !== 'serial') { setSortKey('serial'); setSortDir('asc'); }
+    else if (sortDir === 'asc') setSortDir('desc');
+    else { setSortKey(null); setSortDir('asc'); }
+  };
+
+  // Gaps in the Serial sequence are only meaningful sorted ascending by
+  // serial — flags a row where the previous row's serial skipped a number,
+  // so missing IATA tickets show up directly in the table.
+  const serialGapBefore = useMemo(() => {
+    const gaps = new Map<string, number>();
+    if (sortKey !== 'serial' || sortDir !== 'asc') return gaps;
+    let prev: number | null = null;
+    for (const t of filtered) {
+      if (t.serial != null) {
+        if (prev != null && t.serial - prev > 1) gaps.set(t.id, t.serial - prev - 1);
+        prev = t.serial;
+      }
+    }
+    return gaps;
+  }, [filtered, sortKey, sortDir]);
 
   const exportToExcel = () => {
     const data = filtered.map(t => ({
+      'Serial':      t.serial ?? '',
       'A/L':         t.airlineCode || '',
       'Route':       t.route || '',
       'Ticket No.':  t.ticketNo,
@@ -262,6 +295,13 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <table className="w-full text-left border-collapse min-w-[900px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                <th
+                  onClick={toggleSerialSort}
+                  className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap cursor-pointer select-none hover:text-slate-700"
+                  title="Click to sort by Serial — reveals gaps in the sequence"
+                >
+                  Serial {sortKey === 'serial' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
+                </th>
               {['A/L', 'Ticket No.', 'Source', 'Status', 'Date', 'Route', 'Total Doc', 'Comm', 'Net Amt', 'PNR', 'Passenger', 'Req Num', 'Recon'].map(col => (
                 <th key={col} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">{col}</th>
               ))}
@@ -271,6 +311,16 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           <tbody className="text-xs font-mono">
             {filtered.map(ticket => (
               <tr key={ticket.id} className={`border-b border-slate-100 hover:bg-slate-50 ${!ticket.reqNum ? 'bg-red-50/20' : ''}`}>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  {ticket.serial != null ? (
+                    <span className="text-slate-500">{ticket.serial}</span>
+                  ) : <span className="text-slate-300">—</span>}
+                  {serialGapBefore.has(ticket.id) && (
+                    <span className="ml-1.5 bg-red-100 text-red-700 px-1 py-0.5 rounded text-[8px] font-bold" title={`${serialGapBefore.get(ticket.id)} serial(s) missing before this ticket`}>
+                      GAP −{serialGapBefore.get(ticket.id)}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-center">
                   {ticket.airlineCode
                     ? <span className="font-mono font-black text-[11px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{ticket.airlineCode}</span>
@@ -354,7 +404,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={onDelete ? 13 : 12} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
+                <td colSpan={onDelete ? 14 : 13} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
                   No tickets found matching your filters.
                 </td>
               </tr>

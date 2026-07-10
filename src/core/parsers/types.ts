@@ -16,6 +16,7 @@ export interface ParsedRow {
   vendorReference?: string; // raw, untouched reference text from the source file (booking/file/PO no.)
   status:          string;
   currency:        SupportedCurrency;
+  serial?:         number;   // vendor's own running sequence number (IATA), if present
   isTopUp?:        boolean;
   skipRow?:        boolean;  // parser says skip this row silently
   rawError?:       string;   // parser error message for this row

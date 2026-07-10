@@ -29,6 +29,7 @@ export const IATAParser: VendorParser = {
     const iComm   = col(headers, 'COMM', 'comm', 'commission');
     const iStatus = col(headers, 'TRNC', 'status', 'Status');
     const iAL     = col(headers, 'A/L', 'Airline key', 'AIRLINE');
+    const iSerial = col(headers, 'Serial');
     const iReq    = pickReqColumn(headers, col(headers, 'Req Number', 'REQ NUMBER', 'REQ NUM', 'Request Number'));
     // currency resolved per-row via resolveCurrency() — no dedicated col index needed
 
@@ -58,6 +59,9 @@ export const IATAParser: VendorParser = {
       const req = resolveReq(cell(row, iReq));
       if (!req) warnings.push(`Ticket ${rawTk}: Missing Req Num`);
 
+      const serialRaw = cell(row, iSerial).replace(/[^0-9]/g, '');
+      const serial = serialRaw ? parseInt(serialRaw, 10) : undefined;
+
       result.push({
         ticketNo:       rawTk,
         pnr:            cell(row, iPNR).replace(/\s+/g,'').toUpperCase(),
@@ -71,6 +75,7 @@ export const IATAParser: VendorParser = {
         vendorReference: cell(row, iReq),
         status,
         currency,
+        serial,
       });
     });
 

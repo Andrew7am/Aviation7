@@ -10,7 +10,7 @@
       {
         "ordinal": 2,
         "sql_name": "serial",
-        "original": "Serial "
+        "original": "Serial"
       },
       {
         "ordinal": 3,
@@ -20,17 +20,17 @@
       {
         "ordinal": 4,
         "sql_name": "ticket_number",
-        "original": "ticket number "
+        "original": "ticket number"
       },
       {
         "ordinal": 5,
         "sql_name": "total",
-        "original": "total "
+        "original": "total"
       },
       {
         "ordinal": 6,
         "sql_name": "tax",
-        "original": "tax "
+        "original": "tax"
       },
       {
         "ordinal": 7,
@@ -45,25 +45,25 @@
       {
         "ordinal": 9,
         "sql_name": "pax_name",
-        "original": "Pax Name "
+        "original": "Pax Name"
       },
       {
         "ordinal": 10,
         "sql_name": "pnr",
-        "original": "PNR "
+        "original": "PNR"
       },
       {
         "ordinal": 11,
         "sql_name": "service",
-        "original": "Service "
+        "original": "Service"
       },
       {
         "ordinal": 12,
         "sql_name": "req_number",
-        "original": "Req Number "
+        "original": "Req Number"
       }
     ],
-    "data_row_count": 1568
+    "data_row_count": 1566
   },
   "flydubai": {
     "sheet": "FLYDubai",
@@ -171,7 +171,7 @@
       {
         "ordinal": 21,
         "sql_name": "req_number",
-        "original": "REQ Number "
+        "original": "REQ Number"
       },
       {
         "ordinal": 22,
@@ -247,7 +247,7 @@
       {
         "ordinal": 13,
         "sql_name": "balance",
-        "original": "Balance "
+        "original": "Balance"
       },
       {
         "ordinal": 14,
@@ -267,7 +267,7 @@
       {
         "ordinal": 17,
         "sql_name": "req_number",
-        "original": "Req number "
+        "original": "Req number"
       },
       {
         "ordinal": 18,
@@ -523,7 +523,7 @@
       {
         "ordinal": 46,
         "sql_name": "req_number",
-        "original": "Req Number "
+        "original": "Req Number"
       }
     ],
     "data_row_count": 4
@@ -554,7 +554,7 @@
       {
         "ordinal": 5,
         "sql_name": "balance",
-        "original": "balance "
+        "original": "balance"
       },
       {
         "ordinal": 6,
@@ -564,12 +564,12 @@
       {
         "ordinal": 7,
         "sql_name": "ticket_number",
-        "original": "Ticket Number "
+        "original": "Ticket Number"
       },
       {
         "ordinal": 8,
         "sql_name": "custmoner_name",
-        "original": "Custmoner name "
+        "original": "Custmoner name"
       },
       {
         "ordinal": 9,
@@ -579,7 +579,7 @@
       {
         "ordinal": 10,
         "sql_name": "request_number",
-        "original": "Request Number "
+        "original": "Request Number"
       },
       {
         "ordinal": 11,
@@ -589,10 +589,10 @@
       {
         "ordinal": 12,
         "sql_name": "status",
-        "original": "Status "
+        "original": "Status"
       }
     ],
-    "data_row_count": 18
+    "data_row_count": 20
   },
   "flynas": {
     "sheet": "FlyNas",
@@ -610,7 +610,7 @@
       {
         "ordinal": 3,
         "sql_name": "pax",
-        "original": "pax "
+        "original": "pax"
       },
       {
         "ordinal": 4,
@@ -620,12 +620,12 @@
       {
         "ordinal": 5,
         "sql_name": "req_number",
-        "original": "REQ. NUMBER "
+        "original": "REQ. NUMBER"
       },
       {
         "ordinal": 6,
         "sql_name": "balance",
-        "original": "balance "
+        "original": "balance"
       },
       {
         "ordinal": 7,
@@ -635,7 +635,7 @@
       {
         "ordinal": 8,
         "sql_name": "status",
-        "original": "Status "
+        "original": "Status"
       }
     ],
     "data_row_count": 19
@@ -1015,7 +1015,7 @@
         "original": "MM"
       }
     ],
-    "data_row_count": 265
+    "data_row_count": 271
   },
   "rts_dxb": {
     "sheet": "RTS DXB",
@@ -1121,7 +1121,7 @@
         "original": "Ticketing terminal ID"
       }
     ],
-    "data_row_count": 249
+    "data_row_count": 258
   },
   "nsa": {
     "sheet": "NSA",
@@ -1149,7 +1149,7 @@
       {
         "ordinal": 5,
         "sql_name": "operator_name",
-        "original": "Operator name "
+        "original": "Operator name"
       },
       {
         "ordinal": 6,
@@ -1194,12 +1194,12 @@
       {
         "ordinal": 14,
         "sql_name": "event_date",
-        "original": "Event date "
+        "original": "Event date"
       },
       {
         "ordinal": 15,
         "sql_name": "reason_for_pending",
-        "original": "Reason For pending  "
+        "original": "Reason For pending"
       }
     ],
     "data_row_count": 2785

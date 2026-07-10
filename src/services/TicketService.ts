@@ -25,6 +25,7 @@ type TicketRow = {
   balance_after: number | null;
   import_time: string | null;
   created_at: string;
+  serial: number | null;
 };
 
 function rowToTicket(r: TicketRow): Ticket {
@@ -52,6 +53,7 @@ function rowToTicket(r: TicketRow): Ticket {
     balanceAfter: r.balance_after ?? undefined,
     importTime: r.import_time ?? undefined,
     createdAt: r.created_at,
+    serial: r.serial ?? undefined,
   };
 }
 
@@ -78,6 +80,7 @@ function ticketToRow(t: Ticket, userId: string) {
     import_time: t.importTime || new Date().toISOString(),
     is_duplicate: false,
     balance_after: t.balanceAfter ?? null,
+    serial: t.serial ?? null,
   };
 }
 
@@ -208,6 +211,7 @@ export class TicketService {
       airlineCode:     'airline_code',
       source:          'source',
       vendorReference: 'vendor_reference',
+      serial:          'serial',
     };
     const row: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(patch)) {
