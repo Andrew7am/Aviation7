@@ -185,4 +185,42 @@ export class TicketService {
       .eq('user_id', this.userId);
     if (error) throw new Error(error.message);
   }
+
+  /**
+   * Edit arbitrary fields on an existing ticket (price, name, req num, pnr,
+   * route, status, date, ...). Only whitelisted, user-editable columns are
+   * accepted — id/user_id/created_at and audit-only fields can't be changed
+   * here. Camel-cased Ticket keys are mapped to their snake_case columns.
+   */
+  async updateFields(ticketId: string, patch: Partial<Ticket>): Promise<void> {
+    const MAP: Record<string, string> = {
+      ticketNo:        'ticket_no',
+      passengerName:   'passenger_name',
+      amount:          'amount',
+      reqNum:          'req_num',
+      pnr:             'pnr',
+      route:           'route',
+      status:          'status',
+      date:            'date',
+      commission:      'commission',
+      totalDoc:        'total_doc',
+      currency:        'currency',
+      airlineCode:     'airline_code',
+      source:          'source',
+      vendorReference: 'vendor_reference',
+    };
+    const row: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(patch)) {
+      const col = MAP[key];
+      if (col) row[col] = value;
+    }
+    if (Object.keys(row).length === 0) return;
+
+    const { error } = await supabase
+      .from('tickets')
+      .update(row)
+      .eq('id', ticketId)
+      .eq('user_id', this.userId);
+    if (error) throw new Error(error.message);
+  }
 }

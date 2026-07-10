@@ -16,11 +16,12 @@ export function useTickets(userId: string) {
     return unsub;
   }, [userId]);
 
-  const deleteTicket    = (id: string)               => svc.delete(id);
-  const updateReqNum    = (id: string, req: string)  => svc.updateReqNum(id, req);
+  const deleteTicket    = (id: string)                       => svc.delete(id);
+  const updateReqNum    = (id: string, req: string)          => svc.updateReqNum(id, req);
+  const updateTicket    = (id: string, patch: Partial<Ticket>) => svc.updateFields(id, patch);
 
   const missingReq = tickets.filter(t => !t.reqNum && t.status !== 'FUND');
   const topUps     = tickets.filter(t => t.status === 'FUND');
 
-  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum };
+  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket };
 }

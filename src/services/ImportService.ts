@@ -20,7 +20,7 @@ export interface ImportRecord {
 export interface AuditEntry {
   id:         string;
   userId:     string;
-  action:     'IMPORT' | 'UPDATE_REQ' | 'DELETE' | 'TOPUP' | 'ADD_VENDOR' | 'DELETE_VENDOR';
+  action:     'IMPORT' | 'UPDATE_REQ' | 'EDIT_TICKET' | 'DELETE' | 'TOPUP' | 'ADD_VENDOR' | 'DELETE_VENDOR';
   entity:     string;   // ticketNo / vendorName / etc
   detail:     string;
   performedAt: string;

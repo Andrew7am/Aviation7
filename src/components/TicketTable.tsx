@@ -9,8 +9,11 @@ interface TicketTableProps {
   defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE';
   onDelete?: (id: string) => void;
   onUpdateReqNum?: (id: string, reqNum: string) => void;
+  onUpdateTicket?: (id: string, patch: Partial<Ticket>) => void;
   currency?: string;
 }
+
+type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr';
 
 const SOURCE_COLORS: Record<string, string> = {
   'flyadeal ksa': 'bg-orange-100 text-orange-700',
@@ -49,12 +52,12 @@ function getSourceColor(source: string) {
 }
 
 export const TicketTable: React.FC<TicketTableProps> = ({
-  tickets, title, defaultFilter = 'ALL', onDelete, onUpdateReqNum, currency = 'SAR',
+  tickets, title, defaultFilter = 'ALL', onDelete, onUpdateReqNum, onUpdateTicket, currency = 'SAR',
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<'ALL' | 'NEED_REQ' | 'DUPLICATE'>(defaultFilter);
   const [sourceFilter, setSourceFilter] = useState('ALL');
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingCell, setEditingCell] = useState<{ id: string; field: EditableField } | null>(null);
   const [editValue, setEditValue] = useState('');
 
   const fmt = (n: number) =>
@@ -126,10 +129,53 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     XLSX.writeFile(wb, 'Missing_REQ_Numbers.xlsx');
   };
 
-  const handleSave = (id: string) => {
-    onUpdateReqNum?.(id, editValue.trim().toUpperCase());
-    setEditingId(null);
+  const canEdit = !!onUpdateReqNum || !!onUpdateTicket;
+
+  const startEdit = (ticket: Ticket, field: EditableField) => {
+    if (!canEdit) return;
+    const current =
+      field === 'reqNum'        ? (ticket.reqNum || '')
+      : field === 'passengerName' ? (ticket.passengerName || '')
+      : field === 'pnr'         ? (ticket.pnr || '')
+      : String(ticket.amount ?? '');
+    setEditingCell({ id: ticket.id, field });
+    setEditValue(current);
   };
+
+  const commitEdit = () => {
+    if (!editingCell) return;
+    const { id, field } = editingCell;
+    const raw = editValue.trim();
+
+    if (field === 'reqNum') {
+      onUpdateReqNum?.(id, raw.toUpperCase());
+    } else if (field === 'amount') {
+      const n = Number(raw.replace(/[^0-9.-]/g, ''));
+      if (!Number.isNaN(n)) onUpdateTicket?.(id, { amount: n });
+    } else if (field === 'passengerName') {
+      onUpdateTicket?.(id, { passengerName: raw.toUpperCase() });
+    } else if (field === 'pnr') {
+      onUpdateTicket?.(id, { pnr: raw.toUpperCase() });
+    }
+    setEditingCell(null);
+  };
+
+  const cancelEdit = () => setEditingCell(null);
+
+  const isEditing = (id: string, field: EditableField) =>
+    editingCell?.id === id && editingCell.field === field;
+
+  const editorInput = (
+    <input
+      type="text"
+      value={editValue}
+      onChange={e => setEditValue(e.target.value)}
+      onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
+      onBlur={commitEdit}
+      className="w-24 px-1.5 py-0.5 text-xs font-bold border border-blue-400 rounded focus:outline-none focus:ring-1 ring-blue-400"
+      autoFocus
+    />
+  );
 
   const totalAmount = filtered.reduce((s, t) => s + t.amount, 0);
 
@@ -253,29 +299,44 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                 <td className="px-3 py-2 text-slate-500">{ticket.totalDoc > 0 ? fmt(ticket.totalDoc) : '—'}</td>
                 <td className="px-3 py-2 text-slate-400">{ticket.commission > 0 ? fmt(ticket.commission) : '—'}</td>
                 <td className={`px-3 py-2 font-bold ${ticket.amount < 0 ? 'text-red-600' : ''}`}>
-                  {ticket.amount < 0 ? '-' : ''}{fmt(Math.abs(ticket.amount))}
+                  {isEditing(ticket.id, 'amount') ? editorInput : (
+                    <span
+                      className={canEdit ? 'cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded' : ''}
+                      onClick={() => startEdit(ticket, 'amount')}
+                      title={canEdit ? 'Click to edit amount' : undefined}
+                    >
+                      {ticket.amount < 0 ? '-' : ''}{fmt(Math.abs(ticket.amount))}
+                    </span>
+                  )}
                 </td>
-                <td className="px-3 py-2 text-slate-600">{ticket.pnr || '—'}</td>
-                <td className="px-3 py-2 text-slate-500 max-w-[100px] truncate">{ticket.passengerName || '—'}</td>
+                <td className="px-3 py-2 text-slate-600">
+                  {isEditing(ticket.id, 'pnr') ? editorInput : (
+                    <span
+                      className={canEdit ? 'cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded' : ''}
+                      onClick={() => startEdit(ticket, 'pnr')}
+                      title={canEdit ? 'Click to edit PNR' : undefined}
+                    >
+                      {ticket.pnr || '—'}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-slate-500 max-w-[140px]">
+                  {isEditing(ticket.id, 'passengerName') ? editorInput : (
+                    <span
+                      className={`block truncate ${canEdit ? 'cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded' : ''}`}
+                      onClick={() => startEdit(ticket, 'passengerName')}
+                      title={canEdit ? (ticket.passengerName || 'Click to edit name') : ticket.passengerName}
+                    >
+                      {ticket.passengerName || '—'}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2">
-                  {editingId === ticket.id ? (
-                    <div className="flex items-center space-x-1.5">
-                      <input
-                        type="text"
-                        value={editValue}
-                        onChange={e => setEditValue(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleSave(ticket.id)}
-                        className="w-20 px-1.5 py-0.5 text-xs font-bold border border-blue-400 rounded focus:outline-none focus:ring-1 ring-blue-400 uppercase"
-                        autoFocus
-                      />
-                      <button onClick={() => handleSave(ticket.id)} className="text-blue-600 text-[9px] font-bold uppercase hover:underline">Save</button>
-                      <button onClick={() => setEditingId(null)} className="text-slate-400 text-[9px] uppercase">✕</button>
-                    </div>
-                  ) : (
+                  {isEditing(ticket.id, 'reqNum') ? editorInput : (
                     <div
-                      className={`font-bold cursor-pointer hover:bg-slate-100 inline-block px-1 py-0.5 rounded ${ticket.reqNum ? 'text-blue-600 underline' : 'text-red-400 italic'}`}
-                      onClick={() => { setEditingId(ticket.id); setEditValue(ticket.reqNum || ''); }}
-                      title="Click to edit"
+                      className={`font-bold inline-block px-1 py-0.5 rounded ${canEdit ? 'cursor-pointer hover:bg-slate-100' : ''} ${ticket.reqNum ? 'text-blue-600 underline' : 'text-red-400 italic'}`}
+                      onClick={() => startEdit(ticket, 'reqNum')}
+                      title={canEdit ? 'Click to edit' : undefined}
                     >
                       {ticket.reqNum || '[+ ADD]'}
                     </div>

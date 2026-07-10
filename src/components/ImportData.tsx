@@ -211,8 +211,11 @@ export const ImportData: React.FC<ImportDataProps> = ({
         </div>
       </div>
 
-      {/* Unknown format → one-time AI analysis */}
-      {preview && preview.confidence === 0 && (
+      {/* Unknown format (or a parser that matched but extracted nothing) →
+          one-time AI analysis. Covers both "no parser detected" and "user
+          picked a vendor whose format has since changed and it parsed 0 rows". */}
+      {preview && (preview.confidence === 0 ||
+        (preview.fresh.length + preview.updates.length + preview.duplicates.length + preview.topUps.length) === 0) && (
         <div className="shrink-0 rounded-lg px-4 py-3 flex items-center justify-between border bg-violet-50 border-violet-200">
           <div className="flex items-center space-x-2">
             <Sparkles className="w-4 h-4 text-violet-600" />

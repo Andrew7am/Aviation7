@@ -28,7 +28,7 @@ function MainApp({ user }: { user: User }) {
   const [currency, setCurrency] = useState<SupportedCurrency>('SAR');
   const [importHistory, setImportHistory] = useState<ImportRecord[]>([]);
 
-  const { tickets, missingReq, deleteTicket, updateReqNum } = useTickets(user.id);
+  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
 
   const ticketSvc = new TicketService(user.id);
@@ -126,6 +126,11 @@ function MainApp({ user }: { user: User }) {
   const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount}`); };
   const handleDelete       = (id: string) => { deleteTicket(id); importSvc.audit('DELETE', id, 'Ticket deleted'); };
   const handleUpdateReqNum = (id: string, req: string) => { updateReqNum(id, req); importSvc.audit('UPDATE_REQ', id, `New req: ${req}`); };
+  const handleUpdateTicket = (id: string, patch: Partial<Ticket>) => {
+    updateTicket(id, patch);
+    const summary = Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ');
+    importSvc.audit('EDIT_TICKET', id, `Edited: ${summary}`);
+  };
   const dismissAlert       = useCallback((id: string) => setAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a)), []);
 
   const missingReqCount = missingReq.length;
@@ -224,8 +229,8 @@ function MainApp({ user }: { user: User }) {
 
         <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
           {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} currency={currency} />}
-          {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} currency={currency} />}
-          {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} currency={currency} />}
+          {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} currency={currency} />}
+          {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} currency={currency} />}
           {view === 'import'    && <ImportData existingTickets={tickets} onImport={handleImport} currency={currency} setCurrency={setCurrency} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
           {view === 'history'   && <ImportHistory records={importHistory} getErrorsFor={(id, cb) => importSvc.subscribeErrors(id, cb)} />}
           {view === 'vendors'   && (
@@ -242,7 +247,7 @@ function MainApp({ user }: { user: User }) {
       <footer className="h-7 bg-slate-800 text-slate-500 flex items-center justify-between px-4 text-[9px] font-mono shrink-0">
         <span>NET = TOTAL − COMM · REFUND→NEGATIVE · FUND→POSITIVE</span>
         <div className="flex items-center space-x-2">
-          <span>FIREBASE LIVE</span>
+          <span>SUPABASE LIVE</span>
           <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
         </div>
       </footer>
