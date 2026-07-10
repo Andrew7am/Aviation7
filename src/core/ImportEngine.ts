@@ -60,6 +60,14 @@ export function detectDuplicatesAgainstExisting(
     // REFUND / FUND / ADM / ACM — never a dup, always fresh
     if (NON_ISSUE_STATUSES.has(status)) { fresh.push(t); return; }
 
+    // Same ticket appeared more than once WITHIN this import batch itself
+    // (detectDuplicates() already flagged every occurrence after the first).
+    // Without this check, two copies of the same ticket in one uploaded file
+    // both land in `fresh` on a first-time import — neither exists in the DB
+    // yet, so the against-existing check below never catches it — and the
+    // "DUP" badge shown in the preview would be cosmetic only.
+    if (t.isDuplicate) { duplicates.push(t); return; }
+
     if (existingKeys.has(key)) {
       // Exact match — but if existing is missing req num and we now have one, update instead
       if (existing && t.reqNum && (!existing.reqNum || !existing.reqNum.trim())) {
