@@ -1,5 +1,5 @@
 import { VendorParser, ParserResult } from './types';
-import { col, cell, num, cleanPax } from './shared';
+import { col, cell, num, cleanPax, rowContentId } from './shared';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { isValidPNR } from '../helpers/isValidTicket';
@@ -25,7 +25,7 @@ export const FlyDubaiParser: VendorParser = {
       // instead of dropping the amount.
       const hasPnr = !!rawPnr && rawPnr!=='NA' && rawPnr.length>=5;
       if (!hasPnr) warnings.push(`Row ${idx+2}: FlyDubai - no booking reference, using placeholder`);
-      const ticketId = hasPnr ? rawPnr : `FLYDUBAI_NOREF_${idx}`;
+      const ticketId = hasPnr ? rawPnr : `FLYDUBAI_NOREF_${rowContentId(row)}`;
       const req = resolveReq(cell(row,iReq));
       if (!req) warnings.push(`PNR ${ticketId}: Missing Req Num`);
       result.push({ticketNo:ticketId,pnr:hasPnr?rawPnr:'',passengerName:cleanPax(cell(row,iPax)),date:parseDate(cell(row,iDate)),amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:amt<0?'REFUND':'ISSUE',currency:defaultCurrency});

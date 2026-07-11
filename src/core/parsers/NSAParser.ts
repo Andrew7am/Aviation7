@@ -1,5 +1,5 @@
 import { VendorParser, ParserResult } from './types';
-import { col, cell, num, cleanPax, airlineCode, cleanTk } from './shared';
+import { col, cell, num, cleanPax, airlineCode, cleanTk, rowContentId } from './shared';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
@@ -22,7 +22,7 @@ export const NSAParser: VendorParser = {
       const desc = cell(row,iPax);
       if (/^RV-/i.test(rawDoc)||/^payment/i.test(desc)) {
         const credit = num(cell(row,iDebit+1));
-        if (credit>0) result.push({ticketNo:`FUND_${Date.now()}${idx}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,iDate)),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
+        if (credit>0) result.push({ticketNo:`NSA_FUND_${rowContentId(row)}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,iDate)),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
         return;
       }
       const debit = num(cell(row,iDebit)); const credit = num(cell(row,iDebit+1));
@@ -49,7 +49,7 @@ export const NSAParser: VendorParser = {
         // Real money moved (debit/credit) but the source row has no usable
         // document reference at all — don't silently drop the amount, flag
         // it for manual review via a synthetic reference instead.
-        tkClean = `NSA_NOREF_${idx}`; ac = '';
+        tkClean = `NSA_NOREF_${rowContentId(row)}`; ac = '';
         warnings.push(`Row ${idx+2}: NSA - no document reference in source, using placeholder [${tkClean}]`);
       }
 

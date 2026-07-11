@@ -1,5 +1,5 @@
 import { VendorParser, ParserResult } from './types';
-import { col, cell, cleanPax } from './shared';
+import { col, cell, cleanPax, rowContentId } from './shared';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { isValidPNR } from '../helpers/isValidTicket';
@@ -27,7 +27,7 @@ export const FlynasParser: VendorParser = {
       if (/^fund$/i.test(pax.trim())) {
         const rawAmt = cell(row,iAmt).replace(/SAR|,|\s/gi,'');
         const fundAmt = Math.abs(parseFloat(rawAmt)||0);
-        if (fundAmt>0) result.push({ticketNo:`FUND_${Date.now()}${idx}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,iDate)),amount:fundAmt,totalDoc:fundAmt,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
+        if (fundAmt>0) result.push({ticketNo:`FLYNAS_FUND_${rowContentId(row)}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,iDate)),amount:fundAmt,totalDoc:fundAmt,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
         return;
       }
       if (!pnr) return;

@@ -1,5 +1,5 @@
 import { VendorParser, ParserResult, ParsedRow } from './types';
-import { col, cell, num, cleanPax, airlineCode, cleanTk } from './shared';
+import { col, cell, num, cleanPax, airlineCode, cleanTk, rowContentId } from './shared';
 import { resolveReq, findReqColumn, findExplicitReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { resolveCurrency } from '../helpers/resolveCurrency';
@@ -70,7 +70,7 @@ export function makeProfileParser(profile: LearnedProfile): VendorParser {
         const status = normSt !== 'UNKNOWN' ? normSt : (isRefund ? 'REFUND' : 'ISSUE');
         if (status === 'FUND') {
           const fundAmt = Math.abs(base);
-          result.push({ ticketNo: `FUND_${Date.now()}${idx}`, pnr: '', passengerName: 'BALANCE TOP-UP', date: parseDate(iDate >= 0 ? cell(row, iDate) : ''), amount: fundAmt, totalDoc: fundAmt, commission: 0, reqNum: '', status: 'FUND', currency: resolveCurrency(row, headers, defaultCurrency), isTopUp: true });
+          result.push({ ticketNo: `${profile.vendorName.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_FUND_${rowContentId(row)}`, pnr: '', passengerName: 'BALANCE TOP-UP', date: parseDate(iDate >= 0 ? cell(row, iDate) : ''), amount: fundAmt, totalDoc: fundAmt, commission: 0, reqNum: '', status: 'FUND', currency: resolveCurrency(row, headers, defaultCurrency), isTopUp: true });
           return;
         }
         const finalAmt = status === 'REFUND' ? -Math.abs(base) : Math.abs(base);
@@ -83,7 +83,7 @@ export function makeProfileParser(profile: LearnedProfile): VendorParser {
         else if (pnr && pnr.length >= 5) ticketId = pnr;
         if (!ticketId) {
           // Real money but no usable reference — keep the amount, flag it.
-          ticketId = `${profile.vendorName.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_NOREF_${idx}`;
+          ticketId = `${profile.vendorName.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_NOREF_${rowContentId(row)}`;
           warnings.push(`Row ${idx + 2}: ${profile.vendorName} - no ticket/PNR reference, using placeholder`);
         }
 

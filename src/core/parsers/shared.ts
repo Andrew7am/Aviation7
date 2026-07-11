@@ -56,6 +56,25 @@ export function airlineCode(ticketNo: string): string {
   return m2 ? m2[1] : '';
 }
 
+/**
+ * rowContentId — a stable placeholder identifier for a row that has no
+ * usable ticket/PNR reference, derived from the row's own content (not its
+ * array position). A position-based id (e.g. `NOREF_${idx}`) silently
+ * drifts whenever rows are added/removed anywhere earlier in the same
+ * sheet — common on re-export, since vendors don't always append at the
+ * bottom — which breaks duplicate detection for every placeholder row
+ * after the shift point. This hashes every non-empty cell instead, so the
+ * same logical row produces the same id regardless of where it sits.
+ */
+export function rowContentId(row: string[]): string {
+  const content = row.map(c => (c ?? '').trim()).filter(Boolean).join('|');
+  let hash = 0;
+  for (let i = 0; i < content.length; i++) {
+    hash = (hash * 31 + content.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
 export function cleanPax(raw: string): string {
   if (!raw) return '';
   let s = raw.trim().replace(/^(MR\.?|MRS\.?|MS\.?|DR\.?|INF\.?|CHD\.?)\s+/i, '');

@@ -1,5 +1,5 @@
 import { VendorParser, ParserResult } from './types';
-import { col, cell, numNoText, cleanPax, airlineCode } from './shared';
+import { col, cell, numNoText, cleanPax, airlineCode, rowContentId } from './shared';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
@@ -22,7 +22,7 @@ export const AirArabiaParser: VendorParser = {
       const debit = numNoText(cell(row,iDebit)); const credit = numNoText(cell(row,iDebit+1));
       if (debit===0&&credit===0) return;
       if (credit>0&&debit===0&&!cell(row,iTicket)&&!cell(row,iPNR)) {
-        result.push({ticketNo:`FUND_${Date.now()}${idx}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,iDate)),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
+        result.push({ticketNo:`AIRARABIA_FUND_${rowContentId(row)}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,iDate)),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
         return;
       }
       const tkRaw = cell(row,iTicket).replace(/[^0-9]/g,'');
@@ -31,7 +31,7 @@ export const AirArabiaParser: VendorParser = {
       // money just because the source row has no ticket/PNR (balance
       // adjustment lines); flag it with a placeholder reference instead.
       if (!tkRaw&&!pnr) warnings.push(`Row ${idx+2}: AirArabia - no ticket/PNR reference, using placeholder`);
-      const ticketId = tkRaw||pnr||`AIRARABIA_NOREF_${idx}`;
+      const ticketId = tkRaw||pnr||`AIRARABIA_NOREF_${rowContentId(row)}`;
       const normSt = normalizeStatus(cell(row,col(headers,'Status','status')));
       const status = normSt !== 'UNKNOWN' ? normSt : (credit>0&&debit===0?'REFUND':'ISSUE');
       const amt = status==='REFUND'?-Math.abs(credit||debit):debit;

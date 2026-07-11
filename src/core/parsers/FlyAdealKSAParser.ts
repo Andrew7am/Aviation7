@@ -24,7 +24,9 @@ export const FlyAdealKSAParser: VendorParser = {
       const amt = num(cell(row,iAmt)); if(amt===0) return;
       const req = resolveReq(cell(row,iReq));
       if (!req) warnings.push(`PNR ${pnr}: Missing Req Num`);
-      result.push({ticketNo:pnr,pnr,passengerName:cleanPax(cell(row,iPax)),route:cell(row,iRoute),date:(cell(row,iDate)||'').split('T')[0]||new Date().toISOString().split('T')[0],amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:amt<0?'REFUND':'ISSUE',currency:defaultCurrency});
+      // No "today" fallback — a blank date must stay deterministically blank
+      // or duplicate detection (keyed on date) breaks on every re-import.
+      result.push({ticketNo:pnr,pnr,passengerName:cleanPax(cell(row,iPax)),route:cell(row,iRoute),date:(cell(row,iDate)||'').split('T')[0],amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:amt<0?'REFUND':'ISSUE',currency:defaultCurrency});
     });
     return {rows:result,errors,warnings};
   },

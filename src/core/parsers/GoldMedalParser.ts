@@ -1,5 +1,5 @@
 import { VendorParser, ParserResult } from './types';
-import { col, cell, num, cleanPax } from './shared';
+import { col, cell, num, cleanPax, rowContentId } from './shared';
 import { resolveReq, findExplicitReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
@@ -42,7 +42,7 @@ export const GoldMedalParser: VendorParser = {
         if (amt===0) return;
         warnings.push(`Row ${idx+2}: Gold Medal - no ticket number, using placeholder`);
       }
-      const ticketId = (rawGMTk && rawGMTk.length>=8) ? rawGMTk : `GOLDMEDAL_NOREF_${idx}`;
+      const ticketId = (rawGMTk && rawGMTk.length>=8) ? rawGMTk : `GOLDMEDAL_NOREF_${rowContentId(row)}`;
       let rawReqVal: string, req: string;
       if (iExplicitReq !== -1) {
         rawReqVal = cell(row, iExplicitReq).toUpperCase();

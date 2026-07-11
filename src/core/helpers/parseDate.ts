@@ -1,8 +1,12 @@
 export function parseDate(raw: unknown): string {
-  const today = new Date().toISOString().split('T')[0];
-  if (raw === null || raw === undefined || raw === '') return today;
+  // Blank/unparseable input returns '' — NEVER "today". A "today" fallback
+  // is non-deterministic: the same source row gets a different date every
+  // time it's re-parsed, which silently breaks duplicate detection (dupKey
+  // includes date) for any row with a missing date field — exactly the kind
+  // of no-ticket/no-PNR placeholder row this happens to correlate with.
+  if (raw === null || raw === undefined || raw === '') return '';
   const s = String(raw).trim();
-  if (!s || s === '0') return today;
+  if (!s || s === '0') return '';
 
   // Excel serial
   const serial = Number(s);
@@ -38,5 +42,5 @@ export function parseDate(raw: unknown): string {
 
   const fallback = new Date(s);
   if (!isNaN(fallback.getTime())) return fallback.toISOString().split('T')[0];
-  return today;
+  return '';
 }

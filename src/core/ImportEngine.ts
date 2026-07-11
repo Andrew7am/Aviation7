@@ -57,8 +57,19 @@ export function detectDuplicatesAgainstExisting(
     const ticketNo = t.ticketNo.trim().toUpperCase();
     const existing = existingByTicket.get(ticketNo);
 
-    // REFUND / FUND / ADM / ACM — never a dup, always fresh
-    if (NON_ISSUE_STATUSES.has(status)) { fresh.push(t); return; }
+    // REFUND / FUND / ADM / ACM — dupKey() gives these a status-scoped key
+    // format (no source/pnr) specifically so they can NEVER collide with an
+    // ISSUE row on the same ticket. But they still need to dedupe against a
+    // PREVIOUSLY saved instance of this exact same refund/fund/adjustment —
+    // without this check every re-import of the same report insert the same
+    // refund again, forever. Deliberately skip the existingByTicket/update
+    // path below: that map is keyed on bare ticketNo and would conflate this
+    // row with an unrelated ISSUE sharing the same ticket number.
+    if (NON_ISSUE_STATUSES.has(status)) {
+      if (existingKeys.has(key)) duplicates.push({ ...t, isDuplicate: true });
+      else fresh.push(t);
+      return;
+    }
 
     // Same ticket appeared more than once WITHIN this import batch itself
     // (detectDuplicates() already flagged every occurrence after the first).

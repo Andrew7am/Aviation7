@@ -1,5 +1,5 @@
 import { VendorParser, ParserResult } from './types';
-import { col, cell, num, cleanPax, airlineCode, cleanTk } from './shared';
+import { col, cell, num, cleanPax, airlineCode, cleanTk, rowContentId } from './shared';
 import { resolveReq, findExplicitReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
@@ -25,7 +25,7 @@ export const IbtekarParser: VendorParser = {
       const isTopUp = /^(topup|fund|top.?up)$/i.test(fileNo)||/^RV\d+$/i.test(rawTk);
       if (isTopUp) {
         const credit = num(cell(row,iDebit+1))||num(cell(row,iDebit));
-        if (credit>0) result.push({ticketNo:`FUND_${Date.now()}${idx}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,0)),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
+        if (credit>0) result.push({ticketNo:`IBTEKAR_FUND_${rowContentId(row)}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,0)),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
         return;
       }
       // Same "3-digit airline code + dash + ticket digits" shape cleanTk()/airlineCode()
