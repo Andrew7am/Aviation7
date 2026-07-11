@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Ticket } from '../types';
 import { Search, Download, Filter } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -61,6 +61,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [editValue, setEditValue] = useState('');
   const [sortKey, setSortKey] = useState<'serial' | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 100;
 
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -91,6 +93,15 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     }
     return rows;
   }, [tickets, searchTerm, filterMode, sourceFilter, sortKey, sortDir]);
+
+  // Reset to page 0 whenever filters/sort change
+  useEffect(() => setPage(0), [searchTerm, filterMode, sourceFilter, sortKey, sortDir]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const paged = useMemo(
+    () => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [filtered, page, PAGE_SIZE]
+  );
 
   const toggleSerialSort = () => {
     if (sortKey !== 'serial') { setSortKey('serial'); setSortDir('asc'); }
@@ -309,7 +320,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             </tr>
           </thead>
           <tbody className="text-xs font-mono">
-            {filtered.map(ticket => (
+            {paged.map(ticket => (
               <tr key={ticket.id} className={`border-b border-slate-100 hover:bg-slate-50 ${!ticket.reqNum ? 'bg-red-50/20' : ''}`}>
                 <td className="px-3 py-2 whitespace-nowrap">
                   {ticket.serial != null ? (
@@ -412,6 +423,35 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="shrink-0 flex items-center justify-between px-4 py-2 bg-white border-t border-slate-200 text-[10px] font-mono text-slate-500">
+          <span>Page {page + 1} of {totalPages} · showing {paged.length} of {filtered.length}</span>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage(0)}
+              disabled={page === 0}
+              className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-30"
+            >«</button>
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-30"
+            >‹ Prev</button>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-30"
+            >Next ›</button>
+            <button
+              onClick={() => setPage(totalPages - 1)}
+              disabled={page >= totalPages - 1}
+              className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-30"
+            >»</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
