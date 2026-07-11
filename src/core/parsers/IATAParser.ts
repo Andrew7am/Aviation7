@@ -29,7 +29,7 @@ export const IATAParser: VendorParser = {
     const iComm   = col(headers, 'COMM', 'comm', 'commission');
     const iStatus = col(headers, 'TRNC', 'status', 'Status');
     const iAL     = col(headers, 'A/L', 'Airline key', 'AIRLINE');
-    const iSerial = col(headers, 'Serial');
+    const iSerial = col(headers, 'Serial', 'SEQ NO', 'Seq No', 'SEQNO', 'SEQ', 'Serial Number');
     const iReq    = pickReqColumn(headers, col(headers, 'Req Number', 'REQ NUMBER', 'REQ NUM', 'Request Number'));
     // currency resolved per-row via resolveCurrency() — no dedicated col index needed
 
