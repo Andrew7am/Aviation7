@@ -184,9 +184,16 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
             const totalRefunds = vTickets.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
             const netIssued = totalIssued - totalRefunds;
             const remaining = vendor.currentBalance;
-            const pct = vendor.initialBalance > 0 ? (remaining / vendor.initialBalance) * 100 : 0;
-            const isLow = pct < 20 && remaining >= 0;
-            const isNeg = remaining < 0;
+            // Debt-style vendors (NSA, Ibtekar): initialBalance is negative because the
+            // sheet's outstanding column is already negative when the agency has credit.
+            // For these, negative remaining = agency has credit (GOOD), positive = owes (BAD).
+            // For prepaid vendors (AirArabia, etc.): positive = credit (GOOD), negative = overdraft (BAD).
+            const isDebtVendor = vendor.initialBalance < 0;
+            const isNeg = isDebtVendor ? remaining > 0 : remaining < 0;
+            const pct = vendor.initialBalance > 0
+              ? (remaining / vendor.initialBalance) * 100
+              : isDebtVendor ? (remaining <= 0 ? 100 : 0) : 0;
+            const isLow = !isDebtVendor && pct < 20 && remaining >= 0;
             const isExpanded = expandedId === vendor.id;
 
             return (
