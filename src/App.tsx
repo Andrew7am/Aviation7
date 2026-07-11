@@ -231,7 +231,7 @@ function MainApp({ user }: { user: User }) {
           {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} currency={currency} />}
           {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} currency={currency} />}
           {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} currency={currency} />}
-          {view === 'import'    && <ImportData existingTickets={tickets} onImport={handleImport} currency={currency} setCurrency={setCurrency} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
+          {view === 'import'    && <ImportData userId={user.id} onImport={handleImport} currency={currency} setCurrency={setCurrency} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
           {view === 'history'   && <ImportHistory records={importHistory} getErrorsFor={(id, cb) => importSvc.subscribeErrors(id, cb)} />}
           {view === 'vendors'   && (
             <div className="p-6 flex flex-col h-full">

@@ -13,7 +13,7 @@ const vendorRefSvc = new VendorReferenceService();
 const aiProfileSvc = new AIProfileService();
 
 interface ImportDataProps {
-  existingTickets: Ticket[];
+  userId: string;
   onImport: (newTickets: Ticket[], updateTickets: Ticket[], topUpTickets: Ticket[], meta: ImportMeta) => void;
   currency?: SupportedCurrency;
   setCurrency?: (c: SupportedCurrency) => void;
@@ -31,9 +31,9 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export const ImportData: React.FC<ImportDataProps> = ({
-  existingTickets, onImport, currency = 'SAR', setCurrency, vendorNames = [],
+  userId, onImport, currency = 'SAR', setCurrency, vendorNames = [],
 }) => {
-  const { preview, inputText, setInputText, runValidation, readFileAsText, clear, buildMeta } = useImport(existingTickets);
+  const { preview, inputText, setInputText, runValidation, readFileAsText, clear, buildMeta } = useImport(userId);
   const [defaultSource, setDefaultSource] = useState('Auto-detect');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -87,7 +87,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
 
   const handlePreview = (profiles: LearnedProfile[] = aiProfiles) => {
     const src = defaultSource === 'Auto-detect' ? undefined : defaultSource;
-    runValidation(inputText, src, currency, src, profiles);
+    runValidation(inputText, src, currency, src, profiles).catch(console.error);
   };
 
   /**

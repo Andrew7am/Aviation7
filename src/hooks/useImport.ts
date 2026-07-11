@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import Papa from 'papaparse';
 import { Ticket } from '../types';
 import { runParser } from '../core/parsers';
@@ -6,6 +6,7 @@ import { detectDuplicates, detectDuplicatesAgainstExisting, readFileAsText } fro
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
 import { LearnedProfile } from '../core/ai/learnedProfile';
 import { v4 as uuidv4 } from 'uuid';
+import { TicketService } from '../services/TicketService';
 
 export interface ImportErrorEntry { row: number; raw: string; error: string }
 
@@ -33,14 +34,18 @@ export interface ImportMeta {
 
 /**
  * useImport — single source of truth for the import preview/validation flow.
- * Used by ImportData.tsx so the parsing + duplicate-detection logic lives in one place.
+ * Accepts userId so it can query the DB directly for dup detection — this
+ * avoids the race condition where the in-memory ticket list hasn't finished
+ * loading yet when the user runs a preview.
  */
-export function useImport(existingTickets: Ticket[]) {
+export function useImport(userId: string) {
   const [preview,   setPreview]   = useState<ImportPreview | null>(null);
   const [loading,   setLoading]   = useState(false);
   const [inputText, setInputText] = useState('');
 
-  const runValidation = useCallback((
+  const svc = useMemo(() => new TicketService(userId), [userId]);
+
+  const runValidation = useCallback(async (
     text:            string,
     defaultSource?:  string,
     defaultCurrency: SupportedCurrency = 'SAR',
@@ -89,7 +94,13 @@ export function useImport(existingTickets: Ticket[]) {
 
       const topUps   = rawTickets.filter(t => t.status === 'FUND');
       const realTkts = detectDuplicates(rawTickets.filter(t => t.status !== 'FUND'));
-      const { fresh, updates, duplicates } = detectDuplicatesAgainstExisting(realTkts, existingTickets);
+
+      // Query DB for only the ticket numbers in this batch — always fresh,
+      // no dependency on the in-memory list that may not have loaded yet.
+      const batchTicketNos = rawTickets.map(t => t.ticketNo);
+      const existingFromDB = await svc.fetchByTicketNos(batchTicketNos);
+
+      const { fresh, updates, duplicates } = detectDuplicatesAgainstExisting(realTkts, existingFromDB);
 
       setPreview({
         fresh, updates, duplicates, topUps,
@@ -100,7 +111,7 @@ export function useImport(existingTickets: Ticket[]) {
     } finally {
       setLoading(false);
     }
-  }, [existingTickets]);
+  }, [svc]);
 
   const clear = useCallback(() => {
     setPreview(null);

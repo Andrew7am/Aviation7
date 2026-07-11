@@ -182,6 +182,20 @@ export class TicketService {
     return { saved: newTickets.length, updated: updateTickets.length, topups: topUpRows.length };
   }
 
+  /** Fetch only the tickets whose ticket_no appears in the given list.
+   *  Used by the import dup-checker so it queries fresh DB data for just
+   *  the batch being imported rather than waiting for the full in-memory list. */
+  async fetchByTicketNos(ticketNos: string[]): Promise<Ticket[]> {
+    if (ticketNos.length === 0) return [];
+    const { data, error } = await supabase
+      .from('tickets')
+      .select('*')
+      .eq('user_id', this.userId)
+      .in('ticket_no', ticketNos);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(rowToTicket);
+  }
+
   async delete(ticketId: string): Promise<void> {
     const { error } = await supabase.from('tickets').delete().eq('id', ticketId).eq('user_id', this.userId);
     if (error) throw new Error(error.message);
