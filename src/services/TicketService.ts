@@ -183,17 +183,23 @@ export class TicketService {
   }
 
   /** Fetch only the tickets whose ticket_no appears in the given list.
-   *  Used by the import dup-checker so it queries fresh DB data for just
-   *  the batch being imported rather than waiting for the full in-memory list. */
+   *  Chunked into batches of 100 to avoid PostgREST URL length limits
+   *  when the report contains many tickets. */
   async fetchByTicketNos(ticketNos: string[]): Promise<Ticket[]> {
     if (ticketNos.length === 0) return [];
-    const { data, error } = await supabase
-      .from('tickets')
-      .select('*')
-      .eq('user_id', this.userId)
-      .in('ticket_no', ticketNos);
-    if (error) throw new Error(error.message);
-    return (data ?? []).map(rowToTicket);
+    const CHUNK = 100;
+    const rows: TicketRow[] = [];
+    for (let i = 0; i < ticketNos.length; i += CHUNK) {
+      const chunk = ticketNos.slice(i, i + CHUNK);
+      const { data, error } = await supabase
+        .from('tickets')
+        .select('*')
+        .eq('user_id', this.userId)
+        .in('ticket_no', chunk);
+      if (error) throw new Error(error.message);
+      rows.push(...(data ?? []));
+    }
+    return rows.map(rowToTicket);
   }
 
   async delete(ticketId: string): Promise<void> {
