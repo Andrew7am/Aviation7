@@ -33,13 +33,15 @@ const STATUS_COLORS: Record<string, string> = {
   ISSUE:  'bg-emerald-100 text-emerald-700',
   REFUND: 'bg-red-100 text-red-700',
   FUND:   'bg-emerald-200 text-emerald-800',
+  VOID:   'bg-slate-200 text-slate-600',
   ADM:    'bg-blue-100 text-blue-700',
   ACM:    'bg-purple-100 text-purple-700',
   // Legacy (for old imported data)
   TKTT: 'bg-emerald-100 text-emerald-700',
   RFND: 'bg-red-100 text-red-700',
-  VOID: 'bg-red-100 text-red-700',
   CANN: 'bg-slate-100 text-slate-500',
+  CANX: 'bg-slate-200 text-slate-600',
+  RFNX: 'bg-slate-200 text-slate-600',
   EMDS: 'bg-purple-100 text-purple-700',
 };
 

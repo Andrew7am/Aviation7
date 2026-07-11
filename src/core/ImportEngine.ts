@@ -18,7 +18,7 @@ import { Ticket } from '../types';
    REFUND/FUND/ADM/ACM on same ticket = NEVER a duplicate of an ISSUE row
    Two ISSUE rows on the same ticket = duplicate
 ───────────────────────────────────────────── */
-const NON_ISSUE_STATUSES = new Set(['REFUND', 'FUND', 'ADM', 'ACM', 'EMD']);
+const NON_ISSUE_STATUSES = new Set(['REFUND', 'FUND', 'ADM', 'ACM', 'EMD', 'VOID']);
 
 function dupKey(t: Ticket): string {
   const status = (t.status || '').toUpperCase();

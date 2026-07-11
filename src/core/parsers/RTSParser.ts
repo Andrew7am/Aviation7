@@ -34,10 +34,14 @@ export const RTSParser: VendorParser = {
       const rtsParts = rawTk.split('-');
       const cleanRTS = rtsParts.length >= 3 ? rtsParts.slice(0, -1).join('-') : rawTk;
       const tkClean = cleanTk(cleanRTS); const ac = airlineCode(cleanRTS);
-      const normSt = normalizeStatus(cell(row,iStatus));
-      const status = normSt !== 'UNKNOWN' ? normSt : 'ISSUE';
       const amt = num(cell(row,iAmt)); const comm = num(cell(row,iComm));
-      const finalAmt = status==='REFUND'?-Math.abs(amt):Math.abs(amt);
+      const normSt = normalizeStatus(cell(row,iStatus));
+      // Zero total with no explicit status = cancelled/void row (RTS sometimes
+      // emits these for cancellations without a status marker). Treat as VOID.
+      const status = normSt !== 'UNKNOWN' ? normSt : (amt === 0 ? 'VOID' : 'ISSUE');
+      const finalAmt = status==='VOID'   ? 0
+                     : status==='REFUND' ? -Math.abs(amt)
+                     : Math.abs(amt);
       const rtsReq = resolveReq(cell(row, iReq));
       if (!rtsReq) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
       result.push({ticketNo:tkClean,pnr:cell(row,iPNR).replace(/\s+/g,'').toUpperCase(),passengerName:cleanPax(cell(row,iPax)),airlineCode:ac,date:parseDate(cell(row,iDate)),amount:finalAmt,totalDoc:Math.abs(finalAmt),commission:comm,reqNum:rtsReq,vendorReference:cell(row,iReq),status,currency:defaultCurrency});

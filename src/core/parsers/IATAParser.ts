@@ -52,7 +52,11 @@ export const IATAParser: VendorParser = {
       const normSt  = normalizeStatus(rawSt);
       // TRNC may be empty in custom IATA exports — fall back to amount sign
       const status  = normSt !== 'UNKNOWN' ? normSt : (amount < 0 ? 'REFUND' : 'ISSUE');
-      const finalAmt = status === 'REFUND' ? -Math.abs(amount) : Math.abs(amount);
+      // VOID (RFNX/CANX/CANN/VOID) — cancelled ticket or cancelled refund.
+      // Business rule: value is zero (informational only, no balance impact).
+      const finalAmt = status === 'VOID'   ? 0
+                     : status === 'REFUND' ? -Math.abs(amount)
+                     : Math.abs(amount);
 
       const currency = resolveCurrency(row, headers, defaultCurrency);
 

@@ -36,13 +36,17 @@ export const IbtekarParser: VendorParser = {
       const tkClean = cleanTk(rawTk); const ac = airlineCode(rawTk);
       const debit = num(cell(row,iDebit)); const credit = num(cell(row,iDebit+1));
       const docNo = cell(row,iDocNo);
-      const isRef = /^RFD/i.test(docNo)||(credit>0&&debit===0);
-      const amt = isRef ? -Math.abs(credit||debit) : debit;
+      // Void row: zero movement on both sides, or explicit VOID / CANX marker
+      // anywhere in the row. Amount forced to 0 — no balance impact.
+      const isVoid = (debit === 0 && credit === 0) || /\b(VOID|CANX|CANN|RFNX|CANCEL)\b/i.test(row.join(' '));
+      const isRef = !isVoid && (/^RFD/i.test(docNo) || (credit > 0 && debit === 0));
+      const status = isVoid ? 'VOID' : (isRef ? 'REFUND' : 'ISSUE');
+      const amt = isVoid ? 0 : (isRef ? -Math.abs(credit || debit) : debit);
       const req = resolveReq(iExplicitReq !== -1 ? cell(row, iExplicitReq) : fileNo);
-      if (!req) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
+      if (!req && !isVoid) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
       const dp = (cell(row,iDate)||'').split('/');
       const date = dp.length===3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : parseDate(cell(row,iDate));
-      result.push({ticketNo:tkClean,pnr:cell(row,iPNR).replace(/\s+/g,'').toUpperCase(),passengerName:cleanPax(cell(row,iPax)),airlineCode:ac,route:cell(row,iRoute),date,amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:fileNo,status:isRef?'REFUND':'ISSUE',currency:defaultCurrency});
+      result.push({ticketNo:tkClean,pnr:cell(row,iPNR).replace(/\s+/g,'').toUpperCase(),passengerName:cleanPax(cell(row,iPax)),airlineCode:ac,route:cell(row,iRoute),date,amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:fileNo,status,currency:defaultCurrency});
     });
     return {rows:result,errors,warnings};
   },
