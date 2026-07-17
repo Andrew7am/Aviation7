@@ -87,7 +87,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
       'Total Doc': t.totalDoc || '',
       'Commission': t.commission || '',
       'Net Amount': t.amount,
-      'Currency':   t.currency || 'SAR',   // always from ticket
+      'Currency':   sourceToCurrency(t.source || ''),
       'PNR':        t.pnr || '',
       'Passenger': t.passengerName || '',
       'Req Num': t.reqNum || '',

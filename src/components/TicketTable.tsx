@@ -170,7 +170,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       'Total Doc':   t.totalDoc || '',
       'Commission':  t.commission || '',
       'Net Amount':  t.amount,
-      'Currency':    t.currency || sourceToCurrency(t.source || ''),
+      'Currency':    sourceToCurrency(t.source || ''),
       'PNR':         t.pnr || '',
       'Passenger':   t.passengerName || '',
       'Req Num':     t.reqNum || '',
@@ -194,7 +194,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       'Status':     t.status || '',
       'Date':       t.date,
       'Net Amount': t.amount,
-      'Currency':   t.currency || sourceToCurrency(t.source || ''),
+      'Currency':   sourceToCurrency(t.source || ''),
       'PNR':        t.pnr || '',
       'Passenger':  t.passengerName || '',
       'Req Num':    '',
@@ -452,7 +452,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           </thead>
           <tbody className="text-xs font-mono">
             {paged.map(ticket => {
-              const ticketCurrency = ticket.currency || sourceToCurrency(ticket.source || '');
+              const ticketCurrency = sourceToCurrency(ticket.source || '');
               return (
                 <tr key={ticket.id} className={`border-b border-slate-100 hover:bg-slate-50 ${!ticket.reqNum ? 'bg-red-50/20' : ''}`}>
                   <td className="px-3 py-2 whitespace-nowrap">
