@@ -2,7 +2,7 @@ import React, { useRef, useState, useMemo, useEffect } from 'react';
 import Papa from 'papaparse';
 import { Ticket } from '../types';
 import { useImport, ImportMeta } from '../hooks/useImport';
-import { SupportedCurrency } from '../core/helpers/resolveCurrency';
+import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { findHeaderRow } from '../core/helpers/columnResolver';
 import { LearnedProfile, bestHeaderRowForAI } from '../core/ai/learnedProfile';
 import { Upload, AlertTriangle, CheckCircle2, Info, Gauge, Database, Sparkles } from 'lucide-react';
@@ -15,8 +15,6 @@ const aiProfileSvc = new AIProfileService();
 interface ImportDataProps {
   userId: string;
   onImport: (newTickets: Ticket[], updateTickets: Ticket[], topUpTickets: Ticket[], meta: ImportMeta) => void;
-  currency?: SupportedCurrency;
-  setCurrency?: (c: SupportedCurrency) => void;
   vendorNames?: string[];
 }
 
@@ -32,7 +30,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export const ImportData: React.FC<ImportDataProps> = ({
-  userId, onImport, currency = 'SAR', setCurrency, vendorNames = [],
+  userId, onImport, vendorNames = [],
 }) => {
   const { preview, inputText, setInputText, runValidation, readFileAsText, clear, buildMeta } = useImport(userId);
   const [defaultSource, setDefaultSource] = useState('Auto-detect');
@@ -88,7 +86,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
 
   const handlePreview = (profiles: LearnedProfile[] = aiProfiles) => {
     const src = defaultSource === 'Auto-detect' ? undefined : defaultSource;
-    runValidation(inputText, src, currency, src, profiles).catch(console.error);
+    runValidation(inputText, src, 'SAR', src, profiles).catch(console.error);
   };
 
   /**
@@ -153,13 +151,6 @@ export const ImportData: React.FC<ImportDataProps> = ({
           <select value={defaultSource} onChange={e => setDefaultSource(e.target.value)}
             className="bg-slate-50 border border-slate-200 text-xs font-bold uppercase text-slate-700 px-3 py-1.5 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20 min-w-[160px]">
             {sourceOptions.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Display Currency</label>
-          <select value={currency} onChange={e => setCurrency?.(e.target.value as SupportedCurrency)}
-            className="bg-slate-50 border border-slate-200 text-xs font-bold uppercase text-slate-700 px-3 py-1.5 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-            {['SAR','AED','USD','EUR'].map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div className="ml-auto flex items-center space-x-2 text-[10px] text-slate-400 font-mono bg-slate-50 border border-slate-200 rounded px-3 py-2">
@@ -264,7 +255,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
               {preview!.topUps.length > 0 && <span className="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.topUps.length} TOP-UPS</span>}
               {preview!.updates.length > 0 && <span className="bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.updates.length} REQ UPDATES</span>}
               {preview!.duplicates.length > 0 && <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.duplicates.length} DUPS SKIPPED</span>}
-              <span className="text-[10px] font-mono text-slate-500">Net: {currency} {fmt(totalNet)}</span>
+              <span className="text-[10px] font-mono text-slate-500">Net: {fmt(totalNet)}</span>
             </div>
             <button onClick={handleConfirm}
               className="px-4 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 shadow-sm flex items-center space-x-1.5">
@@ -299,7 +290,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
                       <td className="px-3 py-2 text-slate-500">{t.totalDoc > 0 ? fmt(t.totalDoc) : '—'}</td>
                       <td className="px-3 py-2 text-slate-400">{t.commission > 0 ? fmt(t.commission) : '—'}</td>
                       <td className={`px-3 py-2 font-bold ${t.amount < 0 ? 'text-red-600' : ''}`}>{t.amount < 0 ? '-' : ''}{fmt(Math.abs(t.amount))}</td>
-                      <td className="px-3 py-2 text-slate-400 text-[9px]">{t.currency || currency}</td>
+                      <td className="px-3 py-2 text-slate-400 text-[9px]">{t.currency || sourceToCurrency(t.source || '')}</td>
                       <td className="px-3 py-2 text-slate-600">{t.pnr || '—'}</td>
                       <td className="px-3 py-2 text-slate-500 max-w-[120px] truncate">{t.passengerName || '—'}</td>
                       <td className={`px-3 py-2 font-bold ${t.reqNum ? 'text-blue-600' : 'text-red-400 italic'}`}>{t.reqNum || 'MISSING'}</td>

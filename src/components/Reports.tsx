@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
+import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { Download, FileText, TrendingDown, Wallet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -8,12 +9,11 @@ interface ReportsProps {
   tickets: Ticket[];
   vendorBalances: VendorBalance[];
   topUps: BalanceTopUp[];
-  currency: string;
 }
 
 type ReportTab = 'summary' | 'overdraft' | 'vendor_detail' | 'missing_req' | 'ledger';
 
-export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUps, currency }) => {
+export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUps }) => {
   const [tab, setTab] = useState<ReportTab>('summary');
   const [selectedVendor, setSelectedVendor] = useState<string>('ALL');
   const [dateFrom, setDateFrom] = useState('');
@@ -52,7 +52,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
         'Top-ups': totalTopUp,
         'Remaining Balance': v.currentBalance,
         'Status': v.currentBalance < 0 ? 'OVERDRAFT' : (v.currentBalance / (v.initialBalance || 1)) < 0.2 ? 'LOW' : 'OK',
-        'Currency': currency,
+        'Currency': sourceToCurrency(v.vendorName),
       };
     });
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -174,7 +174,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                       <td className="px-4 py-2.5 text-right text-slate-600">{fmt(issued)}</td>
                       <td className="px-4 py-2.5 text-right text-red-500">{refunds > 0 ? fmt(refunds) : '—'}</td>
                       <td className={`px-4 py-2.5 text-right font-bold ${isNeg ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
-                        {isNeg ? '-' : ''}{currency} {fmt(Math.abs(rem))}
+                        {isNeg ? '-' : ''}{sourceToCurrency(v.vendorName)} {fmt(Math.abs(rem))}
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         {isNeg
@@ -203,7 +203,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                 {overdraftVendors.map(v => (
                   <div key={v.id} className="flex justify-between items-center px-4 py-3 border-b border-red-50">
                     <span className="font-bold text-sm uppercase text-slate-700">{v.vendorName}</span>
-                    <span className="font-mono font-black text-red-600 text-lg">{currency} {fmt(Math.abs(v.currentBalance))} OVERDRAWN</span>
+                    <span className="font-mono font-black text-red-600 text-lg">{sourceToCurrency(v.vendorName)} {fmt(Math.abs(v.currentBalance))} OVERDRAWN</span>
                   </div>
                 ))}
               </div>
@@ -222,7 +222,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                         <div className="w-24 bg-amber-100 rounded-full h-2">
                           <div className="bg-amber-400 h-2 rounded-full" style={{ width: `${pct}%` }} />
                         </div>
-                        <span className="font-mono font-bold text-amber-700 text-sm">{currency} {fmt(v.currentBalance)} ({pct.toFixed(0)}%)</span>
+                        <span className="font-mono font-bold text-amber-700 text-sm">{sourceToCurrency(v.vendorName)} {fmt(v.currentBalance)} ({pct.toFixed(0)}%)</span>
                       </div>
                     </div>
                   );
@@ -372,7 +372,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                   <div className="flex justify-between items-center px-4 py-3 bg-slate-50 border-b border-slate-100">
                     <span className="font-bold text-sm uppercase text-slate-700">{v.vendorName}</span>
                     <span className={`font-mono font-black text-lg ${isNeg ? 'text-red-600' : 'text-emerald-700'}`}>
-                      {isNeg ? '-' : ''}{currency} {fmt(Math.abs(balance))}
+                      {isNeg ? '-' : ''}{sourceToCurrency(v.vendorName)} {fmt(Math.abs(balance))}
                     </span>
                   </div>
                   <div className="max-h-64 overflow-y-auto">

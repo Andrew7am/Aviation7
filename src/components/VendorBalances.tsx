@@ -4,6 +4,7 @@ import {
   Plus, Trash2, Wallet, ChevronDown, ChevronRight,
   TrendingUp, TrendingDown, X, PlusCircle, Edit3
 } from 'lucide-react';
+import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 
 interface VendorBalancesProps {
   vendorBalances: VendorBalance[];
@@ -12,7 +13,6 @@ interface VendorBalancesProps {
   onSaveVendor: (v: VendorBalance) => void;
   onDeleteVendor: (id: string) => void;
   onTopUp: (topUp: BalanceTopUp) => void;
-  currency: string;
 }
 
 // Known aliases for edge cases (spaces, abbreviations, etc.)
@@ -45,7 +45,7 @@ const PRESET_VENDORS = [
 type ModalMode = null | 'add_existing' | 'add_new' | 'topup';
 
 export const VendorBalances: React.FC<VendorBalancesProps> = ({
-  vendorBalances, topUps, tickets, onSaveVendor, onDeleteVendor, onTopUp, currency,
+  vendorBalances, topUps, tickets, onSaveVendor, onDeleteVendor, onTopUp,
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [modalMode, setModalMode] = useState<ModalMode>(null);
@@ -214,7 +214,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                   </td>
                   <td className="py-3 px-4 text-right font-mono text-xs text-slate-600">{fmt(netIssued)}</td>
                   <td className={`py-3 px-4 text-right font-mono font-bold text-xs ${isNeg ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-emerald-700'}`}>
-                    {isNeg ? '-' : ''}{currency} {fmt(Math.abs(remaining))}
+                    {isNeg ? '-' : ''}{sourceToCurrency(vendor.vendorName)} {fmt(Math.abs(remaining))}
                   </td>
                   <td className="py-3 px-4 text-center">
                     <div className="flex flex-col items-center space-y-1">
@@ -270,7 +270,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                                   <tr key={tu.id} className="border-b border-slate-50 text-xs hover:bg-slate-50">
                                     <td className="px-4 py-2 text-slate-500 font-mono text-[10px]">{tu.date}</td>
                                     <td className="px-4 py-2 text-slate-600">{tu.note}</td>
-                                    <td className="px-4 py-2 text-right font-mono font-bold text-emerald-600">+{fmt(tu.amount)} {currency}</td>
+                                    <td className="px-4 py-2 text-right font-mono font-bold text-emerald-600">+{fmt(tu.amount)} {sourceToCurrency(vendor.vendorName)}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -404,7 +404,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                       </div>
                       <div>
                         <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                          Initial Balance ({currency})
+                          Initial Balance
                         </label>
                         <input
                           type="number"
@@ -439,7 +439,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                       </div>
                       <div>
                         <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                          Initial Balance ({currency})
+                          Initial Balance
                         </label>
                         <input
                           type="number"
@@ -482,12 +482,12 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                   <div className="bg-slate-50 rounded-lg p-3 text-xs font-mono flex justify-between">
                     <span className="text-slate-500">Current Balance</span>
                     <span className={`font-bold ${topUpVendor.currentBalance < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                      {currency} {fmt(topUpVendor.currentBalance)}
+                      {sourceToCurrency(topUpVendor.vendorName)} {fmt(topUpVendor.currentBalance)}
                     </span>
                   </div>
                   <div>
                     <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
-                      Amount to Add ({currency})
+                      Amount to Add ({sourceToCurrency(topUpVendor.vendorName)})
                     </label>
                     <input
                       type="number"
@@ -515,7 +515,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                     <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3 text-xs font-mono flex justify-between">
                       <span className="text-emerald-600">New Balance After Top-up</span>
                       <span className="font-bold text-emerald-700">
-                        {currency} {fmt(topUpVendor.currentBalance + Number(topUpAmount))}
+                        {sourceToCurrency(topUpVendor.vendorName)} {fmt(topUpVendor.currentBalance + Number(topUpAmount))}
                       </span>
                     </div>
                   )}

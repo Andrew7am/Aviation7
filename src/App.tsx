@@ -18,17 +18,15 @@ import {
   Upload, LogOut, Wallet, BarChart2, History,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
-import { SupportedCurrency } from './core/helpers/resolveCurrency';
 
 const LOW_PCT = 0.2;
 
 function MainApp({ user }: { user: User }) {
   const [view, setView]         = useState<ViewState>('dashboard');
   const [alerts, setAlerts]     = useState<AppAlert[]>([]);
-  const [currency, setCurrency] = useState<SupportedCurrency>('SAR');
   const [importHistory, setImportHistory] = useState<ImportRecord[]>([]);
 
-  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket } = useTickets(user.id);
+  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
 
   const ticketSvc = new TicketService(user.id);
@@ -44,7 +42,7 @@ function MainApp({ user }: { user: User }) {
         if (prev.some(a => a.id === alertId && !a.dismissed)) return prev;
         return [...prev.filter(a => a.id !== alertId), {
           id: alertId, type: 'low_balance',
-          message: `⚠ ${v.vendorName} balance below 20% — ${currency} ${v.currentBalance.toFixed(2)} remaining`,
+          message: `⚠ ${v.vendorName} balance below 20% — ${v.currentBalance.toFixed(2)} remaining`,
           vendorName: v.vendorName, dismissed: false,
           createdAt: new Date().toISOString(),
         }];
@@ -125,7 +123,11 @@ function MainApp({ user }: { user: User }) {
   const handleDeleteVendor = (id: string) => { if (confirm('Delete vendor?')) { deleteVendor(id); importSvc.audit('DELETE_VENDOR', id, 'Vendor deleted'); } };
   const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount}`); };
   const handleDelete       = (id: string) => { deleteTicket(id); importSvc.audit('DELETE', id, 'Ticket deleted'); };
-  const handleUpdateReqNum = (id: string, req: string) => { updateReqNum(id, req); importSvc.audit('UPDATE_REQ', id, `New req: ${req}`); };
+  const handleUpdateReqNum      = (id: string, req: string) => { updateReqNum(id, req); importSvc.audit('UPDATE_REQ', id, `New req: ${req}`); };
+  const handleBulkUpdateReqNum  = async (findVal: string, replaceVal: string, ids: string[]) => {
+    await bulkUpdateReqNum(ids, replaceVal.toUpperCase());
+    importSvc.audit('BULK_UPDATE_REQ', ids.join(','), `Find: ${findVal} → Replace: ${replaceVal} (${ids.length} tickets)`);
+  };
   const handleUpdateTicket = (id: string, patch: Partial<Ticket>) => {
     updateTicket(id, patch);
     const summary = Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ');
@@ -160,14 +162,6 @@ function MainApp({ user }: { user: User }) {
           </div>
         </div>
         <div className="flex items-center space-x-4">
-          <div className="flex items-center space-x-1 bg-white/5 rounded px-2 py-1">
-            {(['SAR', 'AED'] as SupportedCurrency[]).map(c => (
-              <button key={c} onClick={() => setCurrency(c)}
-                className={`font-mono px-2 py-0.5 rounded text-[10px] font-bold transition-colors ${currency === c ? 'bg-blue-600 text-white' : 'text-white/40 hover:text-white/70'}`}>
-                {c}
-              </button>
-            ))}
-          </div>
           <button onClick={() => setView('import')}
             className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
             <Upload className="w-3 h-3" /><span>Import CSV / XLS</span>
@@ -228,19 +222,19 @@ function MainApp({ user }: { user: User }) {
         </aside>
 
         <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
-          {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} currency={currency} />}
-          {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} currency={currency} />}
-          {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} currency={currency} />}
-          {view === 'import'    && <ImportData userId={user.id} onImport={handleImport} currency={currency} setCurrency={setCurrency} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
+          {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
+          {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} onBulkUpdateReqNum={handleBulkUpdateReqNum} />}
+          {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} onBulkUpdateReqNum={handleBulkUpdateReqNum} />}
+          {view === 'import'    && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
           {view === 'history'   && <ImportHistory records={importHistory} getErrorsFor={(id, cb) => importSvc.subscribeErrors(id, cb)} />}
           {view === 'vendors'   && (
             <div className="p-6 flex flex-col h-full">
               <VendorBalances vendorBalances={vendorBalancesLive} topUps={topUps} tickets={tickets}
                 onSaveVendor={handleSaveVendor} onDeleteVendor={handleDeleteVendor}
-                onTopUp={handleTopUp} currency={currency} />
+                onTopUp={handleTopUp} />
             </div>
           )}
-          {view === 'reports'   && <Reports tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} currency={currency} />}
+          {view === 'reports'   && <Reports tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
         </main>
       </div>
 

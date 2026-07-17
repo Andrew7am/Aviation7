@@ -216,6 +216,19 @@ export class TicketService {
     if (error) throw new Error(error.message);
   }
 
+  async bulkUpdateReqNum(ticketIds: string[], reqNum: string): Promise<void> {
+    const CHUNK = 200;
+    for (let i = 0; i < ticketIds.length; i += CHUNK) {
+      const chunk = ticketIds.slice(i, i + CHUNK);
+      const { error } = await supabase
+        .from('tickets')
+        .update({ req_num: reqNum })
+        .in('id', chunk)
+        .eq('user_id', this.userId);
+      if (error) throw new Error(error.message);
+    }
+  }
+
   /**
    * Edit arbitrary fields on an existing ticket (price, name, req num, pnr,
    * route, status, date, ...). Only whitelisted, user-editable columns are

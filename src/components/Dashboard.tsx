@@ -1,16 +1,16 @@
 import React, { useMemo } from 'react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
+import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { TrendingDown, TrendingUp, AlertCircle, CheckCircle2, Wallet, FileText } from 'lucide-react';
 
 interface DashboardProps {
   tickets: Ticket[];
   vendorBalances: VendorBalance[];
   topUps?: BalanceTopUp[];
-  currency?: string;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, topUps = [], currency = 'SAR' }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, topUps = [] }) => {
   // Centralized stats — single source of truth, shared with Reports.tsx
   const { totalIssued, totalRefunds, bySource: sources, missingReq } = useReports(tickets, vendorBalances, topUps);
 
@@ -23,6 +23,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
     return v.currentBalance < v.initialBalance * 0.2;
   });
 
+  const sarNet = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'SAR').reduce((s, t) => s + t.amount, 0), [tickets]);
+  const aedNet = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'AED').reduce((s, t) => s + t.amount, 0), [tickets]);
+  const sarIssued = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'SAR' && t.amount > 0).reduce((s, t) => s + t.amount, 0), [tickets]);
+  const aedIssued = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'AED' && t.amount > 0).reduce((s, t) => s + t.amount, 0), [tickets]);
+  const sarRefundsAmt = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'SAR' && t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0), [tickets]);
+  const aedRefundsAmt = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'AED' && t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0), [tickets]);
+
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
@@ -34,7 +41,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 shrink-0">
         {[
-          { label: 'Total Tickets', value: tickets.length, color: 'slate', icon: <FileText className="w-4 h-4" />, sub: `${currency} ${fmt(totalIssued - totalRefunds)} net` },
+          { label: 'Total Tickets', value: tickets.length, color: 'slate', icon: <FileText className="w-4 h-4" />, sub: `SAR ${fmt(sarNet)} · AED ${fmt(aedNet)}` },
           { label: 'Matched', value: matchedCount, color: 'emerald', icon: <CheckCircle2 className="w-4 h-4" />, sub: `${((matchedCount / Math.max(tickets.length, 1)) * 100).toFixed(0)}% match rate` },
           { label: 'Missing REQ', value: needsReqCount, color: 'red', icon: <AlertCircle className="w-4 h-4" />, sub: 'need req number' },
           { label: 'Duplicates', value: duplicateCount, color: 'amber', icon: <AlertCircle className="w-4 h-4" />, sub: 'in current dataset' },
@@ -71,7 +78,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
                   <td className="px-4 py-2.5 font-sans font-bold text-slate-700 text-[11px]">{s.name}</td>
                   <td className="px-4 py-2.5 text-right text-slate-500">{s.count}</td>
                   <td className={`px-4 py-2.5 text-right font-bold ${s.amount < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {currency} {fmt(s.amount)}
+                    {sourceToCurrency(s.name)} {fmt(s.amount)}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     {s.missing > 0
@@ -116,7 +123,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
                   <tr key={v.id} className="border-b border-slate-50 hover:bg-slate-50">
                     <td className="px-4 py-2.5 font-sans font-bold text-slate-700 text-[11px] uppercase">{v.vendorName}</td>
                     <td className={`px-4 py-2.5 text-right font-bold ${isNeg ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
-                      {isNeg && '-'}{currency} {fmt(Math.abs(v.currentBalance))}
+                      {isNeg && '-'}{sourceToCurrency(v.vendorName)} {fmt(Math.abs(v.currentBalance))}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <div className="flex items-center justify-end space-x-1.5">
@@ -158,7 +165,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
                 <TrendingUp className="w-4 h-4 text-emerald-500" />
                 <span className="text-[10px] font-bold uppercase text-slate-500">Total Issued</span>
               </div>
-              <div className="text-xl font-mono font-black text-emerald-700">{currency} {fmt(totalIssued)}</div>
+              <div className="text-sm font-mono font-black text-emerald-700">SAR {fmt(sarIssued)}</div>
+              <div className="text-sm font-mono font-black text-emerald-600">AED {fmt(aedIssued)}</div>
               <div className="text-[10px] text-slate-400 mt-1">{tickets.filter(t => t.amount > 0).length} tickets</div>
             </div>
             <div className="p-4">
@@ -166,7 +174,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
                 <TrendingDown className="w-4 h-4 text-red-500" />
                 <span className="text-[10px] font-bold uppercase text-slate-500">Total Refunds</span>
               </div>
-              <div className="text-xl font-mono font-black text-red-700">{currency} {fmt(totalRefunds)}</div>
+              <div className="text-sm font-mono font-black text-red-700">SAR {fmt(sarRefundsAmt)}</div>
+              <div className="text-sm font-mono font-black text-red-600">AED {fmt(aedRefundsAmt)}</div>
               <div className="text-[10px] text-slate-400 mt-1">{tickets.filter(t => t.amount < 0).length} tickets</div>
             </div>
             <div className="p-4">
@@ -174,10 +183,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
                 <Wallet className="w-4 h-4 text-blue-500" />
                 <span className="text-[10px] font-bold uppercase text-slate-500">Net Total</span>
               </div>
-              <div className={`text-xl font-mono font-black ${(totalIssued - totalRefunds) < 0 ? 'text-red-700' : 'text-blue-700'}`}>
-                {currency} {fmt(totalIssued - totalRefunds)}
+              <div className={`text-sm font-mono font-black ${sarNet < 0 ? 'text-red-700' : 'text-blue-700'}`}>
+                SAR {fmt(sarNet)}
               </div>
-              <div className="text-[10px] text-slate-400 mt-1">across all sources</div>
+              <div className={`text-sm font-mono font-black ${aedNet < 0 ? 'text-red-600' : 'text-blue-600'}`}>
+                AED {fmt(aedNet)}
+              </div>
             </div>
           </div>
         </div>
