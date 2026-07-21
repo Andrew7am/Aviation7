@@ -131,15 +131,6 @@ export class WalletService {
     const linked = tickets.filter(t => WalletService.vendorMatchesSource(vendor.vendorName, t.source));
     const issued  = linked.filter(t => (t.status || '').toUpperCase() !== 'FUND').reduce((s, t) => s + t.amount, 0);
     const topUpTotal = topUps.filter(tu => tu.vendorId === vendor.id).reduce((s, tu) => s + tu.amount, 0);
-
-    // Ibtekar's ledger uses the opposite polarity from every other vendor:
-    // its "Balance" column runs negative when the agency has credit and
-    // climbs toward positive as that credit is used, so top-ups push it
-    // further negative and issuance pushes it back up (refunds push it
-    // back down). Every other vendor is initial + topUps - issued.
-    if (vendor.vendorName.trim().toLowerCase() === 'ibtekar') {
-      return vendor.initialBalance - topUpTotal + issued;
-    }
     return vendor.initialBalance + topUpTotal - issued;
   }
 }

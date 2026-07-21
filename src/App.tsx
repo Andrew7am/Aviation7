@@ -122,7 +122,7 @@ function MainApp({ user }: { user: User }) {
   const handleSaveVendor   = (v: VendorBalance) => { saveVendor(v); importSvc.audit('ADD_VENDOR', v.vendorName, `Initial balance: ${v.initialBalance}`); };
   const handleDeleteVendor = (id: string) => { if (confirm('Delete vendor?')) { deleteVendor(id); importSvc.audit('DELETE_VENDOR', id, 'Vendor deleted'); } };
   const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount}`); };
-  const handleDelete       = (id: string) => { deleteTicket(id); importSvc.audit('DELETE', id, 'Ticket deleted'); };
+  const handleDelete       = (id: string) => { if (confirm('Delete this ticket?')) { deleteTicket(id); importSvc.audit('DELETE', id, 'Ticket deleted'); } };
   const handleUpdateReqNum      = (id: string, req: string) => { updateReqNum(id, req); importSvc.audit('UPDATE_REQ', id, `New req: ${req}`); };
   const handleBulkUpdateReqNum  = async (findVal: string, replaceVal: string, ids: string[]) => {
     await bulkUpdateReqNum(ids, replaceVal.toUpperCase());
