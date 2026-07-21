@@ -131,6 +131,17 @@ export class WalletService {
     const linked = tickets.filter(t => WalletService.vendorMatchesSource(vendor.vendorName, t.source));
     const issued  = linked.filter(t => (t.status || '').toUpperCase() !== 'FUND').reduce((s, t) => s + t.amount, 0);
     const topUpTotal = topUps.filter(tu => tu.vendorId === vendor.id).reduce((s, tu) => s + tu.amount, 0);
+
+    // Ibtekar's own ledger runs "balance = prev + debit - credit" (verified
+    // row-by-row against their raw sheet in scripts/_verify_ibtekar_ledger.ts):
+    // issuance (debit) moves the number toward positive, top-ups/refunds
+    // (credit) push it further negative. Combined with the "negative = good"
+    // display flip in VendorBalances.tsx, this is what makes issuance reduce
+    // the on-screen balance and refunds/top-ups raise it. Every other vendor
+    // uses the plain initial + topUps - issued formula.
+    if (vendor.vendorName.trim().toLowerCase() === 'ibtekar') {
+      return vendor.initialBalance - topUpTotal + issued;
+    }
     return vendor.initialBalance + topUpTotal - issued;
   }
 }
