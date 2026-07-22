@@ -4,6 +4,7 @@ import { NSAParser } from './NSAParser';
 import { FlyAdealDXBParser } from './FlyAdealDXBParser';
 import { FlyAdealKSAParser } from './FlyAdealKSAParser';
 import { IbtekarParser } from './IbtekarParser';
+import { IbtekarV2Parser } from './IbtekarV2Parser';
 import { GoldMedalParser } from './GoldMedalParser';
 import { AirArabiaParser } from './AirArabiaParser';
 import { FlynasParser } from './FlynasParser';
@@ -17,7 +18,7 @@ import { LearnedProfile, headerFingerprint, bestHeaderRowForAI } from '../ai/lea
 export const ALL_PARSERS: VendorParser[] = [
   IATAParser, NSAParser,
   FlyAdealDXBParser, FlyAdealKSAParser,
-  IbtekarParser, GoldMedalParser,
+  IbtekarV2Parser, IbtekarParser, GoldMedalParser,
   AirArabiaParser, FlynasParser,
   FlyDubaiParser, RTSParser,
 ];
