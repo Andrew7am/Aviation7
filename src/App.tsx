@@ -26,7 +26,7 @@ function MainApp({ user }: { user: User }) {
   const [alerts, setAlerts]     = useState<AppAlert[]>([]);
   const [importHistory, setImportHistory] = useState<ImportRecord[]>([]);
 
-  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum } = useTickets(user.id);
+  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
 
   const ticketSvc = new TicketService(user.id);
@@ -133,6 +133,11 @@ function MainApp({ user }: { user: User }) {
     const summary = Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ');
     importSvc.audit('EDIT_TICKET', id, `Edited: ${summary}`);
   };
+  const handleUpdateClosed     = (id: string, closed: boolean) => { updateClosed(id, closed); importSvc.audit('UPDATE_CLOSED', id, closed ? 'Closed' : 'Not Closed'); };
+  const handleBulkUpdateClosed = async (ids: string[], closed: boolean) => {
+    await bulkUpdateClosed(ids, closed);
+    importSvc.audit('BULK_UPDATE_CLOSED', ids.join(','), `${closed ? 'Closed' : 'Not Closed'} (${ids.length} tickets)`);
+  };
   const dismissAlert       = useCallback((id: string) => setAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a)), []);
 
   const missingReqCount = missingReq.length;
@@ -223,8 +228,8 @@ function MainApp({ user }: { user: User }) {
 
         <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
           {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
-          {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} onBulkUpdateReqNum={handleBulkUpdateReqNum} />}
-          {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} onBulkUpdateReqNum={handleBulkUpdateReqNum} />}
+          {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} onBulkUpdateReqNum={handleBulkUpdateReqNum} onUpdateClosed={handleUpdateClosed} onBulkUpdateClosed={handleBulkUpdateClosed} />}
+          {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} onBulkUpdateReqNum={handleBulkUpdateReqNum} onUpdateClosed={handleUpdateClosed} onBulkUpdateClosed={handleBulkUpdateClosed} />}
           {view === 'import'    && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
           {view === 'history'   && <ImportHistory records={importHistory} getErrorsFor={(id, cb) => importSvc.subscribeErrors(id, cb)} />}
           {view === 'vendors'   && (

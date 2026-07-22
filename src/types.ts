@@ -29,6 +29,9 @@ export interface Ticket {
    *  report. Lets the user spot gaps (missing tickets) by checking for skips
    *  in the sequence. Only populated for vendors whose report has one. */
   serial?: number;
+  /** Follow-up workflow status independent of ISSUE/REFUND: true = Closed
+   *  (reconciled/finalized with client), false = Not Closed (pending). */
+  closed?: boolean;
 }
 
 export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'import' | 'vendors' | 'reports' | 'history';

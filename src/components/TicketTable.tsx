@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Ticket } from '../types';
-import { Search, Download, Filter, Replace } from 'lucide-react';
+import { Search, Download, Filter, Replace, CheckCircle2, Circle } from 'lucide-react';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import * as XLSX from 'xlsx';
 
@@ -12,6 +12,8 @@ interface TicketTableProps {
   onUpdateReqNum?: (id: string, reqNum: string) => void;
   onUpdateTicket?: (id: string, patch: Partial<Ticket>) => void;
   onBulkUpdateReqNum?: (findVal: string, replaceVal: string, ids: string[]) => Promise<void>;
+  onUpdateClosed?: (id: string, closed: boolean) => void;
+  onBulkUpdateClosed?: (ids: string[], closed: boolean) => Promise<void>;
 }
 
 type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr';
@@ -53,11 +55,12 @@ function getSourceColor(source: string) {
 }
 
 export const TicketTable: React.FC<TicketTableProps> = ({
-  tickets, title, defaultFilter = 'ALL', onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum,
+  tickets, title, defaultFilter = 'ALL', onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const [filterMode, setFilterMode]     = useState<'ALL' | 'NEED_REQ' | 'DUPLICATE'>(defaultFilter);
   const [sourceFilter, setSourceFilter] = useState('ALL');
+  const [closedFilter, setClosedFilter] = useState<'ALL' | 'CLOSED' | 'NOT_CLOSED'>('ALL');
   const [filterAL, setFilterAL]         = useState('');
   const [filterPax, setFilterPax]       = useState('');
   const [filterPNR, setFilterPNR]       = useState('');
@@ -66,6 +69,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [findVal, setFindVal]           = useState('');
   const [replaceVal, setReplaceVal]     = useState('');
   const [frBusy, setFrBusy]            = useState(false);
+  const [bulkClosedBusy, setBulkClosedBusy] = useState(false);
   const [editingCell, setEditingCell]   = useState<{ id: string; field: EditableField } | null>(null);
   const [editValue, setEditValue]       = useState('');
   const [sortKey, setSortKey]           = useState<'serial' | null>(null);
@@ -86,6 +90,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterMode === 'NEED_REQ' && (t.reqNum || t.status === 'FUND')) return false;
       if (filterMode === 'DUPLICATE' && !t.isDuplicate) return false;
       if (sourceFilter !== 'ALL' && t.source !== sourceFilter) return false;
+      if (closedFilter === 'CLOSED'     && !t.closed) return false;
+      if (closedFilter === 'NOT_CLOSED' &&  t.closed) return false;
       if (filterAL  && !(t.airlineCode || '').toLowerCase().includes(filterAL.toLowerCase())) return false;
       if (filterPax && !(t.passengerName || '').toLowerCase().includes(filterPax.toLowerCase())) return false;
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
@@ -104,9 +110,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       });
     }
     return rows;
-  }, [tickets, searchTerm, filterMode, sourceFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  }, [tickets, searchTerm, filterMode, sourceFilter, closedFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
-  useEffect(() => setPage(0), [searchTerm, filterMode, sourceFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  useEffect(() => setPage(0), [searchTerm, filterMode, sourceFilter, closedFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = useMemo(
@@ -129,6 +135,21 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       setFindVal(''); setReplaceVal(''); setShowFindReplace(false);
     } finally {
       setFrBusy(false);
+    }
+  };
+
+  /** Bulk-close operates on the entire filtered result set — so the natural
+   *  workflow is: search by req num (or any filter), then click Close All /
+   *  Reopen All to flip every currently-visible ticket at once. */
+  const applyBulkClosed = async (closed: boolean) => {
+    if (!onBulkUpdateClosed || filtered.length === 0) return;
+    const label = closed ? 'Close' : 'Reopen';
+    if (!confirm(`${label} ${filtered.length} ticket${filtered.length !== 1 ? 's' : ''} (current filter)?`)) return;
+    setBulkClosedBusy(true);
+    try {
+      await onBulkUpdateClosed(filtered.map(t => t.id), closed);
+    } finally {
+      setBulkClosedBusy(false);
     }
   };
 
@@ -175,6 +196,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       'Passenger':   t.passengerName || '',
       'Req Num':     t.reqNum || '',
       'Recon Status': t.reqNum ? 'MATCHED' : 'NEED REQ',
+      'Closed':      t.closed ? 'Closed' : 'Not Closed',
       'Import Time': t.importTime || '',
       'Report Name': t.reportName || '',
     }));
@@ -296,6 +318,45 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             <option value="NEED_REQ">Missing REQ</option>
             <option value="DUPLICATE">Duplicates</option>
           </select>
+
+          {/* Closed / Not Closed filter */}
+          <select
+            value={closedFilter}
+            onChange={e => setClosedFilter(e.target.value as any)}
+            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+              closedFilter === 'CLOSED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : closedFilter === 'NOT_CLOSED' ? 'bg-orange-50 text-orange-700 border-orange-200'
+              : 'bg-white text-slate-500 border-slate-200'
+            }`}
+          >
+            <option value="ALL">All Closure</option>
+            <option value="CLOSED">Closed</option>
+            <option value="NOT_CLOSED">Not Closed</option>
+          </select>
+
+          {/* Bulk close / reopen — operates on entire filtered set */}
+          {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || filterAL || filterPax || filterPNR || sourceFilter !== 'ALL') && (
+            <>
+              <button
+                onClick={() => applyBulkClosed(true)}
+                disabled={bulkClosedBusy}
+                title={`Mark all ${filtered.length} filtered tickets as Closed`}
+                className="px-2 py-1.5 bg-emerald-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-40 flex items-center gap-1"
+              >
+                <CheckCircle2 className="w-3 h-3" />
+                Close ({filtered.length})
+              </button>
+              <button
+                onClick={() => applyBulkClosed(false)}
+                disabled={bulkClosedBusy}
+                title={`Mark all ${filtered.length} filtered tickets as Not Closed`}
+                className="px-2 py-1.5 bg-orange-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1"
+              >
+                <Circle className="w-3 h-3" />
+                Reopen
+              </button>
+            </>
+          )}
 
           {/* Column filters toggle */}
           <button
@@ -430,6 +491,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         {hasAED && <span className={aedTotal < 0 ? 'text-red-600 font-bold' : 'text-slate-600'}>Net AED: {fmt(aedTotal)}</span>}
         <span className="text-slate-300">|</span>
         <span className="text-red-500">{filtered.filter(t => !t.reqNum).length} missing req</span>
+        <span className="text-slate-300">|</span>
+        <span className="text-emerald-600">{filtered.filter(t => t.closed).length} closed</span>
+        <span className="text-orange-600">· {filtered.filter(t => !t.closed).length} not closed</span>
       </div>
 
       {/* Table */}
@@ -444,7 +508,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               >
                 Serial {sortKey === 'serial' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
               </th>
-              {['A/L', 'Ticket No.', 'Source', 'Status', 'Date', 'Route', 'Total Doc', 'Comm', 'Net Amt', 'Curr', 'PNR', 'Passenger', 'Req Num', 'Recon'].map(col => (
+              {['A/L', 'Ticket No.', 'Source', 'Status', 'Date', 'Route', 'Total Doc', 'Comm', 'Net Amt', 'Curr', 'PNR', 'Passenger', 'Req Num', 'Recon', 'Closed'].map(col => (
                 <th key={col} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">{col}</th>
               ))}
               {onDelete && <th className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase text-right">Del</th>}
@@ -540,6 +604,26 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                   <td className={`px-3 py-2 font-bold text-[9px] ${!ticket.reqNum ? 'text-red-600' : 'text-emerald-600'}`}>
                     {!ticket.reqNum ? 'NEED REQ' : 'MATCHED'}
                   </td>
+                  <td className="px-3 py-2">
+                    {onUpdateClosed ? (
+                      <button
+                        onClick={() => onUpdateClosed(ticket.id, !ticket.closed)}
+                        title={ticket.closed ? 'Click to reopen' : 'Click to close'}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 transition-colors ${
+                          ticket.closed
+                            ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                            : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
+                        }`}
+                      >
+                        {ticket.closed ? <CheckCircle2 className="w-2.5 h-2.5" /> : <Circle className="w-2.5 h-2.5" />}
+                        {ticket.closed ? 'Closed' : 'Not Closed'}
+                      </button>
+                    ) : (
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                        {ticket.closed ? 'Closed' : 'Not Closed'}
+                      </span>
+                    )}
+                  </td>
                   {onDelete && (
                     <td className="px-3 py-2 text-right">
                       <button onClick={() => onDelete(ticket.id)} className="text-slate-300 hover:text-red-500 font-bold text-xs transition-colors">✕</button>
@@ -550,7 +634,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={onDelete ? 16 : 15} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
+                <td colSpan={onDelete ? 17 : 16} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
                   No tickets found matching your filters.
                 </td>
               </tr>

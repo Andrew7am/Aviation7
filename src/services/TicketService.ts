@@ -26,6 +26,7 @@ type TicketRow = {
   import_time: string | null;
   created_at: string;
   serial: number | null;
+  closed: boolean | null;
 };
 
 function rowToTicket(r: TicketRow): Ticket {
@@ -54,6 +55,7 @@ function rowToTicket(r: TicketRow): Ticket {
     importTime: r.import_time ?? undefined,
     createdAt: r.created_at,
     serial: r.serial ?? undefined,
+    closed: r.closed ?? false,
   };
 }
 
@@ -81,6 +83,7 @@ function ticketToRow(t: Ticket, userId: string) {
     is_duplicate: false,
     balance_after: t.balanceAfter ?? null,
     serial: t.serial ?? null,
+    closed: t.closed ?? false,
   };
 }
 
@@ -229,6 +232,28 @@ export class TicketService {
     }
   }
 
+  async updateClosed(ticketId: string, closed: boolean): Promise<void> {
+    const { error } = await supabase
+      .from('tickets')
+      .update({ closed })
+      .eq('id', ticketId)
+      .eq('user_id', this.userId);
+    if (error) throw new Error(error.message);
+  }
+
+  async bulkUpdateClosed(ticketIds: string[], closed: boolean): Promise<void> {
+    const CHUNK = 200;
+    for (let i = 0; i < ticketIds.length; i += CHUNK) {
+      const chunk = ticketIds.slice(i, i + CHUNK);
+      const { error } = await supabase
+        .from('tickets')
+        .update({ closed })
+        .in('id', chunk)
+        .eq('user_id', this.userId);
+      if (error) throw new Error(error.message);
+    }
+  }
+
   /**
    * Edit arbitrary fields on an existing ticket (price, name, req num, pnr,
    * route, status, date, ...). Only whitelisted, user-editable columns are
@@ -252,6 +277,7 @@ export class TicketService {
       source:          'source',
       vendorReference: 'vendor_reference',
       serial:          'serial',
+      closed:          'closed',
     };
     const row: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(patch)) {

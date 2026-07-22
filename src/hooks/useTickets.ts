@@ -20,9 +20,11 @@ export function useTickets(userId: string) {
   const updateReqNum      = (id: string, req: string)            => svc.updateReqNum(id, req);
   const updateTicket      = (id: string, patch: Partial<Ticket>) => svc.updateFields(id, patch);
   const bulkUpdateReqNum  = (ids: string[], req: string)         => svc.bulkUpdateReqNum(ids, req);
+  const updateClosed      = (id: string, closed: boolean)        => svc.updateClosed(id, closed);
+  const bulkUpdateClosed  = (ids: string[], closed: boolean)     => svc.bulkUpdateClosed(ids, closed);
 
   const missingReq = tickets.filter(t => !t.reqNum && t.status !== 'FUND');
   const topUps     = tickets.filter(t => t.status === 'FUND');
 
-  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum };
+  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed };
 }
