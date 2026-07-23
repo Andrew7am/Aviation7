@@ -15,7 +15,12 @@ export const NSAParser: VendorParser = {
     const iTicket = col(headers,'Doc No'); const iPNR = col(headers,'PNR');
     const iPax = col(headers,'Description'); const iDate = col(headers,'DATE');
     const iDebit = col(headers,'DEBIT','DEBIT (SAR)'); const iReq = pickReqColumn(headers, col(headers,'Request Number'));
-    const iRoute = col(headers,'LPO NUMBER');
+    // NSA source sheets never carry a route/sector column — earlier revisions
+    // mistakenly mapped "LPO NUMBER" to route, which just wrote invoice numbers
+    // (INV-YY-MM-XXXX, RFD-YY-MM-XXXX) into the route field. Vendor now sends
+    // routes in the same "notes" column as everything else when they exist,
+    // so accept it there and leave route blank otherwise.
+    const iRoute = col(headers,'Route','Sector','Itinerary');
     rows.forEach((row,idx) => {
       if (!row.some(c=>c?.trim())) return;
       const rawDoc = cell(row,iTicket);
