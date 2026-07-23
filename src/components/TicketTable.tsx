@@ -178,6 +178,29 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const hasSAR = filtered.some(t => sourceToCurrency(t.source || '') === 'SAR');
   const hasAED = filtered.some(t => sourceToCurrency(t.source || '') === 'AED');
 
+  /** Build a filename that reflects what the user filtered by, so an export
+   *  saved off a search for "REQ12345" lands as "REQ12345_Export.xlsx" not a
+   *  generic title. Priority chain: general search text → find/replace target
+   *  → column filters (PNR / passenger / A/L) → source/status filter → title.
+   *  Sanitizes to filename-safe chars; caps at 40 to avoid OS length issues. */
+  const filenameForFilter = (): string => {
+    const sanitize = (s: string) => s.trim().replace(/[^\w\-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+    const parts: string[] = [];
+    if (searchTerm.trim()) parts.push(sanitize(searchTerm));
+    else if (findVal.trim() && showFindReplace) parts.push('REQ_' + sanitize(findVal));
+    else {
+      if (filterPNR) parts.push('PNR_' + sanitize(filterPNR));
+      if (filterPax) parts.push('PAX_' + sanitize(filterPax));
+      if (filterAL)  parts.push('AL_'  + sanitize(filterAL));
+      if (sourceFilter !== 'ALL') parts.push(sanitize(sourceFilter));
+      if (closedFilter !== 'ALL') parts.push(closedFilter === 'CLOSED' ? 'Closed' : 'NotClosed');
+      if (filterMode === 'NEED_REQ') parts.push('MissingREQ');
+      else if (filterMode === 'DUPLICATE') parts.push('Duplicates');
+    }
+    if (parts.length === 0) parts.push(sanitize(title));
+    return parts.join('-');
+  };
+
   const exportToExcel = () => {
     const data = filtered.map(t => ({
       'Serial':      t.serial ?? '',
@@ -203,7 +226,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Tickets');
-    XLSX.writeFile(wb, `${title.replace(/\s+/g, '_')}_Export.xlsx`);
+    XLSX.writeFile(wb, `${filenameForFilter()}_Export.xlsx`);
   };
 
   const exportMissingReq = () => {
