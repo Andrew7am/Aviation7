@@ -15,12 +15,22 @@ export const NSAParser: VendorParser = {
     const iTicket = col(headers,'Doc No'); const iPNR = col(headers,'PNR');
     const iPax = col(headers,'Description'); const iDate = col(headers,'DATE');
     const iDebit = col(headers,'DEBIT','DEBIT (SAR)'); const iReq = pickReqColumn(headers, col(headers,'Request Number'));
-    // NSA source sheets never carry a route/sector column — earlier revisions
-    // mistakenly mapped "LPO NUMBER" to route, which just wrote invoice numbers
-    // (INV-YY-MM-XXXX, RFD-YY-MM-XXXX) into the route field. Vendor now sends
-    // routes in the same "notes" column as everything else when they exist,
-    // so accept it there and leave route blank otherwise.
+    // NSA carries route info in the free-text "notes" column when it exists —
+    // usually as a pure "RUH/JED/RUH" or "DMM/JED/DMM" string, sometimes
+    // embedded inside a longer description like "Dummy flight ticket (
+    // DXB-MNL-DXB )". Extract any run of 3-letter airport codes joined by
+    // `/` or `-` (at least two codes) — everything else in notes (invoice
+    // refs, "PENALTY FEE", "SA 917", MICE briefs) leaves route blank.
+    // "Route" / "Sector" / "Itinerary" are checked first for the day the
+    // vendor sends them as proper columns. LPO NUMBER (invoice #) is
+    // deliberately NOT read — that was a prior bug that put "INV-..." /
+    // "RFD-..." into route for 2,538 tickets.
     const iRoute = col(headers,'Route','Sector','Itinerary');
+    const iNotes = col(headers,'notes','Notes');
+    const extractRoute = (raw: string): string => {
+      const m = raw.match(/[A-Z]{3}(?:[\/-][A-Z]{3})+/);
+      return m ? m[0] : '';
+    };
     rows.forEach((row,idx) => {
       if (!row.some(c=>c?.trim())) return;
       const rawDoc = cell(row,iTicket);
@@ -63,7 +73,10 @@ export const NSAParser: VendorParser = {
       const amt = isRef ? -Math.abs(credit||debit) : debit;
       const req = resolveReq(cell(row,iReq));
       if (!req) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
-      result.push({ticketNo:tkClean,pnr:cell(row,iPNR).replace(/\s+/g,'').toUpperCase(),passengerName:cleanPax(desc),airlineCode:ac,route:cell(row,iRoute),date:parseDate(cell(row,iDate)),amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:isRef?'REFUND':'ISSUE',currency:defaultCurrency});
+      const routeExplicit = iRoute !== -1 ? cell(row,iRoute).trim() : '';
+      const routeFromNotes = iNotes !== -1 ? extractRoute(cell(row,iNotes)) : '';
+      const route = routeExplicit || routeFromNotes;
+      result.push({ticketNo:tkClean,pnr:cell(row,iPNR).replace(/\s+/g,'').toUpperCase(),passengerName:cleanPax(desc),airlineCode:ac,route,date:parseDate(cell(row,iDate)),amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:isRef?'REFUND':'ISSUE',currency:defaultCurrency});
     });
     return {rows:result,errors,warnings};
   },
