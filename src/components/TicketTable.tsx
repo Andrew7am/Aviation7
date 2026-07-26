@@ -18,6 +18,12 @@ interface TicketTableProps {
 
 type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr';
 
+/** Vendors whose workflow uses a "Closed / Not Closed" status. Other
+ *  vendors don't have this concept — hide the toggle, exclude them from
+ *  Closed/Not-Closed filtering, and skip them in bulk close/reopen. */
+const CLOSED_VENDORS = new Set(['nsa', 'flyadeal ksa', 'flynas', 'ibtekar']);
+const canBeClosed = (source: string) => CLOSED_VENDORS.has((source || '').toLowerCase().trim());
+
 const SOURCE_COLORS: Record<string, string> = {
   'flyadeal ksa': 'bg-orange-100 text-orange-700',
   'flyadeal dxb': 'bg-amber-100 text-amber-700',
@@ -90,8 +96,10 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterMode === 'NEED_REQ' && (t.reqNum || t.status === 'FUND')) return false;
       if (filterMode === 'DUPLICATE' && !t.isDuplicate) return false;
       if (sourceFilter !== 'ALL' && t.source !== sourceFilter) return false;
-      if (closedFilter === 'CLOSED'     && !t.closed) return false;
-      if (closedFilter === 'NOT_CLOSED' &&  t.closed) return false;
+      // Closed status is only tracked for a subset of vendors — exclude
+      // everyone else when the user filters on closure state.
+      if (closedFilter === 'CLOSED'     && (!canBeClosed(t.source) || !t.closed)) return false;
+      if (closedFilter === 'NOT_CLOSED' && (!canBeClosed(t.source) ||  t.closed)) return false;
       if (filterAL  && !(t.airlineCode || '').toLowerCase().includes(filterAL.toLowerCase())) return false;
       if (filterPax && !(t.passengerName || '').toLowerCase().includes(filterPax.toLowerCase())) return false;
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
@@ -142,12 +150,16 @@ export const TicketTable: React.FC<TicketTableProps> = ({
    *  workflow is: search by req num (or any filter), then click Close All /
    *  Reopen All to flip every currently-visible ticket at once. */
   const applyBulkClosed = async (closed: boolean) => {
-    if (!onBulkUpdateClosed || filtered.length === 0) return;
+    if (!onBulkUpdateClosed) return;
+    // Bulk close only touches vendors that support the flag — filter out
+    // IATA / FlyDubai / AirArabia / etc. from the selection.
+    const targets = filtered.filter(t => canBeClosed(t.source)).map(t => t.id);
+    if (targets.length === 0) return;
     const label = closed ? 'Close' : 'Reopen';
-    if (!confirm(`${label} ${filtered.length} ticket${filtered.length !== 1 ? 's' : ''} (current filter)?`)) return;
+    if (!confirm(`${label} ${targets.length} ticket${targets.length !== 1 ? 's' : ''} (current filter, NSA/FlyAdeal KSA/Flynas/Ibtekar only)?`)) return;
     setBulkClosedBusy(true);
     try {
-      await onBulkUpdateClosed(filtered.map(t => t.id), closed);
+      await onBulkUpdateClosed(targets, closed);
     } finally {
       setBulkClosedBusy(false);
     }
@@ -515,8 +527,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <span className="text-slate-300">|</span>
         <span className="text-red-500">{filtered.filter(t => !t.reqNum).length} missing req</span>
         <span className="text-slate-300">|</span>
-        <span className="text-emerald-600">{filtered.filter(t => t.closed).length} closed</span>
-        <span className="text-orange-600">· {filtered.filter(t => !t.closed).length} not closed</span>
+        <span className="text-emerald-600">{filtered.filter(t => canBeClosed(t.source) && t.closed).length} closed</span>
+        <span className="text-orange-600">· {filtered.filter(t => canBeClosed(t.source) && !t.closed).length} not closed</span>
       </div>
 
       {/* Table */}
@@ -628,7 +640,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     {!ticket.reqNum ? 'NEED REQ' : 'MATCHED'}
                   </td>
                   <td className="px-3 py-2">
-                    {onUpdateClosed ? (
+                    {!canBeClosed(ticket.source || '') ? (
+                      <span className="text-slate-300 text-[9px]">—</span>
+                    ) : onUpdateClosed ? (
                       <button
                         onClick={() => onUpdateClosed(ticket.id, !ticket.closed)}
                         title={ticket.closed ? 'Click to reopen' : 'Click to close'}

@@ -100,7 +100,11 @@ export class TicketService {
    * current list" contract the hooks rely on, refetch the whole table on any
    * change instead of trying to patch the local array incrementally.
    */
-  subscribe(onData: (tickets: Ticket[]) => void, onError?: (e: Error) => void) {
+  subscribe(
+    onData: (tickets: Ticket[]) => void,
+    onError?: (e: Error) => void,
+    opts?: { onEvent?: (fetchAll: () => void) => void },
+  ) {
     let cancelled = false;
 
     const fetchAll = async () => {
@@ -116,9 +120,14 @@ export class TicketService {
 
     fetchAll();
 
+    // Realtime handler — by default refetch on every event, but let the
+    // caller intercept (e.g. to debounce bursts from a bulk update) via
+    // opts.onEvent. Passing `fetchAll` gives the caller control over when
+    // to actually run the full refetch.
+    const handler = () => (opts?.onEvent ? opts.onEvent(fetchAll) : fetchAll());
     const channel = supabase
       .channel(`tickets-${this.userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `user_id=eq.${this.userId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `user_id=eq.${this.userId}` }, handler)
       .subscribe();
 
     return () => {
