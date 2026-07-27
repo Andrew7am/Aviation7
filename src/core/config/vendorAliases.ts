@@ -8,4 +8,5 @@ export const VENDOR_ALIASES: Record<string, string[]> = {
   'iata':        ['iata'],
   'nsa':         ['nsa'],
   'rts':         ['rts'],
+  'riyadh air':  ['riyadh air', 'riyadhair'],
 };

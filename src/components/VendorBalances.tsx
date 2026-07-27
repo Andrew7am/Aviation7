@@ -39,7 +39,7 @@ function vendorTicketMatcher(vendorName: string, ticketSource: string): boolean 
 
 const PRESET_VENDORS = [
   'IATA', 'Flynas', 'FlyAdeal KSA', 'FlyAdeal DXB',
-  'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal', 'NSA',
+  'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal', 'NSA', 'Riyadh Air',
 ];
 
 type ModalMode = null | 'add_existing' | 'add_new' | 'topup';

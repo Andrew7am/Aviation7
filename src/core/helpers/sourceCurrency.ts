@@ -1,4 +1,4 @@
-const AED_KEYS = ['iata', 'rts', 'flyadeal dxb', 'air arabia', 'airarabia', 'flydubai', 'fly dubai'];
+const AED_KEYS = ['iata', 'rts', 'flyadeal dxb', 'air arabia', 'airarabia', 'flydubai', 'fly dubai', 'riyadh air', 'riyadhair'];
 
 export function sourceToCurrency(source: string): 'SAR' | 'AED' {
   const s = (source || '').toLowerCase();

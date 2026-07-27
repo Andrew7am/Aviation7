@@ -18,11 +18,21 @@ export function parseDate(raw: unknown): string {
   if (s.includes('T')) return s.split('T')[0];
 
   // dd-MMM or dd-MMM-yy / dd-MMM-yyyy
+  // Built as a literal yyyy-MM-dd string rather than via `new Date(...)`:
+  // a non-ISO string like "23-Jul-2026" is parsed as LOCAL midnight, and
+  // .toISOString() then shifts it back a day in every UTC+ timezone (the
+  // agency runs at UTC+3, so every such date landed one day early).
   if (/^\d{1,2}-[A-Za-z]{3}(-\d{2,4})?$/.test(s)) {
+    const MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
     const parts = s.split('-');
-    const yr = parts[2] ? (parts[2].length === 2 ? `20${parts[2]}` : parts[2]) : new Date().getFullYear().toString();
-    const d = new Date(`${parts[0].padStart(2,'0')}-${parts[1]}-${yr}`);
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+    const mi = MONTHS.indexOf(parts[1].toLowerCase());
+    if (mi !== -1) {
+      const yr = parts[2] ? (parts[2].length === 2 ? `20${parts[2]}` : parts[2]) : new Date().getFullYear().toString();
+      const day = parts[0].padStart(2, '0');
+      if (Number(day) >= 1 && Number(day) <= 31) {
+        return `${yr}-${String(mi + 1).padStart(2, '0')}-${day}`;
+      }
+    }
   }
 
   // MM/dd/yy or MM/dd/yyyy

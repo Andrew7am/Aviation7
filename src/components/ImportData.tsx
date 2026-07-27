@@ -20,13 +20,14 @@ interface ImportDataProps {
 
 const BUILTIN_SOURCES = [
   'IATA', 'NSA', 'FlyAdeal KSA', 'FlyAdeal DXB',
-  'Flynas', 'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal',
+  'Flynas', 'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal', 'Riyadh Air',
 ];
 
 const STATUS_COLORS: Record<string, string> = {
   ISSUE: 'bg-emerald-100 text-emerald-700', REFUND: 'bg-red-100 text-red-700',
   FUND: 'bg-emerald-200 text-emerald-800', VOID: 'bg-slate-200 text-slate-600',
   ADM: 'bg-blue-100 text-blue-700', ACM: 'bg-purple-100 text-purple-700',
+  HOLD: 'bg-amber-100 text-amber-800', EMDS: 'bg-purple-100 text-purple-700',
 };
 
 export const ImportData: React.FC<ImportDataProps> = ({

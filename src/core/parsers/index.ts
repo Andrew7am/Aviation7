@@ -10,6 +10,7 @@ import { AirArabiaParser } from './AirArabiaParser';
 import { FlynasParser } from './FlynasParser';
 import { FlyDubaiParser } from './FlyDubaiParser';
 import { RTSParser } from './RTSParser';
+import { RiyadhAirParser } from './RiyadhAirParser';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 import { findHeaderRow } from '../helpers/columnResolver';
 import { makeProfileParser } from './ProfileParser';
@@ -21,6 +22,7 @@ export const ALL_PARSERS: VendorParser[] = [
   IbtekarV2Parser, IbtekarParser, GoldMedalParser,
   AirArabiaParser, FlynasParser,
   FlyDubaiParser, RTSParser,
+  RiyadhAirParser,
 ];
 
 export interface SmartDetectResult {
@@ -94,7 +96,10 @@ export function runParser(
   }
 
   const headers  = allRows[headerRowIdx];
-  const dataRows = allRows.slice(headerRowIdx + 1).filter(r => r.some(c => c?.trim()));
+  // Headerless vendors (pure-data exports) must keep row 0 — slicing it off
+  // as a header row would silently drop a real transaction.
+  const dataRows = (parser.headerless ? allRows : allRows.slice(headerRowIdx + 1))
+    .filter(r => r.some(c => c?.trim()));
   const result   = parser.parse(dataRows, headers, defaultCurrency, defaultSource);
 
   return { ...result, parserName: parser.name, confidence };

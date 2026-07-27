@@ -31,6 +31,10 @@ export interface ParserResult {
 export interface VendorParser {
   id:      string;
   name:    string;
+  /** Set when the vendor's export has NO header row (pure data from row 1).
+   *  runParser then hands every row to parse() instead of treating the first
+   *  one as headers and slicing it off. */
+  headerless?: boolean;
   detect:  (headers: string[]) => boolean;
   parse:   (
     rows:            string[][],
