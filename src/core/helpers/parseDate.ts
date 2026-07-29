@@ -8,9 +8,13 @@ export function parseDate(raw: unknown): string {
   const s = String(raw).trim();
   if (!s || s === '0') return '';
 
-  // Excel serial
+  // Excel serial. Lower bound is 10000 (1927) rather than 40000 so a genuine
+  // old date survives — Ibtekar's export writes epoch dates, and 25569 is
+  // exactly 1970-01-01. Bare small numbers ("1", "0", "2070") are NOT serials
+  // in any real report and are left to fall through, so they can't be turned
+  // into an invented date.
   const serial = Number(s);
-  if (!isNaN(serial) && serial > 40000 && serial < 60000)
+  if (!isNaN(serial) && serial >= 10000 && serial < 60000)
     return new Date((serial - 25569) * 86400000).toISOString().split('T')[0];
 
   // yyyy-MM-dd or ISO
@@ -50,15 +54,17 @@ export function parseDate(raw: unknown): string {
     if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];
   }
 
+  // Last resort. Whatever date the vendor wrote is kept EXACTLY as written,
+  // however odd the year looks — Ibtekar's report genuinely contains
+  // 1970-01-01 rows, and blanking them would hide a real data problem the
+  // agency needs to see and chase with the vendor. A wrong-looking date on
+  // screen is honest; a silently emptied one is not.
+  //
+  // The one thing not allowed is INVENTING a date: JS happily turns "1" into
+  // 2001 and "2070" into the year 2070, so a bare number — which is never a
+  // date in any of these reports — is rejected rather than parsed.
+  if (/^-?\d+(\.\d+)?$/.test(s)) return '';
   const fallback = new Date(s);
-  if (!isNaN(fallback.getTime())) {
-    const out = fallback.toISOString().split('T')[0];
-    // Guard against JS's very loose Date parsing: a bare number like "2070"
-    // or a mangled cell parses "successfully" into a date decades away, which
-    // then silently lands in the ledger. Anything outside a plausible
-    // ticketing window is treated as unparseable instead.
-    const yr = Number(out.slice(0, 4));
-    return yr >= 2000 && yr <= 2050 ? out : '';
-  }
+  if (!isNaN(fallback.getTime())) return fallback.toISOString().split('T')[0];
   return '';
 }
