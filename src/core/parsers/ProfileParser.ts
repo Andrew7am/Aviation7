@@ -4,6 +4,7 @@ import { resolveReq, findReqColumn, findExplicitReqColumn } from '../helpers/res
 import { parseDate } from '../helpers/parseDate';
 import { resolveCurrency } from '../helpers/resolveCurrency';
 import { normalizeStatus } from '../helpers/normalizeStatus';
+import { extractRoute } from '../helpers/extractRoute';
 import { LearnedProfile, headerFingerprint } from '../ai/learnedProfile';
 
 /**
@@ -95,7 +96,11 @@ export function makeProfileParser(profile: LearnedProfile): VendorParser {
           pnr,
           passengerName:   iPax >= 0 ? cleanPax(cell(row, iPax)) : '',
           airlineCode:     airlineCode(rawTk),
-          route:           iRoute >= 0 ? cell(row, iRoute) : '',
+          // The AI often maps a free-text column (e.g. NSA's "notes") to
+          // route because routes really do live there — but the same column
+          // also holds "PENALTY FEE" and invoice refs. Keep only what is
+          // actually an itinerary.
+          route:           iRoute >= 0 ? extractRoute(cell(row, iRoute)) : '',
           date:            parseDate(iDate >= 0 ? cell(row, iDate) : ''),
           amount:          finalAmt,
           totalDoc:        Math.abs(total) || Math.abs(finalAmt),

@@ -7,12 +7,18 @@ import { parseDate } from '../helpers/parseDate';
  * Riyadh Air (RX) DSR export.
  *
  * This vendor's file has NO header row — it's pure data from the first row,
- * ~80 unlabelled columns wide. So instead of resolving columns by name, we
- * anchor on the one unmistakable column (the transaction-type enum) and read
- * every other field at a fixed offset from it. That keeps the mapping intact
- * when the user appends a Req Number column at the end, which is the whole
- * point — a plain fixed-index map would also work until the first extra
- * column shifted everything.
+ * ~80 unlabelled columns wide. There is therefore nothing to match column
+ * names against, so every column is located by the SHAPE of its values
+ * (a booking-state enum, an RX record locator, a 13-digit document number,
+ * a dd-MMM-yyyy date, an IATA route, a currency code...) measured across all
+ * rows at once.
+ *
+ * Resolving by shape rather than by fixed position is what lets the user add
+ * a Req Number column — anywhere, not only at the end — without the mapping
+ * silently sliding onto the wrong fields. Only the money columns can't be
+ * told apart by shape (they're all just numbers), so those are taken at a
+ * known offset from the currency column and then validated; if validation
+ * fails the parser reports it instead of importing wrong amounts.
  */
 
 const TXN_TYPES = new Set([
@@ -20,41 +26,32 @@ const TXN_TYPES = new Set([
   'REFUND', 'REFUNDED', 'VOID', 'VOIDED', 'CANCELLED', 'CANCELED', 'EXCHANGE',
 ]);
 
-// Offsets relative to the transaction-type column (index 13 in the sample).
-const O = {
-  ticketNo:   -9,
-  airline:    -8,
-  docType:    -3,
-  product:    -2,
-  pnr:        +1,
-  bookingRef: +2,
-  payStatus:  +8,
-  issueDate:  +10,
-  flightNos:  +16,
-  route:      +17,
-  passenger:  +23,
-  paxType:    +24,
-  baseFare:   +29,
-  taxes:      +30,
-  total:      +31,
-  paidAmount: +33,
-  currency:   +42,
-  /** Anything past the vendor's own last column is user-added — that's where
-   *  a Req Number column lands when appended to the export. */
-  reqScanFrom: +67,
+const CURRENCIES = new Set(['AED', 'SAR', 'USD', 'EUR', 'GBP', 'EGP']);
+
+const RE = {
+  ticket:   /^\d{13}$/,
+  pnr:      /^RX[A-Z0-9]{6,}$/i,
+  route:    /^[A-Z]{3}(?:-[A-Z]{3})+$/,
+  date:     /^\d{1,2}-[A-Za-z]{3}-\d{4}$/,
+  passenger: /^[A-Z][A-Z0-9 .'\-]*\/[A-Z][A-Z0-9 .'\-]*$/i,
+  money:    /^-?\d+(?:\.\d+)?$/,
+  /** Flight designator(s), e.g. "RX401" or "RX401/RX402". */
+  flight:   /^[A-Z]{2}\d{1,4}(?:\/[A-Z]{2}\d{1,4})*$/i,
 };
 
-const at = (row: string[], anchor: number, offset: number): string =>
-  (row[anchor + offset] ?? '').toString().trim();
+const val = (row: string[], i: number): string =>
+  i >= 0 && i < row.length ? (row[i] ?? '').toString().trim() : '';
 
-/** Find the column holding the transaction-type enum. Scans every row so a
- *  stray header/blank row can't throw the detection off. */
-function findAnchor(rows: string[][]): number {
+/** Index of the column where `test` holds for the most rows. Ties go to the
+ *  leftmost column, which matters because this format repeats the PNR and
+ *  the route later in the row. */
+function findCol(rows: string[][], test: (v: string) => boolean): number {
   const hits = new Map<number, number>();
+  const width = Math.max(...rows.map(r => r.length), 0);
   for (const row of rows) {
-    for (let i = 0; i < row.length; i++) {
-      const v = (row[i] ?? '').toString().trim().toUpperCase();
-      if (TXN_TYPES.has(v)) hits.set(i, (hits.get(i) ?? 0) + 1);
+    for (let i = 0; i < width; i++) {
+      const v = val(row, i);
+      if (v && test(v)) hits.set(i, (hits.get(i) ?? 0) + 1);
     }
   }
   let best = -1, bestCount = 0;
@@ -64,6 +61,20 @@ function findAnchor(rows: string[][]): number {
     }
   }
   return best;
+}
+
+/** True when a column holds numbers (or blanks) in essentially every row —
+ *  used to confirm an offset-derived money column really is money. */
+function looksNumeric(rows: string[][], idx: number): boolean {
+  if (idx < 0) return false;
+  let filled = 0, numeric = 0;
+  for (const row of rows) {
+    const v = val(row, idx);
+    if (!v) continue;
+    filled++;
+    if (RE.money.test(v)) numeric++;
+  }
+  return filled > 0 && numeric / filled >= 0.9;
 }
 
 /** Stable synthetic id for rows the vendor issues no document for (holds).
@@ -88,49 +99,114 @@ export const RiyadhAirParser: VendorParser = {
   name: 'Riyadh Air',
   headerless: true,
   detect: (headers) => {
-    // headers here is really the first data row. Riyadh Air is the only
-    // vendor whose rows carry these booking-state enums plus the RX carrier.
+    // `headers` is really the first data row. Riyadh Air is the only vendor
+    // whose rows carry these booking-state enums alongside the RX carrier.
     const cells = headers.map(c => (c || '').toString().trim().toUpperCase());
-    const hasTxnType = cells.some(c => TXN_TYPES.has(c));
-    const hasRX = cells.some(c => c === 'RX');
-    return hasTxnType && hasRX;
+    return cells.some(c => TXN_TYPES.has(c)) && cells.some(c => c === 'RX');
   },
   parse: (rows, _headers, defaultCurrency): ParserResult => {
     const errors: string[] = [];
     const warnings: string[] = [];
     const result = [];
 
-    const anchor = findAnchor(rows);
-    if (anchor === -1) {
-      errors.push('Riyadh Air: could not locate the transaction-type column.');
+    // ── Locate every column by the shape of its values ───────────────────
+    const cTxn      = findCol(rows, v => TXN_TYPES.has(v.toUpperCase()));
+    if (cTxn === -1) {
+      errors.push('Riyadh Air: no booking-status column found (expected PAID_BOOKING / TICKETING / UNPAID_BOOKING).');
+      return { rows: result, errors, warnings };
+    }
+    const cCurrency = findCol(rows, v => CURRENCIES.has(v.toUpperCase()));
+    const cTicket   = findCol(rows, v => RE.ticket.test(v));
+    const cPnr      = findCol(rows, v => RE.pnr.test(v));
+    const cRoute    = findCol(rows, v => RE.route.test(v));
+    const cDate     = findCol(rows, v => RE.date.test(v));
+    const cPax      = findCol(rows, v => RE.passenger.test(v));
+    const cPay      = findCol(rows, v => /^(PAID|UNPAID)$/i.test(v));
+
+    // Money columns are indistinguishable by shape, so take them at the
+    // vendor's fixed offsets from the currency column and verify.
+    let cTotal = cCurrency !== -1 ? cCurrency - 11 : -1;
+    if (!looksNumeric(rows, cTotal)) {
+      // Currency column missing or layout shifted — fall back to the offset
+      // from the status column, then give up rather than guess.
+      const alt = cTxn + 31;
+      cTotal = looksNumeric(rows, alt) ? alt : -1;
+    }
+    if (cTotal === -1) {
+      errors.push('Riyadh Air: could not identify the grand-total column — amounts would be wrong, so nothing was imported.');
       return { rows: result, errors, warnings };
     }
 
-    // A Req Number column, if the user appended one, sits past the vendor's
-    // own columns. Find the first such column that actually holds values.
-    let reqCol = -1;
-    for (let i = anchor + O.reqScanFrom; i < Math.max(...rows.map(r => r.length)); i++) {
-      if (rows.some(r => (r[i] ?? '').toString().trim())) { reqCol = i; break; }
+    // Locate the user-added Req Number column STRUCTURALLY rather than by
+    // guessing at value shapes. The vendor's own export is a fixed 80-column
+    // layout, so comparing where the anchor columns actually landed against
+    // where they sit natively reveals exactly where an extra column was
+    // inserted. Shape-matching alone is not enough here: the export repeats
+    // the record locator, and carries flight numbers ("RX401/RX402") and an
+    // agent username — all letter+digit strings that look just like a
+    // reference number.
+    const NATIVE = [
+      [cTicket, 4], [cTxn, 13], [cPnr, 14], [cPay, 21],
+      [cDate, 23], [cRoute, 30], [cPax, 36], [cCurrency, 55],
+    ].filter(([resolved]) => resolved !== -1) as [number, number][];
+
+    const width = Math.max(...rows.map(r => r.length), 0);
+    const extraCols = Math.max(0, width - 80);
+
+    let cReq = -1;
+    if (extraCols > 0) {
+      // Anchors before the insertion point keep their native index; anchors
+      // after it are pushed right by the number of inserted columns.
+      let lo = 0, hi = width - 1;
+      for (const [resolved, native] of NATIVE) {
+        if (resolved === native) lo = Math.max(lo, native + 1);         // insertion is after this column
+        else if (resolved > native) hi = Math.min(hi, native);          // insertion is at or before it
+      }
+      const candidates: number[] = [];
+      for (let i = lo; i <= hi && i < width; i++) {
+        if (!NATIVE.some(([r]) => r === i) && i !== cTotal) candidates.push(i);
+      }
+      // Among the columns inside the shifted window, take the one that most
+      // consistently holds reference-looking values.
+      let bestScore = 0;
+      for (const i of candidates) {
+        let filled = 0, reqish = 0;
+        for (const row of rows) {
+          const v = val(row, i);
+          if (!v || v === '/') continue;
+          filled++;
+          // Two of the vendor's own columns are letter+digit strings that
+          // read like a reference: the record locator repeated near the end
+          // of the row, and the flight numbers ("RX401/RX402"). Rule both
+          // out explicitly so they can never be imported as a req number.
+          const mimicsReference =
+            RE.flight.test(v) ||
+            v === val(row, cPnr) ||
+            v === val(row, cTicket);
+          if (!mimicsReference && v.length <= 24 && /[A-Za-z]/.test(v) && /\d/.test(v) && !RE.money.test(v)) reqish++;
+        }
+        const score = filled > 0 ? reqish / filled : 0;
+        if (score >= 0.8 && score > bestScore) { bestScore = score; cReq = i; }
+      }
     }
 
+    // ── Walk the rows ────────────────────────────────────────────────────
     let skippedFreeSeats = 0;
 
     rows.forEach((row, idx) => {
-      const txn = at(row, anchor, 0).toUpperCase();
+      const txn = val(row, cTxn).toUpperCase();
       // Not a transaction row (blank filler, or a header row in some future
       // export that does include one) — skip without noise.
       if (!TXN_TYPES.has(txn)) return;
 
-      const payStatus = at(row, anchor, O.payStatus).toUpperCase();
-      const pnr       = at(row, anchor, O.pnr).toUpperCase();
-      const pax       = riyadhPax(at(row, anchor, O.passenger));
-      const route     = at(row, anchor, O.route);
-      const rawTicket = at(row, anchor, O.ticketNo).replace(/\s/g, '');
-      const total     = num(at(row, anchor, O.total));
-      const currency  = (at(row, anchor, O.currency) || defaultCurrency).toUpperCase();
+      const payStatus = val(row, cPay).toUpperCase();
+      const pnr       = val(row, cPnr).toUpperCase();
+      const pax       = riyadhPax(val(row, cPax));
+      const route     = val(row, cRoute);
+      const rawTicket = val(row, cTicket).replace(/\s/g, '');
+      const total     = num(val(row, cTotal));
+      const cur       = val(row, cCurrency).toUpperCase();
 
-      // Free seat assignments carry no document and no money — they'd only
-      // add noise to the ticket list. Counted and reported, never silent.
       if (txn === 'FREE_SEAT') { skippedFreeSeats++; return; }
 
       const isHold   = txn === 'UNPAID_BOOKING' || payStatus === 'UNPAID';
@@ -154,8 +230,7 @@ export const RiyadhAirParser: VendorParser = {
         return;
       }
 
-      const airline = at(row, anchor, O.airline) || rawTicket.slice(0, 3) || '';
-      const req = reqCol !== -1 ? resolveReq(row[reqCol]) : '';
+      const req = cReq !== -1 ? resolveReq(val(row, cReq)) : '';
       if (!req && !isHold && !isVoid) warnings.push(`Ticket ${ticketNo}: Missing Req Num`);
       if (isHold) warnings.push(`${pnr} / ${pax}: on hold, not ticketed — excluded from balance`);
 
@@ -163,21 +238,24 @@ export const RiyadhAirParser: VendorParser = {
         ticketNo,
         pnr,
         passengerName: pax,
-        airlineCode: airline,
+        airlineCode: rawTicket.slice(0, 3) || '',
         route,
-        date: parseDate(at(row, anchor, O.issueDate)),
+        date: parseDate(val(row, cDate)),
         amount,
         totalDoc: Math.abs(total),
         commission: 0,
         reqNum: req,
-        vendorReference: at(row, anchor, O.bookingRef),
+        vendorReference: pnr,
         status,
-        currency: (currency === 'AED' || currency === 'SAR' ? currency : defaultCurrency) as typeof defaultCurrency,
+        currency: (CURRENCIES.has(cur) ? cur : defaultCurrency) as typeof defaultCurrency,
       });
     });
 
     if (skippedFreeSeats > 0) {
       warnings.push(`${skippedFreeSeats} complimentary seat assignment row(s) skipped — no document, no charge.`);
+    }
+    if (cReq === -1) {
+      warnings.push('No Req Number column detected. Add one anywhere in the sheet and it will be picked up automatically.');
     }
 
     // A hold that has since been ticketed appears in the same export as both

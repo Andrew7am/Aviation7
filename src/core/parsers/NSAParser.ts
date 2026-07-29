@@ -2,6 +2,7 @@ import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax, airlineCode, cleanTk, rowContentId } from './shared';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
+import { extractRoute } from '../helpers/extractRoute';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 
 export const NSAParser: VendorParser = {
@@ -27,10 +28,6 @@ export const NSAParser: VendorParser = {
     // "RFD-..." into route for 2,538 tickets.
     const iRoute = col(headers,'Route','Sector','Itinerary');
     const iNotes = col(headers,'notes','Notes');
-    const extractRoute = (raw: string): string => {
-      const m = raw.match(/[A-Z]{3}(?:[\/-][A-Z]{3})+/);
-      return m ? m[0] : '';
-    };
     rows.forEach((row,idx) => {
       if (!row.some(c=>c?.trim())) return;
       const rawDoc = cell(row,iTicket);
