@@ -52,7 +52,7 @@ export class WalletService {
     const fetchAll = async () => {
       try {
         const rows = await fetchAllRows<VendorBalanceRow>((from, to) =>
-          supabase.from('vendor_balances').select('*').eq('user_id', this.userId).range(from, to)
+          supabase.from('vendor_balances').select('*').range(from, to)
         );
         if (!cancelled) onData(rows.map(rowToVendor));
       } catch (e) { console.error('vendor_balances error', e); }
@@ -60,7 +60,7 @@ export class WalletService {
     fetchAll();
     const channel = supabase
       .channel(`vendor-balances-${this.userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_balances', filter: `user_id=eq.${this.userId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vendor_balances' }, fetchAll)
       .subscribe();
     return () => { cancelled = true; supabase.removeChannel(channel); };
   }
@@ -70,7 +70,7 @@ export class WalletService {
     const fetchAll = async () => {
       try {
         const rows = await fetchAllRows<BalanceTopUpRow>((from, to) =>
-          supabase.from('balance_topups').select('*').eq('user_id', this.userId).range(from, to)
+          supabase.from('balance_topups').select('*').range(from, to)
         );
         if (!cancelled) onData(rows.map(rowToTopUp));
       } catch (e) { console.error('balance_topups error', e); }
@@ -78,7 +78,7 @@ export class WalletService {
     fetchAll();
     const channel = supabase
       .channel(`balance-topups-${this.userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'balance_topups', filter: `user_id=eq.${this.userId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'balance_topups' }, fetchAll)
       .subscribe();
     return () => { cancelled = true; supabase.removeChannel(channel); };
   }
@@ -95,7 +95,7 @@ export class WalletService {
   }
 
   async deleteVendor(id: string): Promise<void> {
-    const { error } = await supabase.from('vendor_balances').delete().eq('id', id).eq('user_id', this.userId);
+    const { error } = await supabase.from('vendor_balances').delete().eq('id', id);
     if (error) throw new Error(error.message);
   }
 

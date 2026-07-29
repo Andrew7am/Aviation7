@@ -34,7 +34,7 @@ export interface Ticket {
   closed?: boolean;
 }
 
-export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'import' | 'vendors' | 'reports' | 'history';
+export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'import' | 'vendors' | 'reports' | 'history' | 'activity';
 
 export interface VendorBalance {
   id: string;

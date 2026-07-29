@@ -9,13 +9,15 @@ import { ImportData } from './components/ImportData';
 import { VendorBalances } from './components/VendorBalances';
 import { Reports } from './components/Reports';
 import { ImportHistory } from './components/ImportHistory';
+import { ActivityLog } from './components/ActivityLog';
+import { AuditService } from './services/AuditService';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
 import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   Plane, LayoutDashboard, List, AlertTriangle,
-  Upload, LogOut, Wallet, BarChart2, History,
+  Upload, LogOut, Wallet, BarChart2, History, ShieldCheck,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -25,6 +27,11 @@ function MainApp({ user }: { user: User }) {
   const [view, setView]         = useState<ViewState>('dashboard');
   const [alerts, setAlerts]     = useState<AppAlert[]>([]);
   const [importHistory, setImportHistory] = useState<ImportRecord[]>([]);
+  // Admin-only screens are hidden until the role is known, so a member never
+  // briefly sees the Activity tab while the lookup is in flight.
+  const [isAdmin, setIsAdmin]   = useState(false);
+
+  React.useEffect(() => { AuditService.myRole().then(r => setIsAdmin(r === 'admin')).catch(() => setIsAdmin(false)); }, [user.id]);
 
   const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
@@ -152,6 +159,7 @@ function MainApp({ user }: { user: User }) {
     { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
     { id: 'vendors',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
     { id: 'reports',   label: 'Reports',         icon: <BarChart2 className="w-4 h-4" /> },
+    ...(isAdmin ? [{ id: 'activity' as ViewState, label: 'Activity Log', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
   ];
 
   return (
@@ -240,6 +248,9 @@ function MainApp({ user }: { user: User }) {
             </div>
           )}
           {view === 'reports'   && <Reports tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
+          {view === 'activity'  && (isAdmin
+            ? <ActivityLog currentUserId={user.id} />
+            : <div className="p-10 text-center text-slate-400 font-sans text-sm">Admin access required.</div>)}
         </main>
       </div>
 

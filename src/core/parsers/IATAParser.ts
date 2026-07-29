@@ -21,6 +21,7 @@ export const IATAParser: VendorParser = {
     const result = [];
 
     const iTicket = col(headers, 'ticket number', 'DOC NUMBER', 'DOCNUMBER');
+    const iTax    = col(headers, 'tax', 'TAX');
     const iPNR    = col(headers, 'PNR', 'RLOC');
     const iPax    = col(headers, 'Pax Name', 'PAX NAME', 'PASSENGER');
     const iDate   = col(headers, 'DATE', 'ISSUE DATE', 'TRAVEL DATE');
@@ -46,8 +47,21 @@ export const IATAParser: VendorParser = {
       const alCode  = /^\d{3}$/.test(alRaw) ? alRaw : airlineCode(rawTk);
       const total   = num(cell(row, iTotal));
       const netRaw  = num(cell(row, iNet));
-      const comm    = num(cell(row, iComm));
-      const amount  = netRaw || (total - comm);
+      const taxVal  = iTax !== -1 ? num(cell(row, iTax)) : 0;
+      let   comm    = num(cell(row, iComm));
+
+      // Data-entry guard: a batch of rows in the source had the tax value
+      // pasted into the comm column, so the sheet's own NET (= total - comm)
+      // came out short by the tax amount. Real commission runs ~1-19% of
+      // total and the same tickets carry comm=0 on their ISSUE row, so an
+      // exact comm == tax match is a paste error, not a real commission.
+      // Drop the bogus commission and take NET straight from total.
+      const commIsPastedTax = taxVal !== 0 && comm === taxVal;
+      if (commIsPastedTax) {
+        warnings.push(`Ticket ${rawTk}: commission equals tax (${comm}) — treated as a data-entry error, net taken from total.`);
+        comm = 0;
+      }
+      const amount  = commIsPastedTax ? total : (netRaw || (total - comm));
       const rawSt   = cell(row, iStatus).toUpperCase();
       const normSt  = normalizeStatus(rawSt);
       // TRNC may be empty in custom IATA exports — fall back to amount sign

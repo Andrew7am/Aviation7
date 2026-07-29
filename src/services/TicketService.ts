@@ -110,7 +110,7 @@ export class TicketService {
     const fetchAll = async () => {
       try {
         const rows = await fetchAllRows<TicketRow>((from, to) =>
-          supabase.from('tickets').select('*').eq('user_id', this.userId).range(from, to)
+          supabase.from('tickets').select('*').range(from, to)
         );
         if (!cancelled) onData(rows.map(rowToTicket));
       } catch (e) {
@@ -127,7 +127,7 @@ export class TicketService {
     const handler = () => (opts?.onEvent ? opts.onEvent(fetchAll) : fetchAll());
     const channel = supabase
       .channel(`tickets-${this.userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets', filter: `user_id=eq.${this.userId}` }, handler)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, handler)
       .subscribe();
 
     return () => {
@@ -161,8 +161,7 @@ export class TicketService {
       const { error } = await supabase
         .from('tickets')
         .update(patch)
-        .eq('id', ticket.id)
-        .eq('user_id', this.userId);
+        .eq('id', ticket.id);
       if (error) throw new Error(error.message);
     }
 
@@ -206,7 +205,6 @@ export class TicketService {
       const { data, error } = await supabase
         .from('tickets')
         .select('*')
-        .eq('user_id', this.userId)
         .in('ticket_no', chunk);
       if (error) throw new Error(error.message);
       rows.push(...(data ?? []));
@@ -215,7 +213,7 @@ export class TicketService {
   }
 
   async delete(ticketId: string): Promise<void> {
-    const { error } = await supabase.from('tickets').delete().eq('id', ticketId).eq('user_id', this.userId);
+    const { error } = await supabase.from('tickets').delete().eq('id', ticketId);
     if (error) throw new Error(error.message);
   }
 
@@ -223,8 +221,7 @@ export class TicketService {
     const { error } = await supabase
       .from('tickets')
       .update({ req_num: reqNum })
-      .eq('id', ticketId)
-      .eq('user_id', this.userId);
+      .eq('id', ticketId);
     if (error) throw new Error(error.message);
   }
 
@@ -235,8 +232,7 @@ export class TicketService {
       const { error } = await supabase
         .from('tickets')
         .update({ req_num: reqNum })
-        .in('id', chunk)
-        .eq('user_id', this.userId);
+        .in('id', chunk);
       if (error) throw new Error(error.message);
     }
   }
@@ -245,8 +241,7 @@ export class TicketService {
     const { error } = await supabase
       .from('tickets')
       .update({ closed })
-      .eq('id', ticketId)
-      .eq('user_id', this.userId);
+      .eq('id', ticketId);
     if (error) throw new Error(error.message);
   }
 
@@ -257,8 +252,7 @@ export class TicketService {
       const { error } = await supabase
         .from('tickets')
         .update({ closed })
-        .in('id', chunk)
-        .eq('user_id', this.userId);
+        .in('id', chunk);
       if (error) throw new Error(error.message);
     }
   }
@@ -298,8 +292,7 @@ export class TicketService {
     const { error } = await supabase
       .from('tickets')
       .update(row)
-      .eq('id', ticketId)
-      .eq('user_id', this.userId);
+      .eq('id', ticketId);
     if (error) throw new Error(error.message);
   }
 }

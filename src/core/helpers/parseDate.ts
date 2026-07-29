@@ -51,6 +51,14 @@ export function parseDate(raw: unknown): string {
   }
 
   const fallback = new Date(s);
-  if (!isNaN(fallback.getTime())) return fallback.toISOString().split('T')[0];
+  if (!isNaN(fallback.getTime())) {
+    const out = fallback.toISOString().split('T')[0];
+    // Guard against JS's very loose Date parsing: a bare number like "2070"
+    // or a mangled cell parses "successfully" into a date decades away, which
+    // then silently lands in the ledger. Anything outside a plausible
+    // ticketing window is treated as unparseable instead.
+    const yr = Number(out.slice(0, 4));
+    return yr >= 2000 && yr <= 2050 ? out : '';
+  }
   return '';
 }

@@ -102,10 +102,20 @@ export class ImportService {
     if (error) throw new Error(error.message);
   }
 
+  /** App-level audit entry. Ticket edits and deletes are already captured by
+   *  a database trigger; this covers the actions a trigger can't see as a
+   *  single event — imports, top-ups, and bulk operations. Stamps the actor
+   *  so the admin log always names a person, never just a user id. */
   async audit(action: AuditEntry['action'], entity: string, detail: string): Promise<void> {
     const id = `audit_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+    const { data: auth } = await supabase.auth.getUser();
     const { error } = await supabase.from('audit_log').insert({
-      id, user_id: this.userId, action, entity, detail,
+      id,
+      user_id: this.userId,
+      actor_id: auth.user?.id ?? this.userId,
+      actor_email: auth.user?.email ?? 'unknown',
+      entity_type: 'app',
+      action, entity, detail,
     });
     if (error) throw new Error(error.message);
   }
@@ -116,7 +126,6 @@ export class ImportService {
       const { data, error } = await supabase
         .from('import_history')
         .select('*')
-        .eq('user_id', this.userId)
         .order('imported_at', { ascending: false })
         .limit(maxItems);
       if (error) { console.error('import_history error', error); return; }
@@ -125,7 +134,7 @@ export class ImportService {
     fetchAll();
     const channel = supabase
       .channel(`import-history-${this.userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'import_history', filter: `user_id=eq.${this.userId}` }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'import_history' }, fetchAll)
       .subscribe();
     return () => { cancelled = true; supabase.removeChannel(channel); };
   }

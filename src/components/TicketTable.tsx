@@ -591,8 +591,13 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                   </td>
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{ticket.date}</td>
                   <td className="px-3 py-2 text-[10px] text-slate-400">{ticket.route || '—'}</td>
-                  <td className="px-3 py-2 text-slate-500">{ticket.totalDoc > 0 ? fmt(ticket.totalDoc) : '—'}</td>
-                  <td className="px-3 py-2 text-slate-400">{ticket.commission > 0 ? fmt(ticket.commission) : '—'}</td>
+                  {/* Negative values must render, not collapse to an em-dash:
+                      a refund's clawed-back commission is real data, and
+                      hiding it makes the net amount look unexplainable. */}
+                  <td className="px-3 py-2 text-slate-500">{ticket.totalDoc ? fmt(ticket.totalDoc) : '—'}</td>
+                  <td className={`px-3 py-2 ${ticket.commission < 0 ? 'text-red-500' : 'text-slate-400'}`}>
+                    {ticket.commission ? fmt(ticket.commission) : '—'}
+                  </td>
                   <td className={`px-3 py-2 font-bold ${ticket.amount < 0 ? 'text-red-600' : ''}`}>
                     {isEditing(ticket.id, 'amount') ? editorInput : (
                       <span
