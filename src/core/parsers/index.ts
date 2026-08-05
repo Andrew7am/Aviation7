@@ -12,12 +12,16 @@ import { FlyDubaiParser } from './FlyDubaiParser';
 import { RTSParser } from './RTSParser';
 import { RiyadhAirParser } from './RiyadhAirParser';
 import { TurkishAirlinesParser } from './TurkishAirlinesParser';
+import { ReconciliationExportParser } from './ReconciliationExportParser';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 import { findHeaderRow } from '../helpers/columnResolver';
 import { makeProfileParser } from './ProfileParser';
 import { LearnedProfile, headerFingerprint, bestHeaderRowForAI } from '../ai/learnedProfile';
 
 export const ALL_PARSERS: VendorParser[] = [
+  // Our own export comes first: it is the most specific signature and must
+  // win before any vendor parser gets a chance to half-match it.
+  ReconciliationExportParser,
   IATAParser, NSAParser,
   FlyAdealDXBParser, FlyAdealKSAParser,
   IbtekarV2Parser, IbtekarParser, GoldMedalParser,

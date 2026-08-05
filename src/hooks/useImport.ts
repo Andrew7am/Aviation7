@@ -75,7 +75,9 @@ export function useImport(userId: string) {
         passengerName:   r.passengerName || '',
         airlineCode:     r.airlineCode || '',
         route:           r.route || '',
-        source:          defaultSource || parserName,
+        // A row may name its own vendor (a multi-vendor re-import); only
+        // fall back to the single source picked in the UI when it doesn't.
+        source:          r.source || defaultSource || parserName,
         date:            r.date,
         amount:          r.amount,
         totalDoc:        r.totalDoc || Math.abs(r.amount),

@@ -20,6 +20,10 @@ export interface ParsedRow {
   /** Vendor-reported reconciliation state, when their report carries one
    *  (Ibtekar's sheet has a Closed / Not Closed column). */
   closed?:         boolean;
+  /** Per-row vendor, for formats that carry their own Source column and can
+   *  therefore span several vendors in one file (our own re-import export).
+   *  When unset the import falls back to the single source chosen in the UI. */
+  source?:         string;
   isTopUp?:        boolean;
   skipRow?:        boolean;  // parser says skip this row silently
   rawError?:       string;   // parser error message for this row
