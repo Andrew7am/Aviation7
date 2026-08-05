@@ -115,7 +115,12 @@ export function readFileAsText(file: File): Promise<string> {
         try {
           const wb = XLSX.read(e.target?.result, { type: 'array' });
           const ws = wb.Sheets[wb.SheetNames[0]];
-          resolve(XLSX.utils.sheet_to_csv(ws));
+          // rawNumbers keeps the cell's underlying value instead of the text
+          // Excel happens to display. Without it a long ticket number stored
+          // as a number comes through as "2.35254E+12" — identical for every
+          // row — so a whole report collapses onto one ticket and the rest
+          // are silently discarded as duplicates.
+          resolve(XLSX.utils.sheet_to_csv(ws, { rawNumbers: true }));
         } catch { reject(new Error('Failed to read Excel file')); }
       };
       reader.onerror = reject;

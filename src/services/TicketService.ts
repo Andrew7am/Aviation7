@@ -212,6 +212,18 @@ export class TicketService {
     return rows.map(rowToTicket);
   }
 
+  /**
+   * Insert a single hand-entered transaction (issue / refund / reissue / void).
+   * Goes through the same tickets table as an import, so it flows into the
+   * vendor's credit automatically — calcBalance derives the balance from the
+   * ticket ledger rather than from a stored figure, so nothing else has to be
+   * told about it.
+   */
+  async addManual(ticket: Ticket): Promise<void> {
+    const { error } = await supabase.from('tickets').insert(ticketToRow(ticket, this.userId));
+    if (error) throw new Error(error.message);
+  }
+
   async delete(ticketId: string): Promise<void> {
     const { error } = await supabase.from('tickets').delete().eq('id', ticketId);
     if (error) throw new Error(error.message);

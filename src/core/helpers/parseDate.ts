@@ -39,6 +39,20 @@ export function parseDate(raw: unknown): string {
     }
   }
 
+  // dd.MM.yyyy — the dot form Turkish Airlines (and most European carriers)
+  // export. Always day-first: "31.07.2026" can only be the 31st, and left to
+  // the generic fallback JS reads it US-style as MM.dd, silently swapping day
+  // and month on every date that could be either ("02.08.2026" became 7 Feb
+  // instead of 2 Aug) and rejecting the ones that couldn't.
+  if (/^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(s)) {
+    const [d, m, y] = s.split('.');
+    const yr = y.length === 2 ? `20${y}` : y;
+    const dn = Number(d), mn = Number(m);
+    if (dn >= 1 && dn <= 31 && mn >= 1 && mn <= 12) {
+      return `${yr}-${String(mn).padStart(2, '0')}-${String(dn).padStart(2, '0')}`;
+    }
+  }
+
   // MM/dd/yy or MM/dd/yyyy
   if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)) {
     const [m, d, y] = s.split('/');

@@ -42,6 +42,11 @@ export function useTickets(userId: string) {
     await svc.delete(id);
   };
 
+  const addManualTicket = async (ticket: Ticket) => {
+    setTickets(prev => detectDuplicates([...prev, ticket]));
+    await svc.addManual(ticket);
+  };
+
   const updateReqNum = async (id: string, req: string) => {
     patchLocal(t => ({ ...t, reqNum: req }), new Set([id]));
     await svc.updateReqNum(id, req);
@@ -72,5 +77,5 @@ export function useTickets(userId: string) {
   const missingReq = tickets.filter(t => !t.reqNum && t.status !== 'FUND');
   const topUps     = tickets.filter(t => t.status === 'FUND');
 
-  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed };
+  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, addManualTicket };
 }

@@ -20,7 +20,7 @@ interface ImportDataProps {
 
 const BUILTIN_SOURCES = [
   'IATA', 'NSA', 'FlyAdeal KSA', 'FlyAdeal DXB',
-  'Flynas', 'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal', 'Riyadh Air',
+  'Flynas', 'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal', 'Riyadh Air', 'Turkish Airlines',
 ];
 
 const STATUS_COLORS: Record<string, string> = {

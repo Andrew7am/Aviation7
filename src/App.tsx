@@ -10,6 +10,7 @@ import { VendorBalances } from './components/VendorBalances';
 import { Reports } from './components/Reports';
 import { ImportHistory } from './components/ImportHistory';
 import { ActivityLog } from './components/ActivityLog';
+import { ManualEntry } from './components/ManualEntry';
 import { AuditService } from './services/AuditService';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
@@ -17,7 +18,7 @@ import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   Plane, LayoutDashboard, List, AlertTriangle,
-  Upload, LogOut, Wallet, BarChart2, History, ShieldCheck,
+  Upload, LogOut, Wallet, BarChart2, History, ShieldCheck, PlusCircle,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -30,10 +31,11 @@ function MainApp({ user }: { user: User }) {
   // Admin-only screens are hidden until the role is known, so a member never
   // briefly sees the Activity tab while the lookup is in flight.
   const [isAdmin, setIsAdmin]   = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
 
   React.useEffect(() => { AuditService.myRole().then(r => setIsAdmin(r === 'admin')).catch(() => setIsAdmin(false)); }, [user.id]);
 
-  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed } = useTickets(user.id);
+  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, addManualTicket } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
 
   const ticketSvc = new TicketService(user.id);
@@ -129,6 +131,10 @@ function MainApp({ user }: { user: User }) {
   const handleSaveVendor   = (v: VendorBalance) => { saveVendor(v); importSvc.audit('ADD_VENDOR', v.vendorName, `Initial balance: ${v.initialBalance}`); };
   const handleDeleteVendor = (id: string) => { if (confirm('Delete vendor?')) { deleteVendor(id); importSvc.audit('DELETE_VENDOR', id, 'Vendor deleted'); } };
   const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount}`); };
+  const handleAddManual = async (t: Ticket) => {
+    await addManualTicket(t);
+    importSvc.audit('MANUAL_ENTRY', t.ticketNo, `Manual ${t.transactionType} — ${t.source} ${t.amount} ${t.currency}${t.reqNum ? ` (req ${t.reqNum})` : ''}`);
+  };
   const handleDelete       = (id: string) => { if (confirm('Delete this ticket?')) { deleteTicket(id); importSvc.audit('DELETE', id, 'Ticket deleted'); } };
   const handleUpdateReqNum      = (id: string, req: string) => { updateReqNum(id, req); importSvc.audit('UPDATE_REQ', id, `New req: ${req}`); };
   const handleBulkUpdateReqNum  = async (findVal: string, replaceVal: string, ids: string[]) => {
@@ -175,6 +181,10 @@ function MainApp({ user }: { user: User }) {
           </div>
         </div>
         <div className="flex items-center space-x-4">
+          <button onClick={() => setShowManualEntry(true)}
+            className="bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
+            <PlusCircle className="w-3 h-3" /><span>Add Manually</span>
+          </button>
           <button onClick={() => setView('import')}
             className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
             <Upload className="w-3 h-3" /><span>Import CSV / XLS</span>
@@ -186,6 +196,14 @@ function MainApp({ user }: { user: User }) {
       </header>
 
       <AlertBanner alerts={alerts} onDismiss={dismissAlert} />
+
+      {showManualEntry && (
+        <ManualEntry
+          vendorNames={vendorBalancesLive.map(v => v.vendorName)}
+          onSave={handleAddManual}
+          onClose={() => setShowManualEntry(false)}
+        />
+      )}
 
       <div className="flex flex-1 min-h-0">
         <aside className="w-56 bg-white border-r border-slate-200 flex flex-col shrink-0">

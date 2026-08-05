@@ -10,8 +10,11 @@ const ACTION_COLORS: Record<string, string> = {
   ADD_VENDOR:    'bg-emerald-100 text-emerald-700',
   EDIT_VENDOR:   'bg-amber-100 text-amber-700',
   IMPORT:        'bg-violet-100 text-violet-700',
+  MANUAL_ENTRY:  'bg-cyan-100 text-cyan-700',
   UPDATE_REQ:    'bg-blue-100 text-blue-700',
   BULK_UPDATE_REQ: 'bg-indigo-100 text-indigo-700',
+  UPDATE_CLOSED: 'bg-teal-100 text-teal-700',
+  BULK_UPDATE_CLOSED: 'bg-teal-100 text-teal-700',
   TOPUP:         'bg-emerald-100 text-emerald-700',
 };
 

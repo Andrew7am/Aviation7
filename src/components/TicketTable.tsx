@@ -18,6 +18,22 @@ interface TicketTableProps {
 
 type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr';
 
+type SortKey = 'serial' | 'date' | 'amount' | 'ticketNo' | 'source' | null;
+
+/** Comparable value for a sort key, or null when the row has nothing to sort
+ *  by. Amount sorts on the SIGNED value so refunds group at one end rather
+ *  than interleaving with issues of a similar size. Dates are ISO strings,
+ *  so a plain string compare is already chronological. */
+function sortValue(t: Ticket, key: Exclude<SortKey, null>): number | string | null {
+  switch (key) {
+    case 'serial':   return t.serial ?? null;
+    case 'date':     return t.date || null;
+    case 'amount':   return t.amount ?? null;
+    case 'ticketNo': return t.ticketNo || null;
+    case 'source':   return t.source || null;
+  }
+}
+
 /** Vendors whose workflow uses a "Closed / Not Closed" status. Other
  *  vendors don't have this concept — hide the toggle, exclude them from
  *  Closed/Not-Closed filtering, and skip them in bulk close/reopen. */
@@ -36,6 +52,7 @@ const SOURCE_COLORS: Record<string, string> = {
   'ibtekar': 'bg-purple-100 text-purple-700',
   'gold medal': 'bg-yellow-100 text-yellow-700',
   'riyadh air': 'bg-violet-100 text-violet-700',
+  'turkish': 'bg-red-100 text-red-700',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -80,7 +97,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [bulkClosedBusy, setBulkClosedBusy] = useState(false);
   const [editingCell, setEditingCell]   = useState<{ id: string; field: EditableField } | null>(null);
   const [editValue, setEditValue]       = useState('');
-  const [sortKey, setSortKey]           = useState<'serial' | null>(null);
+  const [sortKey, setSortKey]           = useState<SortKey>(null);
   const [sortDir, setSortDir]           = useState<'asc' | 'desc'>('asc');
   const [page, setPage]                 = useState(0);
   const PAGE_SIZE = 100;
@@ -112,11 +129,17 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       }
       return true;
     });
-    if (sortKey === 'serial') {
+    if (sortKey) {
+      const dir = sortDir === 'asc' ? 1 : -1;
       rows.sort((a, b) => {
-        const av = a.serial ?? (sortDir === 'asc' ? Infinity : -Infinity);
-        const bv = b.serial ?? (sortDir === 'asc' ? Infinity : -Infinity);
-        return sortDir === 'asc' ? av - bv : bv - av;
+        // Blanks always sink to the bottom regardless of direction — a row
+        // with no date or no serial is missing data, not "the earliest", and
+        // flipping the arrow shouldn't parade it to the top.
+        const av = sortValue(a, sortKey), bv = sortValue(b, sortKey);
+        if (av === null && bv === null) return 0;
+        if (av === null) return 1;
+        if (bv === null) return -1;
+        return av < bv ? -dir : av > bv ? dir : 0;
       });
     }
     return rows;
@@ -167,11 +190,14 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     }
   };
 
-  const toggleSerialSort = () => {
-    if (sortKey !== 'serial') { setSortKey('serial'); setSortDir('asc'); }
+  /** Click a sortable header to cycle: ascending -> descending -> unsorted. */
+  const toggleSort = (key: Exclude<SortKey, null>) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir(key === 'serial' ? 'asc' : 'desc'); }
     else if (sortDir === 'asc') setSortDir('desc');
-    else { setSortKey(null); setSortDir('asc'); }
+    else if (sortDir === 'desc') { setSortKey(null); setSortDir('asc'); }
   };
+  const sortArrow = (key: Exclude<SortKey, null>) =>
+    sortKey !== key ? '' : sortDir === 'asc' ? ' ▲' : ' ▼';
 
   const serialGapBefore = useMemo(() => {
     const gaps = new Map<string, number>();
@@ -538,15 +564,37 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <table className="w-full text-left border-collapse min-w-[900px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-              <th
-                onClick={toggleSerialSort}
-                className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap cursor-pointer select-none hover:text-slate-700"
-                title="Click to sort by Serial"
-              >
-                Serial {sortKey === 'serial' ? (sortDir === 'asc' ? '▲' : '▼') : ''}
-              </th>
-              {['A/L', 'Ticket No.', 'Source', 'Status', 'Date', 'Route', 'Total Doc', 'Comm', 'Net Amt', 'Curr', 'PNR', 'Passenger', 'Req Num', 'Recon', 'Closed'].map(col => (
-                <th key={col} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">{col}</th>
+              {/* Sortable headers cycle ascending -> descending -> unsorted. */}
+              {([
+                ['Serial',     'serial'],
+                ['A/L',        null],
+                ['Ticket No.', 'ticketNo'],
+                ['Source',     'source'],
+                ['Status',     null],
+                ['Date',       'date'],
+                ['Route',      null],
+                ['Total Doc',  null],
+                ['Comm',       null],
+                ['Net Amt',    'amount'],
+                ['Curr',       null],
+                ['PNR',        null],
+                ['Passenger',  null],
+                ['Req Num',    null],
+                ['Recon',      null],
+                ['Closed',     null],
+              ] as [string, Exclude<SortKey, null> | null][]).map(([label, key]) => (
+                <th
+                  key={label}
+                  onClick={key ? () => toggleSort(key) : undefined}
+                  title={key ? `Sort by ${label}` : undefined}
+                  className={`px-3 py-2 text-[9px] font-bold uppercase whitespace-nowrap ${
+                    key
+                      ? `cursor-pointer select-none hover:text-slate-700 ${sortKey === key ? 'text-blue-600' : 'text-slate-500'}`
+                      : 'text-slate-500'
+                  }`}
+                >
+                  {label}{key ? sortArrow(key) : ''}
+                </th>
               ))}
               {onDelete && <th className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase text-right">Del</th>}
             </tr>

@@ -11,6 +11,7 @@ import { FlynasParser } from './FlynasParser';
 import { FlyDubaiParser } from './FlyDubaiParser';
 import { RTSParser } from './RTSParser';
 import { RiyadhAirParser } from './RiyadhAirParser';
+import { TurkishAirlinesParser } from './TurkishAirlinesParser';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 import { findHeaderRow } from '../helpers/columnResolver';
 import { makeProfileParser } from './ProfileParser';
@@ -22,7 +23,7 @@ export const ALL_PARSERS: VendorParser[] = [
   IbtekarV2Parser, IbtekarParser, GoldMedalParser,
   AirArabiaParser, FlynasParser,
   FlyDubaiParser, RTSParser,
-  RiyadhAirParser,
+  RiyadhAirParser, TurkishAirlinesParser,
 ];
 
 export interface SmartDetectResult {
