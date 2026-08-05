@@ -20,6 +20,10 @@ export const IbtekarParser: VendorParser = {
     const iDate = col(headers,'Issue Date'); const iPax = col(headers,'Passenger');
     const iDebit = col(headers,'Debit'); const iRoute = col(headers,'Sector');
     const iDocNo = col(headers,'Doc No');
+    // Ibtekar's "Status" column is their reconciliation state (Closed / Not
+    // Closed), NOT the transaction type — the transaction type is derived
+    // from the debit/credit pair below.
+    const iClosed = col(headers,'Status');
     rows.forEach((row,idx) => {
       const rawTk = cell(row,iTicket); const fileNo = cell(row,iFileNo);
       const isTopUp = /^(topup|fund|top.?up)$/i.test(fileNo)||/^RV\d+$/i.test(rawTk);
@@ -46,7 +50,8 @@ export const IbtekarParser: VendorParser = {
       if (!req && !isVoid) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
       const dp = (cell(row,iDate)||'').split('/');
       const date = dp.length===3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : parseDate(cell(row,iDate));
-      result.push({ticketNo:tkClean,pnr:cell(row,iPNR).replace(/\s+/g,'').toUpperCase(),passengerName:cleanPax(cell(row,iPax)),airlineCode:ac,route:cell(row,iRoute),date,amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:fileNo,status,currency:defaultCurrency});
+      const closed = /^closed$/i.test(cell(row,iClosed).trim());
+      result.push({ticketNo:tkClean,pnr:cell(row,iPNR).replace(/\s+/g,'').toUpperCase(),passengerName:cleanPax(cell(row,iPax)),airlineCode:ac,route:cell(row,iRoute),date,amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:fileNo,status,currency:defaultCurrency,closed});
     });
     return {rows:result,errors,warnings};
   },

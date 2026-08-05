@@ -17,6 +17,9 @@ export interface ParsedRow {
   status:          string;
   currency:        SupportedCurrency;
   serial?:         number;   // vendor's own running sequence number (IATA), if present
+  /** Vendor-reported reconciliation state, when their report carries one
+   *  (Ibtekar's sheet has a Closed / Not Closed column). */
+  closed?:         boolean;
   isTopUp?:        boolean;
   skipRow?:        boolean;  // parser says skip this row silently
   rawError?:       string;   // parser error message for this row

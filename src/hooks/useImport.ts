@@ -86,6 +86,7 @@ export function useImport(userId: string) {
         currency:        r.currency,
         serial:          r.serial,
         transactionType: r.status,
+        closed:          r.closed ?? false,
         reportName:      reportName || defaultSource || parserName,
         importTime:      new Date().toISOString(),
         isDuplicate:     false,
