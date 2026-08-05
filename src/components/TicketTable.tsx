@@ -192,9 +192,17 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   /** Click a sortable header to cycle: ascending -> descending -> unsorted. */
   const toggleSort = (key: Exclude<SortKey, null>) => {
-    if (sortKey !== key) { setSortKey(key); setSortDir(key === 'serial' ? 'asc' : 'desc'); }
-    else if (sortDir === 'asc') setSortDir('desc');
-    else if (sortDir === 'desc') { setSortKey(null); setSortDir('asc'); }
+    // Money and dates are most often wanted biggest/newest first, so that is
+    // the opening direction; serial reads naturally low-to-high. Whichever it
+    // starts on, the second click gives the OPPOSITE direction and only the
+    // third turns sorting off — otherwise one of the two directions is
+    // unreachable, which is what happened here: every non-serial column went
+    // descending -> off and could never be sorted ascending at all.
+    const first: 'asc' | 'desc' = key === 'serial' ? 'asc' : 'desc';
+    const second: 'asc' | 'desc' = first === 'asc' ? 'desc' : 'asc';
+    if (sortKey !== key)          { setSortKey(key); setSortDir(first); }
+    else if (sortDir === first)   { setSortDir(second); }
+    else                          { setSortKey(null); setSortDir('asc'); }
   };
   const sortArrow = (key: Exclude<SortKey, null>) =>
     sortKey !== key ? '' : sortDir === 'asc' ? ' ▲' : ' ▼';
@@ -264,6 +272,37 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       'Report Name': t.reportName || '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
+
+    // Totals block, split by currency. A req-num report almost always mixes
+    // SAR and AED vendors, and adding those together gives a meaningless
+    // number — so each currency is totalled on its own line, with issued and
+    // refunds shown separately so the net is auditable rather than just
+    // asserted. Only currencies actually present are listed.
+    const byCurrency = (cur: 'SAR' | 'AED') => {
+      const rows = filtered.filter(t => sourceToCurrency(t.source || '') === cur);
+      return {
+        cur,
+        count:   rows.length,
+        issued:  rows.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0),
+        refunds: rows.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0),
+        net:     rows.reduce((s, t) => s + t.amount, 0),
+      };
+    };
+    const totals = (['SAR', 'AED'] as const).map(byCurrency).filter(t => t.count > 0);
+
+    const block: (string | number)[][] = [[], ['TOTALS BY CURRENCY']];
+    block.push(['Currency', 'Tickets', 'Issued', 'Refunds', 'Net']);
+    for (const t of totals) {
+      block.push([t.cur, t.count, Number(t.issued.toFixed(2)), Number(t.refunds.toFixed(2)), Number(t.net.toFixed(2))]);
+    }
+    block.push([]);
+    block.push(['Total tickets', filtered.length]);
+    // The label names the exact filter this export was taken under, so a
+    // saved file still says what it was a report OF weeks later.
+    block.push(['Report filter', filenameForFilter().replace(/_/g, ' ')]);
+    block.push(['Generated', new Date().toLocaleString()]);
+    XLSX.utils.sheet_add_aoa(ws, block, { origin: -1 });
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Tickets');
     XLSX.writeFile(wb, `${filenameForFilter()}_Export.xlsx`);
