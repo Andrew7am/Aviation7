@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
-import { Download, FileText, TrendingDown, Wallet } from 'lucide-react';
+import { Download, FileText, TrendingDown, Wallet, Database } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 interface ReportsProps {
@@ -41,6 +41,112 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
     ['ALL', ...Array.from(new Set(tickets.map(t => t.source).filter(Boolean)))],
     [tickets]
   );
+
+  /**
+   * Excel rejects sheet names over 31 chars or containing : \ / ? * [ ], and
+   * silently produces a corrupt file on a duplicate name. Vendor names are
+   * free text, so every name is sanitised and de-duplicated before use.
+   */
+  const safeSheetName = (raw: string, used: Set<string>): string => {
+    let name = (raw || 'UNKNOWN').replace(/[:\\/?*[\]]/g, '-').trim().slice(0, 31) || 'UNKNOWN';
+    if (used.has(name.toLowerCase())) {
+      const stem = name.slice(0, 27);
+      let n = 2;
+      while (used.has(`${stem}_${n}`.toLowerCase())) n++;
+      name = `${stem}_${n}`;
+    }
+    used.add(name.toLowerCase());
+    return name;
+  };
+
+  const backupRow = (t: Ticket) => ({
+    'Serial':       t.serial ?? '',
+    'A/L':          t.airlineCode || '',
+    'Ticket No.':   t.ticketNo,
+    'Source':       t.source || '',
+    'Status':       t.status || '',
+    'Type':         t.transactionType || t.status || '',
+    'Date':         t.date || '',
+    'Route':        t.route || '',
+    'PNR':          t.pnr || '',
+    'Passenger':    t.passengerName || '',
+    'Total Doc':    t.totalDoc ?? 0,
+    'Commission':   t.commission ?? 0,
+    'Net Amount':   t.amount ?? 0,
+    'Currency':     sourceToCurrency(t.source || ''),
+    'Req Num':      t.reqNum || '',
+    'Closed':       t.closed ? 'Closed' : 'Not Closed',
+    'Report Name':  t.reportName || '',
+    'Import Time':  t.importTime || '',
+  });
+
+  /**
+   * Full backup — every ticket of every vendor, one sheet per vendor, in a
+   * single workbook. Deliberately ignores the screen's filters: a backup that
+   * silently captured only what was on screen would be worse than none.
+   * Vendor balances and top-ups are included too, since tickets alone cannot
+   * rebuild a wallet.
+   */
+  const exportFullBackup = () => {
+    const wb = XLSX.utils.book_new();
+    const used = new Set<string>();
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+
+    const bySrc = new Map<string, Ticket[]>();
+    for (const t of tickets) {
+      const k = t.source || 'UNKNOWN';
+      if (!bySrc.has(k)) bySrc.set(k, []);
+      bySrc.get(k)!.push(t);
+    }
+    const sources = [...bySrc.keys()].sort((a, b) => a.localeCompare(b));
+
+    // Sheet 1 — index, so the file explains itself months from now.
+    const index: (string | number)[][] = [
+      ['FULL BACKUP — ALL TICKETS, ALL VENDORS'],
+      ['Generated', stamp],
+      ['Total tickets', tickets.length],
+      ['Vendors', sources.length],
+      [],
+      ['Vendor', 'Tickets', 'Currency', 'Issued', 'Refunds', 'Net'],
+    ];
+    for (const s of sources) {
+      const rows = bySrc.get(s)!;
+      const live = rows.filter(t => (t.status || '').toUpperCase() !== 'FUND');
+      index.push([
+        s,
+        rows.length,
+        sourceToCurrency(s),
+        Number(live.filter(t => t.amount > 0).reduce((a, t) => a + t.amount, 0).toFixed(2)),
+        Number(live.filter(t => t.amount < 0).reduce((a, t) => a + Math.abs(t.amount), 0).toFixed(2)),
+        Number(live.reduce((a, t) => a + t.amount, 0).toFixed(2)),
+      ]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(index), safeSheetName('INDEX', used));
+
+    // One sheet per vendor.
+    for (const s of sources) {
+      const ws = XLSX.utils.json_to_sheet(bySrc.get(s)!.map(backupRow));
+      XLSX.utils.book_append_sheet(wb, ws, safeSheetName(s, used));
+    }
+
+    // Wallet state — a ticket list alone can't reconstruct the balances.
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
+      vendorBalances.map(v => ({
+        'Vendor': v.vendorName,
+        'Opening Balance': v.initialBalance,
+        'Current Balance': v.currentBalance,
+        'Currency': sourceToCurrency(v.vendorName),
+      }))
+    ), safeSheetName('Vendor Balances', used));
+
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(
+      topUps.map(tu => ({
+        'Vendor': tu.vendorName, 'Date': tu.date, 'Amount': tu.amount, 'Note': tu.note,
+      }))
+    ), safeSheetName('Top-ups', used));
+
+    XLSX.writeFile(wb, `Backup_All_Tickets_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
 
   const exportSummary = () => {
     const rows = vendorBalances.map(v => {
@@ -108,8 +214,16 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   return (
     <div className="flex flex-col h-full bg-slate-100">
-      <div className="px-6 py-4 bg-white border-b border-slate-200 shrink-0">
-        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Reports & Exports</h2>
+      <div className="px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex items-center justify-between gap-4">
+        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Reports &amp; Exports</h2>
+        <button
+          onClick={exportFullBackup}
+          title="Download every ticket of every vendor — one sheet per vendor, plus balances and top-ups"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-slate-700 shadow-sm"
+        >
+          <Database className="w-3 h-3" />
+          <span>Backup All Tickets ({tickets.length})</span>
+        </button>
       </div>
 
       {/* Tab bar */}
