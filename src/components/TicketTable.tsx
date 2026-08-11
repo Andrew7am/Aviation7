@@ -272,7 +272,6 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       // Total Doc only earns a column when it differs from the net somewhere.
       total:  filtered.some(t => Math.abs((t.totalDoc ?? 0) - Math.abs(t.amount)) > 0.005),
       closed: filtered.some(t => canBeClosed(t.source)),
-      multiVendor: new Set(filtered.map(t => t.source)).size > 1,
     };
 
     type Col = { key: string; get: (t: Ticket) => string | number; w: number; money?: boolean };
@@ -283,7 +282,10 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       { key: 'Ticket No.',  get: (t: Ticket) => t.ticketNo,              w: 16 },
       // With a single vendor the value repeats on every line; the filename
       // and the totals block already name it.
-      ...(has.multiVendor ? [{ key: 'Source', get: (t: Ticket) => t.source || 'UNKNOWN', w: 15 }] : []),
+      // Always present, exactly once. The old sheet printed the vendor twice
+      // (Source in the middle, Report Name at the end); the fix is dropping
+      // the duplicate, not the column itself.
+      { key: 'Source', get: (t: Ticket) => t.source || 'UNKNOWN', w: 15 },
       { key: 'Status',      get: (t: Ticket) => t.status || '',          w: 9 },
       ...(has.route ? [{ key: 'Route',       get: (t: Ticket) => t.route || '',  w: 18 }] : []),
       ...(has.pnr   ? [{ key: 'PNR',         get: (t: Ticket) => t.pnr || '',    w: 9 }] : []),
