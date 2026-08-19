@@ -11,6 +11,7 @@ import {
   reconcileIata, normDoc, dirOf, invoiceKey, ledgerKey, isVoid,
   type InvoiceTxn, type LedgerTxn,
 } from '../src/core/helpers/iataReconcile';
+import { invoiceGrid, txn } from './helpers/bspFixture';
 
 let pass = 0, fail = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -21,17 +22,9 @@ function check(name: string, got: unknown, want: unknown) {
   else { fail++; console.log(`  FAIL  ${name}\n          got  ${JSON.stringify(got)}\n          want ${JSON.stringify(want)}`); }
 }
 
-/** Wrap transaction lines in just enough invoice for the parser to detect. */
-const invoiceDoc = (body: string[]): string[][] => [
-  ['FCAGBILLDET AGENT BILLING DETAILS 86-2 1913 6 LUXURY EVENTS AND VIP TRAVEL FZC'],
-  ['Billing Period: 260802(09-AUG-2026 to 15-AUG-2026) REFERENCE: 86219136 - 260802'],
-  ['GRAND TOTAL (AED) 126,925.08 97,052.08 8,605.00 17,603.00 3,665.00'],
-  ...body.map(l => [l]),
-];
-
-/** Parse invoice lines into the shape the reconciler consumes. */
-function parse(body: string[]): InvoiceTxn[] {
-  const r = runParser(invoiceDoc(body), undefined, 'AED', 'invoice.pdf');
+/** Parse invoice rows into the shape the reconciler consumes. */
+function parse(body: Parameters<typeof invoiceGrid>[0]): InvoiceTxn[] {
+  const r = runParser(invoiceGrid(body), undefined, 'AED', 'invoice.pdf');
   if (r.parserName !== 'IATA BSP Invoice (PDF)') throw new Error(`parser was ${r.parserName}`);
   return r.rows.map(x => ({
     ticketNo: x.ticketNo, rawType: x.rawType || '', status: x.status || '',
@@ -51,19 +44,19 @@ console.log('CASES 1-9 — document type coverage');
 {
   const inv = parse([
     '*** ISSUES',
-    '077 TKTT 5513059026 09AUG26 FFVV I 4,080.00 2,240.00 2,240.00 7.00 156.80 0.00 0.00 3,923.20',
-    '065 EMDA 5551234567 09AUG26 FFVV I 150.00 0.00 0.00 150.00',
-    '065 EMDS 5551234568 10AUG26 FFVV I 260.00 0.00 0.00 260.00',
-    '235 SPDR 6000088139 17AUG26 22.08 0.00 0.00 22.08',
-    '235 ADMA 1234567890 12AUG26 0.00 -104.36 104.36',
-    '235 ACMA 1234567891 12AUG26 0.00 55.00 -55.00',
+    txn({ air: '077', trnc: 'TKTT', doc: '5513059026', date: '09AUG26', cpui: 'FFVV', txn: 4080.00, fare: 2240.00, cobl: 2240.00, stdRate: 7.00, stdAmt: 156.80, suppAmt: 0, payable: 3923.20 }),
+    txn({ trnc: 'EMDA', doc: '5551234567', date: '09AUG26', cpui: 'FFVV', txn: 150.00, stdAmt: 0, suppAmt: 0, payable: 150.00 }),
+    txn({ trnc: 'EMDS', doc: '5551234568', date: '10AUG26', cpui: 'FFVV', txn: 260.00, stdAmt: 0, suppAmt: 0, payable: 260.00 }),
+    txn({ air: '235', trnc: 'SPDR', doc: '6000088139', date: '17AUG26', txn: 22.08, stdAmt: 0, suppAmt: 0, payable: 22.08 }),
+    txn({ air: '235', trnc: 'ADMA', doc: '1234567890', date: '12AUG26', txn: 0, stdAmt: -104.36, suppAmt: 0, payable: 104.36 }),
+    txn({ air: '235', trnc: 'ACMA', doc: '1234567891', date: '12AUG26', txn: 0, stdAmt: 55.00, suppAmt: 0, payable: -55.00 }),
     '*** REFUNDS',
-    '235 RFND 0079549112 13AUG26 I -1,760.00 -1,760.00 0.00 0.00 -1,760.00',
+    txn({ air: '235', trnc: 'RFND', doc: '0079549112', date: '13AUG26', txn: -1760.00, fare: -1760.00, stdAmt: 0, suppAmt: 0, payable: -1760.00 }),
     'CATEGORY WEBSALES-EDIS',
     '*** ISSUES',
-    '254 TKTT 2540225913 12AUG26 FFVV I 4,150.80 4,150.80 4,150.80 0.00 0.00 0.00 0.00 4,150.80',
-    '065 CANX 5513059030 10AUG26 VVVV I 0.00 0.00 0.00 0.00 0.00 0.00',
-    '065 CANN 5513059031 10AUG26 VVVV I 0.00 0.00 0.00 0.00 0.00 0.00',
+    txn({ air: '254', trnc: 'TKTT', doc: '2540225913', date: '12AUG26', cpui: 'FFVV', txn: 4150.80, fare: 4150.80, cobl: 4150.80, stdAmt: 0, suppAmt: 0, payable: 4150.80 }),
+    txn({ trnc: 'CANX', doc: '5513059030', date: '10AUG26', cpui: 'VVVV', txn: 0, fare: 0, stdAmt: 0, suppAmt: 0, payable: 0 }),
+    txn({ trnc: 'CANN', doc: '5513059031', date: '10AUG26', cpui: 'VVVV', txn: 0, fare: 0, stdAmt: 0, suppAmt: 0, payable: 0 }),
   ]);
   const r = reconcileIata(inv, []);            // nothing in the ledger yet
   const types = (list: InvoiceTxn[]) => list.map(t => t.rawType).sort();
@@ -89,8 +82,8 @@ console.log('\nCASES 10-11 — VOID');
 {
   const inv = parse([
     '*** ISSUES',
-    '065 TKTT 5513059027 09AUG26 FFVV I 6,830.00 5,170.00 680.00 YR 5,170.00 0.00 0.00 0.00 0.00 6,830.00',
-    '065 CANX 5513059030 10AUG26 VVVV I 0.00 0.00 0.00 0.00 0.00 0.00',
+    txn({ trnc: 'TKTT', doc: '5513059027', date: '09AUG26', cpui: 'FFVV', txn: 6830.00, fare: 5170.00, taxes: { tax: 680.00 }, cobl: 5170.00, stdAmt: 0, suppAmt: 0, payable: 6830.00 }),
+    txn({ trnc: 'CANX', doc: '5513059030', date: '10AUG26', cpui: 'VVVV', txn: 0, fare: 0, stdAmt: 0, suppAmt: 0, payable: 0 }),
   ]);
   const r = reconcileIata(inv, []);
   check('10 missing VOID excluded from import', r.toImport.some(isVoid), false);
@@ -111,7 +104,7 @@ console.log('\nCASE 12 — no existing row can be dropped');
 {
   const inv = parse([
     '*** ISSUES',
-    '077 TKTT 5513059026 09AUG26 FFVV I 4,080.00 2,240.00 2,240.00 7.00 156.80 0.00 0.00 3,923.20',
+    txn({ air: '077', trnc: 'TKTT', doc: '5513059026', date: '09AUG26', cpui: 'FFVV', txn: 4080.00, fare: 2240.00, cobl: 2240.00, stdRate: 7.00, stdAmt: 156.80, suppAmt: 0, payable: 3923.20 }),
   ]);
   const ledger = [
     led({ ticketNo: '5513059026', amount: 3923.20, totalDoc: 4080, date: '2026-07-03' }),
@@ -133,9 +126,9 @@ console.log('\nCASE 13 — issue + refund on the same document');
 {
   const inv = parse([
     '*** ISSUES',
-    '077 TKTT 5513059026 09AUG26 FFVV I 4,080.00 2,240.00 2,240.00 0.00 0.00 4,080.00',
+    txn({ air: '077', trnc: 'TKTT', doc: '5513059026', date: '09AUG26', cpui: 'FFVV', txn: 4080.00, fare: 2240.00, cobl: 2240.00, stdAmt: 0, suppAmt: 0, payable: 4080.00 }),
     '*** REFUNDS',
-    '077 RFND 5513059026 14AUG26 I -3,905.00 -3,905.00 0.00 0.00 -3,905.00',
+    txn({ air: '077', trnc: 'RFND', doc: '5513059026', date: '14AUG26', txn: -3905.00, fare: -3905.00, stdAmt: 0, suppAmt: 0, payable: -3905.00 }),
   ]);
   check('two lines, not one', inv.length, 2);
   check('their keys differ by direction',
@@ -152,23 +145,23 @@ console.log('\nCASE 13 — issue + refund on the same document');
 /* ── 14-16: the money ────────────────────────────────────────────────────── */
 console.log('\nCASES 14-16 — fare, commission, payable, signs, cents');
 {
-  const [t] = parse(['*** ISSUES', '077 TKTT 5513059026 09AUG26 FFVV I 4,080.00 2,240.00 2,240.00 7.00 156.80 0.00 0.00 3,923.20']);
+  const [t] = parse(['*** ISSUES', txn({ air: '077', trnc: 'TKTT', doc: '5513059026', date: '09AUG26', cpui: 'FFVV', txn: 4080.00, fare: 2240.00, cobl: 2240.00, stdRate: 7.00, stdAmt: 156.80, suppAmt: 0, payable: 3923.20 })]);
   check('14 fare', t.fare, 4080.00);
   check('14 commission', t.commission, 156.80);
   check('14 balance payable', t.payable, 3923.20);
   check('14 fare - commission = payable', t.fare - t.commission, t.payable);
 
-  const [ref] = parse(['*** REFUNDS', '235 RFND 5513059004 09AUG26 NR:5B I -10,410.00 -9,810.00 -1,040.00 YR 740.00 CP -9,810.00 0.00 0.00 2.00 -196.20 0.00 -10,213.80']);
+  const [ref] = parse(['*** REFUNDS', txn({ air: '235', trnc: 'RFND', doc: '5513059004', date: '09AUG26', txn: -10410.00, fare: -9810.00, taxes: { tax: -1040.00, fc: 740.00 }, cobl: -9810.00, stdRate: 2.00, stdAmt: -196.20, suppAmt: 0, payable: -10213.80 })]);
   check('15 refund payable stays negative', ref.payable, -10213.80);
   check('15 refund commission keeps its sign', ref.commission, -196.20);
   check('15 no Math.abs anywhere in the chain', ref.fare < 0 || ref.payable < 0, true);
 
-  const [c] = parse(['*** ISSUES', '077 TKTT 5513059029 09AUG26 FFVV I 1,710.00 570.00 570.00 7.00 39.90 0.00 0.00 1,670.10']);
+  const [c] = parse(['*** ISSUES', txn({ air: '077', trnc: 'TKTT', doc: '5513059029', date: '09AUG26', cpui: 'FFVV', txn: 1710.00, fare: 570.00, cobl: 570.00, stdRate: 7.00, stdAmt: 39.90, suppAmt: 0, payable: 1670.10 })]);
   check('16 commission cents survive', c.commission, 39.90);
   check('16 payable cents survive', c.payable, 1670.10);
   check('16 commission is not rounded to a whole unit', Number.isInteger(c.commission), false);
 
-  const [adm] = parse(['*** DEBIT MEMOS', '235 ADMA 1234567890 12AUG26 0.00 -104.36 104.36']);
+  const [adm] = parse(['*** DEBIT MEMOS', txn({ air: '235', trnc: 'ADMA', doc: '1234567890', date: '12AUG26', txn: 0, stdAmt: -104.36, suppAmt: 0, payable: 104.36 })]);
   check('   zero-fare commission recall accepted', adm.payable, 104.36);
   check('   its commission is negative', adm.commission, -104.36);
 }
@@ -176,7 +169,7 @@ console.log('\nCASES 14-16 — fare, commission, payable, signs, cents');
 /* ── 17-18: dates ────────────────────────────────────────────────────────── */
 console.log('\nCASES 17-18 — dates');
 {
-  const inv = parse(['*** ISSUES', '077 TKTT 5513059026 09AUG26 FFVV I 4,080.00 2,240.00 2,240.00 0.00 0.00 4,080.00']);
+  const inv = parse(['*** ISSUES', txn({ air: '077', trnc: 'TKTT', doc: '5513059026', date: '09AUG26', cpui: 'FFVV', txn: 4080.00, fare: 2240.00, cobl: 2240.00, stdAmt: 0, suppAmt: 0, payable: 4080.00 })]);
   check('17 invoice date parsed', inv[0].date, '2026-08-09');
   const uploaded = '2026-07-03';
   const r = reconcileIata(inv, [led({ ticketNo: '5513059026', amount: 4080, totalDoc: 4080, date: uploaded })]);
@@ -196,8 +189,8 @@ console.log('\nCASES 19-21 — duplicate protection and idempotency');
 {
   const inv = parse([
     '*** ISSUES',
-    '077 TKTT 5513059026 09AUG26 FFVV I 4,080.00 2,240.00 2,240.00 7.00 156.80 0.00 0.00 3,923.20',
-    '065 EMDA 5551234567 09AUG26 FFVV I 150.00 0.00 0.00 150.00',
+    txn({ air: '077', trnc: 'TKTT', doc: '5513059026', date: '09AUG26', cpui: 'FFVV', txn: 4080.00, fare: 2240.00, cobl: 2240.00, stdRate: 7.00, stdAmt: 156.80, suppAmt: 0, payable: 3923.20 }),
+    txn({ trnc: 'EMDA', doc: '5551234567', date: '09AUG26', cpui: 'FFVV', txn: 150.00, stdAmt: 0, suppAmt: 0, payable: 150.00 }),
   ]);
   const ledger = [led({ ticketNo: '5513059026', amount: 3923.20, totalDoc: 4080, date: '2026-07-03' })];
   const first = reconcileIata(inv, ledger);
@@ -223,7 +216,7 @@ console.log('\nCASES 19-21 — duplicate protection and idempotency');
 /* ── 22: scope ───────────────────────────────────────────────────────────── */
 console.log('\nCASE 22 — nothing outside the IATA rows it is given');
 {
-  const inv = parse(['*** ISSUES', '077 TKTT 5513059026 09AUG26 FFVV I 4,080.00 2,240.00 2,240.00 0.00 0.00 4,080.00']);
+  const inv = parse(['*** ISSUES', txn({ air: '077', trnc: 'TKTT', doc: '5513059026', date: '09AUG26', cpui: 'FFVV', txn: 4080.00, fare: 2240.00, cobl: 2240.00, stdAmt: 0, suppAmt: 0, payable: 4080.00 })]);
   const iataOnly = [led({ ticketNo: '5513059026', amount: 4080, totalDoc: 4080, date: '2026-07-03' })];
   const r = reconcileIata(inv, iataOnly);
   const touched = [...r.dateUpdates.map(u => u.row.id), ...r.alreadyCorrect.map(u => u.row.id), ...r.unresolved.map(t => t.id)];

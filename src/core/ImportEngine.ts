@@ -9,7 +9,7 @@
  * intentionally does NOT parse rows itself.
  */
 import * as XLSX from 'xlsx';
-import { extractPdfRows } from './helpers/pdfText';
+import { extractPdfRows, pdfRowsToCsv } from './helpers/pdfText';
 import { Ticket } from '../types';
 
 /* ─────────────────────────────────────────────
@@ -208,14 +208,17 @@ export function readFileAsText(file: File): Promise<string> {
       reader.onerror = reject;
       reader.readAsText(file);
     } else if (file.name.match(/\.pdf$/i)) {
-      // A PDF row is free text, not delimited columns, so each row is emitted
-      // as ONE quoted CSV field. Papa then yields [[row], [row], …] and the
-      // parser splits each row itself — commas inside "4,080.00" would
-      // otherwise be read as column breaks and shred every amount.
+      // A PDF row is free text, not delimited columns, so the row's text goes
+      // into ONE quoted CSV field — commas inside "4,080.00" would otherwise
+      // be read as column breaks and shred every amount. A second field
+      // carries the row's runs with their x positions, because a table's
+      // columns cannot be recovered from token order alone: on a BSP invoice,
+      // Standard and Supplementary Commission are told apart only by where
+      // they sit on the page.
       reader.onload = async e => {
         try {
           const rows = await extractPdfRows(e.target?.result as ArrayBuffer);
-          resolve(rows.map(r => `"${r.replace(/"/g, '""')}"`).join('\n'));
+          resolve(pdfRowsToCsv(rows));
         } catch (err) {
           reject(err instanceof Error ? err : new Error('Failed to read PDF'));
         }

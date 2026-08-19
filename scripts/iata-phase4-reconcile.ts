@@ -28,7 +28,7 @@ import Papa from 'papaparse';
 import { Client } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { runParser } from '../src/core/parsers';
-import { extractPdfRows } from '../src/core/helpers/pdfText';
+import { extractPdfRows, pdfRowsToCsv } from '../src/core/helpers/pdfText';
 import {
   reconcileIata, ledgerKey, invoiceKey, isVoid,
   type InvoiceTxn, type LedgerTxn,
@@ -46,9 +46,8 @@ async function parseInvoice(file: string): Promise<{ rows: InvoiceTxn[]; errors:
   const buf = readFileSync(file);
   const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
   const lines = await extractPdfRows(ab);
-  // A PDF row has no delimiters and its amounts contain thousands separators,
-  // so each row is emitted as ONE quoted CSV field — same as ImportEngine.
-  const csv = lines.map(r => `"${r.replace(/"/g, '""')}"`).join('\n');
+  // Same grid the import screen builds: row text plus column positions.
+  const csv = pdfRowsToCsv(lines);
   const grid = Papa.parse(csv, { skipEmptyLines: true }).data as string[][];
   const parsed = runParser(grid, undefined, 'AED', path.basename(file));
   const rows: InvoiceTxn[] = parsed.rows.map(r => ({

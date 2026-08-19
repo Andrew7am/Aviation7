@@ -18,7 +18,7 @@ import path from 'path';
 import Papa from 'papaparse';
 import { Client } from 'pg';
 import { runParser } from '../src/core/parsers';
-import { extractPdfRows } from '../src/core/helpers/pdfText';
+import { extractPdfRows, pdfRowsToCsv } from '../src/core/helpers/pdfText';
 import { reconcileIata, isVoid, type InvoiceTxn, type LedgerTxn } from '../src/core/helpers/iataReconcile';
 
 const IATA_VENDOR = 'IATA BSP';
@@ -42,7 +42,7 @@ async function main() {
   for (const f of files) {
     const buf = readFileSync(path.join(DIR, f));
     const lines = await extractPdfRows(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
-    const grid = Papa.parse(lines.map(r => `"${r.replace(/"/g, '""')}"`).join('\n'), { skipEmptyLines: true }).data as string[][];
+    const grid = Papa.parse(pdfRowsToCsv(lines), { skipEmptyLines: true }).data as string[][];
     for (const r of runParser(grid, undefined, 'AED', f).rows) {
       invoice.push({
         ticketNo: r.ticketNo, rawType: r.rawType || '', status: r.status || '', date: r.date,

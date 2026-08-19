@@ -1,6 +1,7 @@
 import { VendorParser, ParserResult, ParsedRow } from './types';
 import { cleanTk, airlineCode } from './shared';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
+import { decodeRuns, type PdfRun } from '../helpers/pdfText';
 
 /**
  * IATA BSP "Agent Billing Details" (FCAGBILLDET) invoice, read straight from
@@ -17,15 +18,25 @@ import { SupportedCurrency } from '../helpers/resolveCurrency';
  * The invoice states its own arithmetic in its notes, and this parser follows
  * it exactly rather than inventing one:
  *
- *   Balance Payable = Transaction Amount - Std Comm - Supp Comm +/- Tax on Comm
+ *   Balance Payable = Transaction Amount CA FOP (or 0)
+ *                     - Std Comm - Supp Comm +/- Tax on Comm
+ *
+ * Note "CA FOP (or 0)": only a CASH sale contributes to what settles through
+ * BSP. On a credit-card sale the airline collects from the passenger directly,
+ * so Balance Payable is 0.00 while the transaction amount is not. That is why
+ * commission must be READ from the Std and Supp Commission columns and never
+ * derived as fare - payable: on a card row the derivation returns the entire
+ * fare as commission.
  *
  * Mapping onto the ledger, which already models all three values:
  *   totalDoc   = Transaction Amount (the fare, gross)
- *   commission = total commission
+ *   commission = Std Comm + Supp Comm, as printed
  *   amount     = Balance Payable  (what is actually owed — the ledger figure)
  *
- * Rows arrive as ONE free-text field each (see readFileAsText), because a PDF
- * row has no delimiters and the amounts contain thousands separators.
+ * Each row arrives as two CSV fields (see readFileAsText): the row's text, and
+ * its runs with their x positions. The positions are what make the columns
+ * readable — a PDF row has no delimiters, and the tax/fee columns vary in
+ * count from row to row, so token order identifies nothing.
  */
 
 /** Section headers that switch the meaning of the rows beneath them. */
@@ -88,6 +99,85 @@ const money = (s: string): number => {
 /** Round to cents without floating-point crumbs (0.1+0.2 style drift). */
 const cents = (n: number): number => Math.round(n * 100) / 100;
 
+/**
+ * Where each money column sits on the page.
+ *
+ * The invoice prints its own heading row:
+ *
+ *   AIR TRNC Number Date CPUI Code STAT FOP  Amount  Amount  TAX  F&C  PEN
+ *       Amount  Rate  Amt  Rate  Amt  Comm  Payable
+ *
+ * reading, left to right: Transaction Amount, FARE Amount, the three tax
+ * columns, COBL Amount, Standard Commission rate and amount, Supplementary
+ * Commission rate and amount, Tax on Commission, and Balance Payable.
+ */
+interface Columns {
+  txn: number; fare: number; cobl: number;
+  taxCols: number[];
+  stdRate: number; stdAmt: number;
+  suppRate: number; suppAmt: number;
+  taxOnComm: number; payable: number;
+}
+
+/** Locate the columns from the heading row. Returns null when the grid carries
+ *  no positions at all, which must fail loudly rather than fall back to
+ *  guessing which number is a commission. */
+function findColumns(runsPerRow: PdfRun[][]): Columns | null {
+  for (const runs of runsPerRow) {
+    const at = (label: string) => runs.filter(r => r.text.trim() === label).map(r => r.x).sort((a, b) => a - b);
+    const amounts = at('Amount');
+    const amts = at('Amt');
+    const rates = at('Rate');
+    const payable = at('Payable');
+    const taxOnComm = at('Comm');
+    // The heading row is the one carrying all of these at once.
+    if (amounts.length < 3 || amts.length < 2 || rates.length < 2 || !payable.length || !taxOnComm.length) continue;
+    const taxCols = [...at('TAX'), ...at('F&C'), ...at('PEN')];
+    return {
+      txn: amounts[0], fare: amounts[1], cobl: amounts[2], taxCols,
+      stdRate: rates[0], stdAmt: amts[0],
+      suppRate: rates[1], suppAmt: amts[1],
+      taxOnComm: taxOnComm[0], payable: payable[0],
+    };
+  }
+  return null;
+}
+
+/**
+ * Assign every money token on a row to the column it physically sits under.
+ *
+ * Each number goes to its NEAREST column, which is what makes the reading
+ * robust: the tax and fee columns vary in how many are printed from row to
+ * row, so counting tokens tells you nothing, but a number's position tells you
+ * exactly which column it belongs to.
+ */
+function readColumns(runs: PdfRun[], c: Columns): Record<keyof Columns | 'none', number | undefined> {
+  const centres: [string, number][] = [
+    ['txn', c.txn], ['fare', c.fare], ['cobl', c.cobl],
+    ['stdRate', c.stdRate], ['stdAmt', c.stdAmt],
+    ['suppRate', c.suppRate], ['suppAmt', c.suppAmt],
+    ['taxOnComm', c.taxOnComm], ['payable', c.payable],
+    ...c.taxCols.map((x, i) => [`tax${i}`, x] as [string, number]),
+  ];
+  const out: Record<string, number | undefined> = {};
+  const dist: Record<string, number> = {};
+  for (const run of runs) {
+    const t = run.text.trim();
+    if (!MONEY_CELL_RE.test(t)) continue;
+    let best = centres[0];
+    for (const cand of centres) {
+      if (Math.abs(run.x - cand[1]) < Math.abs(run.x - best[1])) best = cand;
+    }
+    const d = Math.abs(run.x - best[1]);
+    // Keep the closest candidate when two numbers land on one column.
+    if (out[best[0]] === undefined || d < dist[best[0]]) { out[best[0]] = cents(money(t)); dist[best[0]] = d; }
+  }
+  return out as Record<keyof Columns | 'none', number | undefined>;
+}
+
+/** A whole cell that is a money value — anchored, unlike the scanning MONEY_RE. */
+const MONEY_CELL_RE = /^-?\d{1,3}(?:,\d{3})*\.\d{2}$|^-?\d+\.\d{2}$/;
+
 export const BSPInvoiceParser: VendorParser = {
   id: 'BSP_INVOICE',
   name: 'IATA BSP Invoice (PDF)',
@@ -104,8 +194,21 @@ export const BSPInvoiceParser: VendorParser = {
     const warnings: string[] = [];
     const result: ParsedRow[] = [];
 
-    // Each emitted CSV row holds the whole PDF line in its first cell.
+    // Cell 0 is the row's text; cell 1 carries its runs with their x positions.
     const lines = rows.map(r => (r[0] ?? '').toString());
+    const runsPerRow = rows.map(r => decodeRuns((r[1] ?? '').toString()));
+
+    // Money columns are located from the invoice's own heading row rather than
+    // hardcoded, so a shift in the layout moves the columns with it.
+    const columns = findColumns(runsPerRow);
+    if (!columns) {
+      return {
+        rows: [], warnings,
+        errors: ['This BSP invoice carries no column positions, so Standard and '
+               + 'Supplementary Commission cannot be told apart from the tax '
+               + 'columns. Import the original PDF rather than a converted copy.'],
+      };
+    }
 
     // Currency and billing period come from the header block.
     let currency: SupportedCurrency = defaultCurrency;
@@ -123,7 +226,8 @@ export const BSPInvoiceParser: VendorParser = {
     let seenTxn = 0;
     const unknownTypes = new Map<string, number>();
 
-    for (const line of lines) {
+    for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+      const line = lines[lineIdx];
       // Channel changes ONLY on the invoice's own category header, e.g.
       //   "CATEGORY WEBSALES-EDIS"
       // Matching a bare mention of the name is not safe: the page-1 summary
@@ -147,6 +251,7 @@ export const BSPInvoiceParser: VendorParser = {
       const trnc = trncRaw.toUpperCase();
       seenTxn++;
 
+      const cols = readColumns(runsPerRow[lineIdx] ?? [], columns);
       const nums = (rest.match(MONEY_RE) || []).map(money);
       if (nums.length === 0) {
         // A void with no money at all still belongs in the ledger as a record.
@@ -160,16 +265,23 @@ export const BSPInvoiceParser: VendorParser = {
         continue;
       }
 
-      // The first money token is the Transaction Amount (the fare), the last
-      // is the Balance Payable. Everything between is the tax/fee breakdown
-      // and the commission columns — which vary in count from line to line,
-      // so they are never read positionally.
-      const fare = cents(nums[0]);
-      const payable = cents(nums[nums.length - 1]);
-      // Commission is whatever reconciles the invoice's own formula. Deriving
-      // it this way rather than by column index is what makes the parser
-      // tolerant of the layout shifting between rows and between issuers.
-      const commission = cents(fare - payable);
+      // Every value is read from its own column.
+      //
+      // Commission is NOT derived as fare - payable. That derivation is wrong
+      // whenever the two are not related by commission alone, and the invoice
+      // says so itself in its footnote:
+      //
+      //   Balance Payable = Transaction Amount CA FOP (or 0)
+      //                     - Std Comm - Supp Comm +/- Tax on Comm
+      //
+      // "CA FOP (or 0)" means only a CASH sale contributes; on a credit-card
+      // sale the airline collects directly, so Balance Payable is 0.00 while
+      // the transaction amount is not. Deriving there manufactures a
+      // commission equal to the entire fare — 341,050.00 of phantom
+      // commission across this agent's 18 card rows.
+      const fare = cents(cols.txn ?? 0);
+      const payable = cents(cols.payable ?? 0);
+      const commission = cents((cols.stdAmt ?? 0) + (cols.suppAmt ?? 0));
 
       const isRefund = trnc === 'RFND' || trnc === 'RFNC' || section === 'REFUNDS';
       const isVoid = trnc === 'CANX' || trnc === 'CANN';
@@ -196,26 +308,22 @@ export const BSPInvoiceParser: VendorParser = {
       const finalPayable = isVoid ? 0 : payable;
       const finalFare = isVoid ? 0 : fare;
 
-      // Sanity-check the derived commission. Note this cannot be a check of
-      // "fare - commission == payable": commission IS defined as fare minus
-      // payable, so that equation holds by construction and would catch
-      // nothing. What can actually be verified is plausibility — commission is
-      // a cut of the fare, so it can never exceed it, and it can never run
-      // against its sign. Either would mean the money tokens were misread
-      // (a stray tax column picked up as the payable, say).
-      // These guards apply ONLY where a fare exists to compare against.
+      // Now that commission is read rather than derived, these guards test
+      // something real: a commission is a cut of the fare, so it cannot exceed
+      // it, and it cannot run against its sign. Either would mean a number was
+      // picked up from the wrong column.
       //
-      // A memo can legitimately carry no fare and consist purely of a
-      // commission adjustment. A real ADMA on this account reads
+      // They apply ONLY where a fare exists to compare against. A memo can
+      // legitimately carry no fare and consist purely of a commission
+      // adjustment — a real ADMA on this account reads
       //   0.00 ... -104.36 ... 104.36
-      // zero transaction amount, commission recalled, so 0 - (-104.36) =
-      // 104.36 becomes payable. Applying "commission cannot exceed the fare"
-      // there rejects a correct row — which is how a genuine 104.36 debit
-      // memo went missing.
+      // zero transaction amount, commission recalled. Applying "commission
+      // cannot exceed the fare" there rejects a correct row, which is how a
+      // genuine 104.36 debit memo went missing.
       const hasFare = Math.abs(finalFare) > 0.005;
       if (!isVoid && hasFare && Math.abs(commission) > Math.abs(finalFare) + 0.011) {
         errors.push(
-          `${trnc} ${docNo}: derived commission ${commission.toFixed(2)} exceeds the fare ${finalFare.toFixed(2)} — line misread, skipped.`
+          `${trnc} ${docNo}: commission ${commission.toFixed(2)} exceeds the fare ${finalFare.toFixed(2)} — line misread, skipped.`
         );
         continue;
       }

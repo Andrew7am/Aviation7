@@ -10,7 +10,7 @@ import Papa from 'papaparse';
 import { Client } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { runParser } from '../src/core/parsers';
-import { extractPdfRows } from '../src/core/helpers/pdfText';
+import { extractPdfRows, pdfRowsToCsv } from '../src/core/helpers/pdfText';
 import { classifyAgainstExisting, RECON_LABEL, ReconClass } from '../src/core/ImportEngine';
 import type { Ticket } from '../src/types';
 
@@ -29,7 +29,7 @@ async function main() {
 
   const buf = readFileSync(PDF);
   const rows = await extractPdfRows(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
-  const csv = rows.map(r => `"${r.replace(/"/g, '""')}"`).join('\n');
+  const csv = pdfRowsToCsv(rows);
   const grid = Papa.parse(csv, { skipEmptyLines: true }).data as string[][];
   const parsed = runParser(grid, undefined, 'AED', 'invoice.pdf');
 

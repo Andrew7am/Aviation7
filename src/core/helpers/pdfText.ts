@@ -76,9 +76,22 @@ function runsFromStream(content: string): Run[] {
   return runs;
 }
 
+/** One piece of text and the x it was printed at. */
+export interface PdfRun { x: number; text: string }
+
+/**
+ * A visual row: its reading-order text, plus the runs it was built from.
+ *
+ * The runs matter because a table's meaning lives in its columns, not in the
+ * order its tokens happen to appear. A BSP invoice prints Standard Commission
+ * and Supplementary Commission in their own columns, and the only reliable way
+ * to tell which number is which is the x it sits at.
+ */
+export interface PdfRow { text: string; runs: PdfRun[] }
+
 /** Group runs into visual rows: same y (to half a unit) is one row, ordered
  *  left to right, top of page first. */
-function rowsFromRuns(runs: Run[]): string[] {
+function rowsFromRuns(runs: Run[]): PdfRow[] {
   const byRow = new Map<number, Run[]>();
   for (const run of runs) {
     const key = Math.round(run.y * 2) / 2;
@@ -87,9 +100,52 @@ function rowsFromRuns(runs: Run[]): string[] {
   }
   return [...byRow.entries()]
     .sort((a, b) => b[0] - a[0])
-    .map(([, group]) =>
-      group.sort((a, b) => a.x - b.x).map(r => r.text).join(' ').replace(/\s+/g, ' ').trim())
-    .filter(Boolean);
+    .map(([, group]) => {
+      const ordered = group.sort((a, b) => a.x - b.x);
+      return {
+        text: ordered.map(r => r.text).join(' ').replace(/\s+/g, ' ').trim(),
+        runs: ordered.map(r => ({ x: r.x, text: r.text })),
+      };
+    })
+    .filter(r => r.text);
+}
+
+// ASCII record/unit separators (0x1E / 0x1F) — chosen because that is
+// precisely what they are for, and no PDF text layer contains them. Built
+// from char codes rather than written literally so they survive any
+// reformatting of this file.
+const RUN_SEP = String.fromCharCode(0x1e);
+const FIELD_SEP = String.fromCharCode(0x1f);
+
+/** Pack runs into a single CSV-safe field so positions survive the grid. */
+export function encodeRuns(runs: PdfRun[]): string {
+  return runs.map(r => `${Math.round(r.x)}${FIELD_SEP}${r.text}`).join(RUN_SEP);
+}
+
+/**
+ * Render extracted rows as the CSV the parsers consume: the row's text in one
+ * quoted field, its positions in a second.
+ *
+ * One quoted field for the text because a PDF row has no delimiters and the
+ * commas inside "4,080.00" would otherwise be read as column breaks.
+ */
+export function pdfRowsToCsv(rows: PdfRow[]): string {
+  const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
+  return rows.map(r => `${q(r.text)},${q(encodeRuns(r.runs))}`).join('\n');
+}
+
+/** Unpack what encodeRuns produced. Returns [] for anything else, so a grid
+ *  that never carried positions simply reports having none. */
+export function decodeRuns(packed: string | undefined): PdfRun[] {
+  if (!packed) return [];
+  const out: PdfRun[] = [];
+  for (const part of packed.split(RUN_SEP)) {
+    const at = part.indexOf(FIELD_SEP);
+    if (at < 0) continue;
+    const x = Number(part.slice(0, at));
+    if (Number.isFinite(x)) out.push({ x, text: part.slice(at + 1) });
+  }
+  return out;
 }
 
 /**
@@ -98,11 +154,11 @@ function rowsFromRuns(runs: Run[]): string[] {
  * image, which needs OCR and is out of scope; failing loudly is better than
  * silently importing nothing.
  */
-export async function extractPdfRows(data: ArrayBuffer): Promise<string[]> {
+export async function extractPdfRows(data: ArrayBuffer): Promise<PdfRow[]> {
   const bytes = new Uint8Array(data);
   const raw = LATIN1.decode(bytes);
 
-  const rows: string[] = [];
+  const rows: PdfRow[] = [];
   let sawStream = false;
 
   const re = /stream\r?\n/g;

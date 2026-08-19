@@ -12,6 +12,7 @@ import { Client } from 'pg';
 import { runParser } from '../src/core/parsers';
 import { vendorMatchesSource, calcVendorBalance } from '../src/core/helpers/walletMath';
 import type { VendorBalance } from '../src/types';
+import { invoiceGrid, txn } from './helpers/bspFixture';
 
 let pass = 0, fail = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -21,15 +22,11 @@ const check = (name: string, got: unknown, want: unknown) => {
   else { fail++; console.log(`  FAIL  ${name}\n          got  ${JSON.stringify(got)}\n          want ${JSON.stringify(want)}`); }
 };
 
-const invoice = (body: string[]) => runParser([
-  ['FCAGBILLDET AGENT BILLING DETAILS 86-2 1913 6 LUXURY EVENTS AND VIP TRAVEL FZC'],
-  ['Billing Period: 260802(09-AUG-2026 to 15-AUG-2026)'],
-  ['GRAND TOTAL (AED) 126,925.08 97,052.08'],
-  ...body.map(l => [l]),
-], undefined, 'AED', 'invoice.pdf');
+const invoice = (body: Parameters<typeof invoiceGrid>[0]) =>
+  runParser(invoiceGrid(body), undefined, 'AED', 'invoice.pdf');
 
-const ISSUE = '077 TKTT 5513059026 09AUG26 FFVV I 4,080.00 2,240.00 2,240.00 7.00 156.80 0.00 0.00 3,923.20';
-const REFUND = '235 RFND 5513059004 09AUG26 NR:5B I -10,410.00 -9,810.00 -9,810.00 0.00 0.00 2.00 -196.20 0.00 -10,213.80';
+const ISSUE = txn({ air: '077', trnc: 'TKTT', doc: '5513059026', date: '09AUG26', cpui: 'FFVV', txn: 4080.00, fare: 2240.00, cobl: 2240.00, stdRate: 7.00, stdAmt: 156.80, suppAmt: 0, payable: 3923.20 });
+const REFUND = txn({ air: '235', trnc: 'RFND', doc: '5513059004', date: '09AUG26', txn: -10410.00, fare: -9810.00, cobl: -9810.00, stdRate: 2.00, stdAmt: -196.20, suppAmt: 0, payable: -10213.80 });
 
 console.log('1. IATA BSP TKTT');
 {
@@ -43,7 +40,7 @@ console.log('1. IATA BSP TKTT');
 console.log('\n2. IATA WEBSALES-EDIS TKTT — channel, not a vendor');
 {
   const r = invoice(['*** ISSUES', ISSUE, 'CATEGORY WEBSALES-EDIS', '*** ISSUES',
-    '235 TKTT 2540225916 13AUG26 FFFF I 20,190.00 15,350.00 15,350.00 0.00 0.00 3.00 533.40 0.00 19,656.60']);
+    txn({ air: '235', trnc: 'TKTT', doc: '2540225916', date: '13AUG26', cpui: 'FFFF', txn: 20190.00, fare: 15350.00, cobl: 15350.00, stdRate: 3.00, stdAmt: 533.40, suppAmt: 0, payable: 19656.60 })]);
   const web = r.rows.find(t => t.ticketNo === '2540225916');
   check('vendor still IATA', web?.source, 'IATA BSP');
   check('channel WEBSALES-EDIS', web?.channel, 'WEBSALES-EDIS');
@@ -61,8 +58,8 @@ console.log('\n3. IATA manual RFND');
 console.log('\n4. IATA EMD');
 {
   const r = invoice(['*** ISSUES',
-    '077 EMDS 1949933364 13AUG26 FVVV I* 80.00 80.00 80.00 0.00 0.00 0.00 0.00 80.00',
-    '065 EMDA 1949933355 09AUG26 FFVV I 640.00 640.00 640.00 0.00 0.00 0.00 0.00 640.00']);
+    txn({ air: '077', trnc: 'EMDS', doc: '1949933364', date: '13AUG26', cpui: 'FVVV', txn: 80.00, fare: 80.00, cobl: 80.00, stdAmt: 0, suppAmt: 0, payable: 80.00 }),
+    txn({ trnc: 'EMDA', doc: '1949933355', date: '09AUG26', cpui: 'FFVV', txn: 640.00, fare: 640.00, cobl: 640.00, stdAmt: 0, suppAmt: 0, payable: 640.00 })]);
   check('EMDS imported', r.rows.find(t => t.rawType === 'EMDS')?.status, 'EMDS');
   check('EMDA imported', r.rows.find(t => t.rawType === 'EMDA')?.status, 'EMDS');
 }
@@ -70,8 +67,8 @@ console.log('\n4. IATA EMD');
 console.log('\n5. IATA CANX / CANN');
 {
   const r = invoice(['*** ISSUES',
-    '065 CANX 5513059030 10AUG26 VVVV I 0.00 0.00 0.00 0.00 0.00 0.00',
-    '065 CANN 5512129119 08FEB26 VVVV I 0.00 0.00 0.00 0.00 0.00 0.00']);
+    txn({ trnc: 'CANX', doc: '5513059030', date: '10AUG26', cpui: 'VVVV', txn: 0, fare: 0, stdAmt: 0, suppAmt: 0, payable: 0 }),
+    txn({ trnc: 'CANN', doc: '5512129119', date: '08FEB26', cpui: 'VVVV', txn: 0, fare: 0, stdAmt: 0, suppAmt: 0, payable: 0 })]);
   check('CANX present', r.rows.find(t => t.rawType === 'CANX')?.status, 'VOID');
   check('CANN present', r.rows.find(t => t.rawType === 'CANN')?.status, 'VOID');
   check('void carries no value', r.rows[0]?.amount, 0);
@@ -79,7 +76,7 @@ console.log('\n5. IATA CANX / CANN');
 
 console.log('\n6. IATA SPDR — the type that used to vanish');
 {
-  const r = invoice(['*** DEBIT MEMOS', '953 SPDR 6000088139 17AUG26 D 22.08 22.08 0.00 22.08 0.00 22.08']);
+  const r = invoice(['*** DEBIT MEMOS', txn({ air: '953', trnc: 'SPDR', doc: '6000088139', date: '17AUG26', stat: 'D', txn: 22.08, fare: 22.08, stdAmt: 0, suppAmt: 0, payable: 22.08 })]);
   check('imported, not skipped', r.rows.length, 1);
   check('raw type preserved', r.rows[0]?.rawType, 'SPDR');
   check('amount captured', r.rows[0]?.amount, 22.08);
@@ -90,7 +87,7 @@ console.log('\n6. IATA SPDR — the type that used to vanish');
 console.log('\n7. Same ticket issued AND refunded — two transactions, not a duplicate');
 {
   const r = invoice(['*** ISSUES', ISSUE, '*** REFUNDS',
-    '077 RFND 5513059026 12AUG26 I -3,905.00 -2,240.00 -2,240.00 7.00 -156.80 0.00 0.00 -3,748.20']);
+    txn({ air: '077', trnc: 'RFND', doc: '5513059026', date: '12AUG26', txn: -3905.00, fare: -2240.00, cobl: -2240.00, stdRate: 7.00, stdAmt: -156.80, suppAmt: 0, payable: -3748.20 })]);
   check('both rows kept', r.rows.length, 2);
   const iss = r.rows.find(t => t.status === 'ISSUE');
   const ref = r.rows.find(t => t.status === 'REFUND');
@@ -119,7 +116,7 @@ console.log('\n9. Negative refund values, signs preserved (no Math.abs)');
 
 console.log('\n10. Commission cents preserved');
 {
-  const t = invoice(['*** ISSUES', '077 TKTT 5513059029 09AUG26 FFVV I 1,710.00 570.00 570.00 7.00 39.90 0.00 0.00 1,670.10']).rows[0];
+  const t = invoice(['*** ISSUES', txn({ air: '077', trnc: 'TKTT', doc: '5513059029', date: '09AUG26', cpui: 'FFVV', txn: 1710.00, fare: 570.00, cobl: 570.00, stdRate: 7.00, stdAmt: 39.90, suppAmt: 0, payable: 1670.10 })]).rows[0];
   check('39.90 stays 39.90', t?.commission, 39.90);
   check('not rounded to an integer', Number.isInteger(t?.commission ?? 0), false);
 }
@@ -141,7 +138,7 @@ console.log('\n12/13. Invoice date is used, upload date is not');
 
 console.log('\n15. Unknown IATA document type is not silently dropped');
 {
-  const r = invoice(['*** ISSUES', '953 ZZZZ 6000099999 17AUG26 D 55.00 55.00 0.00 55.00 0.00 55.00']);
+  const r = invoice(['*** ISSUES', txn({ air: '953', trnc: 'ZZZZ', doc: '6000099999', date: '17AUG26', stat: 'D', txn: 55.00, fare: 55.00, stdAmt: 0, suppAmt: 0, payable: 55.00 })]);
   check('row imported', r.rows.length, 1);
   check('raw type kept', r.rows[0]?.rawType, 'ZZZZ');
   check('financial value kept', r.rows[0]?.amount, 55.00);
