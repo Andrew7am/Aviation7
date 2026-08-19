@@ -2,6 +2,7 @@ import React, { useRef, useState, useMemo, useEffect } from 'react';
 import Papa from 'papaparse';
 import { Ticket } from '../types';
 import { useImport, ImportMeta } from '../hooks/useImport';
+import { ClassifiedRow, ReconClass, RECON_LABEL } from '../core/ImportEngine';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { findHeaderRow } from '../core/helpers/columnResolver';
 import { LearnedProfile, bestHeaderRowForAI } from '../core/ai/learnedProfile';
@@ -29,6 +30,23 @@ const STATUS_COLORS: Record<string, string> = {
   ADM: 'bg-blue-100 text-blue-700', ACM: 'bg-purple-100 text-purple-700',
   HOLD: 'bg-amber-100 text-amber-800', EMDS: 'bg-purple-100 text-purple-700',
 };
+
+/** Reconciliation verdict colours. Commission gaps are money the ledger is
+ *  missing, so they read as a warning rather than a neutral difference. */
+const RECON_COLORS: Record<ReconClass, string> = {
+  NEW:                'bg-emerald-100 text-emerald-700',
+  EXACT_MATCH:        'bg-slate-100 text-slate-500',
+  COMMISSION_MISSING: 'bg-red-100 text-red-700',
+  COMMISSION_DIFF:    'bg-amber-100 text-amber-700',
+  FARE_DIFF:          'bg-amber-100 text-amber-700',
+  PAYABLE_DIFF:       'bg-amber-100 text-amber-700',
+  DATE_DIFF:          'bg-blue-100 text-blue-700',
+  CHANNEL_DIFF:       'bg-violet-100 text-violet-700',
+  DUPLICATE:          'bg-slate-200 text-slate-600',
+};
+
+const verdictKey = (ticketNo: string, amount: number) =>
+  `${ticketNo.trim().toUpperCase()}|${amount < 0 ? '-' : '+'}`;
 
 export const ImportData: React.FC<ImportDataProps> = ({
   userId, onImport, vendorNames = [],
@@ -128,6 +146,18 @@ export const ImportData: React.FC<ImportDataProps> = ({
     setDefaultSource('Auto-detect');
   };
 
+  /** Reconciliation verdict per row, keyed by ticket id. Display only —
+   *  what actually gets saved is still decided by fresh/updates/duplicates. */
+  const verdicts = useMemo(() => {
+    const m = new Map<string, ClassifiedRow>();
+    // Keyed on ticket number + direction of money, NOT on row id: an update
+    // row is re-issued carrying the EXISTING record's id, so an id lookup
+    // would silently miss exactly the rows whose verdict matters most.
+    for (const c of preview?.classified ?? []) m.set(verdictKey(c.ticket.ticketNo, c.ticket.amount), c);
+    return m;
+  }, [preview]);
+  const verdictFor = (ticketNo: string, amount: number) => verdicts.get(verdictKey(ticketNo, amount));
+
   // Flatten preview into one renderable list, tagging dup/update for styling
   const rows = preview
     ? [
@@ -184,7 +214,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
         <div className="flex items-center justify-between mb-2">
           <label className="text-[10px] font-bold uppercase text-slate-500">Data Input</label>
           <div className="flex space-x-2">
-            <input type="file" accept=".csv,.txt,.xls,.xlsx" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+            <input type="file" accept=".csv,.txt,.xls,.xlsx,.pdf" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
             <button onClick={() => fileInputRef.current?.click()}
               className="px-3 py-1 flex items-center space-x-2 bg-slate-100 border border-slate-200 rounded text-[10px] font-bold uppercase text-slate-600 hover:bg-slate-200">
               <Upload className="w-3 h-3" /><span>Upload File</span>
@@ -267,7 +297,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
             <table className="w-full text-left border-collapse">
               <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                 <tr>
-                  {['Serial','A/L','Ticket No.','Source','Type','Date','Route','Total Doc','Comm','Net Amt','Curr','PNR','Passenger','Req Num'].map(col => (
+                  {['Serial','A/L','Ticket No.','Source','Type','Date','Route','Fare','Commission','Balance Payable','Curr','PNR','Passenger','Req Num','Status'].map(col => (
                     <th key={col} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap border-b border-slate-200">{col}</th>
                   ))}
                 </tr>
@@ -288,13 +318,32 @@ export const ImportData: React.FC<ImportDataProps> = ({
                       <td className="px-3 py-2">{t.status ? <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${STATUS_COLORS[t.status] ?? 'bg-slate-100 text-slate-500'}`}>{t.status}</span> : <span className="text-slate-300">—</span>}</td>
                       <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{t.date}</td>
                       <td className="px-3 py-2 text-slate-400 text-[10px] max-w-[80px] truncate">{t.route || '—'}</td>
-                      <td className="px-3 py-2 text-slate-500">{t.totalDoc > 0 ? fmt(t.totalDoc) : '—'}</td>
-                      <td className="px-3 py-2 text-slate-400">{t.commission > 0 ? fmt(t.commission) : '—'}</td>
+                      {/* Fare | Commission | Balance Payable, always all three.
+                          `> 0` would hide a refund's negative commission and
+                          make the payable look wrong for no visible reason. */}
+                      <td className="px-3 py-2 text-slate-500">{t.totalDoc ? fmt(t.totalDoc) : '—'}</td>
+                      <td className={`px-3 py-2 ${t.commission < 0 ? 'text-red-500' : 'text-slate-400'}`}>{t.commission ? fmt(t.commission) : '—'}</td>
                       <td className={`px-3 py-2 font-bold ${t.amount < 0 ? 'text-red-600' : ''}`}>{t.amount < 0 ? '-' : ''}{fmt(Math.abs(t.amount))}</td>
-                      <td className="px-3 py-2 text-slate-400 text-[9px]">{sourceToCurrency(t.source || '')}</td>
+                      <td className="px-3 py-2 text-slate-400 text-[9px]">{t.currency || sourceToCurrency(t.source || '')}</td>
                       <td className="px-3 py-2 text-slate-600">{t.pnr || '—'}</td>
                       <td className="px-3 py-2 text-slate-500 max-w-[120px] truncate">{t.passengerName || '—'}</td>
                       <td className={`px-3 py-2 font-bold ${t.reqNum ? 'text-blue-600' : 'text-red-400 italic'}`}>{t.reqNum || 'MISSING'}</td>
+                      <td className="px-3 py-2">
+                        {(() => {
+                          const v = verdictFor(t.ticketNo, t.amount);
+                          if (!v) return <span className="text-slate-300 text-[9px]">—</span>;
+                          return (
+                            <span
+                              title={v.cls === 'COMMISSION_MISSING'
+                                ? `Invoice charges ${fmt(Math.abs(v.delta.commission))} commission the system does not have — payable differs by ${fmt(Math.abs(v.delta.payable))}`
+                                : undefined}
+                              className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold whitespace-nowrap ${RECON_COLORS[v.cls]}`}
+                            >
+                              {RECON_LABEL[v.cls]}
+                            </span>
+                          );
+                        })()}
+                      </td>
                     </tr>
                   );
                 })}

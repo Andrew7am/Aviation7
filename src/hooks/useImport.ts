@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import Papa from 'papaparse';
 import { Ticket } from '../types';
 import { runParser } from '../core/parsers';
-import { detectDuplicates, detectDuplicatesAgainstExisting, readFileAsText } from '../core/ImportEngine';
+import { detectDuplicates, detectDuplicatesAgainstExisting, classifyAgainstExisting, ClassifiedRow, readFileAsText } from '../core/ImportEngine';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
 import { LearnedProfile } from '../core/ai/learnedProfile';
 import { v4 as uuidv4 } from 'uuid';
@@ -20,6 +20,9 @@ export interface ImportPreview {
   parserName:  string;
   confidence:  number;
   totalRows:   number;
+  /** Per-row reconciliation verdict, for the preview only. The save path
+   *  still goes through fresh/updates/duplicates above, unchanged. */
+  classified:  ClassifiedRow[];
 }
 
 export interface ImportMeta {
@@ -104,9 +107,11 @@ export function useImport(userId: string) {
       const existingFromDB = await svc.fetchByTicketNos(batchTicketNos);
 
       const { fresh, updates, duplicates } = detectDuplicatesAgainstExisting(realTkts, existingFromDB);
+      const classified = classifyAgainstExisting(realTkts, existingFromDB);
 
       setPreview({
         fresh, updates, duplicates, topUps,
+        classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
         warnings, parserName, confidence,
         totalRows: allRows.length,

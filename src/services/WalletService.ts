@@ -1,6 +1,6 @@
 import { supabase, fetchAllRows } from '../utils/supabase';
 import { VendorBalance, BalanceTopUp } from '../types';
-import { VENDOR_ALIASES } from '../core/config/vendorAliases';
+import { vendorMatchesSource, calcVendorBalance } from '../core/helpers/walletMath';
 
 type VendorBalanceRow = {
   id: string;
@@ -112,36 +112,19 @@ export class WalletService {
     if (error) throw new Error(error.message);
   }
 
-  /** Match vendor to tickets by source name using alias table */
+  /** Match vendor to tickets by source name using alias table.
+   *  Implementation lives in core/helpers/walletMath so it can be tested
+   *  without loading the Supabase client; behaviour is unchanged. */
   static vendorMatchesSource(vendorName: string, ticketSource: string): boolean {
-    const vn  = vendorName.toLowerCase().trim();
-    const src = ticketSource.toLowerCase().trim();
-    if (!vn || !src) return false;
-    const aliases = (VENDOR_ALIASES as Record<string, string[]>)[vn];
-    if (aliases) return aliases.some(a => src.includes(a));
-    return src.includes(vn) || vn.includes(src);
+    return vendorMatchesSource(vendorName, ticketSource);
   }
 
-  /** Recalculate balance from scratch using ledger */
+  /** Recalculate balance from scratch using ledger. */
   static calcBalance(
     vendor: VendorBalance,
     tickets: { source: string; amount: number; status?: string }[],
     topUps: BalanceTopUp[]
   ): number {
-    const linked = tickets.filter(t => WalletService.vendorMatchesSource(vendor.vendorName, t.source));
-    const issued  = linked.filter(t => (t.status || '').toUpperCase() !== 'FUND').reduce((s, t) => s + t.amount, 0);
-    const topUpTotal = topUps.filter(tu => tu.vendorId === vendor.id).reduce((s, tu) => s + tu.amount, 0);
-
-    // Ibtekar's own ledger runs "balance = prev + debit - credit" (verified
-    // row-by-row against their raw sheet in scripts/_verify_ibtekar_ledger.ts):
-    // issuance (debit) moves the number toward positive, top-ups/refunds
-    // (credit) push it further negative. Combined with the "negative = good"
-    // display flip in VendorBalances.tsx, this is what makes issuance reduce
-    // the on-screen balance and refunds/top-ups raise it. Every other vendor
-    // uses the plain initial + topUps - issued formula.
-    if (vendor.vendorName.trim().toLowerCase() === 'ibtekar') {
-      return vendor.initialBalance - topUpTotal + issued;
-    }
-    return vendor.initialBalance + topUpTotal - issued;
+    return calcVendorBalance(vendor, tickets, topUps);
   }
 }

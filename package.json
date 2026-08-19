@@ -10,7 +10,11 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "db:migrate": "tsx scripts/run-supabase-migrations.ts",
-    "db:verify-import": "tsx scripts/verify-import-pipeline.ts"
+    "db:verify-import": "tsx scripts/verify-import-pipeline.ts",
+    "test:bsp": "tsx scripts/test-bsp-invoice.ts",
+    "test:wallet": "tsx scripts/test-websales-wallet.ts",
+    "test:reconcile": "tsx scripts/test-bsp-reconcile.ts",
+    "test": "npm run test:bsp && npm run test:wallet"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

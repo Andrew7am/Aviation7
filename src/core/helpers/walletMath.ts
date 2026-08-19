@@ -1,0 +1,55 @@
+import { VENDOR_ALIASES } from '../config/vendorAliases';
+import type { VendorBalance, BalanceTopUp } from '../../types';
+
+/**
+ * Vendor↔ledger matching and balance arithmetic.
+ *
+ * Extracted from WalletService purely so these rules can be exercised outside
+ * the browser: WalletService imports the Supabase client at module load, which
+ * makes its business rules untestable in a plain Node script. The logic below
+ * is unchanged and WalletService still exposes it under the same names, so
+ * every existing call site behaves exactly as before.
+ */
+
+/** Match vendor to tickets by source name using alias table. */
+export function vendorMatchesSource(vendorName: string, ticketSource: string): boolean {
+  const vn  = vendorName.toLowerCase().trim();
+  const src = ticketSource.toLowerCase().trim();
+  if (!vn || !src) return false;
+  const aliases = (VENDOR_ALIASES as Record<string, string[]>)[vn];
+  if (aliases) return aliases.some(a => src.includes(a));
+  return src.includes(vn) || vn.includes(src);
+}
+
+/**
+ * Recalculate a vendor balance from the ledger.
+ *
+ * Note what this does NOT do: it never special-cases a settlement channel.
+ * A channel only affects a wallet if its `source` matches that vendor's name
+ * or an alias — which is why WEBSALES-EDIS, settled separately from BSP, stays
+ * out of the IATA balance without needing an exclusion rule.
+ */
+export function calcVendorBalance(
+  vendor: VendorBalance,
+  tickets: { source: string; amount: number; status?: string }[],
+  topUps: BalanceTopUp[],
+): number {
+  const linked = tickets.filter(t => vendorMatchesSource(vendor.vendorName, t.source));
+  const issued = linked
+    .filter(t => (t.status || '').toUpperCase() !== 'FUND')
+    .reduce((s, t) => s + t.amount, 0);
+  const topUpTotal = topUps
+    .filter(tu => tu.vendorId === vendor.id)
+    .reduce((s, tu) => s + tu.amount, 0);
+
+  // Ibtekar's own ledger runs "balance = prev + debit - credit" (verified
+  // row-by-row against their raw sheet): issuance (debit) moves the number
+  // toward positive, top-ups/refunds (credit) push it further negative.
+  // Combined with the "negative = good" display flip in VendorBalances.tsx,
+  // this is what makes issuance reduce the on-screen balance and refunds and
+  // top-ups raise it. Every other vendor uses initial + topUps - issued.
+  if (vendor.vendorName.trim().toLowerCase() === 'ibtekar') {
+    return vendor.initialBalance - topUpTotal + issued;
+  }
+  return vendor.initialBalance + topUpTotal - issued;
+}

@@ -9,6 +9,7 @@
  * intentionally does NOT parse rows itself.
  */
 import * as XLSX from 'xlsx';
+import { extractPdfRows } from './helpers/pdfText';
 import { Ticket } from '../types';
 
 /* ─────────────────────────────────────────────
@@ -101,7 +102,103 @@ export function detectDuplicatesAgainstExisting(
 }
 
 /* ─────────────────────────────────────────────
-   FILE READING — CSV/TXT as plain text, XLSX via SheetJS → CSV
+   RECONCILIATION CLASSIFICATION
+
+   Used for DISPLAY ONLY — the save path still runs through
+   detectDuplicatesAgainstExisting above, unchanged. This exists so the
+   import preview can explain *why* a row differs rather than just marking
+   it a duplicate, which is what a settlement invoice needs: an invoice line
+   whose only difference is commission is not a conflict, it is money the
+   ledger has not captured yet.
+───────────────────────────────────────────── */
+export type ReconClass =
+  | 'NEW'                 // not in the system at all
+  | 'EXACT_MATCH'         // fare, commission and payable all agree
+  | 'COMMISSION_MISSING'  // invoice charges commission the ledger does not have
+  | 'COMMISSION_DIFF'     // both have commission, amounts differ
+  | 'FARE_DIFF'           // the gross fare itself disagrees
+  | 'PAYABLE_DIFF'        // payable differs for some other reason
+  | 'DATE_DIFF'           // same money, different transaction date
+  | 'CHANNEL_DIFF'        // same document settled under another channel
+  | 'DUPLICATE';          // already present, identical
+
+export interface ClassifiedRow {
+  ticket:   Ticket;
+  existing?: Ticket;
+  cls:      ReconClass;
+  /** invoice minus system, per value. Positive = invoice is higher. */
+  delta:    { fare: number; commission: number; payable: number };
+}
+
+const money = (n: number | undefined) => Math.round((n ?? 0) * 100) / 100;
+const differs = (a: number | undefined, b: number | undefined) => Math.abs(money(a) - money(b)) > 0.005;
+
+/**
+ * Compare incoming rows against what the system already holds and say what
+ * kind of difference each one is.
+ *
+ * A row is NOT a mismatch merely because fare !== payable — that gap is the
+ * commission and is expected on every commissionable ticket.
+ */
+export function classifyAgainstExisting(
+  incoming: Ticket[],
+  existing: Ticket[],
+): ClassifiedRow[] {
+  const byTicket = new Map<string, Ticket[]>();
+  for (const t of existing) {
+    const k = t.ticketNo.trim().toUpperCase();
+    const list = byTicket.get(k);
+    if (list) list.push(t); else byTicket.set(k, [t]);
+  }
+
+  return incoming.map(t => {
+    const key = t.ticketNo.trim().toUpperCase();
+    const sameDoc = byTicket.get(key) ?? [];
+    // Match within the same direction of money: a refund must not be compared
+    // against the original issue of the same document number.
+    const wantNegative = t.amount < 0;
+    const match = sameDoc.find(e => (e.amount < 0) === wantNegative) ?? sameDoc[0];
+
+    const delta = {
+      fare:       money((t.totalDoc ?? 0) - (match?.totalDoc ?? 0)),
+      commission: money((t.commission ?? 0) - (match?.commission ?? 0)),
+      payable:    money(t.amount - (match?.amount ?? 0)),
+    };
+
+    if (!match) return { ticket: t, cls: 'NEW' as ReconClass, delta };
+
+    const commissionOnInvoice = Math.abs(money(t.commission)) > 0.005;
+    const commissionInSystem  = Math.abs(money(match.commission)) > 0.005;
+
+    let cls: ReconClass;
+    if (commissionOnInvoice && !commissionInSystem)      cls = 'COMMISSION_MISSING';
+    else if (differs(t.commission, match.commission))    cls = 'COMMISSION_DIFF';
+    else if (differs(t.totalDoc, match.totalDoc))        cls = 'FARE_DIFF';
+    else if (differs(t.amount, match.amount))            cls = 'PAYABLE_DIFF';
+    else if ((t.source || '') !== (match.source || ''))  cls = 'CHANNEL_DIFF';
+    else if (t.date && match.date && t.date !== match.date) cls = 'DATE_DIFF';
+    else if (t.isDuplicate)                              cls = 'DUPLICATE';
+    else                                                 cls = 'EXACT_MATCH';
+
+    return { ticket: t, existing: match, cls, delta };
+  });
+}
+
+export const RECON_LABEL: Record<ReconClass, string> = {
+  NEW:                'New',
+  EXACT_MATCH:        'Match',
+  COMMISSION_MISSING: 'Commission Missing',
+  COMMISSION_DIFF:    'Commission Differs',
+  FARE_DIFF:          'Fare Differs',
+  PAYABLE_DIFF:       'Payable Differs',
+  DATE_DIFF:          'Date Differs',
+  CHANNEL_DIFF:       'Channel Differs',
+  DUPLICATE:          'Duplicate',
+};
+
+/* ─────────────────────────────────────────────
+   FILE READING — CSV/TXT as plain text, XLSX via SheetJS → CSV,
+   PDF via its own text layer → one CSV field per visual row
 ───────────────────────────────────────────── */
 export function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -110,6 +207,21 @@ export function readFileAsText(file: File): Promise<string> {
       reader.onload  = e => resolve(e.target?.result as string || '');
       reader.onerror = reject;
       reader.readAsText(file);
+    } else if (file.name.match(/\.pdf$/i)) {
+      // A PDF row is free text, not delimited columns, so each row is emitted
+      // as ONE quoted CSV field. Papa then yields [[row], [row], …] and the
+      // parser splits each row itself — commas inside "4,080.00" would
+      // otherwise be read as column breaks and shred every amount.
+      reader.onload = async e => {
+        try {
+          const rows = await extractPdfRows(e.target?.result as ArrayBuffer);
+          resolve(rows.map(r => `"${r.replace(/"/g, '""')}"`).join('\n'));
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error('Failed to read PDF'));
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
     } else {
       reader.onload  = e => {
         try {

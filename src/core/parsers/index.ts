@@ -13,6 +13,7 @@ import { RTSParser } from './RTSParser';
 import { RiyadhAirParser } from './RiyadhAirParser';
 import { TurkishAirlinesParser } from './TurkishAirlinesParser';
 import { ReconciliationExportParser } from './ReconciliationExportParser';
+import { BSPInvoiceParser } from './BSPInvoiceParser';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 import { findHeaderRow } from '../helpers/columnResolver';
 import { makeProfileParser } from './ProfileParser';
@@ -22,6 +23,9 @@ export const ALL_PARSERS: VendorParser[] = [
   // Our own export comes first: it is the most specific signature and must
   // win before any vendor parser gets a chance to half-match it.
   ReconciliationExportParser,
+  // BSP settlement invoice (PDF) — checked before the TJQ parser so a
+  // settlement document is never mistaken for a daily sales report.
+  BSPInvoiceParser,
   IATAParser, NSAParser,
   FlyAdealDXBParser, FlyAdealKSAParser,
   IbtekarV2Parser, IbtekarParser, GoldMedalParser,
