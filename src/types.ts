@@ -32,6 +32,11 @@ export interface Ticket {
   /** Follow-up workflow status independent of ISSUE/REFUND: true = Closed
    *  (reconciled/finalized with client), false = Not Closed (pending). */
   closed?: boolean;
+  /** Settlement channel within a vendor (IATA: 'BSP' | 'WEBSALES-EDIS').
+   *  Kept separate from `source`: source names the VENDOR and is what wallet
+   *  matching keys on, so putting a channel there would move the row to a
+   *  different (or non-existent) wallet. NULL for single-channel vendors. */
+  channel?: string;
 }
 
 export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'import' | 'vendors' | 'reports' | 'history' | 'activity';

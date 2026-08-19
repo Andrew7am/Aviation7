@@ -92,8 +92,10 @@ console.log('\nCASE 6 — WEBSALES-EDIS keeps its own channel');
   ]);
   const bsp = r.rows.find(t => t.ticketNo === '5513059027');
   const web = r.rows.find(t => t.ticketNo === '2540225913');
-  check('BSP row channel', bsp?.source, 'IATA BSP');
-  check('web row channel', web?.source, 'WEBSALES-EDIS');
+  check('BSP row vendor', bsp?.source, 'IATA BSP');
+  check('BSP row channel', bsp?.channel, 'BSP');
+  check('web row vendor is still IATA', web?.source, 'IATA BSP');
+  check('web row channel', web?.channel, 'WEBSALES-EDIS');
   check('warns about separate settlement', r.warnings.some(w => /WEBSALES-EDIS/.test(w)), true);
 }
 
@@ -128,8 +130,8 @@ console.log('\nCASE 9 — page-1 summary must not switch the channel');
     '*** ISSUES',
     '235 TKTT 2540225913 12AUG26 FFFF I 4,230.00 2,640.00 2,640.00 3.00 79.20 0.00 4,150.80',
   ]);
-  check('BSP ticket stayed BSP', r.rows.find(t => t.ticketNo === '5513059026')?.source, 'IATA BSP');
-  check('web ticket is WEBSALES-EDIS', r.rows.find(t => t.ticketNo === '2540225913')?.source, 'WEBSALES-EDIS');
+  check('BSP ticket stayed BSP', r.rows.find(t => t.ticketNo === '5513059026')?.channel, 'BSP');
+  check('web ticket is WEBSALES-EDIS', r.rows.find(t => t.ticketNo === '2540225913')?.channel, 'WEBSALES-EDIS');
 }
 
 // ── Against the real invoice, when available ────────────────────────────────
@@ -147,8 +149,8 @@ if (!existsSync(pdfPath)) {
       const r = runParser(grid, undefined, 'AED', 'invoice.pdf');
       check('detected as BSP invoice', r.parserName, 'IATA BSP Invoice (PDF)');
       check('no parse errors', r.errors.length, 0);
-      const bsp = r.rows.filter(t => t.source === 'IATA BSP');
-      const web = r.rows.filter(t => t.source === 'WEBSALES-EDIS');
+      const bsp = r.rows.filter(t => t.channel === 'BSP');
+      const web = r.rows.filter(t => t.channel === 'WEBSALES-EDIS');
       console.log(`  parsed ${r.rows.length} transactions — ${bsp.length} BSP, ${web.length} WEBSALES-EDIS`);
       const everyRowReconciles = r.rows.every(t =>
         Math.abs((t.status === 'VOID' ? 0 : (t.amount < 0 ? -(t.totalDoc ?? 0) : (t.totalDoc ?? 0))) - (t.commission ?? 0) - t.amount) < 0.011);

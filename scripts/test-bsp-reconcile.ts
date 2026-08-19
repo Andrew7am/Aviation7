@@ -40,7 +40,7 @@ async function main() {
     airlineCode: r.airlineCode || '', route: r.route || '', source: r.source || 'IATA BSP',
     date: r.date, amount: r.amount, totalDoc: r.totalDoc ?? 0, commission: r.commission ?? 0,
     reqNum: r.reqNum, vendorReference: r.vendorReference || '', status: r.status,
-    currency: r.currency, transactionType: r.status, reportName: 'BSP invoice',
+    currency: r.currency, transactionType: r.status, reportName: 'BSP invoice', channel: r.channel,
     importTime: new Date().toISOString(), isDuplicate: false, userId: 'temp',
   } as Ticket));
 
@@ -77,7 +77,7 @@ async function main() {
   const missing = classified.filter(c2 => c2.cls === 'NEW');
   const byChannel = new Map<string, { n: number; v: number }>();
   for (const c2 of missing) {
-    const k = c2.ticket.source;
+    const k = `${c2.ticket.source} / ${(c2.ticket as any).channel ?? '-'}`;
     const e = byChannel.get(k) ?? { n: 0, v: 0 };
     e.n++; e.v += c2.ticket.amount;
     byChannel.set(k, e);
@@ -85,9 +85,10 @@ async function main() {
   for (const [ch, e] of byChannel) console.log(`  ${ch.padEnd(16)} ${String(e.n).padStart(3)} transactions, ${e.v.toFixed(2)} AED`);
 
   console.log('\n=== assertions ===');
-  const web = classified.filter(c2 => c2.ticket.source === 'WEBSALES-EDIS');
+  const web = classified.filter(c2 => (c2.ticket as any).channel === 'WEBSALES-EDIS');
   check('WEBSALES-EDIS kept on its own channel', web.length > 0, true);
-  check('no WEBSALES row is labelled IATA BSP', web.every(c2 => c2.ticket.source === 'WEBSALES-EDIS'), true);
+  check('WEBSALES rows stay under the IATA vendor', web.every(c2 => c2.ticket.source === 'IATA BSP'), true);
+  check('no WEBSALES row loses its channel', web.every(c2 => (c2.ticket as any).channel === 'WEBSALES-EDIS'), true);
   check('commission gaps detected as COMMISSION_MISSING, not FARE_DIFF',
     commMissing.length > 0 && classified.filter(c2 => c2.cls === 'FARE_DIFF').length === 0, true);
   check('every parsed row carries a date', tickets.every(t => /^\d{4}-\d{2}-\d{2}$/.test(t.date)), true);

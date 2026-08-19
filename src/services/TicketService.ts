@@ -27,6 +27,7 @@ type TicketRow = {
   created_at: string;
   serial: number | null;
   closed: boolean | null;
+  channel: string | null;
 };
 
 function rowToTicket(r: TicketRow): Ticket {
@@ -56,6 +57,7 @@ function rowToTicket(r: TicketRow): Ticket {
     createdAt: r.created_at,
     serial: r.serial ?? undefined,
     closed: r.closed ?? false,
+    channel: r.channel ?? undefined,
   };
 }
 
@@ -84,6 +86,7 @@ function ticketToRow(t: Ticket, userId: string) {
     balance_after: t.balanceAfter ?? null,
     serial: t.serial ?? null,
     closed: t.closed ?? false,
+    channel: t.channel ?? null,
   };
 }
 
@@ -293,6 +296,7 @@ export class TicketService {
       vendorReference: 'vendor_reference',
       serial:          'serial',
       closed:          'closed',
+      channel:         'channel',
     };
     const row: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(patch)) {

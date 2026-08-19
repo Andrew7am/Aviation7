@@ -14,7 +14,9 @@
     "test:bsp": "tsx scripts/test-bsp-invoice.ts",
     "test:wallet": "tsx scripts/test-websales-wallet.ts",
     "test:reconcile": "tsx scripts/test-bsp-reconcile.ts",
-    "test": "npm run test:bsp && npm run test:wallet"
+    "test": "npm run test:bsp && npm run test:wallet && npm run test:iata",
+    "test:iata": "tsx scripts/test-iata-phase3.ts",
+    "iata:dates": "tsx scripts/iata-date-correction.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

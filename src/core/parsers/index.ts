@@ -55,6 +55,14 @@ export function smartDetect(
     if (parser.detect(headers)) {
       return { parser, confidence: 95, missingCols: [], headerRowIdx };
     }
+    // A headerless format has no header row, so findHeaderRow's pick is
+    // arbitrary for it — it keys on whichever line first contains a generic
+    // signal word. On a BSP invoice that can land on a section heading like
+    // "*** DEBIT MEMOS" (it contains "debit"), hiding the document's own
+    // identifying first line and failing detection. Offer row 0 as well.
+    if (parser.headerless && headerRowIdx !== 0 && parser.detect(allRows[0] ?? [])) {
+      return { parser, confidence: 95, missingCols: [], headerRowIdx };
+    }
   }
 
   // 2. Learned AI profile — exact header fingerprint match means this exact

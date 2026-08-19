@@ -92,6 +92,7 @@ export function useImport(userId: string) {
         serial:          r.serial,
         transactionType: r.status,
         closed:          r.closed ?? false,
+        channel:         r.channel,
         reportName:      reportName || defaultSource || parserName,
         importTime:      new Date().toISOString(),
         isDuplicate:     false,

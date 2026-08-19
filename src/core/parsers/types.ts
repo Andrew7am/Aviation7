@@ -24,6 +24,13 @@ export interface ParsedRow {
    *  therefore span several vendors in one file (our own re-import export).
    *  When unset the import falls back to the single source chosen in the UI. */
   source?:         string;
+  /** Settlement channel WITHIN a vendor (IATA: BSP vs WEBSALES-EDIS).
+   *  Distinct from source, which identifies the vendor and drives wallet
+   *  matching — a channel must never change which wallet a row belongs to. */
+  channel?:        string;
+  /** The vendor's own document-type code, kept verbatim even when it maps to
+   *  no known status, so an unrecognised type stays visible rather than lost. */
+  rawType?:        string;
   isTopUp?:        boolean;
   skipRow?:        boolean;  // parser says skip this row silently
   rawError?:       string;   // parser error message for this row

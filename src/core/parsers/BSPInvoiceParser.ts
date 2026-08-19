@@ -31,8 +31,32 @@ import { SupportedCurrency } from '../helpers/resolveCurrency';
 /** Section headers that switch the meaning of the rows beneath them. */
 const SECTION_RE = /^\*+\s*(ISSUES|REFUNDS|DEBIT MEMOS|CREDIT MEMOS)\b/i;
 
-/** The document types this invoice uses. */
-const TRNC = 'TKTT|RFND|EMDA|EMDS|EMDX|CANX|CANN|RFNC|ADMA|ACMA|ADNT|ACNT';
+/**
+ * Document types seen across the agent's full BSP invoice history (32 weekly
+ * periods, 1,936 transaction lines):
+ *   TKTT 1268 · RFND 319 · CANN 131 · CANX 73 · EMDA 69 · EMDS 60
+ *   SPDR 12 · ADMA 2 · ACMA 2
+ * plus the rarer codes below that BSP can issue but this agent has not yet.
+ */
+const KNOWN_TRNC = new Set([
+  'TKTT', 'RFND', 'RFNC',           // sales and refunds
+  'EMDA', 'EMDS', 'EMDX',           // electronic miscellaneous documents
+  'CANX', 'CANN',                   // cancellations / voids
+  'ADMA', 'ADNT', 'ACMA', 'ACNT',   // debit and credit memos
+  'SPDR', 'SPCR',                   // supplementary debit / credit (agent fees)
+]);
+
+/**
+ * Deliberately matches ANY 3-5 letter document code, not just the known list.
+ * A type BSP introduces later must surface as unsupported rather than vanish
+ * from the totals — silently dropping SPDR is exactly how 22.08 per period
+ * went missing before.
+ */
+const TRNC = '[A-Z]{3,5}';
+
+/** Every row on a BSP invoice belongs to the IATA vendor, whichever channel
+ *  it settled through. Wallet matching keys on this. */
+const IATA_VENDOR = 'IATA BSP';
 
 /**
  * A transaction line, e.g.
@@ -94,8 +118,10 @@ export const BSPInvoiceParser: VendorParser = {
     }
 
     let section = '';
-    let channel = 'IATA BSP';
+    // Channel within the IATA vendor, NOT the vendor itself.
+    let channel = 'BSP';
     let seenTxn = 0;
+    const unknownTypes = new Map<string, number>();
 
     for (const line of lines) {
       // Channel changes ONLY on the invoice's own category header, e.g.
@@ -107,7 +133,7 @@ export const BSPInvoiceParser: VendorParser = {
       const cat = line.match(/^CATEGORY\s+([A-Z][A-Z0-9\-\s]*?)\s*$/i);
       if (cat) {
         const name = cat[1].trim().toUpperCase();
-        channel = /^BSP$/.test(name) ? 'IATA BSP' : name;
+        channel = name;
         continue;
       }
 
@@ -129,7 +155,7 @@ export const BSPInvoiceParser: VendorParser = {
           airlineCode: airline, route: '', date: bspDate(dateRaw),
           amount: 0, totalDoc: 0, commission: 0, reqNum: '',
           vendorReference: billingPeriod, status: 'VOID',
-          currency, source: channel,
+          currency, source: IATA_VENDOR, channel, rawType: trnc,
         });
         continue;
       }
@@ -149,12 +175,19 @@ export const BSPInvoiceParser: VendorParser = {
       const isVoid = trnc === 'CANX' || trnc === 'CANN';
       const isEmd = trnc.startsWith('EMD');
 
+      if (!KNOWN_TRNC.has(trnc)) {
+        // Unrecognised type: still imported, with its financial values intact
+        // and its raw code preserved, then reported. Never dropped — a type
+        // that disappears silently takes its money out of the totals with it.
+        unknownTypes.set(trnc, (unknownTypes.get(trnc) ?? 0) + 1);
+      }
+
       let status: string;
       if (isVoid) status = 'VOID';
       else if (isRefund) status = 'REFUND';
       else if (isEmd) status = 'EMDS';
-      else if (trnc === 'ADMA' || trnc === 'ADNT') status = 'ADM';
-      else if (trnc === 'ACMA' || trnc === 'ACNT') status = 'ACM';
+      else if (trnc === 'ADMA' || trnc === 'ADNT' || trnc === 'SPDR') status = 'ADM';
+      else if (trnc === 'ACMA' || trnc === 'ACNT' || trnc === 'SPCR') status = 'ACM';
       else status = 'ISSUE';
 
       // Signs come from the invoice itself — a refund line already carries
@@ -170,13 +203,23 @@ export const BSPInvoiceParser: VendorParser = {
       // a cut of the fare, so it can never exceed it, and it can never run
       // against its sign. Either would mean the money tokens were misread
       // (a stray tax column picked up as the payable, say).
-      if (!isVoid && Math.abs(commission) > Math.abs(finalFare) + 0.011) {
+      // These guards apply ONLY where a fare exists to compare against.
+      //
+      // A memo can legitimately carry no fare and consist purely of a
+      // commission adjustment. A real ADMA on this account reads
+      //   0.00 ... -104.36 ... 104.36
+      // zero transaction amount, commission recalled, so 0 - (-104.36) =
+      // 104.36 becomes payable. Applying "commission cannot exceed the fare"
+      // there rejects a correct row — which is how a genuine 104.36 debit
+      // memo went missing.
+      const hasFare = Math.abs(finalFare) > 0.005;
+      if (!isVoid && hasFare && Math.abs(commission) > Math.abs(finalFare) + 0.011) {
         errors.push(
           `${trnc} ${docNo}: derived commission ${commission.toFixed(2)} exceeds the fare ${finalFare.toFixed(2)} — line misread, skipped.`
         );
         continue;
       }
-      if (!isVoid && commission !== 0 && Math.sign(commission) !== Math.sign(finalFare)) {
+      if (!isVoid && hasFare && commission !== 0 && Math.sign(commission) !== Math.sign(finalFare)) {
         errors.push(
           `${trnc} ${docNo}: commission ${commission.toFixed(2)} has the opposite sign to the fare ${finalFare.toFixed(2)} — line misread, skipped.`
         );
@@ -197,18 +240,27 @@ export const BSPInvoiceParser: VendorParser = {
         vendorReference: billingPeriod,
         status,
         currency,
-        source: channel,
+        // Vendor stays IATA for every channel: WEBSALES-EDIS is a settlement
+        // channel, not a vendor, and putting it in source would detach those
+        // rows from IATA tracking and from wallet matching.
+        source: IATA_VENDOR,
+        channel,
+        rawType: trnc,
       });
     }
 
     if (seenTxn === 0) {
       errors.push('No BSP transaction lines found in this PDF.');
     }
-    const web = result.filter(r => r.source === 'WEBSALES-EDIS').length;
+    const web = result.filter(r => r.channel === 'WEBSALES-EDIS').length;
     if (web > 0) {
       warnings.push(
-        `${web} WEBSALES-EDIS transaction(s) found. These settle separately from BSP and are kept under their own source — they do not draw on the IATA credit.`
+        `${web} WEBSALES-EDIS transaction(s) found — recorded under vendor IATA with channel WEBSALES-EDIS.`
       );
+    }
+    if (unknownTypes.size > 0) {
+      const list = [...unknownTypes.entries()].map(([t, n]) => `${t} (${n})`).join(', ');
+      warnings.push(`Unsupported IATA document type(s) imported and flagged, not skipped: ${list}. Their amounts are included in the totals.`);
     }
     const withComm = result.filter(r => Math.abs(r.commission ?? 0) > 0.005).length;
     if (withComm > 0) {
