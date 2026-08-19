@@ -162,9 +162,21 @@ async function dbChecks() {
   const c = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   await c.connect();
 
-  console.log('\n14. Missing invoice transactions are NOT auto-created');
-  const { rows: cnt } = await c.query(`select count(*)::int as n from tickets where source = 'IATA BSP'`);
-  check('IATA ticket count unchanged by preview runs', cnt[0].n, 1685);
+  console.log('\n14. Missing invoice transactions are never created by a preview');
+  // Phase 3's rule was "the ledger holds exactly 1,685 IATA rows and parsing an
+  // invoice must not add to them". Phase 4 then imported the missing
+  // transactions under an explicit authorisation, so a bare count no longer
+  // expresses the rule. What still must hold — and is the thing actually worth
+  // guarding — is that every IATA row beyond the Phase 3 baseline arrived
+  // through that authorised import, never as a side effect of parsing.
+  const PHASE3_BASELINE = 1685;
+  const { rows: cnt } = await c.query(
+    `select count(*)::int as n,
+            count(*) filter (where import_batch_id like 'bsp-phase4-%')::int as imported
+     from tickets where source = 'IATA BSP'`);
+  check('every IATA row above the Phase 3 baseline came from the authorised import',
+    cnt[0].n - cnt[0].imported, PHASE3_BASELINE);
+  check('parsing alone still creates nothing', cnt[0].n >= PHASE3_BASELINE, true);
 
   console.log('\n18. IATA matching can never reach another vendor');
   // A document number that exists under a NON-IATA vendor must be invisible

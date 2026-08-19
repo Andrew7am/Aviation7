@@ -14,3 +14,6 @@ graphify-out/
 # Contains real passenger PII (names, PNRs, ticket data) — data lives safely
 # in Supabase already, no need to duplicate it in version control.
 supabase/seed_data/*.csv
+# Rollback snapshots produced by the IATA date audit — production row ids.
+iata-date-snapshot*.json
+iata-phase4-report.json

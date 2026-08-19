@@ -14,9 +14,12 @@
     "test:bsp": "tsx scripts/test-bsp-invoice.ts",
     "test:wallet": "tsx scripts/test-websales-wallet.ts",
     "test:reconcile": "tsx scripts/test-bsp-reconcile.ts",
-    "test": "npm run test:bsp && npm run test:wallet && npm run test:iata",
+    "test": "npm run test:bsp && npm run test:wallet && npm run test:iata && npm run test:phase4",
     "test:iata": "tsx scripts/test-iata-phase3.ts",
-    "iata:dates": "tsx scripts/iata-date-correction.ts"
+    "test:phase4": "tsx scripts/test-iata-phase4.ts",
+    "iata:dates": "tsx scripts/iata-date-correction.ts",
+    "iata:reconcile": "tsx scripts/iata-phase4-reconcile.ts",
+    "iata:verify": "tsx scripts/verify-iata-phase4.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

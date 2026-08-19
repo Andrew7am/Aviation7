@@ -77,7 +77,7 @@ const MONEY = /-?\d{1,3}(?:,\d{3})*\.\d{2}|-?\d+\.\d{2}/g;
 const TXN = /^(\d{3})\s+([A-Z]{3,5})\s+(\d{8,})\s+(\d{2}[A-Z]{3}\d{2})\b(.*)$/i;
 const REFUNDY = new Set(['RFND', 'RFNC']);
 
-interface InvTxn { doc: string; trnc: string; date: string; channel: string; payable: number; period: string; file: string }
+interface InvTxn { doc: string; trnc: string; date: string; channel: string; fare: number; payable: number; period: string; file: string }
 
 function readInvoice(file: string): InvTxn[] {
   const out: InvTxn[] = [];
@@ -94,10 +94,13 @@ function readInvoice(file: string): InvTxn[] {
     const m = line.match(TXN);
     if (!m) continue;
     const nums = (m[5].match(MONEY) || []).map(v => parseFloat(v.replace(/,/g, '')));
+    // First money token is the Transaction Amount (fare), last is Balance
+    // Payable — the same reading the app parser uses.
+    const fare = nums.length ? Math.round(nums[0] * 100) / 100 : 0;
     const payable = nums.length ? Math.round(nums[nums.length - 1] * 100) / 100 : 0;
     const trnc = m[2].toUpperCase();
     out.push({
-      doc: m[3], trnc, date: bspDate(m[4]), channel, payable,
+      doc: m[3], trnc, date: bspDate(m[4]), channel, fare, payable,
       period, file: path.basename(file),
     });
     void section;
@@ -127,39 +130,77 @@ async function main() {
   for (const f of files) invoice.push(...readInvoice(path.join(DIR, f)));
   console.log(`invoice transactions: ${invoice.length}`);
 
-  // Where one document+direction appears in several periods, the EARLIEST
-  // date is the issue date; later appearances are re-billings of the same
-  // document and must not overwrite it.
-  const best = new Map<string, InvTxn>();
+  // Invoice lines grouped by document+direction. One key can hold several
+  // lines: the same document re-billed in a later period, or two genuinely
+  // different transactions on the same document.
+  const invByKey = new Map<string, InvTxn[]>();
   for (const t of invoice) {
     if (!t.date) continue;
     const k = `${normDoc(t.doc)}|${dirOf(t.trnc, t.payable)}`;
-    const prev = best.get(k);
-    if (!prev || t.date < prev.date) best.set(k, t);
+    const b = invByKey.get(k); if (b) b.push(t); else invByKey.set(k, [t]);
   }
-  console.log(`distinct document+direction keys with a date: ${best.size}`);
+  console.log(`distinct document+direction keys with a date: ${invByKey.size}`);
 
   const c = new Client({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
   await c.connect();
 
   // === IATA ONLY. Every read and write below carries this filter. ===
   const { rows: iata } = await c.query(
-    `select id, ticket_no, status, date, amount::float8 as amount, import_time::date::text as uploaded
+    `select id, ticket_no, status, date, amount::float8 as amount,
+            total_doc::float8 as total_doc, import_time::date::text as uploaded
      from tickets where source = $1`, [IATA_VENDOR]);
   console.log(`IATA tickets in ledger: ${iata.length}\n`);
 
-  const updates: any[] = [], already: any[] = [], noMatch: InvTxn[] = [], unmatchedTickets: any[] = [];
-  const seen = new Set<string>();
-
+  // Ledger rows grouped by the SAME key, so a key that covers more than one
+  // row is visible rather than silently collapsed.
+  const dbByKey = new Map<string, any[]>();
   for (const t of iata) {
     const k = `${normDoc(t.ticket_no)}|${t.amount < 0 ? '-' : '+'}`;
-    const inv = best.get(k);
-    if (!inv) { unmatchedTickets.push(t); continue; }
-    seen.add(k);
-    if (t.date === inv.date) { already.push({ t, inv }); continue; }
-    updates.push({ t, inv });
+    const b = dbByKey.get(k); if (b) b.push(t); else dbByKey.set(k, [t]);
   }
-  for (const [k, inv] of best) if (!seen.has(k)) noMatch.push(inv);
+
+  /** Money comparison on magnitude — the ledger and the invoice can disagree
+   *  on sign convention, never on how much. */
+  const near = (a: number, b: number) => Math.abs(Math.abs(a) - Math.abs(b)) < 0.011;
+  /** Where a document was re-billed, the EARLIEST date is the transaction
+   *  date; later appearances must not overwrite it. */
+  const earliest = (rows: InvTxn[]) => rows.reduce((a, b) => (a.date <= b.date ? a : b));
+
+  const updates: any[] = [], already: any[] = [], noMatch: InvTxn[] = [],
+        unmatchedTickets: any[] = [], ambiguous: any[] = [];
+  const seen = new Set<string>();
+
+  for (const [k, rows] of dbByKey) {
+    const inv = invByKey.get(k);
+    if (!inv) { unmatchedTickets.push(...rows); continue; }
+    seen.add(k);
+
+    if (rows.length === 1) {
+      const t = rows[0], pick = earliest(inv);
+      if (t.date === pick.date) already.push({ t, inv: pick }); else updates.push({ t, inv: pick });
+      continue;
+    }
+
+    // Several ledger rows share this document and direction — legitimate: a
+    // void sitting alongside its sale, a second partial refund, a zero-value
+    // stub. The key alone cannot say which invoice line belongs to which row,
+    // so resolve on money: the invoice's Transaction Amount against the
+    // ledger's fare, falling back to Balance Payable against the ledger
+    // amount. A row that does not resolve to exactly one invoice line is LEFT
+    // ALONE — a date borrowed from a neighbouring transaction is worse than
+    // no correction at all.
+    for (const t of rows) {
+      let cand = inv.filter(i => near(i.fare, t.total_doc));
+      if (cand.length === 0) cand = inv.filter(i => near(i.payable, t.amount));
+      // Two ledger rows competing for the same invoice line stay unresolved.
+      const claimants = cand.length === 0 ? [] :
+        rows.filter(o => near(cand[0].fare, o.total_doc) || near(cand[0].payable, o.amount));
+      if (cand.length === 0 || claimants.length > 1) { ambiguous.push({ t, inv }); continue; }
+      const pick = earliest(cand);
+      if (t.date === pick.date) already.push({ t, inv: pick }); else updates.push({ t, inv: pick });
+    }
+  }
+  for (const [k, inv] of invByKey) if (!seen.has(k)) noMatch.push(earliest(inv));
 
   console.log('='.repeat(96));
   console.log('IATA DATE CORRECTION PREVIEW   (vendor = IATA BSP only)');
@@ -175,11 +216,17 @@ async function main() {
   }
   if (noMatch.length > 10) console.log(`       ... +${noMatch.length - 10} more missing`);
 
+  for (const a of ambiguous) {
+    console.log(`IATA   | ${a.t.ticket_no.padEnd(13)} | ${String(a.t.status).padEnd(5)} | ${(a.t.date || '—').padEnd(12)} | ${'—'.padEnd(12)} | BSP Invoice  | UNRESOLVED — LEFT ALONE`);
+  }
+
   console.log('-'.repeat(96));
   console.log(`  UPDATE (date corrected)      : ${updates.length}`);
   console.log(`  ALREADY CORRECT (no write)   : ${already.length}`);
+  console.log(`  UNRESOLVED (left untouched)  : ${ambiguous.length}   (key covers >1 ledger row, money does not single one out)`);
   console.log(`  MISSING FROM SYSTEM          : ${noMatch.length}   (not created — out of scope this phase)`);
   console.log(`  IATA tickets with no invoice : ${unmatchedTickets.length}   (left untouched)`);
+  console.log(`  accounted for                : ${updates.length + already.length + ambiguous.length + unmatchedTickets.length} of ${iata.length} IATA rows`);
 
   const fromUpload = updates.filter(u => u.t.date === u.t.uploaded).length;
   console.log(`\n  of the updates, ${fromUpload} currently hold their UPLOAD date`);

@@ -24,10 +24,13 @@ export function vendorMatchesSource(vendorName: string, ticketSource: string): b
 /**
  * Recalculate a vendor balance from the ledger.
  *
- * Note what this does NOT do: it never special-cases a settlement channel.
- * A channel only affects a wallet if its `source` matches that vendor's name
- * or an alias — which is why WEBSALES-EDIS, settled separately from BSP, stays
- * out of the IATA balance without needing an exclusion rule.
+ * Note what this does NOT do: it never looks at the settlement channel.
+ * Matching is on `source` alone, and WEBSALES-EDIS rows carry source
+ * 'IATA BSP' with the channel in its own column. So if an IATA wallet is ever
+ * created, WEBSALES-EDIS would be drawn against it alongside BSP — and the two
+ * settle separately in reality, so such a wallet would need a channel filter
+ * here before it could be trusted. No IATA wallet exists today, which is why
+ * the question has not had to be answered yet.
  */
 export function calcVendorBalance(
   vendor: VendorBalance,
