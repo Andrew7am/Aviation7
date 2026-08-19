@@ -138,6 +138,61 @@ async function main() {
   const { rows: w } = await c.query(`select count(*)::int as n from vendor_balances`);
   check('11   wallet count unchanged — none created for IATA or WEBSALES', w[0].n === 7, `${w[0].n} wallets`);
 
+  /* ── 23: financial reconciliation, invoice vs system ──────────────────── */
+  console.log('\nFINANCIAL RECONCILIATION (23) — invoice vs system, by channel');
+  // The ledger stores the fare as a magnitude with the sign on the amount, so
+  // both sides are put on the signed footing before anything is compared.
+  // Summing magnitudes against signed values is how a reconciliation ends up
+  // reporting a difference that does not exist.
+  const signedFare = (fare: number, payable: number) => (payable < 0 ? -Math.abs(fare) : Math.abs(fare));
+  const commById = new Map<string, number>(dbRows.map((r: any) => [r.id, r.commission]));
+
+  for (const ch of ['BSP', 'WEBSALES-EDIS']) {
+    const lines = invoice.filter(t => t.channel === ch && !isVoid(t));
+    const iFare = lines.reduce((s, t) => s + signedFare(t.fare, t.payable), 0);
+    const iComm = lines.reduce((s, t) => s + t.commission, 0);
+    const iPay = lines.reduce((s, t) => s + t.payable, 0);
+    // System side: the rows those same lines match. VOID lines are dropped from
+    // both sides or the two columns would not be counting the same population.
+    const pairs = rec.alreadyCorrect.filter(p => p.invoice.channel === ch && !isVoid(p.invoice));
+    const sFare = pairs.reduce((s, p) => s + signedFare(p.row.totalDoc, p.row.amount), 0);
+    const sComm = pairs.reduce((s, p) => s + (commById.get(p.row.id) ?? 0), 0);
+    const sPay = pairs.reduce((s, p) => s + p.row.amount, 0);
+    console.log(`\n  ${ch}  — ${lines.length} valued invoice lines, ${pairs.length} matched in the system`);
+    console.log(`     invoice   fare ${money(iFare).padStart(15)}   commission ${money(iComm).padStart(13)}   payable ${money(iPay).padStart(15)}`);
+    console.log(`     system    fare ${money(sFare).padStart(15)}   commission ${money(sComm).padStart(13)}   payable ${money(sPay).padStart(15)}`);
+    console.log(`     diff      fare ${money(sFare - iFare).padStart(15)}   commission ${money(sComm - iComm).padStart(13)}   payable ${money(sPay - iPay).padStart(15)}`);
+  }
+
+  // The one difference that is real money: the daily TJQ does not carry
+  // commission, so rows that predate the invoice import sit at commission 0
+  // while the invoice charges one. That gap is a data question for the agent,
+  // not a defect in the import.
+  const valued = rec.alreadyCorrect.filter(p => !isVoid(p.invoice));
+  const gap = valued.filter(p =>
+    Math.abs(p.invoice.commission) > 0.005 && Math.abs(commById.get(p.row.id) ?? 0) < 0.005);
+  const gapValue = gap.reduce((s, p) => s + p.invoice.commission, 0);
+  console.log(`\n  OUTSTANDING ITEM 1 — commission the ledger never recorded`);
+  console.log(`     rows the invoice charges commission on but the ledger holds none: ${gap.length}`);
+  console.log(`     value: ${money(gapValue)} AED`);
+  console.log(`     (the daily TJQ carries no commission column, so rows imported from it`);
+  console.log(`      sit at zero while the settlement invoice charges one)`);
+
+  const fareOff = valued.filter(p =>
+    Math.abs(signedFare(p.row.totalDoc, p.row.amount) - signedFare(p.invoice.fare, p.invoice.payable)) > 0.011);
+  const fareOffValue = fareOff.reduce((s, p) =>
+    s + signedFare(p.row.totalDoc, p.row.amount) - signedFare(p.invoice.fare, p.invoice.payable), 0);
+  console.log(`\n  OUTSTANDING ITEM 2 — fare disagreements on matched rows`);
+  console.log(`     matched rows where the ledger fare differs from the invoice: ${fareOff.length}`);
+  console.log(`     net effect: ${money(fareOffValue)} AED`);
+  for (const p of fareOff.sort((a, b) =>
+    Math.abs(signedFare(b.row.totalDoc, b.row.amount) - signedFare(b.invoice.fare, b.invoice.payable)) -
+    Math.abs(signedFare(a.row.totalDoc, a.row.amount) - signedFare(a.invoice.fare, a.invoice.payable))).slice(0, 10)) {
+    console.log(`       ${p.invoice.rawType.padEnd(5)} ${p.row.ticketNo.padEnd(13)} ledger ${money(signedFare(p.row.totalDoc, p.row.amount)).padStart(12)}   invoice ${money(signedFare(p.invoice.fare, p.invoice.payable)).padStart(12)}`);
+  }
+  console.log(`     (neither value is changed by this phase — Phase 4 may only correct`);
+  console.log(`      dates and add missing rows, so these are reported for your decision)`);
+
   await c.end();
   console.log(`\n${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
