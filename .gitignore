@@ -18,3 +18,4 @@ supabase/seed_data/*.csv
 iata-date-snapshot*.json
 iata-phase4-report.json
 iata-commission-audit.json
+iata-commission-balance-preview.json
