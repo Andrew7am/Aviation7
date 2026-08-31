@@ -46,8 +46,25 @@ export function detectDuplicatesAgainstExisting(
   newTickets: Ticket[],
   existingTickets: Ticket[]
 ): { fresh: Ticket[]; updates: Ticket[]; duplicates: Ticket[] } {
-  const existingKeys     = new Set(existingTickets.map(t => dupKey(t)));
-  const existingByTicket = new Map(existingTickets.map(t => [t.ticketNo.trim().toUpperCase(), t]));
+  const existingKeys = new Set(existingTickets.map(t => dupKey(t)));
+  // Keyed on ticket AND vendor, never the ticket alone.
+  //
+  // Ticket numbers are stored as the bare serial now, so the portal row and
+  // its BSP invoice line finally carry the SAME number — that is the whole
+  // point of the normalisation, and it is what lets reconciliation pair them.
+  // But this map decides whether an incoming row is new, and a ticket-only key
+  // would answer "already have it" for the settlement row of a document the
+  // portal reported first. The BSP line would then be dropped as a duplicate
+  // (losing the commission and the payable, which only the invoice states) or
+  // pushed as an update onto the portal row's id, overwriting it.
+  //
+  // A vendor-scoped key keeps both records: the same document seen through two
+  // channels is two rows, one per vendor, exactly as the ledger needs it —
+  // while a re-upload of the SAME report still dedupes, because that row
+  // matches on vendor too.
+  const vendorKey = (t: Ticket) =>
+    `${t.ticketNo.trim().toUpperCase()}|${(t.source || '').trim().toLowerCase()}`;
+  const existingByTicket = new Map(existingTickets.map(t => [vendorKey(t), t]));
   const fresh:      Ticket[] = [];
   const updates:    Ticket[] = [];
   const duplicates: Ticket[] = [];
@@ -55,8 +72,7 @@ export function detectDuplicatesAgainstExisting(
   newTickets.forEach(t => {
     const status   = (t.status || '').toUpperCase();
     const key      = dupKey(t);
-    const ticketNo = t.ticketNo.trim().toUpperCase();
-    const existing = existingByTicket.get(ticketNo);
+    const existing = existingByTicket.get(vendorKey(t));
 
     // REFUND / FUND / ADM / ACM — dupKey() gives these a status-scoped key
     // format (no source/pnr) specifically so they can NEVER collide with an
@@ -64,8 +80,9 @@ export function detectDuplicatesAgainstExisting(
     // PREVIOUSLY saved instance of this exact same refund/fund/adjustment —
     // without this check every re-import of the same report insert the same
     // refund again, forever. Deliberately skip the existingByTicket/update
-    // path below: that map is keyed on bare ticketNo and would conflate this
-    // row with an unrelated ISSUE sharing the same ticket number.
+    // path below: that map holds one row per ticket+vendor without regard to
+    // status, so a refund would find its own ISSUE there and be treated as an
+    // update to it.
     if (NON_ISSUE_STATUSES.has(status)) {
       if (existingKeys.has(key)) duplicates.push({ ...t, isDuplicate: true });
       else fresh.push(t);
