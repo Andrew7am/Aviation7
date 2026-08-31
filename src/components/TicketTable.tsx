@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Ticket } from '../types';
-import { Search, Download, Filter, Replace, CheckCircle2, Circle } from 'lucide-react';
+import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown } from 'lucide-react';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import * as XLSX from 'xlsx';
 
@@ -17,6 +17,19 @@ interface TicketTableProps {
 }
 
 type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr';
+
+/** Last day of a YYYY-MM month, as YYYY-MM-DD. Day 0 of the NEXT month is the
+ *  last day of this one, which gets February and leap years right for free. */
+function endOfMonth(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+}
+
+/** "2026-03" -> "Mar 2026", for the month picker. */
+function monthLabel(ym: string): string {
+  const [y, m] = ym.split('-').map(Number);
+  return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]} ${y}`;
+}
 
 type SortKey = 'serial' | 'date' | 'amount' | 'ticketNo' | 'source' | null;
 
@@ -84,7 +97,13 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const [filterMode, setFilterMode]     = useState<'ALL' | 'NEED_REQ' | 'DUPLICATE'>(defaultFilter);
-  const [sourceFilter, setSourceFilter] = useState('ALL');
+  // Vendors are multi-select: comparing NSA against IATA, or a handful of
+  // portals at once, is the normal reconciliation question. Empty = every
+  // vendor, so the filter starts out of the way.
+  const [sourceSel, setSourceSel]       = useState<string[]>([]);
+  const [showSources, setShowSources]   = useState(false);
+  const [dateFrom, setDateFrom]         = useState('');
+  const [dateTo, setDateTo]             = useState('');
   const [closedFilter, setClosedFilter] = useState<'ALL' | 'CLOSED' | 'NOT_CLOSED'>('ALL');
   const [filterAL, setFilterAL]         = useState('');
   const [filterPax, setFilterPax]       = useState('');
@@ -106,15 +125,57 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const sources = useMemo(
-    () => ['ALL', ...Array.from(new Set(tickets.map(t => t.source).filter(Boolean)))],
+    () => Array.from(new Set(tickets.map(t => t.source).filter(Boolean))).sort(),
     [tickets]
   );
+
+  /** Months present in the data, newest first — the quick-pick for "show me
+   *  April". Dates are stored as YYYY-MM-DD, so the prefix IS the month and
+   *  string comparison is date comparison; no parsing needed anywhere here. */
+  const months = useMemo(() => {
+    const seen = new Set<string>();
+    for (const t of tickets) if (/^\d{4}-\d{2}/.test(t.date || '')) seen.add(t.date.slice(0, 7));
+    return [...seen].sort().reverse();
+  }, [tickets]);
+
+  const monthSel = dateFrom && dateTo && dateFrom.slice(0, 7) === dateTo.slice(0, 7)
+    && dateFrom.endsWith('-01') && dateTo === endOfMonth(dateFrom.slice(0, 7))
+    ? dateFrom.slice(0, 7) : '';
+
+  const pickMonth = (m: string) => {
+    if (!m) { setDateFrom(''); setDateTo(''); return; }
+    setDateFrom(`${m}-01`);
+    setDateTo(endOfMonth(m));
+  };
+
+  const toggleSource = (s: string) =>
+    setSourceSel(cur => cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s]);
+
+  // Close the vendor popover on an outside click, so it behaves like a menu.
+  const srcRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showSources) return;
+    const onDown = (e: MouseEvent) => {
+      if (srcRef.current && !srcRef.current.contains(e.target as Node)) setShowSources(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showSources]);
 
   const filtered = useMemo(() => {
     const rows = tickets.filter(t => {
       if (filterMode === 'NEED_REQ' && (t.reqNum || t.status === 'FUND')) return false;
       if (filterMode === 'DUPLICATE' && !t.isDuplicate) return false;
-      if (sourceFilter !== 'ALL' && t.source !== sourceFilter) return false;
+      // No vendor ticked means every vendor, not none.
+      if (sourceSel.length > 0 && !sourceSel.includes(t.source)) return false;
+      // Dates are YYYY-MM-DD, so these compare as strings. A row with no date
+      // cannot satisfy a date window, so it drops out while one is set.
+      if (dateFrom || dateTo) {
+        const d = t.date || '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+        if (dateFrom && d < dateFrom) return false;
+        if (dateTo   && d > dateTo)   return false;
+      }
       // Closed status is only tracked for a subset of vendors — exclude
       // everyone else when the user filters on closure state.
       if (closedFilter === 'CLOSED'     && (!canBeClosed(t.source) || !t.closed)) return false;
@@ -143,9 +204,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       });
     }
     return rows;
-  }, [tickets, searchTerm, filterMode, sourceFilter, closedFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
-  useEffect(() => setPage(0), [searchTerm, filterMode, sourceFilter, closedFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = useMemo(
@@ -240,7 +301,14 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterPNR) parts.push('PNR_' + sanitize(filterPNR));
       if (filterPax) parts.push('PAX_' + sanitize(filterPax));
       if (filterAL)  parts.push('AL_'  + sanitize(filterAL));
-      if (sourceFilter !== 'ALL') parts.push(sanitize(sourceFilter));
+      // Name every selected vendor, up to a point — an export filtered to
+      // three portals should say so, but not run to a 200-character filename.
+      if (sourceSel.length > 0) {
+        parts.push(sourceSel.length <= 3 ? sourceSel.map(sanitize).join('_')
+                                         : `${sourceSel.length}_vendors`);
+      }
+      if (monthSel) parts.push(monthSel);
+      else if (dateFrom || dateTo) parts.push(`${dateFrom || 'start'}_to_${dateTo || 'end'}`);
       if (closedFilter !== 'ALL') parts.push(closedFilter === 'CLOSED' ? 'Closed' : 'NotClosed');
       if (filterMode === 'NEED_REQ') parts.push('MissingREQ');
       else if (filterMode === 'DUPLICATE') parts.push('Duplicates');
@@ -438,16 +506,115 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             />
           </div>
 
-          {/* Source filter */}
-          <div className="relative">
-            <Filter className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
-            <select
-              value={sourceFilter}
-              onChange={e => setSourceFilter(e.target.value)}
-              className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          {/* Vendor filter — multi-select, so several portals can be compared
+              against IATA in one view. */}
+          <div className="relative" ref={srcRef}>
+            <button
+              type="button"
+              onClick={() => setShowSources(v => !v)}
+              title="Filter by one or more vendors"
+              className={`pl-7 pr-6 py-1.5 rounded text-[10px] font-bold uppercase border transition-colors flex items-center ${
+                sourceSel.length > 0
+                  ? 'bg-blue-50 text-blue-700 border-blue-200'
+                  : 'bg-white text-slate-500 border-slate-200'
+              }`}
             >
-              {sources.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+              <Filter className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none" />
+              {sourceSel.length === 0 ? 'All Vendors'
+                : sourceSel.length === 1 ? sourceSel[0]
+                : `${sourceSel.length} Vendors`}
+              <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none" />
+            </button>
+
+            {showSources && (
+              <div className="absolute z-30 mt-1 left-0 w-56 max-h-72 overflow-y-auto bg-white border border-slate-200 rounded shadow-lg py-1">
+                <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 mb-1">
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                    {sourceSel.length || 'all'} selected
+                  </span>
+                  {sourceSel.length > 0 && (
+                    <button
+                      onClick={() => setSourceSel([])}
+                      className="text-[9px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {sources.map(s => {
+                  const on = sourceSel.includes(s);
+                  return (
+                    <label
+                      key={s}
+                      className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => toggleSource(s)}
+                        className="w-3 h-3 accent-blue-600"
+                      />
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${getSourceColor(s)}`}>
+                        {s}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Date range — a month quick-pick for the common case, explicit
+              from/to for anything else. Both drive the same two values. */}
+          <div className="flex items-center gap-1">
+            <div className="relative">
+              <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+              <select
+                value={monthSel}
+                onChange={e => pickMonth(e.target.value)}
+                title="Jump to a whole month"
+                className={`pl-7 pr-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+                  monthSel ? 'bg-blue-50 text-blue-700 border-blue-200'
+                           : 'bg-white text-slate-500 border-slate-200'
+                }`}
+              >
+                <option value="">Month</option>
+                {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+              </select>
+            </div>
+
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={e => setDateFrom(e.target.value)}
+              title="From date"
+              className={`px-1.5 py-1.5 rounded text-[10px] font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                dateFrom ? 'bg-blue-50 text-blue-700 border-blue-200'
+                         : 'bg-white text-slate-500 border-slate-200'
+              }`}
+            />
+            <span className="text-[9px] font-bold uppercase text-slate-400">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={e => setDateTo(e.target.value)}
+              title="To date"
+              className={`px-1.5 py-1.5 rounded text-[10px] font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+                dateTo ? 'bg-blue-50 text-blue-700 border-blue-200'
+                       : 'bg-white text-slate-500 border-slate-200'
+              }`}
+            />
+            {(dateFrom || dateTo) && (
+              <button
+                onClick={() => { setDateFrom(''); setDateTo(''); }}
+                title="Clear the date range"
+                className="p-1 text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
 
           {/* Status filter */}
@@ -481,7 +648,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           </select>
 
           {/* Bulk close / reopen — operates on entire filtered set */}
-          {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || filterAL || filterPax || filterPNR || sourceFilter !== 'ALL') && (
+          {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || filterAL || filterPax || filterPNR || sourceSel.length > 0 || dateFrom || dateTo) && (
             <>
               <button
                 onClick={() => applyBulkClosed(true)}
