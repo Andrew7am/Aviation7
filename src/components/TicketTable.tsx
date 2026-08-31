@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Ticket } from '../types';
 import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown } from 'lucide-react';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
+import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import * as XLSX from 'xlsx';
 
 interface TicketTableProps {
@@ -105,6 +106,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [dateFrom, setDateFrom]         = useState('');
   const [dateTo, setDateTo]             = useState('');
   const [closedFilter, setClosedFilter] = useState<'ALL' | 'CLOSED' | 'NOT_CLOSED'>('ALL');
+  const [filterTicket, setFilterTicket] = useState('');
   const [filterAL, setFilterAL]         = useState('');
   const [filterPax, setFilterPax]       = useState('');
   const [filterPNR, setFilterPNR]       = useState('');
@@ -180,6 +182,13 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       // everyone else when the user filters on closure state.
       if (closedFilter === 'CLOSED'     && !t.closed) return false;
       if (closedFilter === 'NOT_CLOSED' &&  t.closed) return false;
+      // Ticket numbers are stored as the bare 10-digit serial, but the number
+      // to hand is often the full 13-digit one off the airline's site or an
+      // older report. Both are matched, so pasting either finds the document.
+      if (filterTicket) {
+        const q = ticketMatchKey(filterTicket);
+        if (!q || !t.ticketNo.toUpperCase().includes(q)) return false;
+      }
       if (filterAL  && !(t.airlineCode || '').toLowerCase().includes(filterAL.toLowerCase())) return false;
       if (filterPax && !(t.passengerName || '').toLowerCase().includes(filterPax.toLowerCase())) return false;
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
@@ -204,9 +213,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       });
     }
     return rows;
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
-  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = useMemo(
@@ -298,6 +307,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     if (searchTerm.trim()) parts.push(sanitize(searchTerm));
     else if (findVal.trim() && showFindReplace) parts.push('REQ_' + sanitize(findVal));
     else {
+      if (filterTicket) parts.push('TK_' + sanitize(filterTicket));
       if (filterPNR) parts.push('PNR_' + sanitize(filterPNR));
       if (filterPax) parts.push('PAX_' + sanitize(filterPax));
       if (filterAL)  parts.push('AL_'  + sanitize(filterAL));
@@ -486,7 +496,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     />
   );
 
-  const activeColFilters = [filterAL, filterPax, filterPNR].filter(Boolean).length;
+  const activeColFilters = [filterTicket, filterAL, filterPax, filterPNR].filter(Boolean).length;
 
   return (
     <div className="flex flex-col h-full bg-slate-100">
@@ -648,7 +658,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           </select>
 
           {/* Bulk close / reopen — operates on entire filtered set */}
-          {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || filterAL || filterPax || filterPNR || sourceSel.length > 0 || dateFrom || dateTo) && (
+          {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || filterTicket || filterAL || filterPax || filterPNR || sourceSel.length > 0 || dateFrom || dateTo) && (
             <>
               <button
                 onClick={() => applyBulkClosed(true)}
@@ -724,6 +734,15 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex flex-wrap items-center gap-3 shrink-0">
           <span className="text-[9px] font-bold uppercase text-blue-500 tracking-wider">Filter by column:</span>
           <div className="flex items-center gap-1">
+            <span className="text-[9px] text-blue-400 font-mono uppercase">Ticket No</span>
+            <input
+              type="text" placeholder="2540225922"
+              title="Full or partial ticket number. The 13-digit form works too — the airline code is ignored."
+              value={filterTicket} onChange={e => setFilterTicket(e.target.value)}
+              className="w-32 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
+            />
+          </div>
+          <div className="flex items-center gap-1">
             <span className="text-[9px] text-blue-400 font-mono uppercase">A/L</span>
             <input
               type="text" placeholder="e.g. 065"
@@ -749,7 +768,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           </div>
           {activeColFilters > 0 && (
             <button
-              onClick={() => { setFilterAL(''); setFilterPax(''); setFilterPNR(''); }}
+              onClick={() => { setFilterTicket(''); setFilterAL(''); setFilterPax(''); setFilterPNR(''); }}
               className="text-[9px] text-blue-500 hover:text-blue-700 font-bold underline"
             >
               Clear all
