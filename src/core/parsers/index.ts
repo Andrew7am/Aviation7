@@ -12,6 +12,7 @@ import { FlyDubaiParser } from './FlyDubaiParser';
 import { RTSParser } from './RTSParser';
 import { RiyadhAirParser } from './RiyadhAirParser';
 import { TurkishAirlinesParser } from './TurkishAirlinesParser';
+import { TurkishAgencySalesParser } from './TurkishAgencySalesParser';
 import { ReconciliationExportParser } from './ReconciliationExportParser';
 import { BSPInvoiceParser } from './BSPInvoiceParser';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
@@ -31,7 +32,11 @@ export const ALL_PARSERS: VendorParser[] = [
   IbtekarV2Parser, IbtekarParser, GoldMedalParser,
   AirArabiaParser, FlynasParser,
   FlyDubaiParser, RTSParser,
-  RiyadhAirParser, TurkishAirlinesParser,
+  RiyadhAirParser,
+  // Both Turkish exports, each matching only its own header set. The agency
+  // sales report is checked first: it is the newer format and the more
+  // specific signature.
+  TurkishAgencySalesParser, TurkishAirlinesParser,
 ];
 
 export interface SmartDetectResult {

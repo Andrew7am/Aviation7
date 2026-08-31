@@ -83,9 +83,17 @@ export function rowContentId(row: string[]): string {
   return Math.abs(hash).toString(36);
 }
 
+/** Courtesy titles, however the vendor punctuates them. Turkish's agency
+ *  sales export puts the title AFTER the given name — "REFAE/AHMED MR" — so
+ *  it has to be stripped from both ends or it ends up mid-name once the
+ *  surname and given name are swapped ("AHMED MR REFAE"). */
+const TITLE = String.raw`MR|MRS|MS|MSTR|MISS|DR|PROF|INF|CHD`;
+const LEADING_TITLE  = new RegExp(`^(?:${TITLE})\\.?\\s+`, 'i');
+const TRAILING_TITLE = new RegExp(`\\s+(?:${TITLE})\\.?$`, 'i');
+
 export function cleanPax(raw: string): string {
   if (!raw) return '';
-  let s = raw.trim().replace(/^(MR\.?|MRS\.?|MS\.?|DR\.?|INF\.?|CHD\.?)\s+/i, '');
+  let s = raw.trim().replace(LEADING_TITLE, '').replace(TRAILING_TITLE, '');
   if (s.includes('/')) {
     const [last, first] = s.split('/');
     s = `${(first || '').trim()} ${(last || '').trim()}`.trim();
@@ -94,5 +102,8 @@ export function cleanPax(raw: string): string {
     const [last, first] = s.split(',');
     s = `${(first || '').trim()} ${(last || '').trim()}`.trim();
   }
-  return s.replace(/\s+/g, ' ').toUpperCase().trim();
+  // Again after the swap: a title sitting on the given name is only at the
+  // end of the string once the two halves have changed places.
+  return s.replace(LEADING_TITLE, '').replace(TRAILING_TITLE, '')
+          .replace(/\s+/g, ' ').toUpperCase().trim();
 }

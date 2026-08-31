@@ -12,12 +12,17 @@
  * least two 3-letter codes joined by - or / is what keeps ordinary words out:
  * a single "JED" on its own is not an itinerary.
  */
-const ROUTE_RE = /[A-Z]{3}(?:\s*[\/-]\s*[A-Z]{3})+/;
+/** Separators seen across the vendors: "JED-RUH", "AHB/JED/MED" and — in
+ *  Turkish's agency sales export — "JED\IST\BER\IST\JED". */
+const ROUTE_RE = /[A-Z]{3}(?:\s*[\/\\-]\s*[A-Z]{3})+/;
 
 export function extractRoute(raw: unknown): string {
   if (raw === null || raw === undefined) return '';
   const s = String(raw).trim();
   if (!s) return '';
   const m = s.toUpperCase().match(ROUTE_RE);
-  return m ? m[0].replace(/\s+/g, '') : '';
+  // Backslashes are normalised to "-" so an itinerary reads the same however
+  // the vendor happened to punctuate it. "/" is left alone: several vendors
+  // already store routes that way and rewriting them would churn the ledger.
+  return m ? m[0].replace(/\s+/g, '').replace(/\\/g, '-') : '';
 }
