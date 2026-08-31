@@ -3,6 +3,7 @@ import { Ticket } from '../types';
 import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown } from 'lucide-react';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
+import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import * as XLSX from 'xlsx';
 
 interface TicketTableProps {
@@ -157,6 +158,25 @@ const CopyableAmount: React.FC<{
   );
 };
 
+/** The itinerary's verdict as text, blank when the route says nothing. */
+const travelText = (route?: string): string => {
+  const s = classifyTravel(route);
+  return s ? TRAVEL_LABEL[s] : '';
+};
+
+/** Domestic / International, or an em-dash when there is no route to read. */
+const TravelBadge: React.FC<{ route?: string }> = ({ route }) => {
+  const scope = classifyTravel(route);
+  if (!scope) return <span className="text-slate-300 text-[9px]">—</span>;
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap ${
+      scope === 'DOMESTIC' ? 'bg-teal-100 text-teal-700' : 'bg-blue-100 text-blue-700'
+    }`}>
+      {TRAVEL_LABEL[scope]}
+    </span>
+  );
+};
+
 export const TicketTable: React.FC<TicketTableProps> = ({
   tickets, title, defaultFilter = 'ALL', onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
@@ -170,6 +190,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [dateFrom, setDateFrom]         = useState('');
   const [dateTo, setDateTo]             = useState('');
   const [closedFilter, setClosedFilter] = useState<'ALL' | 'CLOSED' | 'NOT_CLOSED'>('ALL');
+  const [travelFilter, setTravelFilter] = useState<'ALL' | TravelScope>('ALL');
   const [filterTicket, setFilterTicket] = useState('');
   const [filterAL, setFilterAL]         = useState('');
   const [filterPax, setFilterPax]       = useState('');
@@ -246,6 +267,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       // everyone else when the user filters on closure state.
       if (closedFilter === 'CLOSED'     && !t.closed) return false;
       if (closedFilter === 'NOT_CLOSED' &&  t.closed) return false;
+      // Domestic / international is read off the itinerary, so a ticket with
+      // no route satisfies neither — it is unknown, not one or the other.
+      if (travelFilter !== 'ALL' && classifyTravel(t.route) !== travelFilter) return false;
       // Ticket numbers are stored as the bare 10-digit serial, but the number
       // to hand is often the full 13-digit one off the airline's site or an
       // older report. Both are matched, so pasting either finds the document.
@@ -277,9 +301,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       });
     }
     return rows;
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
-  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = useMemo(
@@ -371,6 +395,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     if (searchTerm.trim()) parts.push(sanitize(searchTerm));
     else if (findVal.trim() && showFindReplace) parts.push('REQ_' + sanitize(findVal));
     else {
+      if (travelFilter === 'DOMESTIC') parts.push('Domestic');
+      else if (travelFilter === 'INTERNATIONAL') parts.push('International');
       if (filterTicket) parts.push('TK_' + sanitize(filterTicket));
       if (filterPNR) parts.push('PNR_' + sanitize(filterPNR));
       if (filterPax) parts.push('PAX_' + sanitize(filterPax));
@@ -430,6 +456,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       { key: 'Source', get: (t: Ticket) => t.source || 'UNKNOWN', w: 15 },
       { key: 'Status',      get: (t: Ticket) => t.status || '',          w: 9 },
       ...(has.route ? [{ key: 'Route',       get: (t: Ticket) => t.route || '',  w: 18 }] : []),
+      ...(has.route ? [{ key: 'Travel',      get: (t: Ticket) => travelText(t.route), w: 13 }] : []),
       ...(has.pnr   ? [{ key: 'PNR',         get: (t: Ticket) => t.pnr || '',    w: 9 }] : []),
       ...(has.pax   ? [{ key: 'Passenger',   get: (t: Ticket) => t.passengerName || '', w: 26 }] : []),
       ...(has.total ? [{ key: 'Fare',        get: (t: Ticket) => t.totalDoc ?? 0, w: 12, money: true }] : []),
@@ -499,6 +526,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     const data = missing.map(t => ({
       'A/L':        t.airlineCode || '',
       'Route':      t.route || '',
+      'Travel':     travelText(t.route),
       'Ticket No.': t.ticketNo,
       'Source':     t.source || '',
       'Status':     t.status || '',
@@ -706,6 +734,23 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             <option value="DUPLICATE">Duplicates</option>
           </select>
 
+          {/* Domestic / International — read off the itinerary, so a ticket
+              with no route belongs to neither and drops out of both. */}
+          <select
+            value={travelFilter}
+            onChange={e => setTravelFilter(e.target.value as 'ALL' | TravelScope)}
+            title="Domestic = every airport on the route is in Saudi Arabia"
+            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+              travelFilter === 'DOMESTIC' ? 'bg-teal-50 text-teal-700 border-teal-200'
+              : travelFilter === 'INTERNATIONAL' ? 'bg-blue-50 text-blue-700 border-blue-200'
+              : 'bg-white text-slate-500 border-slate-200'
+            }`}
+          >
+            <option value="ALL">All Travel</option>
+            <option value="DOMESTIC">Domestic</option>
+            <option value="INTERNATIONAL">International</option>
+          </select>
+
           {/* Closed / Not Closed filter */}
           <select
             value={closedFilter}
@@ -722,7 +767,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           </select>
 
           {/* Bulk close / reopen — operates on entire filtered set */}
-          {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || filterTicket || filterAL || filterPax || filterPNR || sourceSel.length > 0 || dateFrom || dateTo) && (
+          {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || travelFilter !== 'ALL' || filterTicket || filterAL || filterPax || filterPNR || sourceSel.length > 0 || dateFrom || dateTo) && (
             <>
               <button
                 onClick={() => applyBulkClosed(true)}
@@ -906,6 +951,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                 ['Status',     null],
                 ['Date',       'date'],
                 ['Route',      null],
+                ['Travel',     null],
                 ['Fare',       null],
                 ['Commission', null],
                 ['Balance Payable', 'amount'],
@@ -972,6 +1018,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                   </td>
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{ticket.date}</td>
                   <td className="px-3 py-2 text-[10px] text-slate-400">{ticket.route || '—'}</td>
+                  <td className="px-3 py-2">
+                    <TravelBadge route={ticket.route} />
+                  </td>
                   {/* Negative values must render, not collapse to an em-dash:
                       a refund's clawed-back commission is real data, and
                       hiding it makes the net amount look unexplainable. */}
