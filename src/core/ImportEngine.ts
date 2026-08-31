@@ -42,10 +42,31 @@ export function detectDuplicates(tickets: Ticket[]): Ticket[] {
 }
 
 // ── Detect duplicates against the existing Firestore tickets ──
+/**
+ * The settlement vendor. A row from here is not a second sale — it is the
+ * invoice for a document the portal already reported.
+ */
+const isSettlementSource = (source: string) => /^iata/i.test((source || '').trim());
+
+/**
+ * Document identity, independent of which vendor reported it.
+ *
+ * A ticket number identifies a document, and airline + serial identifies it
+ * uniquely, so those are the key. Direction is part of it: a refund is its own
+ * document and must never merge into the issue it reverses. The airline code
+ * is only included when BOTH sides state one, so a row that never learned its
+ * airline still matches on the serial rather than splitting off on its own.
+ */
+function documentKey(t: Ticket, withAirline: boolean): string {
+  const dir = t.amount < 0 ? 'CR' : 'DR';
+  const al  = withAirline ? (t.airlineCode || '').trim() : '';
+  return `${al}|${t.ticketNo.trim().toUpperCase()}|${dir}`;
+}
+
 export function detectDuplicatesAgainstExisting(
   newTickets: Ticket[],
   existingTickets: Ticket[]
-): { fresh: Ticket[]; updates: Ticket[]; duplicates: Ticket[] } {
+): { fresh: Ticket[]; updates: Ticket[]; duplicates: Ticket[]; settlements: Ticket[] } {
   const existingKeys = new Set(existingTickets.map(t => dupKey(t)));
   // Keyed on ticket AND vendor, never the ticket alone.
   //
@@ -65,9 +86,35 @@ export function detectDuplicatesAgainstExisting(
   const vendorKey = (t: Ticket) =>
     `${t.ticketNo.trim().toUpperCase()}|${(t.source || '').trim().toLowerCase()}`;
   const existingByTicket = new Map(existingTickets.map(t => [vendorKey(t), t]));
-  const fresh:      Ticket[] = [];
-  const updates:    Ticket[] = [];
-  const duplicates: Ticket[] = [];
+
+  // The same DOCUMENT, whoever reported it. Used to spot the invoice line for
+  // a ticket the portal already recorded. Indexed with and without the airline
+  // so a row missing its airline code still finds its counterpart.
+  const existingByDoc = new Map<string, Ticket>();
+  for (const t of existingTickets) {
+    existingByDoc.set(documentKey(t, true), t);
+    const bare = documentKey(t, false);
+    if (!existingByDoc.has(bare)) existingByDoc.set(bare, t);
+  }
+  const findDocument = (t: Ticket): Ticket | undefined => {
+    const exact = existingByDoc.get(documentKey(t, true));
+    if (exact) return exact;
+    const bare = existingByDoc.get(documentKey(t, false));
+    if (!bare) return undefined;
+    // The serial-only fallback exists for rows that never learned their
+    // airline. It must not reach across two airlines that DID state one and
+    // disagree — airline + serial is what makes a document unique, and two
+    // carriers can legitimately issue the same serial.
+    const incoming = (t.airlineCode || '').trim();
+    const held     = (bare.airlineCode || '').trim();
+    if (incoming && held && incoming !== held) return undefined;
+    return bare;
+  };
+
+  const fresh:       Ticket[] = [];
+  const updates:     Ticket[] = [];
+  const duplicates:  Ticket[] = [];
+  const settlements: Ticket[] = [];
 
   newTickets.forEach(t => {
     const status   = (t.status || '').toUpperCase();
@@ -87,6 +134,50 @@ export function detectDuplicatesAgainstExisting(
       if (existingKeys.has(key)) duplicates.push({ ...t, isDuplicate: true });
       else fresh.push(t);
       return;
+    }
+
+    // ── The weekly invoice for a ticket the portal already reported ──
+    //
+    // The agency issues on a portal and uploads it daily to see what is
+    // running; at the end of the week BSP invoices the same documents. Those
+    // are ONE sale, so keeping both rows would double the money — 25 documents
+    // in this ledger were counting 454,371.30 for 229,860.00 of real sales.
+    //
+    // The invoice supersedes: it alone states the commission and the balance
+    // actually payable. So it does not become a row of its own, it updates the
+    // document already there — one row per document, with the settled figures
+    // on it. The vendor stays the issuing portal, so the ticket is still
+    // visibly a Turkish sale, with the channel recording that it settled
+    // through BSP.
+    if (!existing && isSettlementSource(t.source)) {
+      const doc = findDocument(t);
+      if (doc && !isSettlementSource(doc.source)) {
+        settlements.push({
+          ...doc,                                   // keep vendor, pax, PNR, route
+          amount:     t.amount,                     // net payable — the invoice's figure
+          commission: t.commission,
+          totalDoc:   t.totalDoc || doc.totalDoc,
+          date:       t.date || doc.date,
+          status:     t.status || doc.status,
+          channel:    t.channel || 'BSP',
+          serial:     t.serial ?? doc.serial,
+          // The portal usually carries the req number and the invoice does not.
+          reqNum:     doc.reqNum?.trim() ? doc.reqNum : t.reqNum,
+        });
+        return;
+      }
+    }
+
+    // The mirror image: a portal report arriving for a document the invoice
+    // already settled. The money on the settled row is the better figure, so
+    // the portal row is not added — it may still contribute a req number.
+    if (!existing && !isSettlementSource(t.source)) {
+      const doc = findDocument(t);
+      if (doc && isSettlementSource(doc.source)) {
+        if (t.reqNum && !doc.reqNum?.trim()) updates.push({ ...t, id: doc.id });
+        else duplicates.push({ ...t, isDuplicate: true });
+        return;
+      }
     }
 
     // Same ticket appeared more than once WITHIN this import batch itself
@@ -115,7 +206,7 @@ export function detectDuplicatesAgainstExisting(
     }
   });
 
-  return { fresh, updates, duplicates };
+  return { fresh, updates, duplicates, settlements };
 }
 
 /* ─────────────────────────────────────────────

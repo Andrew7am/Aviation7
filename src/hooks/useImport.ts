@@ -15,6 +15,9 @@ export interface ImportPreview {
   updates:     Ticket[];
   duplicates:  Ticket[];
   topUps:      Ticket[];
+  /** Invoice lines landing on a document the portal already recorded. They
+   *  update that row's money rather than adding a second row for the sale. */
+  settlements: Ticket[];
   errors:      ImportErrorEntry[];
   warnings:    string[];
   parserName:  string;
@@ -57,7 +60,7 @@ export function useImport(userId: string) {
   ) => {
     if (!text.trim()) {
       setPreview({
-        fresh: [], updates: [], duplicates: [], topUps: [],
+        fresh: [], updates: [], duplicates: [], topUps: [], settlements: [],
         errors: [{ row: 0, raw: '', error: 'Please enter some data.' }],
         warnings: [], parserName: '', confidence: 0, totalRows: 0,
       });
@@ -107,11 +110,11 @@ export function useImport(userId: string) {
       const batchTicketNos = rawTickets.map(t => t.ticketNo);
       const existingFromDB = await svc.fetchByTicketNos(batchTicketNos);
 
-      const { fresh, updates, duplicates } = detectDuplicatesAgainstExisting(realTkts, existingFromDB);
+      const { fresh, updates, duplicates, settlements } = detectDuplicatesAgainstExisting(realTkts, existingFromDB);
       const classified = classifyAgainstExisting(realTkts, existingFromDB);
 
       setPreview({
-        fresh, updates, duplicates, topUps,
+        fresh, updates, duplicates, topUps, settlements,
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
         warnings, parserName, confidence,

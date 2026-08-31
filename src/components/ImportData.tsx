@@ -15,7 +15,7 @@ const aiProfileSvc = new AIProfileService();
 
 interface ImportDataProps {
   userId: string;
-  onImport: (newTickets: Ticket[], updateTickets: Ticket[], topUpTickets: Ticket[], meta: ImportMeta) => void;
+  onImport: (newTickets: Ticket[], updateTickets: Ticket[], topUpTickets: Ticket[], settlementTickets: Ticket[], meta: ImportMeta) => void;
   vendorNames?: string[];
 }
 
@@ -141,7 +141,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
     if (!preview) return;
     const meta = buildMeta(defaultSource);
     if (!meta) return;
-    onImport(preview.fresh, preview.updates, preview.topUps, meta);
+    onImport(preview.fresh, preview.updates, preview.topUps, preview.settlements, meta);
     clear();
     setDefaultSource('Auto-detect');
   };
@@ -164,6 +164,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
         ...preview.topUps,
         ...preview.fresh,
         ...preview.updates.map(t => ({ ...t, _isUpdate: true } as any)),
+        ...preview.settlements.map(t => ({ ...t, _isSettlement: true } as any)),
         ...preview.duplicates,
       ]
     : [];
@@ -238,7 +239,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
           one-time AI analysis. Covers both "no parser detected" and "user
           picked a vendor whose format has since changed and it parsed 0 rows". */}
       {preview && (preview.confidence === 0 ||
-        (preview.fresh.length + preview.updates.length + preview.duplicates.length + preview.topUps.length) === 0) && (
+        (preview.fresh.length + preview.updates.length + preview.duplicates.length + preview.topUps.length + preview.settlements.length) === 0) && (
         <div className="shrink-0 rounded-lg px-4 py-3 flex items-center justify-between border bg-violet-50 border-violet-200">
           <div className="flex items-center space-x-2">
             <Sparkles className="w-4 h-4 text-violet-600" />
@@ -285,6 +286,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
               </span>
               {preview!.topUps.length > 0 && <span className="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.topUps.length} TOP-UPS</span>}
               {preview!.updates.length > 0 && <span className="bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.updates.length} REQ UPDATES</span>}
+              {preview!.settlements.length > 0 && <span title="Invoice lines for tickets already uploaded from the portal — these update that ticket instead of adding a second row" className="bg-violet-100 text-violet-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.settlements.length} SETTLED FROM INVOICE</span>}
               {preview!.duplicates.length > 0 && <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.duplicates.length} DUPS SKIPPED</span>}
               <span className="text-[10px] font-mono text-slate-500">Net: {fmt(totalNet)}</span>
             </div>

@@ -93,6 +93,7 @@ function MainApp({ user }: { user: User }) {
     newTickets: Ticket[],
     updateTickets: Ticket[],
     topUpTickets: Ticket[],
+    settlementTickets: Ticket[],
     meta?: { parserName: string; confidence: number; totalRows: number; warnings: number; errors: { row: number; raw: string; error: string }[]; vendor: string; reportName: string }
   ) => {
     const startTime = Date.now();
@@ -110,8 +111,8 @@ function MainApp({ user }: { user: User }) {
         return t;
       });
 
-      const { saved, updated, topups } = await ticketSvc.saveImport(
-        ticketsWithBalance, updateTickets, topUpTickets, vendorBalancesLive
+      const { saved, updated, topups, settled } = await ticketSvc.saveImport(
+        ticketsWithBalance, updateTickets, topUpTickets, vendorBalancesLive, settlementTickets
       );
 
       const duration = Date.now() - startTime;
@@ -138,7 +139,8 @@ function MainApp({ user }: { user: User }) {
         }
 
         // Audit log
-        await importSvc.audit('IMPORT', meta.vendor, `${saved} tickets, ${updated} updates, ${topups} top-ups`);
+        await importSvc.audit('IMPORT', meta.vendor,
+          `${saved} tickets, ${updated} updates, ${settled} settled from invoice, ${topups} top-ups`);
       }
 
       const parts = [

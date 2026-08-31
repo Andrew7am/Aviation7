@@ -143,8 +143,9 @@ export class TicketService {
     newTickets: Ticket[],
     updateTickets: Ticket[],
     topUpTickets: Ticket[],
-    vendorBalancesLive: { id: string; vendorName: string }[]
-  ): Promise<{ saved: number; updated: number; topups: number }> {
+    vendorBalancesLive: { id: string; vendorName: string }[],
+    settlementTickets: Ticket[] = []
+  ): Promise<{ saved: number; updated: number; topups: number; settled: number }> {
     if (newTickets.length > 0) {
       const rows = newTickets.map(t => ticketToRow(t, this.userId));
       const { error } = await supabase.from('tickets').upsert(rows, { onConflict: 'id' });
@@ -160,6 +161,29 @@ export class TicketService {
     // of a one-off backfill script.
     for (const ticket of updateTickets) {
       const patch: Record<string, unknown> = { req_num: ticket.reqNum };
+      if (ticket.serial != null) patch.serial = ticket.serial;
+      const { error } = await supabase
+        .from('tickets')
+        .update(patch)
+        .eq('id', ticket.id);
+      if (error) throw new Error(error.message);
+    }
+
+    // Settlement rows — the weekly BSP invoice landing on a document the
+    // portal already recorded. This patches the MONEY, which the req-num path
+    // above deliberately never touches: the invoice is the only source for the
+    // commission and the balance actually payable, and writing it here is what
+    // keeps the document to a single row instead of counting the sale twice.
+    for (const ticket of settlementTickets) {
+      const patch: Record<string, unknown> = {
+        amount:     ticket.amount,
+        commission: ticket.commission,
+        total_doc:  ticket.totalDoc,
+        date:       ticket.date,
+        status:     ticket.status,
+        channel:    ticket.channel ?? 'BSP',
+        req_num:    ticket.reqNum,
+      };
       if (ticket.serial != null) patch.serial = ticket.serial;
       const { error } = await supabase
         .from('tickets')
@@ -193,7 +217,12 @@ export class TicketService {
       if (error) throw new Error(error.message);
     }
 
-    return { saved: newTickets.length, updated: updateTickets.length, topups: topUpRows.length };
+    return {
+      saved:   newTickets.length,
+      updated: updateTickets.length,
+      topups:  topUpRows.length,
+      settled: settlementTickets.length,
+    };
   }
 
   /** Fetch only the tickets whose ticket_no appears in the given list.
