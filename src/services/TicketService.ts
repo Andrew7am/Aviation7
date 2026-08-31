@@ -160,8 +160,19 @@ export class TicketService {
     // it's the one chance to fill in serial for pre-existing tickets short
     // of a one-off backfill script.
     for (const ticket of updateTickets) {
-      const patch: Record<string, unknown> = { req_num: ticket.reqNum };
-      if (ticket.serial != null) patch.serial = ticket.serial;
+      // Every field here is written ONLY when the incoming row actually has
+      // one. An import fills gaps in the ledger; it must never empty a field
+      // the ledger already holds because this particular report had no column
+      // for it. Turkish's agency sales export carries the route and passenger
+      // name but leaves req num blank, so writing req num unconditionally
+      // erased fifteen req numbers the agency had typed in by hand.
+      const patch: Record<string, unknown> = {};
+      if (ticket.reqNum?.trim())        patch.req_num        = ticket.reqNum;
+      if (ticket.serial != null)        patch.serial         = ticket.serial;
+      if (ticket.route?.trim())         patch.route          = ticket.route;
+      if (ticket.passengerName?.trim()) patch.passenger_name = ticket.passengerName;
+      if (ticket.pnr?.trim())           patch.pnr            = ticket.pnr;
+      if (Object.keys(patch).length === 0) continue;
       const { error } = await supabase
         .from('tickets')
         .update(patch)
@@ -184,6 +195,10 @@ export class TicketService {
         channel:    ticket.channel ?? 'BSP',
         req_num:    ticket.reqNum,
       };
+      // Descriptive fields the newer export can supply where the ledger has
+      // none. Only written when non-empty, so a settlement never blanks them.
+      if (ticket.route?.trim())         patch.route          = ticket.route;
+      if (ticket.passengerName?.trim()) patch.passenger_name = ticket.passengerName;
       if (ticket.serial != null) patch.serial = ticket.serial;
       const { error } = await supabase
         .from('tickets')

@@ -163,6 +163,8 @@ export function detectDuplicatesAgainstExisting(
           serial:     t.serial ?? doc.serial,
           // The portal usually carries the req number and the invoice does not.
           reqNum:     doc.reqNum?.trim() ? doc.reqNum : t.reqNum,
+          route:         doc.route?.trim()         ? doc.route         : t.route,
+          passengerName: doc.passengerName?.trim() ? doc.passengerName : t.passengerName,
         });
         return;
       }
@@ -188,16 +190,65 @@ export function detectDuplicatesAgainstExisting(
     // "DUP" badge shown in the preview would be cosmetic only.
     if (t.isDuplicate) { duplicates.push(t); return; }
 
+    // ── The same document, re-reported with a commission the ledger lacks ──
+    //
+    // A vendor's newer export can state things its older one did not. Turkish's
+    // agency sales report gives the discount — the agency's earning, and the
+    // same figure BSP invoices as commission — where the older export gave only
+    // the gross. Re-uploading such a document matched on nothing (the payable
+    // differs BY the commission) and was discarded as a duplicate, so the
+    // commission it was carrying never reached the ledger.
+    //
+    // The guard is that the GROSS FARE must already agree. That is what makes
+    // this safe: the two sides are demonstrably the same sale at the same
+    // price, and the only thing changing is a commission recorded as zero
+    // being replaced by one the vendor has now stated. A row whose fare
+    // disagrees is a real conflict and still falls through to be reported.
+    if (existing
+        && Math.abs(money(t.commission) ) > 0.005
+        && Math.abs(money(existing.commission)) <= 0.005
+        && !differs(t.totalDoc, existing.totalDoc)) {
+      settlements.push({
+        ...existing,
+        amount:     t.amount,
+        commission: t.commission,
+        totalDoc:   t.totalDoc || existing.totalDoc,
+        date:       t.date || existing.date,
+        status:     t.status || existing.status,
+        channel:    t.channel ?? existing.channel,
+        serial:     t.serial ?? existing.serial,
+        reqNum:     existing.reqNum?.trim() ? existing.reqNum : t.reqNum,
+        // Fill in only what the ledger is missing. The newer export carries
+        // the route and the passenger name that the older one left blank; a
+        // value already recorded is never replaced.
+        route:         existing.route?.trim()         ? existing.route         : t.route,
+        passengerName: existing.passengerName?.trim() ? existing.passengerName : t.passengerName,
+      });
+      return;
+    }
+
+    // A row whose money already agrees can still be carrying detail the ledger
+    // does not have. Turkish's older export had no passenger or route column at
+    // all, so 43 tickets sit there with both blank while the newer report
+    // states them. Treating that as "nothing to do" would keep the ledger
+    // emptier than the file it was just given.
+    const adds = (incoming?: string, held?: string) => !!incoming?.trim() && !held?.trim();
+    const enriches = existing && (
+      adds(t.route, existing.route) ||
+      adds(t.passengerName, existing.passengerName) ||
+      adds(t.pnr, existing.pnr) ||
+      adds(t.reqNum, existing.reqNum)
+    );
+
     if (existingKeys.has(key)) {
-      // Exact match — but if existing is missing req num and we now have one, update instead
-      if (existing && t.reqNum && (!existing.reqNum || !existing.reqNum.trim())) {
+      if (existing && enriches) {
         updates.push({ ...t, id: existing.id });
       } else {
         duplicates.push({ ...t, isDuplicate: true });
       }
     } else if (!existing) {
       fresh.push(t);
-    } else if (t.reqNum && (!existing.reqNum || !existing.reqNum.trim())) {
+    } else if (enriches) {
       updates.push({ ...t, id: existing.id });
     } else if (t.reqNum && existing.reqNum && t.reqNum !== existing.reqNum) {
       updates.push({ ...t, id: existing.id });
@@ -230,7 +281,15 @@ export function mergeImported(
 
   for (const u of updates) {
     const cur = byId.get(u.id);
-    if (cur) byId.set(u.id, { ...cur, reqNum: u.reqNum, serial: u.serial ?? cur.serial });
+    // Fill-only, never blank — the same rule the save path applies.
+    if (cur) byId.set(u.id, {
+      ...cur,
+      reqNum:        u.reqNum?.trim()        ? u.reqNum        : cur.reqNum,
+      serial:        u.serial ?? cur.serial,
+      route:         u.route?.trim()         ? u.route         : cur.route,
+      passengerName: u.passengerName?.trim() ? u.passengerName : cur.passengerName,
+      pnr:           u.pnr?.trim()           ? u.pnr           : cur.pnr,
+    });
   }
 
   for (const s of settlements) {
@@ -245,6 +304,8 @@ export function mergeImported(
       channel:    s.channel ?? 'BSP',
       reqNum:     s.reqNum,
       serial:     s.serial ?? cur.serial,
+      route:         s.route         || cur.route,
+      passengerName: s.passengerName || cur.passengerName,
     });
   }
 

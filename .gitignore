@@ -25,3 +25,4 @@ settled-merge-snapshot.json
 void-purge-snapshot.json
 misread-cancellation-snapshot.json
 deleted-rows-*.json
+import-snapshot-*.json

@@ -98,7 +98,30 @@ console.log('\n6. All three groups together');
   eq('  fresh row', out.find(t => t.id === 'c')?.ticketNo, '3333333333');
 }
 
-console.log('\n7. The input list is not mutated');
+console.log('\n7. An update FILLS gaps and never blanks what is held');
+{
+  // The report that prompted this rule carries route and passenger name but
+  // leaves req num empty. Writing every field unconditionally erased fifteen
+  // req numbers the agency had typed in by hand.
+  const held = [mk({ id: 'h', reqNum: 'KSAML2064', pnr: 'SF4JXT', route: 'JED-IST-JED', passengerName: 'HELD NAME' })];
+  const incoming = mk({ id: 'h', reqNum: '', pnr: '', route: '', passengerName: '' });
+  const out = mergeImported(held, [], [incoming]);
+  const h = out.find(t => t.id === 'h')!;
+  eq('req number survives an empty one', h.reqNum, 'KSAML2064');
+  eq('route survives', h.route, 'JED-IST-JED');
+  eq('passenger survives', h.passengerName, 'HELD NAME');
+  eq('PNR survives', h.pnr, 'SF4JXT');
+}
+{
+  const bare = [mk({ id: 'b2', reqNum: '', route: '', passengerName: '' })];
+  const rich = mk({ id: 'b2', reqNum: 'REQ-NEW', route: 'MED-IST-MED', passengerName: 'NEW NAME' });
+  const b = mergeImported(bare, [], [rich]).find(t => t.id === 'b2')!;
+  eq('an empty field is filled', b.route, 'MED-IST-MED');
+  eq('  ...passenger too', b.passengerName, 'NEW NAME');
+  eq('  ...and req num', b.reqNum, 'REQ-NEW');
+}
+
+console.log('\n8. The input list is not mutated');
 {
   const before = JSON.stringify(existing);
   mergeImported(existing, [mk({ id: 'z' })], [mk({ id: 'a', reqNum: 'ZZZ' })]);

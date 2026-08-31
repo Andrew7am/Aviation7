@@ -125,5 +125,41 @@ console.log('\n10. Two airlines sharing a serial are different documents');
   eq('  ...the other airline is its own row', r.fresh.length, 1);
 }
 
+console.log('\n11. A newer export states a commission the ledger never had');
+{
+  // The old Turkish export gave only the gross; the agency sales report gives
+  // the discount too. Re-uploading the same document must record it, not
+  // discard the row as a duplicate and lose the commission with it.
+  const old = mk({ id: 'old-1', amount: 8930, totalDoc: 8930, commission: 0, date: '2026-08-25' });
+  const now = mk({ id: 'new-1', amount: 8736.5, totalDoc: 8930, commission: 193.5, date: '2026-08-25' });
+  const r = detectDuplicatesAgainstExisting(detectDuplicates([now]), [old]);
+  eq('it is not thrown away', r.duplicates.length, 0);
+  eq('it updates the row already there', r.settlements.length, 1);
+  eq('  ...the same row', r.settlements[0]?.id, 'old-1');
+  eq('  ...commission is captured', r.settlements[0]?.commission, 193.5);
+  eq('  ...payable corrected', r.settlements[0]?.amount, 8736.5);
+  eq('  ...no second row appears', r.fresh.length, 0);
+  eq('  ...vendor unchanged', r.settlements[0]?.source, 'Turkish Airlines');
+  eq('  ...not stamped as a BSP settlement', r.settlements[0]?.channel, undefined);
+}
+
+console.log('\n12. But only when the gross fare already agrees');
+{
+  // A different fare is a real conflict, not a commission being filled in.
+  const old = mk({ id: 'old-2', amount: 8930, totalDoc: 8930, commission: 0 });
+  const now = mk({ id: 'new-2', amount: 5000, totalDoc: 5200, commission: 200 });
+  const r = detectDuplicatesAgainstExisting(detectDuplicates([now]), [old]);
+  eq('the money is not silently rewritten', r.settlements.length, 0);
+}
+
+console.log('\n13. A commission already recorded is not overwritten');
+{
+  const held  = mk({ id: 'held',  amount: 8736.5, totalDoc: 8930, commission: 193.5 });
+  const again = mk({ id: 'again', amount: 8736.5, totalDoc: 8930, commission: 193.5 });
+  const r = detectDuplicatesAgainstExisting(detectDuplicates([again]), [held]);
+  eq('re-uploading changes nothing', r.settlements.length, 0);
+  eq('  ...it is a duplicate', r.duplicates.length, 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
