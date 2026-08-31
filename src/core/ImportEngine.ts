@@ -264,8 +264,15 @@ export function classifyAgainstExisting(
     const sameDoc = byTicket.get(key) ?? [];
     // Match within the same direction of money: a refund must not be compared
     // against the original issue of the same document number.
+    //
+    // There is deliberately no fallback to "any row on this document". A
+    // refund that the ledger has not seen before has nothing to be compared
+    // WITH, and pairing it with the issue it reverses reported a fare
+    // difference on every single refund — the two are supposed to differ, so
+    // the finding carried no information and buried the ones that did. With no
+    // counterpart the row is simply NEW, which is what it is.
     const wantNegative = t.amount < 0;
-    const match = sameDoc.find(e => (e.amount < 0) === wantNegative) ?? sameDoc[0];
+    const match = sameDoc.find(e => (e.amount < 0) === wantNegative);
 
     const delta = {
       fare:       money((t.totalDoc ?? 0) - (match?.totalDoc ?? 0)),
