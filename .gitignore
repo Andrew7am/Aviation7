@@ -24,3 +24,4 @@ airline-code-snapshot.json
 settled-merge-snapshot.json
 void-purge-snapshot.json
 misread-cancellation-snapshot.json
+deleted-rows-*.json
