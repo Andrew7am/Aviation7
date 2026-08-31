@@ -1,8 +1,8 @@
 /**
- * Read-only audit of ticket_no vs airline_code in production.
- * Answers: how many rows carry the 3-digit airline prefix inside ticket_no,
- * how many don't, and how many pairs are the SAME document stored twice
- * because one side kept the prefix and the other didn't.
+ * Read-only audit of ticket_no vs airline_code.
+ * Confirms the ledger holds one canonical spelling: ticket_no is the bare
+ * 10-digit serial, the airline lives in airline_code, and a document issued
+ * on a portal matches its BSP invoice line.
  */
 import 'dotenv/config';
 import { Client } from 'pg';
@@ -14,78 +14,52 @@ async function main() {
   const total = await client.query(`select count(*)::int n from tickets`);
   console.log('total tickets:', total.rows[0].n);
 
-  const bySource = await client.query(`
+  console.log('\n--- ticket_no shape by source ---');
+  console.table((await client.query(`
     select source,
-           count(*)::int                                                     n,
-           count(*) filter (where ticket_no ~ '^[0-9]{13}$')::int            len13,
-           count(*) filter (where ticket_no ~ '^[0-9]{10}$')::int            len10,
-           count(*) filter (where ticket_no ~ '^[0-9]{8,15}$')::int          numeric_any,
+           count(*)::int                                            n,
+           count(*) filter (where ticket_no ~ '^[0-9]{13}$')::int    len13,
+           count(*) filter (where ticket_no ~ '^[0-9]{10}$')::int    len10,
            count(*) filter (where airline_code is not null
-                              and airline_code <> '')::int                   has_al,
+                              and airline_code <> '')::int           has_al,
            count(*) filter (where airline_code is not null and airline_code <> ''
-                              and ticket_no like airline_code || '%')::int   prefixed
+                              and ticket_no like airline_code || '%')::int prefixed
     from tickets
     group by source order by n desc
-  `);
-  console.table(bySource.rows);
+  `)).rows);
 
-  const lens = await client.query(`
+  console.log('\n--- ticket_no lengths (numeric identifiers only) ---');
+  console.table((await client.query(`
     select length(ticket_no) len, count(*)::int n
     from tickets where ticket_no ~ '^[0-9]+$'
     group by 1 order by 1
-  `);
-  console.table(lens.rows);
+  `)).rows);
 
-  // The collision: same trailing serial, stored under two different ticket_no
-  // spellings (one with the airline prefix, one without).
-  const collisions = await client.query(`
-    with norm as (
-      select id, ticket_no, source, airline_code, date, amount, status,
-             case when airline_code is not null and airline_code <> ''
-                   and ticket_no like airline_code || '%'
-                   and length(ticket_no) > length(airline_code)
-                  then substr(ticket_no, length(airline_code) + 1)
-                  when ticket_no ~ '^[0-9]{13}$' then substr(ticket_no, 4)
-                  else ticket_no end as serial
-      from tickets
-    )
-    select serial,
-           count(*)::int                          n,
-           count(distinct ticket_no)::int         spellings,
-           array_agg(distinct ticket_no)          nos,
-           array_agg(distinct source)             sources
-    from norm
-    where serial ~ '^[0-9]{6,}$'
-    group by serial
-    having count(distinct ticket_no) > 1
+  console.log('\n--- documents present under more than one vendor ---');
+  const shared = await client.query(`
+    select ticket_no,
+           count(*)::int              n,
+           array_agg(distinct source) sources
+    from tickets
+    where ticket_no ~ '^[0-9]{10}$'
+    group by ticket_no
+    having count(distinct source) > 1
     order by n desc
-    limit 25
   `);
-  console.log('\n--- same serial, different ticket_no spelling ---');
-  console.log('groups:', collisions.rowCount);
-  console.table(collisions.rows.map(r => ({
-    serial: r.serial, n: r.n, spellings: r.spellings,
-    nos: r.nos.join(','), sources: r.sources.join(','),
+  console.log('matched across vendors:', shared.rowCount);
+  console.table(shared.rows.slice(0, 10).map(r => ({
+    serial: r.ticket_no, rows: r.n, vendors: r.sources.join(' + '),
   })));
 
-  const collTotal = await client.query(`
-    with norm as (
-      select ticket_no, airline_code,
-             case when airline_code is not null and airline_code <> ''
-                   and ticket_no like airline_code || '%'
-                   and length(ticket_no) > length(airline_code)
-                  then substr(ticket_no, length(airline_code) + 1)
-                  when ticket_no ~ '^[0-9]{13}$' then substr(ticket_no, 4)
-                  else ticket_no end as serial
-      from tickets
-    )
-    select count(*)::int groups, sum(n)::int rows_involved from (
-      select serial, count(*)::int n from norm
-      where serial ~ '^[0-9]{6,}$'
-      group by serial having count(distinct ticket_no) > 1
-    ) x
-  `);
-  console.log('collision summary:', collTotal.rows[0]);
+  console.log('\n--- airline_code still scavenged from its own serial ---');
+  console.table((await client.query(`
+    select airline_code, count(*)::int n, min(ticket_no) example
+    from tickets
+    where ticket_no ~ '^[0-9]{10}$'
+      and airline_code ~ '^[0-9]{3}$'
+      and ticket_no like airline_code || '%'
+    group by airline_code order by n desc
+  `)).rows);
 
   await client.end();
 }
