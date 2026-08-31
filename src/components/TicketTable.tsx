@@ -93,6 +93,70 @@ function getSourceColor(source: string) {
   return 'bg-slate-100 text-slate-700';
 }
 
+/**
+ * A total that can be clicked to copy.
+ *
+ * The number copied is the PLAIN one — "5295441.46", not "5,295,441.46" — so
+ * it pastes into a spreadsheet or an invoice as a value rather than as text a
+ * locale has to re-interpret. The separators are only there to be read.
+ *
+ * navigator.clipboard needs a secure context, which production has and a plain
+ * http origin does not, so a failure falls back to the old textarea trick and
+ * then says so instead of silently doing nothing.
+ */
+const CopyableAmount: React.FC<{
+  label: string;
+  value: number;
+  fmt: (n: number) => string;
+}> = ({ label, value, fmt }) => {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+
+  useEffect(() => {
+    if (state === 'idle') return;
+    const t = setTimeout(() => setState('idle'), 1500);
+    return () => clearTimeout(t);
+  }, [state]);
+
+  const copy = async () => {
+    const plain = value.toFixed(2);
+    try {
+      await navigator.clipboard.writeText(plain);
+      setState('copied');
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = plain;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        setState(ok ? 'copied' : 'failed');
+      } catch {
+        setState('failed');
+      }
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title={`Click to copy ${value.toFixed(2)}`}
+      className={`font-mono rounded px-1 -mx-1 transition-colors hover:bg-slate-200 ${
+        state === 'copied' ? 'text-emerald-600 font-bold'
+        : state === 'failed' ? 'text-red-600 font-bold'
+        : value < 0 ? 'text-red-600 font-bold' : 'text-slate-600'
+      }`}
+    >
+      {state === 'copied' ? `${label}: copied`
+       : state === 'failed' ? `${label}: press Ctrl+C`
+       : `${label}: ${fmt(value)}`}
+    </button>
+  );
+};
+
 export const TicketTable: React.FC<TicketTableProps> = ({
   tickets, title, defaultFilter = 'ALL', onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
@@ -818,9 +882,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       <div className="flex items-center space-x-4 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-[10px] font-mono text-slate-500">
         <span>{filtered.length} tickets</span>
         <span className="text-slate-300">|</span>
-        {hasSAR && <span className={sarTotal < 0 ? 'text-red-600 font-bold' : 'text-slate-600'}>Net SAR: {fmt(sarTotal)}</span>}
+        {hasSAR && <CopyableAmount label="Net SAR" value={sarTotal} fmt={fmt} />}
         {hasSAR && hasAED && <span className="text-slate-300">·</span>}
-        {hasAED && <span className={aedTotal < 0 ? 'text-red-600 font-bold' : 'text-slate-600'}>Net AED: {fmt(aedTotal)}</span>}
+        {hasAED && <CopyableAmount label="Net AED" value={aedTotal} fmt={fmt} />}
         <span className="text-slate-300">|</span>
         <span className="text-red-500">{filtered.filter(t => !t.reqNum).length} missing req</span>
         <span className="text-slate-300">|</span>
