@@ -35,7 +35,7 @@ function MainApp({ user }: { user: User }) {
 
   React.useEffect(() => { AuditService.myRole().then(r => setIsAdmin(r === 'admin')).catch(() => setIsAdmin(false)); }, [user.id]);
 
-  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, addManualTicket } = useTickets(user.id);
+  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, addManualTicket, applyImport } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
 
   const ticketSvc = new TicketService(user.id);
@@ -114,6 +114,12 @@ function MainApp({ user }: { user: User }) {
       const { saved, updated, topups, settled } = await ticketSvc.saveImport(
         ticketsWithBalance, updateTickets, topUpTickets, vendorBalancesLive, settlementTickets
       );
+
+      // Put the rows on screen now. The realtime refetch that follows would
+      // eventually surface them, but only after a per-row event burst, the
+      // debounce, and a full re-download of the table — for rows this client
+      // just wrote and already holds.
+      applyImport(ticketsWithBalance, updateTickets, settlementTickets);
 
       const duration = Date.now() - startTime;
 

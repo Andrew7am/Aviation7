@@ -209,6 +209,50 @@ export function detectDuplicatesAgainstExisting(
   return { fresh, updates, duplicates, settlements };
 }
 
+/**
+ * Fold a saved import into the list already on screen.
+ *
+ * Each group is applied EXACTLY as TicketService.saveImport() writes it, so
+ * the local list says what the database says: fresh rows are added whole,
+ * `updates` touch only the req number and serial (that save path patches
+ * nothing else, by design), and settlements carry the invoice's money onto the
+ * row already there.
+ *
+ * Pure, so the merge can be exercised without React — the hook only wraps it.
+ */
+export function mergeImported(
+  prev:        Ticket[],
+  fresh:       Ticket[],
+  updates:     Ticket[] = [],
+  settlements: Ticket[] = [],
+): Ticket[] {
+  const byId = new Map<string, Ticket>(prev.map(t => [t.id, t] as [string, Ticket]));
+
+  for (const u of updates) {
+    const cur = byId.get(u.id);
+    if (cur) byId.set(u.id, { ...cur, reqNum: u.reqNum, serial: u.serial ?? cur.serial });
+  }
+
+  for (const s of settlements) {
+    const cur = byId.get(s.id);
+    if (cur) byId.set(s.id, {
+      ...cur,
+      amount:     s.amount,
+      commission: s.commission,
+      totalDoc:   s.totalDoc,
+      date:       s.date,
+      status:     s.status,
+      channel:    s.channel ?? 'BSP',
+      reqNum:     s.reqNum,
+      serial:     s.serial ?? cur.serial,
+    });
+  }
+
+  for (const f of fresh) byId.set(f.id, f);
+
+  return [...byId.values()];
+}
+
 /* ─────────────────────────────────────────────
    RECONCILIATION CLASSIFICATION
 

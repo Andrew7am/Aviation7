@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Ticket } from '../types';
 import { TicketService } from '../services/TicketService';
-import { detectDuplicates } from '../core/ImportEngine';
+import { detectDuplicates, mergeImported } from '../core/ImportEngine';
 
 export function useTickets(userId: string) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -47,6 +47,28 @@ export function useTickets(userId: string) {
     await svc.addManual(ticket);
   };
 
+  /**
+   * Show an import the moment it is saved.
+   *
+   * Every other mutation here patches local state first; import was the one
+   * that did not, so a finished upload sat invisible while realtime fired an
+   * event per row, waited out the 400ms debounce, and then re-downloaded the
+   * whole table just to surface rows the client already had in hand.
+   *
+   * Each group is applied EXACTLY as saveImport() writes it, so local state
+   * says what the database says: fresh rows are added whole, `updates` touch
+   * only the req number and serial, and settlements carry the invoice's money
+   * onto the row already there. Anything wrong here is corrected by the
+   * refetch that follows anyway — it just no longer has to be waited for.
+   */
+  const applyImport = (
+    fresh:       Ticket[],
+    updates:     Ticket[] = [],
+    settlements: Ticket[] = [],
+  ) => {
+    setTickets(prev => detectDuplicates(mergeImported(prev, fresh, updates, settlements)));
+  };
+
   const updateReqNum = async (id: string, req: string) => {
     patchLocal(t => ({ ...t, reqNum: req }), new Set([id]));
     await svc.updateReqNum(id, req);
@@ -77,5 +99,5 @@ export function useTickets(userId: string) {
   const missingReq = tickets.filter(t => !t.reqNum && t.status !== 'FUND');
   const topUps     = tickets.filter(t => t.status === 'FUND');
 
-  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, addManualTicket };
+  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, addManualTicket, applyImport };
 }
