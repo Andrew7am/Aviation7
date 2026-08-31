@@ -1,4 +1,5 @@
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
+import { toSerial, toAirlineCode } from '../core/helpers/ticketIdentity';
 import { v4 as uuidv4 } from 'uuid';
 import { Ticket } from '../types';
 import Papa from 'papaparse';
@@ -59,18 +60,14 @@ function isValidPNR(s: string): boolean {
   return /^[A-Z0-9]{5,6}$/i.test(s) && /[A-Z]/i.test(s);
 }
 
-function extractAirlineCode(ticketNo: string): string {
-  const m1 = ticketNo.match(/^(\d{3})\s*[-–]\s*\d+/);
-  if (m1) return m1[1];
-  const m2 = ticketNo.match(/^(\d{3})\d{7,}/);
-  if (m2) return m2[1];
-  return '';
+// Airline code and serial are kept in separate fields — see
+// core/helpers/ticketIdentity.ts for why, and for the shared implementation.
+function extractAirlineCode(ticketNo: string, explicitCode?: string): string {
+  return toAirlineCode(ticketNo, explicitCode);
 }
 
-function cleanTicketNo(raw: string): string {
-  const m = raw.match(/^(\d{3})\s*[-–]\s*(\d+)$/);
-  if (m) return m[1] + m[2];
-  return raw.replace(/\s+/g, '');
+function cleanTicketNo(raw: string, explicitCode?: string): string {
+  return toSerial(raw, explicitCode);
 }
 
 function cleanPassengerName(raw: string): string {

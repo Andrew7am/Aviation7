@@ -1,3 +1,5 @@
+import { toSerial, toAirlineCode } from './ticketIdentity';
+
 export function isValidTicketNo(ticketNo: string, isLCC: boolean): boolean {
   if (!ticketNo) return false;
   if (isLCC) {
@@ -48,17 +50,14 @@ export function isValidTicket(t: {
   return { valid: errors.length === 0, errors };
 }
 
-export function cleanTicketNo(raw: string): string {
-  // "065 - 1930576239" → "0651930576239"
-  const m = raw.match(/^(\d{3})\s*[-–]\s*(\d+)$/);
-  return m ? m[1] + m[2] : raw.replace(/\s+/g, '');
+/** "065 - 1930576239" → "1930576239". Airline and serial are kept apart —
+ *  see core/helpers/ticketIdentity.ts for the reasoning. */
+export function cleanTicketNo(raw: string, explicitCode?: string): string {
+  return toSerial(raw, explicitCode);
 }
 
-export function extractAirlineCode(ticketNo: string): string {
-  const m1 = ticketNo.match(/^(\d{3})\s*[-–]\s*\d+/);
-  if (m1) return m1[1];
-  const m2 = ticketNo.match(/^(\d{3})\d{7,}/);
-  return m2 ? m2[1] : '';
+export function extractAirlineCode(ticketNo: string, explicitCode?: string): string {
+  return toAirlineCode(ticketNo, explicitCode);
 }
 
 export function cleanPassengerName(raw: string): string {

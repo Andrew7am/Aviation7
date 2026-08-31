@@ -1,5 +1,6 @@
 import { VendorParser, ParserResult } from './types';
-import { col, cell, num, cleanPax, airlineCode, cleanTk } from './shared';
+import { col, cell, num, cleanPax } from './shared';
+import { splitTicketNo } from '../helpers/ticketIdentity';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency, resolveCurrency } from '../helpers/resolveCurrency';
@@ -43,8 +44,12 @@ export const IATAParser: VendorParser = {
         return;
       }
 
+      // BSP prints the bare 10-digit serial and names the airline in its own
+      // A/L column, so that column is the ONLY source for the code here —
+      // deriving it from a 10-digit serial just returns the serial's own first
+      // three digits (see ticketIdentity.ts). Blank beats invented.
       const alRaw   = cell(row, iAL);
-      const alCode  = /^\d{3}$/.test(alRaw) ? alRaw : airlineCode(rawTk);
+      const { ticketNo: tkSerial, airlineCode: alCode } = splitTicketNo(rawTk, alRaw);
       const total   = num(cell(row, iTotal));
       const netRaw  = num(cell(row, iNet));
       const taxVal  = iTax !== -1 ? num(cell(row, iTax)) : 0;
@@ -81,7 +86,7 @@ export const IATAParser: VendorParser = {
       const serial = serialRaw ? parseInt(serialRaw, 10) : undefined;
 
       result.push({
-        ticketNo:       rawTk,
+        ticketNo:       tkSerial,
         pnr:            cell(row, iPNR).replace(/\s+/g,'').toUpperCase(),
         passengerName:  cleanPax(cell(row, iPax)),
         airlineCode:    alCode,

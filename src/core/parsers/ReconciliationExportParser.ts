@@ -112,7 +112,8 @@ export const ReconciliationExportParser: VendorParser = {
                    : status === 'REFUND' ? -Math.abs(exported)
                    : exported;
 
-      const ticketNo = rawTk ? cleanTk(rawTk) : pnr;
+      const alCol    = iAL !== -1 ? cell(row, iAL) : '';
+      const ticketNo = rawTk ? cleanTk(rawTk, alCol) : pnr;
       const req = resolveReq(cell(row, iReq));
       if (!req) warnings.push(`Ticket ${ticketNo}: still has no Req Num — row will not update anything.`);
 
@@ -123,7 +124,7 @@ export const ReconciliationExportParser: VendorParser = {
         ticketNo,
         pnr,
         passengerName: iPax !== -1 ? cleanPax(cell(row, iPax)) : '',
-        airlineCode:   (iAL !== -1 ? cell(row, iAL) : '') || airlineCode(rawTk),
+        airlineCode:   airlineCode(rawTk, alCol),
         route:         iRoute !== -1 ? extractRoute(cell(row, iRoute)) : '',
         date:          parseDate(cell(row, iDate)),
         amount,

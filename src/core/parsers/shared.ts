@@ -5,6 +5,8 @@
  * This file only holds column-lookup and cosmetic-cleanup helpers that
  * are genuinely generic across vendors and don't belong in `helpers/`.
  */
+import { toSerial, toAirlineCode } from '../helpers/ticketIdentity';
+
 export function h(headers: string[]): string[] {
   return headers.map(c => (c || '').trim().toLowerCase().replace(/[^a-z0-9.]/g, ''));
 }
@@ -44,16 +46,22 @@ export function pnrClean(raw: string): string {
   return raw.replace(/\s+/g, '').toUpperCase();
 }
 
-export function cleanTk(raw: string): string {
-  const m = raw.match(/^(\d{3})\s*[-–]\s*(\d+)/);
-  return m ? m[1] + m[2] : raw.replace(/\s+/g, '');
+/**
+ * cleanTk / airlineCode — thin wrappers over the canonical splitter in
+ * core/helpers/ticketIdentity.ts. Every parser already calls this pair, so
+ * routing them here is what makes the whole import layer agree on one
+ * spelling: `ticketNo` is the bare 10-digit serial, the airline lives in
+ * `airlineCode`. See ticketIdentity.ts for why that split matters.
+ *
+ * `explicitCode` is the report's own airline column when it has one (BSP
+ * "A/L"); pass it and it wins over anything inferred from the digits.
+ */
+export function cleanTk(raw: string, explicitCode?: string): string {
+  return toSerial(raw, explicitCode);
 }
 
-export function airlineCode(ticketNo: string): string {
-  const m1 = ticketNo.match(/^(\d{3})\s*[-–]\s*\d+/);
-  if (m1) return m1[1];
-  const m2 = ticketNo.match(/^(\d{3})\d{7,}/);
-  return m2 ? m2[1] : '';
+export function airlineCode(ticketNo: string, explicitCode?: string): string {
+  return toAirlineCode(ticketNo, explicitCode);
 }
 
 /**

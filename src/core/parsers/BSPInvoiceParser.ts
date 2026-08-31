@@ -335,10 +335,10 @@ export const BSPInvoiceParser: VendorParser = {
       }
 
       result.push({
-        ticketNo: cleanTk(docNo),
+        ticketNo: cleanTk(docNo, airline),
         pnr: '',
         passengerName: '',
-        airlineCode: airline || airlineCode(docNo),
+        airlineCode: airlineCode(docNo, airline),
         route: '',
         date: bspDate(dateRaw),
         amount: finalPayable,      // ledger figure: what is actually owed
