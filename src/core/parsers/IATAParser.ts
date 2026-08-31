@@ -4,7 +4,7 @@ import { splitTicketNo } from '../helpers/ticketIdentity';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency, resolveCurrency } from '../helpers/resolveCurrency';
-import { normalizeStatus } from '../helpers/normalizeStatus';
+import { normalizeStatus, type NormalizedStatus } from '../helpers/normalizeStatus';
 
 export const IATAParser: VendorParser = {
   id:   'IATA',
@@ -69,8 +69,25 @@ export const IATAParser: VendorParser = {
       const amount  = commIsPastedTax ? total : (netRaw || (total - comm));
       const rawSt   = cell(row, iStatus).toUpperCase();
       const normSt  = normalizeStatus(rawSt);
-      // TRNC may be empty in custom IATA exports — fall back to amount sign
-      const status  = normSt !== 'UNKNOWN' ? normSt : (amount < 0 ? 'REFUND' : 'ISSUE');
+      // TRNC may be empty in custom IATA exports — fall back to the amount.
+      //
+      // The sign tells a refund from a sale, but only when there IS an amount.
+      // A row with no stated type, no fare and nothing payable is not a sale:
+      // on the invoice these are the cancellations, printed as CANN/CANX with
+      // 0.00 across every column. Calling them ISSUE put four cancelled
+      // documents into the ledger as live tickets that could never be closed.
+      // With nothing to go on, VOID is both the truthful reading and the safe
+      // one — it settles at zero either way, so a genuine zero-fare ticket
+      // misread here costs nothing, while a cancellation read as a sale does.
+      const typeless = normSt === 'UNKNOWN';
+      const noMoney  = amount === 0 && total === 0;
+      let status: NormalizedStatus;
+      if (!typeless)     status = normSt;
+      else if (noMoney) {
+        warnings.push(`Ticket ${rawTk}: no transaction type and no value — treated as a cancellation (VOID) rather than a sale.`);
+        status = 'VOID';
+      }
+      else status = amount < 0 ? 'REFUND' : 'ISSUE';
       // VOID (RFNX/CANX/CANN/VOID) — cancelled ticket or cancelled refund.
       // Business rule: value is zero (informational only, no balance impact).
       const finalAmt = status === 'VOID'   ? 0
