@@ -286,6 +286,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
               </span>
               {preview!.topUps.length > 0 && <span className="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.topUps.length} TOP-UPS</span>}
               {preview!.updates.length > 0 && <span className="bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.updates.length} REQ UPDATES</span>}
+              {preview!.voided.length > 0 && <span title="Voided / cancelled documents (VOID, CANN, CANX, RFNX) — they settle at zero and are discarded, not saved" className="bg-slate-200 text-slate-600 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.voided.length} VOID DROPPED</span>}
               {preview!.settlements.length > 0 && <span title="Invoice lines for tickets already uploaded from the portal — these update that ticket instead of adding a second row" className="bg-violet-100 text-violet-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.settlements.length} SETTLED FROM INVOICE</span>}
               {preview!.duplicates.length > 0 && <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.duplicates.length} DUPS SKIPPED</span>}
               <span className="text-[10px] font-mono text-slate-500">Net: {fmt(totalNet)}</span>

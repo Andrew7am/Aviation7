@@ -25,6 +25,22 @@ export function normalizeStatus(raw: unknown): NormalizedStatus {
   return MAP[s] ?? 'UNKNOWN';
 }
 
+/**
+ * A voided document: cancelled ticket, cancelled refund, void.
+ *
+ * These always settle at zero (see statusToAmount below), so the row carries
+ * no money and no obligation. Import discards them rather than storing them —
+ * a stored void only pads the ticket count and the "not closed" list with
+ * documents nobody has to act on.
+ *
+ * Deliberately keyed on the STATUS, not on the amount. A zero amount can also
+ * mean a genuinely free ticket or a fare the report failed to state, and
+ * neither of those should silently disappear.
+ */
+export function isVoidRow(t: { status?: unknown }): boolean {
+  return normalizeStatus(t.status) === 'VOID';
+}
+
 export function statusToAmount(amount: number, status: NormalizedStatus): number {
   switch (status) {
     case 'REFUND': return -Math.abs(amount);

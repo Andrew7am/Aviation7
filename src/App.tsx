@@ -18,7 +18,7 @@ import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   Plane, LayoutDashboard, List, AlertTriangle,
-  Upload, LogOut, Wallet, BarChart2, History, ShieldCheck, PlusCircle,
+  Upload, LogOut, Wallet, BarChart2, History, ShieldCheck, PlusCircle, Eye,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -187,12 +187,24 @@ function MainApp({ user }: { user: User }) {
   const missingReqCount = missingReq.length;
   const lowVendorCount  = lowVendors.length;
 
+  /** Everything that changes data. Passed only to an admin — the database
+   *  refuses these writes for anyone else (migration 0019), so offering the
+   *  controls to a viewer would only produce failures. */
+  const writeHandlers = {
+    onDelete:            handleDelete,
+    onUpdateReqNum:      handleUpdateReqNum,
+    onUpdateTicket:      handleUpdateTicket,
+    onBulkUpdateReqNum:  handleBulkUpdateReqNum,
+    onUpdateClosed:      handleUpdateClosed,
+    onBulkUpdateClosed:  handleBulkUpdateClosed,
+  };
+
   type NavItem = { id: ViewState; label: string; icon: React.ReactNode; badge?: number; badgeColor?: 'red' | 'amber' | 'slate' };
   const NAV: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard',       icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'tickets',   label: 'All Tickets',     icon: <List className="w-4 h-4" />, badge: tickets.length },
     { id: 'missing',   label: 'Action Required', icon: <AlertTriangle className="w-4 h-4" />, badge: missingReqCount, badgeColor: 'red' },
-    { id: 'import',    label: 'Import Data',     icon: <Upload className="w-4 h-4" /> },
+    ...(isAdmin ? [{ id: 'import' as ViewState, label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
     { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
     { id: 'vendors',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
     { id: 'reports',   label: 'Reports',         icon: <BarChart2 className="w-4 h-4" /> },
@@ -212,14 +224,26 @@ function MainApp({ user }: { user: User }) {
           </div>
         </div>
         <div className="flex items-center space-x-4">
-          <button onClick={() => setShowManualEntry(true)}
-            className="bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
-            <PlusCircle className="w-3 h-3" /><span>Add Manually</span>
-          </button>
-          <button onClick={() => setView('import')}
-            className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
-            <Upload className="w-3 h-3" /><span>Import CSV / XLS</span>
-          </button>
+          {/* Adding and importing both write. A viewer gets a badge instead,
+              so the read-only role is stated rather than just felt as a
+              missing button. */}
+          {isAdmin ? (
+            <>
+              <button onClick={() => setShowManualEntry(true)}
+                className="bg-white/10 hover:bg-white/20 px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
+                <PlusCircle className="w-3 h-3" /><span>Add Manually</span>
+              </button>
+              <button onClick={() => setView('import')}
+                className="bg-blue-600 hover:bg-blue-500 px-4 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
+                <Upload className="w-3 h-3" /><span>Import CSV / XLS</span>
+              </button>
+            </>
+          ) : (
+            <span title="You have read-only access. Ask the administrator to make changes."
+              className="bg-white/10 text-white/70 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest flex items-center space-x-1.5">
+              <Eye className="w-3 h-3" /><span>View Only</span>
+            </span>
+          )}
           <button onClick={logout} className="text-white/30 hover:text-white/70" title="Sign Out">
             <LogOut className="w-4 h-4" />
           </button>
@@ -285,13 +309,14 @@ function MainApp({ user }: { user: User }) {
 
         <main className="flex-1 min-h-0 overflow-y-auto flex flex-col">
           {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
-          {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} onBulkUpdateReqNum={handleBulkUpdateReqNum} onUpdateClosed={handleUpdateClosed} onBulkUpdateClosed={handleBulkUpdateClosed} />}
-          {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" onDelete={handleDelete} onUpdateReqNum={handleUpdateReqNum} onUpdateTicket={handleUpdateTicket} onBulkUpdateReqNum={handleBulkUpdateReqNum} onUpdateClosed={handleUpdateClosed} onBulkUpdateClosed={handleBulkUpdateClosed} />}
-          {view === 'import'    && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
+          {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} {...(isAdmin ? writeHandlers : {})} />}
+          {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}
+          {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
           {view === 'history'   && <ImportHistory records={importHistory} getErrorsFor={(id, cb) => importSvc.subscribeErrors(id, cb)} />}
           {view === 'vendors'   && (
             <div className="p-6 flex flex-col h-full">
               <VendorBalances vendorBalances={vendorBalancesLive} topUps={topUps} tickets={tickets}
+                canEdit={isAdmin}
                 onSaveVendor={handleSaveVendor} onDeleteVendor={handleDeleteVendor}
                 onTopUp={handleTopUp} />
             </div>

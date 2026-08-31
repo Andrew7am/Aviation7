@@ -13,6 +13,9 @@ interface VendorBalancesProps {
   onSaveVendor: (v: VendorBalance) => void;
   onDeleteVendor: (id: string) => void;
   onTopUp: (topUp: BalanceTopUp) => void;
+  /** False for a viewer: the wallets stay readable, the actions that change
+   *  them are withheld. The database refuses those writes regardless. */
+  canEdit?: boolean;
 }
 
 // Known aliases for edge cases (spaces, abbreviations, etc.)
@@ -45,7 +48,7 @@ const PRESET_VENDORS = [
 type ModalMode = null | 'add_existing' | 'add_new' | 'topup';
 
 export const VendorBalances: React.FC<VendorBalancesProps> = ({
-  vendorBalances, topUps, tickets, onSaveVendor, onDeleteVendor, onTopUp,
+  vendorBalances, topUps, tickets, onSaveVendor, onDeleteVendor, onTopUp, canEdit = true,
 }) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [modalMode, setModalMode] = useState<ModalMode>(null);
@@ -144,13 +147,13 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
           <Wallet className="text-purple-600 w-5 h-5" />
           <h2 className="text-sm font-bold uppercase text-slate-700 tracking-wider">Vendor Credit Balances</h2>
         </div>
-        <button
+        {canEdit && <button
           onClick={() => setModalMode('add_existing')}
           className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>Add Vendor</span>
-        </button>
+        </button>}
       </div>
 
       {/* Table */}
@@ -235,20 +238,26 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                   </td>
                   <td className="py-3 px-4 text-center">
                     <div className="flex items-center justify-center space-x-2" onClick={e => e.stopPropagation()}>
-                      <button
-                        onClick={e => openTopUp(vendor.id, e)}
-                        className="text-emerald-500 hover:text-emerald-700 transition-colors"
-                        title="Add balance"
-                      >
-                        <PlusCircle className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => { if (confirm(`Delete ${vendor.vendorName}?`)) onDeleteVendor(vendor.id); }}
-                        className="text-slate-300 hover:text-red-500 transition-colors"
-                        title="Delete vendor"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canEdit ? (
+                        <>
+                          <button
+                            onClick={e => openTopUp(vendor.id, e)}
+                            className="text-emerald-500 hover:text-emerald-700 transition-colors"
+                            title="Add balance"
+                          >
+                            <PlusCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => { if (confirm(`Delete ${vendor.vendorName}?`)) onDeleteVendor(vendor.id); }}
+                            className="text-slate-300 hover:text-red-500 transition-colors"
+                            title="Delete vendor"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <span className="text-slate-300 text-[9px]">—</span>
+                      )}
                     </div>
                   </td>
                 </tr>

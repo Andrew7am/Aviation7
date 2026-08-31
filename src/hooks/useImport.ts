@@ -4,6 +4,7 @@ import { Ticket } from '../types';
 import { runParser } from '../core/parsers';
 import { detectDuplicates, detectDuplicatesAgainstExisting, classifyAgainstExisting, ClassifiedRow, readFileAsText } from '../core/ImportEngine';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
+import { isVoidRow } from '../core/helpers/normalizeStatus';
 import { LearnedProfile } from '../core/ai/learnedProfile';
 import { v4 as uuidv4 } from 'uuid';
 import { TicketService } from '../services/TicketService';
@@ -18,6 +19,8 @@ export interface ImportPreview {
   /** Invoice lines landing on a document the portal already recorded. They
    *  update that row's money rather than adding a second row for the sale. */
   settlements: Ticket[];
+  /** Voided documents found in the file and discarded — never saved. */
+  voided:      Ticket[];
   errors:      ImportErrorEntry[];
   warnings:    string[];
   parserName:  string;
@@ -60,7 +63,7 @@ export function useImport(userId: string) {
   ) => {
     if (!text.trim()) {
       setPreview({
-        fresh: [], updates: [], duplicates: [], topUps: [], settlements: [],
+        fresh: [], updates: [], duplicates: [], topUps: [], settlements: [], voided: [],
         errors: [{ row: 0, raw: '', error: 'Please enter some data.' }],
         warnings: [], parserName: '', confidence: 0, totalRows: 0,
       });
@@ -103,18 +106,27 @@ export function useImport(userId: string) {
       }));
 
       const topUps   = rawTickets.filter(t => t.status === 'FUND');
-      const realTkts = detectDuplicates(rawTickets.filter(t => t.status !== 'FUND'));
+
+      // Voided documents are dropped, not stored. VOID covers the vendors'
+      // cancellation vocabulary — VOID / CANN / CANX / CANCEL / RFNX — and
+      // every one of them settles at zero, so the row carries no money and no
+      // obligation; keeping them only pads the ticket count and the "not
+      // closed" list with documents nobody has to act on. They are counted in
+      // the preview so the import still says what it found and discarded.
+      const voided   = rawTickets.filter(t => t.status !== 'FUND' && isVoidRow(t));
+      const keepable = rawTickets.filter(t => t.status !== 'FUND' && !isVoidRow(t));
+      const realTkts = detectDuplicates(keepable);
 
       // Query DB for only the ticket numbers in this batch — always fresh,
       // no dependency on the in-memory list that may not have loaded yet.
-      const batchTicketNos = rawTickets.map(t => t.ticketNo);
+      const batchTicketNos = keepable.map(t => t.ticketNo);
       const existingFromDB = await svc.fetchByTicketNos(batchTicketNos);
 
       const { fresh, updates, duplicates, settlements } = detectDuplicatesAgainstExisting(realTkts, existingFromDB);
       const classified = classifyAgainstExisting(realTkts, existingFromDB);
 
       setPreview({
-        fresh, updates, duplicates, topUps, settlements,
+        fresh, updates, duplicates, topUps, settlements, voided,
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
         warnings, parserName, confidence,
