@@ -45,14 +45,21 @@ export function calcVendorBalance(
     .filter(tu => tu.vendorId === vendor.id)
     .reduce((s, tu) => s + tu.amount, 0);
 
-  // Ibtekar's own ledger runs "balance = prev + debit - credit" (verified
-  // row-by-row against their raw sheet): issuance (debit) moves the number
-  // toward positive, top-ups/refunds (credit) push it further negative.
-  // Combined with the "negative = good" display flip in VendorBalances.tsx,
-  // this is what makes issuance reduce the on-screen balance and refunds and
-  // top-ups raise it. Every other vendor uses initial + topUps - issued.
-  if (vendor.vendorName.trim().toLowerCase() === 'ibtekar') {
-    return vendor.initialBalance - topUpTotal + issued;
-  }
+  // One convention for every vendor: money paid in raises the balance, tickets
+  // issued lower it, and a positive balance is credit the agency still holds.
+  //
+  // Ibtekar used to be special-cased to "initial - topUps + issued", mirroring
+  // how Ibtekar's own sheet prints the running total (credit as a negative).
+  // That inverted sign then had to be undone again in the display layer, and
+  // the top-up dialog never got the memo — so it promised a HIGHER balance
+  // while the arithmetic moved the number down. Topping up 200 made the
+  // vendor look 200 further overdrawn.
+  //
+  // Ibtekar's opening balance is 0, so dropping the special case leaves the
+  // number it produces identical in magnitude and meaning (an agency that owes
+  // 3,896.52 reads as -3,896.52 here, and still shows red). What changes is
+  // only that a top-up now adds, exactly as it does for everyone else. Reading
+  // Ibtekar's own sheet is a presentation concern and belongs in the parser,
+  // not in the balance arithmetic every vendor shares.
   return vendor.initialBalance + topUpTotal - issued;
 }

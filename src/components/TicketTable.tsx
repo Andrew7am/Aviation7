@@ -47,11 +47,11 @@ function sortValue(t: Ticket, key: Exclude<SortKey, null>): number | string | nu
   }
 }
 
-/** Vendors whose workflow uses a "Closed / Not Closed" status. Other
- *  vendors don't have this concept — hide the toggle, exclude them from
- *  Closed/Not-Closed filtering, and skip them in bulk close/reopen. */
-const CLOSED_VENDORS = new Set(['nsa', 'flyadeal ksa', 'flynas', 'ibtekar']);
-const canBeClosed = (source: string) => CLOSED_VENDORS.has((source || '').toLowerCase().trim());
+/** Closed / Not Closed is a follow-up state on the AGENCY's side — has this
+ *  document been reconciled and finalised with the client — so it applies to
+ *  every ticket regardless of which vendor issued it. It used to be offered
+ *  for four vendors only, which left the rest with a dash and no way to track
+ *  the same workflow. The `closed` column has always existed for every row. */
 
 const SOURCE_COLORS: Record<string, string> = {
   'flyadeal ksa': 'bg-orange-100 text-orange-700',
@@ -178,8 +178,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       }
       // Closed status is only tracked for a subset of vendors — exclude
       // everyone else when the user filters on closure state.
-      if (closedFilter === 'CLOSED'     && (!canBeClosed(t.source) || !t.closed)) return false;
-      if (closedFilter === 'NOT_CLOSED' && (!canBeClosed(t.source) ||  t.closed)) return false;
+      if (closedFilter === 'CLOSED'     && !t.closed) return false;
+      if (closedFilter === 'NOT_CLOSED' &&  t.closed) return false;
       if (filterAL  && !(t.airlineCode || '').toLowerCase().includes(filterAL.toLowerCase())) return false;
       if (filterPax && !(t.passengerName || '').toLowerCase().includes(filterPax.toLowerCase())) return false;
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
@@ -237,12 +237,12 @@ export const TicketTable: React.FC<TicketTableProps> = ({
    *  Reopen All to flip every currently-visible ticket at once. */
   const applyBulkClosed = async (closed: boolean) => {
     if (!onBulkUpdateClosed) return;
-    // Bulk close only touches vendors that support the flag — filter out
-    // IATA / FlyDubai / AirArabia / etc. from the selection.
-    const targets = filtered.filter(t => canBeClosed(t.source)).map(t => t.id);
+    const targets = filtered.map(t => t.id);
     if (targets.length === 0) return;
     const label = closed ? 'Close' : 'Reopen';
-    if (!confirm(`${label} ${targets.length} ticket${targets.length !== 1 ? 's' : ''} (current filter, NSA/FlyAdeal KSA/Flynas/Ibtekar only)?`)) return;
+    // Name the count and say it follows the filter — this flips every visible
+    // row, so the user needs to know the filter is the selection.
+    if (!confirm(`${label} all ${targets.length} ticket${targets.length !== 1 ? 's' : ''} in the current filter?`)) return;
     setBulkClosedBusy(true);
     try {
       await onBulkUpdateClosed(targets, closed);
@@ -339,7 +339,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       comm:   filtered.some(t => !!t.commission),
       // Total Doc only earns a column when it differs from the net somewhere.
       total:  filtered.some(t => Math.abs((t.totalDoc ?? 0) - Math.abs(t.amount)) > 0.005),
-      closed: filtered.some(t => canBeClosed(t.source)),
+      closed: filtered.length > 0,
     };
 
     type Col = { key: string; get: (t: Ticket) => string | number; w: number; money?: boolean };
@@ -363,7 +363,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       { key: 'Balance Payable', get: (t: Ticket) => t.amount ?? 0,           w: 13, money: true },
       { key: 'Cur',         get: (t: Ticket) => sourceToCurrency(t.source || ''), w: 6 },
       { key: 'Req Num',     get: (t: Ticket) => t.reqNum || '',          w: 14 },
-      ...(has.closed ? [{ key: 'Closed', get: (t: Ticket) => canBeClosed(t.source) ? (t.closed ? 'Closed' : 'Not Closed') : '', w: 11 }] : []),
+      ...(has.closed ? [{ key: 'Closed', get: (t: Ticket) => t.closed ? 'Closed' : 'Not Closed', w: 11 }] : []),
     ];
 
     const data = filtered.map(t => Object.fromEntries(cols.map(c => [c.key, c.get(t)])));
@@ -805,8 +805,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <span className="text-slate-300">|</span>
         <span className="text-red-500">{filtered.filter(t => !t.reqNum).length} missing req</span>
         <span className="text-slate-300">|</span>
-        <span className="text-emerald-600">{filtered.filter(t => canBeClosed(t.source) && t.closed).length} closed</span>
-        <span className="text-orange-600">· {filtered.filter(t => canBeClosed(t.source) && !t.closed).length} not closed</span>
+        <span className="text-emerald-600">{filtered.filter(t => t.closed).length} closed</span>
+        <span className="text-orange-600">· {filtered.filter(t => !t.closed).length} not closed</span>
       </div>
 
       {/* Table */}
@@ -945,9 +945,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     {!ticket.reqNum ? 'NEED REQ' : 'MATCHED'}
                   </td>
                   <td className="px-3 py-2">
-                    {!canBeClosed(ticket.source || '') ? (
-                      <span className="text-slate-300 text-[9px]">—</span>
-                    ) : onUpdateClosed ? (
+                    {onUpdateClosed ? (
                       <button
                         onClick={() => onUpdateClosed(ticket.id, !ticket.closed)}
                         title={ticket.closed ? 'Click to reopen' : 'Click to close'}

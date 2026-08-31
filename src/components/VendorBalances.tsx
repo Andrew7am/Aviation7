@@ -184,13 +184,14 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
             const totalRefunds = vTickets.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
             const netIssued = totalIssued - totalRefunds;
             const remaining = vendor.currentBalance;
-            // Ibtekar's sheet balance is already negative when the agency has credit,
-            // so negative remaining = good (show OK), positive = agency owes (show OVERDUE).
-            // All other vendors keep standard logic: positive = credit, negative = overdraft.
-            const isCreditNegative = vendor.vendorName === 'Ibtekar';
-            const isNeg = isCreditNegative ? remaining > 0 : remaining < 0;
+            // One reading for every vendor now that calcVendorBalance uses one
+            // convention: positive = credit the agency holds, negative = owed.
+            // Ibtekar used to be flipped here to undo an inverted sign in the
+            // arithmetic; both halves are gone, and the number it shows is
+            // unchanged because Ibtekar's opening balance is 0.
+            const isNeg = remaining < 0;
             const pct = vendor.initialBalance > 0 ? (remaining / vendor.initialBalance) * 100 : 0;
-            const isLow = !isCreditNegative && pct < 20 && remaining >= 0;
+            const isLow = pct < 20 && remaining >= 0;
             const isExpanded = expandedId === vendor.id;
 
             return (
