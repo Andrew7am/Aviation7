@@ -117,15 +117,24 @@ export const TurkishAgencySalesParser: VendorParser = {
       const fees     = num(cell(row, iFees));
       const remit    = num(cell(row, iRemit));
 
-      // The report writes the discount as a negative ("-415.2"). It is the
-      // agency's earning on the sale, so the ledger holds it as a positive
-      // commission — the same shape and the same number BSP invoices.
-      const stated   = num(cell(row, iDiscount));
-      const discount = Math.abs(stated);
+      // The discount is SIGNED, and the sign is the whole point. A sale writes
+      // it negative ("-415.2") because it reduces what the agency remits; a
+      // refund writes it positive ("240.9") because the commission is being
+      // handed back. Taking the magnitude broke the report's own identity on
+      // every refund, so the signed value is used as written:
+      //
+      //   Cash Payment = Fare + Total Tax + Total Fees + Discount
+      //   sale:    12,310 + 2,480 + 0 + (-369.30) =  14,420.70
+      //   refund:  -7,280 + -2,370 + 0 +  240.90  =  -9,409.10
+      //
+      // Commission is the agency's earning, so it is the discount inverted:
+      // positive on a sale, negative on a refund, which is how the rest of the
+      // ledger already records a reversal.
+      const stated  = num(cell(row, iDiscount));
       // A separate Commission Amount column exists and is 0 throughout the
       // agent's history; if a file ever fills it in, it is a real commission
       // on top and must not be silently dropped.
-      const commCol  = Math.abs(num(cell(row, iComm)));
+      const commCol = num(cell(row, iComm));
 
       const gross   = fare + tax + fees;
       // Only cash settles through the agency's credit; a card sale is
@@ -134,10 +143,10 @@ export const TurkishAgencySalesParser: VendorParser = {
 
       // Integrity check on the vendor's own arithmetic. When it fails, a
       // column has been misread and the row's money cannot be trusted.
-      const expected = gross - discount;
+      const expected = gross + stated;
       if (card === 0 && invoiced === 0 && Math.abs(expected - settled) > 0.01) {
         warnings.push(
-          `Ticket ${ticketNo}: fare ${fare} + tax ${tax} + fees ${fees} - discount ${discount} = ${expected.toFixed(2)}, ` +
+          `Ticket ${ticketNo}: fare ${fare} + tax ${tax} + fees ${fees} + discount ${stated} = ${expected.toFixed(2)}, ` +
           `but Cash Payment is ${settled.toFixed(2)} — the report's own arithmetic does not agree.`);
       }
       if (iRemit !== -1 && Math.abs(remit - settled) > 0.01 && card === 0 && invoiced === 0) {
@@ -150,9 +159,19 @@ export const TurkishAgencySalesParser: VendorParser = {
         warnings.push(`Ticket ${ticketNo}: ${invoiced} settled as Invoice Payment, not cash.`);
       }
 
+      // The report already signs a refund's cash negative, so `settled` carries
+      // the right direction on its own. The status still has the final say, so
+      // a mislabelled sign cannot turn a refund into a sale.
+      //
+      // There is deliberately no "fall back to the computed figure when this is
+      // zero". Zero is frequently the RIGHT answer — a card sale settles
+      // nothing through the agency — and a fallback would quietly restore the
+      // full fare on exactly those rows. Only a missing Cash Payment column,
+      // which is a different thing from a zero in it, uses the computed value.
+      const figure = iCash === -1 ? expected : settled;
       const amount = status === 'VOID'   ? 0
-                   : status === 'REFUND' ? -Math.abs(settled || expected)
-                   : settled;
+                   : status === 'REFUND' ? -Math.abs(figure)
+                   : figure;
 
       const req = resolveReq(iReq >= 0 ? cell(row, iReq) : '');
       if (!req && status !== 'VOID') warnings.push(`Ticket ${ticketNo}: Missing Req Num`);
@@ -171,12 +190,16 @@ export const TurkishAgencySalesParser: VendorParser = {
         passengerName: iPax   !== -1 ? cleanPax(cell(row, iPax)) : '',
         airlineCode,
         route:         iRoute !== -1 ? extractRoute(cell(row, iRoute)) : '',
-        // Issue Date is when the document was written, which is what BSP bills
-        // against; Transaction Date only differs on a later change.
-        date:          parseDate(cell(row, iIssue !== -1 ? iIssue : iTxnDate)),
+        // Issue Date is when the DOCUMENT was written; Transaction Date is when
+        // THIS line happened. They are the same on a sale, and differ on a
+        // refund or a later change — a refund of a 13 Aug ticket on 28 Aug
+        // carries Issue Date 13.08. Dating that row 13 Aug would put the
+        // refund before it happened and group it with the sale it reverses, so
+        // anything that is not the original issue takes the transaction date.
+        date:          parseDate(cell(row, status === 'ISSUE' && iIssue !== -1 ? iIssue : (iTxnDate !== -1 ? iTxnDate : iIssue))),
         amount,
         totalDoc:      Math.abs(gross) || Math.abs(amount),
-        commission:    discount + commCol,
+        commission:    -stated + commCol,
         reqNum:        req,
         vendorReference: pnr,
         status,

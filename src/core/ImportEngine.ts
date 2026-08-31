@@ -83,8 +83,12 @@ export function detectDuplicatesAgainstExisting(
   // channels is two rows, one per vendor, exactly as the ledger needs it —
   // while a re-upload of the SAME report still dedupes, because that row
   // matches on vendor too.
+  // Direction is part of the key, not just the vendor. A document usually has
+  // both an issue and a refund under the same vendor, and a key without it
+  // keeps only whichever came last — so an incoming refund could be compared
+  // against the sale it reverses, and vice versa.
   const vendorKey = (t: Ticket) =>
-    `${t.ticketNo.trim().toUpperCase()}|${(t.source || '').trim().toLowerCase()}`;
+    `${t.ticketNo.trim().toUpperCase()}|${(t.source || '').trim().toLowerCase()}|${t.amount < 0 ? 'CR' : 'DR'}`;
   const existingByTicket = new Map(existingTickets.map(t => [vendorKey(t), t]));
 
   // The same DOCUMENT, whoever reported it. Used to spot the invoice line for
@@ -121,20 +125,12 @@ export function detectDuplicatesAgainstExisting(
     const key      = dupKey(t);
     const existing = existingByTicket.get(vendorKey(t));
 
-    // REFUND / FUND / ADM / ACM — dupKey() gives these a status-scoped key
-    // format (no source/pnr) specifically so they can NEVER collide with an
-    // ISSUE row on the same ticket. But they still need to dedupe against a
-    // PREVIOUSLY saved instance of this exact same refund/fund/adjustment —
-    // without this check every re-import of the same report insert the same
-    // refund again, forever. Deliberately skip the existingByTicket/update
-    // path below: that map holds one row per ticket+vendor without regard to
-    // status, so a refund would find its own ISSUE there and be treated as an
-    // update to it.
-    if (NON_ISSUE_STATUSES.has(status)) {
-      if (existingKeys.has(key)) duplicates.push({ ...t, isDuplicate: true });
-      else fresh.push(t);
-      return;
-    }
+    // A refund is a document in its own right and gets the same treatment as a
+    // sale: its invoice line settles it, a re-report fills in what is missing,
+    // and it is never confused with the issue it reverses. Both the vendor key
+    // and the document key carry direction, so a credit only ever meets
+    // another credit. The status-scoped fallback for these rows comes after
+    // the document checks, further down.
 
     // ── The weekly invoice for a ticket the portal already reported ──
     //
@@ -239,6 +235,29 @@ export function detectDuplicatesAgainstExisting(
       adds(t.pnr, existing.pnr) ||
       adds(t.reqNum, existing.reqNum)
     );
+
+    // REFUND / FUND / ADM / ACM. dupKey() gives these a status-scoped format
+    // (no source or pnr) so they can never collide with an ISSUE on the same
+    // document, and they still need to dedupe against a previously saved copy
+    // of this exact refund — otherwise every re-import inserts it again.
+    //
+    // Matching on the exact key alone is not enough here, though: two sources
+    // can date the same refund differently (BSP recorded one on 26 Aug that
+    // Turkish's own report dates 28 Aug), and dupKey includes the date. So a
+    // credit already held for this document, in this direction, at this
+    // amount, is the same credit whatever day each side wrote down.
+    if (NON_ISSUE_STATUSES.has(status)) {
+      const sameCredit = existing
+        && (existing.status || '').toUpperCase() === status
+        && !differs(Math.abs(existing.amount), Math.abs(t.amount));
+      if (existingKeys.has(key) || sameCredit) {
+        if (existing && enriches) updates.push({ ...t, id: existing.id });
+        else duplicates.push({ ...t, isDuplicate: true });
+      } else {
+        fresh.push(t);
+      }
+      return;
+    }
 
     if (existingKeys.has(key)) {
       if (existing && enriches) {
