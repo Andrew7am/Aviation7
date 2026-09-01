@@ -319,8 +319,14 @@ function MainApp({ user }: { user: User }) {
           {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}
           {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
           {view === 'history'   && <ImportHistory records={importHistory} getErrorsFor={(id, cb) => importSvc.subscribeErrors(id, cb)} />}
+          {/* No h-full on the wrapper below. Pinning it to the viewport meant
+              an expanded vendor's transactions were taller than the box that
+              held them, so the lower half — and the vendors under it — could
+              not be reached: the wrapper never exceeded its parent, so main's
+              own scrollbar never appeared. Letting it grow with its content is
+              what gives the page something to scroll. */}
           {view === 'vendors'   && (
-            <div className="p-6 flex flex-col h-full">
+            <div className="p-6">
               <VendorBalances vendorBalances={vendorBalancesLive} topUps={topUps} tickets={tickets}
                 canEdit={isAdmin}
                 onSaveVendor={handleSaveVendor} onDeleteVendor={handleDeleteVendor}

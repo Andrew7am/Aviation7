@@ -294,10 +294,15 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                             <TrendingDown className="w-3 h-3" />
                             <span>Tickets ({vTickets.length})</span>
                           </div>
+                          {/* The list keeps a height cap — NSA alone has
+                              thousands of tickets and rendering them all would
+                              bury the vendor list — but 56 was cramped enough
+                              that a vendor with 29 tickets looked broken. The
+                              page scrolls around this now. */}
                           {vTickets.length === 0 ? (
                             <p className="px-4 py-4 text-xs text-slate-400 italic">No tickets linked to this vendor yet.</p>
                           ) : (
-                            <div className="max-h-56 overflow-y-auto">
+                            <div className="max-h-96 overflow-y-auto">
                               <table className="w-full text-left">
                                 <thead>
                                   <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
