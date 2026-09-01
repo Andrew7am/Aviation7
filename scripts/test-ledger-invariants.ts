@@ -54,13 +54,31 @@ function check(name: string, got: unknown, want: unknown, detail?: string) {
        and ticket_no like airline_code || '%'`,
     'Deriving an airline from a bare serial just returns its own first three digits — that is where 1,446 rows stamped "551" came from.');
 
-  console.log('\n2. Money — signs and status agree');
-  await none('no ISSUE carries a negative amount',
-    `select count(*)::int n, min(ticket_no) sample from tickets where status = 'ISSUE' and amount < 0`,
-    'A credit recorded as a sale reads as negative revenue and quietly moves a wallet balance.');
+  console.log('\n2. Money — the figures on a row are coherent');
+  // Deliberately NOT asserted: "an ISSUE is never negative". It looks like a
+  // rule and is not one. AirArabia credits are recorded as negative ISSUE
+  // rows — one carries req num "CREDIT" for -20,000 — and the wallet maths
+  // handles them correctly, because subtracting a negative issuance raises the
+  // balance, which is what a credit should do. The AirArabia balance is right
+  // WITH those rows, so anyone tempted to "fix" them would break a balance
+  // that currently reconciles.
+  //
+  // What is asserted instead are the properties that do hold everywhere, and
+  // that a genuine sign or parsing error would break.
   await none('no REFUND carries a positive amount',
     `select count(*)::int n, min(ticket_no) sample from tickets where status = 'REFUND' and amount > 0`,
     'A refund that adds money reverses the sign of a reversal.');
+  await none('the gross fare is never negative',
+    `select count(*)::int n, min(ticket_no) sample from tickets where total_doc < 0`,
+    'total_doc is a magnitude; direction belongs to amount alone.');
+  await none('a document with a fare always carries a value',
+    `select count(*)::int n, min(ticket_no) sample from tickets
+     where total_doc > 0 and amount = 0 and upper(coalesce(status,'')) <> 'VOID'`,
+    'A fare with nothing payable and no cancellation means a column was misread.');
+  await none('commission never exceeds the fare it was earned on',
+    `select count(*)::int n, min(ticket_no) sample from tickets
+     where total_doc > 0 and abs(commission) > total_doc + 0.01`,
+    'Deriving commission as fare-minus-payable returns the whole fare on a card sale; this is what catches that.');
   await none('no currency outside the supported set',
     `select count(*)::int n, min(currency) sample from tickets
      where currency is not null and currency not in ('SAR','AED','USD','EUR')`,
