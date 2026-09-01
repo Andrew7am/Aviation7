@@ -2,8 +2,13 @@ import React, { useMemo, useState } from 'react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
-import { Download, FileText, TrendingDown, Wallet, Database, BarChart3 } from 'lucide-react';
+import { Download, FileText, TrendingDown, Wallet, Database, BarChart3, Calendar, X } from 'lucide-react';
 import { airlineName } from '../core/config/airlines';
+import { computeAnalytics, type ShareRow } from '../core/helpers/analytics';
+import {
+  PERIOD_PRESETS, endOfMonth, inPeriod, monthLabel, monthsIn, periodLabel, selectedMonth,
+} from '../core/helpers/period';
+import { Donut, TrendBars, paletteAt } from './Charts';
 import * as XLSX from 'xlsx';
 
 interface ReportsProps {
@@ -14,10 +19,26 @@ interface ReportsProps {
 
 type ReportTab = 'summary' | 'analytics' | 'overdraft' | 'vendor_detail' | 'missing_req' | 'ledger';
 
-interface ShareRow {
-  key: string; tickets: number; pct: number; sar: number; aed: number; other: number;
-  sarIssued: number; sarRefunded: number; aedIssued: number; aedRefunded: number;
-}
+/** How many leading rows the donuts colour individually. The same number is
+ *  handed to the table below so the two agree on where the tail begins. */
+const DONUT_MAX = 8;
+
+/** A titled card with an optional control in its header — the frame every
+ *  chart on the analytics tab sits in. */
+const ChartCard: React.FC<{
+  title: string; subtitle?: string; right?: React.ReactNode; children: React.ReactNode;
+}> = ({ title, subtitle, right, children }) => (
+  <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-[10px] font-bold uppercase text-slate-500">{title}</div>
+        {subtitle && <div className="text-[9px] text-slate-400 mt-0.5">{subtitle}</div>}
+      </div>
+      {right}
+    </div>
+    <div className="p-4 overflow-x-auto">{children}</div>
+  </div>
+);
 
 /**
  * One currency's net, with the sales and refunds behind it.
@@ -58,6 +79,11 @@ const NetCell: React.FC<{
  *
  * The bar is drawn relative to the top row, not to 100%, because the leader
  * holds about half and everything else would otherwise be an invisible sliver.
+ *
+ * The top rows take the same colours, in the same order, as the donut above
+ * them, so a slice can be found in the table without reading every label. Rows
+ * past the donut's cut-off go grey, matching its "Others" slice rather than
+ * implying a colour that is not on the chart.
  */
 const ShareTable: React.FC<{
   title: string; subtitle: string; keyHeader: string;
@@ -66,7 +92,9 @@ const ShareTable: React.FC<{
    *  Returning '' leaves the code standing alone, which is what an airline
    *  outside the supplied list should do rather than showing a guess. */
   subLabel?: (key: string) => string;
-}> = ({ title, subtitle, keyHeader, rows, fmt, subLabel }) => {
+  /** How many leading rows the donut gave a colour to. */
+  colored?: number;
+}> = ({ title, subtitle, keyHeader, rows, fmt, subLabel, colored = 0 }) => {
   const top = rows[0]?.tickets || 1;
   const shown = rows.slice(0, 25);
   return (
@@ -89,20 +117,27 @@ const ShareTable: React.FC<{
             </tr>
           </thead>
           <tbody>
-            {shown.map(r => (
+            {shown.map((r, i) => (
               <tr key={r.key} className="border-b border-slate-50 hover:bg-slate-50">
                 <td className="px-3 py-2 whitespace-nowrap">
-                  <div className="font-mono text-[11px] font-bold text-slate-700">{r.key}</div>
-                  {subLabel?.(r.key) && (
-                    <div className="text-[9px] text-slate-400 leading-tight">{subLabel(r.key)}</div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-sm shrink-0"
+                          style={{ background: i < colored ? paletteAt(i) : '#cbd5e1' }} />
+                    <div>
+                      <div className="font-mono text-[11px] font-bold text-slate-700">{r.key}</div>
+                      {subLabel?.(r.key) && (
+                        <div className="text-[9px] text-slate-400 leading-tight">{subLabel(r.key)}</div>
+                      )}
+                    </div>
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-600">{r.tickets}</td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div className="h-1.5 bg-blue-500 rounded-full"
-                           style={{ width: `${Math.max(2, (r.tickets / top) * 100)}%` }} />
+                      <div className="h-1.5 rounded-full"
+                           style={{ width: `${Math.max(2, (r.tickets / top) * 100)}%`,
+                                    background: i < colored ? paletteAt(i) : '#94a3b8' }} />
                     </div>
                     <span className="font-mono text-[11px] font-bold text-slate-700 w-11 text-right">
                       {r.pct.toFixed(1)}%
@@ -125,14 +160,141 @@ const ShareTable: React.FC<{
   );
 };
 
+/**
+ * The period control for the analytics screen.
+ *
+ * Three ways in, all driving the same two dates: a preset for the answer you
+ * usually want, a month picker listing only months the data actually has, and
+ * from/to for anything else. Whatever is active is highlighted, so the numbers
+ * below can never be read as "all time" when they are not.
+ */
+const PeriodBar: React.FC<{
+  from: string; to: string; months: string[];
+  onChange: (from: string, to: string) => void;
+}> = ({ from, to, months, onChange }) => {
+  const monthSel = selectedMonth(from, to);
+  const activePreset = PERIOD_PRESETS.find(p => {
+    const r = p.range();
+    return r.from === from && r.to === to;
+  })?.key ?? (from || to ? 'custom' : 'all');
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Period</span>
+
+      <div className="flex flex-wrap gap-1">
+        {PERIOD_PRESETS.map(p => (
+          <button
+            key={p.key}
+            onClick={() => { const r = p.range(); onChange(r.from, r.to); }}
+            className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+              activePreset === p.key
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700'
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="h-4 w-px bg-slate-200" />
+
+      <div className="relative">
+        <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
+        <select
+          value={monthSel}
+          onChange={e => {
+            const m = e.target.value;
+            if (!m) onChange('', ''); else onChange(`${m}-01`, endOfMonth(m));
+          }}
+          title="Jump to a whole month"
+          className={`pl-7 pr-2 py-1 rounded text-[10px] font-bold uppercase border focus:outline-none ${
+            monthSel ? 'bg-blue-50 text-blue-700 border-blue-200'
+                     : 'bg-white text-slate-500 border-slate-200'
+          }`}
+        >
+          <option value="">Month</option>
+          {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
+        </select>
+      </div>
+
+      <input
+        type="date" value={from} max={to || undefined} title="From date"
+        onChange={e => onChange(e.target.value, to)}
+        className={`px-1.5 py-1 rounded text-[10px] font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+          from ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-200'
+        }`}
+      />
+      <span className="text-[9px] font-bold uppercase text-slate-400">to</span>
+      <input
+        type="date" value={to} min={from || undefined} title="To date"
+        onChange={e => onChange(from, e.target.value)}
+        className={`px-1.5 py-1 rounded text-[10px] font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+          to ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-200'
+        }`}
+      />
+      {(from || to) && (
+        <button onClick={() => onChange('', '')} title="Clear the period"
+                className="p-1 text-slate-400 hover:text-slate-700">
+          <X className="w-3 h-3" />
+        </button>
+      )}
+    </div>
+  );
+};
+
+/** One headline figure. `tone` colours the number, never the whole card, so a
+ *  screen of cards does not turn into a traffic light. */
+const Kpi: React.FC<{
+  label: string; value: string; sub?: string; tone?: 'blue' | 'green' | 'red' | 'slate';
+}> = ({ label, value, sub, tone = 'slate' }) => {
+  const color = {
+    blue: 'text-blue-600', green: 'text-emerald-600',
+    red: 'text-red-600', slate: 'text-slate-800',
+  }[tone];
+  const accent = {
+    blue: 'bg-blue-500', green: 'bg-emerald-500',
+    red: 'bg-red-500', slate: 'bg-slate-300',
+  }[tone];
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex">
+      <div className={`w-1 shrink-0 ${accent}`} />
+      <div className="px-4 py-3 min-w-0">
+        <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{label}</div>
+        <div className={`font-mono font-bold text-lg leading-tight truncate ${color}`}>{value}</div>
+        {sub && <div className="text-[9px] text-slate-400 leading-tight truncate">{sub}</div>}
+      </div>
+    </div>
+  );
+};
+
 export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUps }) => {
   const [tab, setTab] = useState<ReportTab>('summary');
   const [selectedVendor, setSelectedVendor] = useState<string>('ALL');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
+  // The analytics period is its own filter, not the Transaction History one.
+  // Sharing a single range across both tabs meant narrowing a vendor export
+  // silently narrowed the share tables too.
+  const [anFrom, setAnFrom] = useState('');
+  const [anTo, setAnTo] = useState('');
+  // Tickets or money, and which currency. SAR and AED are never plotted on one
+  // axis — two currencies against a single scale draw a picture that reads like
+  // money and is not.
+  const [trendMetric, setTrendMetric] = useState<'tickets' | 'SAR' | 'AED'>('tickets');
+
   // Centralized stats — single source of truth, no duplicated calculations
-  const { totalIssued, totalRefunds, netTotal, bySource, missingReq, duplicates, byAirline, byRoute } = useReports(tickets, vendorBalances, topUps);
+  const { totalIssued, totalRefunds, netTotal, bySource, missingReq, duplicates } = useReports(tickets, vendorBalances, topUps);
+
+  const analyticsMonths = useMemo(() => monthsIn(tickets.map(t => t.date)), [tickets]);
+
+  /** The same maths the whole-ledger figures use, over the chosen period. */
+  const an = useMemo(
+    () => computeAnalytics(tickets.filter(t => inPeriod(t.date, anFrom, anTo))),
+    [tickets, anFrom, anTo],
+  );
 
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -363,22 +525,111 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
         {/* ── ANALYTICS TAB ── */}
         {tab === 'analytics' && (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <ShareTable
-              title="By Airline"
-              subtitle="Share of tickets issued, and what each airline earned"
-              keyHeader="A/L"
-              rows={byAirline}
-              fmt={fmt}
-              subLabel={airlineName}
+          <div className="space-y-4">
+            <PeriodBar
+              from={anFrom} to={anTo} months={analyticsMonths}
+              onChange={(f, t) => { setAnFrom(f); setAnTo(t); }}
             />
-            <ShareTable
-              title="Most Issued Routes"
-              subtitle="Journeys ranked by how many tickets were issued on them"
-              keyHeader="Route"
-              rows={byRoute}
-              fmt={fmt}
-            />
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Kpi label="Tickets issued" tone="blue"
+                   value={an.issuedCount.toLocaleString('en-US')}
+                   sub={periodLabel(anFrom, anTo)} />
+              <Kpi label="Refunds" tone="red"
+                   value={an.refundCount.toLocaleString('en-US')}
+                   sub={an.issuedCount ? `${((an.refundCount / an.issuedCount) * 100).toFixed(1)}% of issues` : '—'} />
+              <Kpi label="Net SAR" tone={an.totals.sar < 0 ? 'red' : 'green'}
+                   value={fmt(an.totals.sar)}
+                   sub={an.totals.sarRefunded < 0
+                     ? `${fmt(an.totals.sarIssued)} − ${fmt(Math.abs(an.totals.sarRefunded))} refunded`
+                     : undefined} />
+              <Kpi label="Net AED" tone={an.totals.aed < 0 ? 'red' : 'green'}
+                   value={fmt(an.totals.aed)}
+                   sub={an.totals.aedRefunded < 0
+                     ? `${fmt(an.totals.aedIssued)} − ${fmt(Math.abs(an.totals.aedRefunded))} refunded`
+                     : undefined} />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ChartCard title="Airline Share"
+                         subtitle="Tickets issued, by carrier — the long tail folded into one slice">
+                <Donut
+                  slices={an.byAirline.map(r => ({
+                    key: r.key,
+                    label: airlineName(r.key) ? `${r.key} · ${airlineName(r.key)}` : r.key,
+                    value: r.tickets,
+                  }))}
+                  max={DONUT_MAX}
+                />
+              </ChartCard>
+
+              <ChartCard title="Route Share"
+                         subtitle="Tickets issued, by journey — tickets with no route are not counted">
+                <Donut
+                  slices={an.byRoute.map(r => ({ key: r.key, label: r.key, value: r.tickets }))}
+                  max={DONUT_MAX}
+                  centerLabel="On routes"
+                />
+              </ChartCard>
+            </div>
+
+            <ChartCard
+              title="Activity by month"
+              subtitle={
+                trendMetric === 'tickets'
+                  ? 'Blue is tickets issued, orange the refunds stacked on top'
+                  : `Net ${trendMetric} per month — a month whose refunds outweigh its sales shows in red`
+              }
+              right={
+                <div className="flex gap-1">
+                  {(['tickets', 'SAR', 'AED'] as const).map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setTrendMetric(m)}
+                      className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+                        trendMetric === m
+                          ? 'bg-slate-800 text-white border-slate-800'
+                          : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              }
+            >
+              <TrendBars
+                money={trendMetric !== 'tickets'}
+                secondaryLabel="refunds"
+                bars={an.months.map(p => ({
+                  label: monthLabel(p.month),
+                  value: trendMetric === 'tickets' ? p.tickets
+                       : trendMetric === 'SAR'     ? p.sar
+                       :                             p.aed,
+                  secondary: trendMetric === 'tickets' ? p.refunds : undefined,
+                }))}
+              />
+            </ChartCard>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ShareTable
+                title="By Airline"
+                subtitle="Share of tickets issued, and what each airline earned"
+                keyHeader="A/L"
+                rows={an.byAirline}
+                fmt={fmt}
+                subLabel={airlineName}
+                colored={DONUT_MAX}
+              />
+              <ShareTable
+                title="Most Issued Routes"
+                subtitle="Journeys ranked by how many tickets were issued on them"
+                keyHeader="Route"
+                rows={an.byRoute}
+                fmt={fmt}
+                colored={DONUT_MAX}
+              />
+            </div>
           </div>
         )}
 

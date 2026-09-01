@@ -5,6 +5,7 @@ import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import { airlineName } from '../core/config/airlines';
+import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers/period';
 import * as XLSX from 'xlsx';
 
 interface TicketTableProps {
@@ -23,19 +24,6 @@ interface TicketTableProps {
 }
 
 type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr';
-
-/** Last day of a YYYY-MM month, as YYYY-MM-DD. Day 0 of the NEXT month is the
- *  last day of this one, which gets February and leap years right for free. */
-function endOfMonth(ym: string): string {
-  const [y, m] = ym.split('-').map(Number);
-  return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
-}
-
-/** "2026-03" -> "Mar 2026", for the month picker. */
-function monthLabel(ym: string): string {
-  const [y, m] = ym.split('-').map(Number);
-  return `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1]} ${y}`;
-}
 
 type SortKey = 'serial' | 'date' | 'amount' | 'ticketNo' | 'source' | null;
 
@@ -221,17 +209,10 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   );
 
   /** Months present in the data, newest first — the quick-pick for "show me
-   *  April". Dates are stored as YYYY-MM-DD, so the prefix IS the month and
-   *  string comparison is date comparison; no parsing needed anywhere here. */
-  const months = useMemo(() => {
-    const seen = new Set<string>();
-    for (const t of tickets) if (/^\d{4}-\d{2}/.test(t.date || '')) seen.add(t.date.slice(0, 7));
-    return [...seen].sort().reverse();
-  }, [tickets]);
+   *  April". */
+  const months = useMemo(() => monthsIn(tickets.map(t => t.date)), [tickets]);
 
-  const monthSel = dateFrom && dateTo && dateFrom.slice(0, 7) === dateTo.slice(0, 7)
-    && dateFrom.endsWith('-01') && dateTo === endOfMonth(dateFrom.slice(0, 7))
-    ? dateFrom.slice(0, 7) : '';
+  const monthSel = selectedMonth(dateFrom, dateTo);
 
   const pickMonth = (m: string) => {
     if (!m) { setDateFrom(''); setDateTo(''); return; }
