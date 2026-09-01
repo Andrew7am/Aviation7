@@ -893,6 +893,16 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       {showColFilters && (
         <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex flex-wrap items-center gap-3 shrink-0">
           <span className="text-[9px] font-bold uppercase text-blue-500 tracking-wider">Filter by column:</span>
+          {/* Ordered to match the table's own columns — A/L then Ticket No —
+              so the eye moves the same way in the filter bar as in the rows. */}
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-blue-400 font-mono uppercase">A/L</span>
+            <input
+              type="text" placeholder="e.g. 065"
+              value={filterAL} onChange={e => setFilterAL(e.target.value)}
+              className="w-20 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
+            />
+          </div>
           <div className="flex items-center gap-1">
             <span className="text-[9px] text-blue-400 font-mono uppercase">Ticket No</span>
             <input
@@ -900,14 +910,6 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               title="Full or partial ticket number. The 13-digit form works too — the airline code is ignored."
               value={filterTicket} onChange={e => setFilterTicket(e.target.value)}
               className="w-32 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
-            />
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-[9px] text-blue-400 font-mono uppercase">A/L</span>
-            <input
-              type="text" placeholder="e.g. 065"
-              value={filterAL} onChange={e => setFilterAL(e.target.value)}
-              className="w-20 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
             />
           </div>
           <div className="flex items-center gap-1">
