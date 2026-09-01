@@ -10,6 +10,9 @@ interface TicketTableProps {
   tickets: Ticket[];
   title: string;
   defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE';
+  /** Opens the table already narrowed to a closure state, so a view can be
+   *  "the outstanding list" without the user having to find the dropdown. */
+  defaultClosed?: 'ALL' | 'CLOSED' | 'NOT_CLOSED';
   onDelete?: (id: string) => void;
   onUpdateReqNum?: (id: string, reqNum: string) => void;
   onUpdateTicket?: (id: string, patch: Partial<Ticket>) => void;
@@ -178,7 +181,7 @@ const TravelBadge: React.FC<{ route?: string }> = ({ route }) => {
 };
 
 export const TicketTable: React.FC<TicketTableProps> = ({
-  tickets, title, defaultFilter = 'ALL', onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
+  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const [filterMode, setFilterMode]     = useState<'ALL' | 'NEED_REQ' | 'DUPLICATE'>(defaultFilter);
@@ -189,7 +192,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [showSources, setShowSources]   = useState(false);
   const [dateFrom, setDateFrom]         = useState('');
   const [dateTo, setDateTo]             = useState('');
-  const [closedFilter, setClosedFilter] = useState<'ALL' | 'CLOSED' | 'NOT_CLOSED'>('ALL');
+  const [closedFilter, setClosedFilter] = useState<'ALL' | 'CLOSED' | 'NOT_CLOSED'>(defaultClosed);
   const [travelFilter, setTravelFilter] = useState<'ALL' | TravelScope>('ALL');
   const [filterTicket, setFilterTicket] = useState('');
   const [filterAL, setFilterAL]         = useState('');

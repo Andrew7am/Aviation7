@@ -18,7 +18,7 @@ import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   Plane, LayoutDashboard, List, AlertTriangle,
-  Upload, LogOut, Wallet, BarChart2, History, ShieldCheck, PlusCircle, Eye,
+  Upload, LogOut, Wallet, BarChart2, History, ShieldCheck, PlusCircle, Eye, Circle,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -153,6 +153,9 @@ function MainApp({ user }: { user: User }) {
   const dismissAlert       = useCallback((id: string) => setAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a)), []);
 
   const missingReqCount = missingReq.length;
+  // Same rule the Not Closed export uses: a top-up is not a ticket that
+  // can be reconciled, so it is not outstanding work.
+  const notClosedCount  = tickets.filter(t => !t.closed && t.status !== 'FUND').length;
   const lowVendorCount  = lowVendors.length;
 
   /** Everything that changes data. Passed only to an admin — the database
@@ -172,6 +175,7 @@ function MainApp({ user }: { user: User }) {
     { id: 'dashboard', label: 'Dashboard',       icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'tickets',   label: 'All Tickets',     icon: <List className="w-4 h-4" />, badge: tickets.length },
     { id: 'missing',   label: 'Action Required', icon: <AlertTriangle className="w-4 h-4" />, badge: missingReqCount, badgeColor: 'red' },
+    { id: 'notclosed', label: 'Not Closed',      icon: <Circle className="w-4 h-4" />, badge: notClosedCount || undefined, badgeColor: 'amber' },
     ...(isAdmin ? [{ id: 'import' as ViewState, label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
     { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
     { id: 'vendors',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
@@ -279,6 +283,7 @@ function MainApp({ user }: { user: User }) {
           {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
           {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} {...(isAdmin ? writeHandlers : {})} />}
           {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}
+          {view === 'notclosed' && <TicketTable title="Not Closed — Still To Reconcile" tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : {})} />}
           {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
           {view === 'history'   && <ImportHistory records={importHistory} getErrorsFor={(id, cb) => importSvc.subscribeErrors(id, cb)} />}
           {/* No h-full on the wrapper below. Pinning it to the viewport meant
