@@ -26,3 +26,4 @@ void-purge-snapshot.json
 misread-cancellation-snapshot.json
 deleted-rows-*.json
 import-snapshot-*.json
+rts-currency-snapshot.json
