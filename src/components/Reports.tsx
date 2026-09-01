@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
-import { Download, FileText, TrendingDown, Wallet, Database } from 'lucide-react';
+import { Download, FileText, TrendingDown, Wallet, Database, BarChart3 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 interface ReportsProps {
@@ -11,7 +11,83 @@ interface ReportsProps {
   topUps: BalanceTopUp[];
 }
 
-type ReportTab = 'summary' | 'overdraft' | 'vendor_detail' | 'missing_req' | 'ledger';
+type ReportTab = 'summary' | 'analytics' | 'overdraft' | 'vendor_detail' | 'missing_req' | 'ledger';
+
+interface ShareRow {
+  key: string; tickets: number; pct: number; sar: number; aed: number; other: number;
+}
+
+/**
+ * A ranked share table — who accounts for how much of the business.
+ *
+ * SAR and AED are separate columns rather than one total. Twenty-eight
+ * airlines here sell in both, and adding the two produces a figure that reads
+ * like money and is not. A currency with nothing in it shows a dash rather
+ * than 0.00, so a zero always means "nothing", never "not applicable".
+ *
+ * The bar is drawn relative to the top row, not to 100%, because the leader
+ * holds about half and everything else would otherwise be an invisible sliver.
+ */
+const ShareTable: React.FC<{
+  title: string; subtitle: string; keyHeader: string;
+  rows: ShareRow[]; fmt: (n: number) => string;
+}> = ({ title, subtitle, keyHeader, rows, fmt }) => {
+  const top = rows[0]?.tickets || 1;
+  const shown = rows.slice(0, 25);
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+        <div className="text-[10px] font-bold uppercase text-slate-500">{title}</div>
+        <div className="text-[9px] text-slate-400 mt-0.5">{subtitle}</div>
+      </div>
+      {rows.length === 0 ? (
+        <p className="px-4 py-6 text-xs text-slate-400 italic">Nothing to show yet.</p>
+      ) : (
+        <table className="w-full text-left">
+          <thead>
+            <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+              <th className="px-3 py-2">{keyHeader}</th>
+              <th className="px-3 py-2 text-right">Tickets</th>
+              <th className="px-3 py-2 text-right">Share</th>
+              <th className="px-3 py-2 text-right">Net SAR</th>
+              <th className="px-3 py-2 text-right">Net AED</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shown.map(r => (
+              <tr key={r.key} className="border-b border-slate-50 hover:bg-slate-50">
+                <td className="px-3 py-2 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap">{r.key}</td>
+                <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-600">{r.tickets}</td>
+                <td className="px-3 py-2 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-blue-500 rounded-full"
+                           style={{ width: `${Math.max(2, (r.tickets / top) * 100)}%` }} />
+                    </div>
+                    <span className="font-mono text-[11px] font-bold text-slate-700 w-11 text-right">
+                      {r.pct.toFixed(1)}%
+                    </span>
+                  </div>
+                </td>
+                <td className={`px-3 py-2 text-right font-mono text-[11px] ${r.sar < 0 ? 'text-red-600' : 'text-slate-600'}`}>
+                  {r.sar === 0 ? <span className="text-slate-300">—</span> : fmt(r.sar)}
+                </td>
+                <td className={`px-3 py-2 text-right font-mono text-[11px] ${r.aed < 0 ? 'text-red-600' : 'text-slate-600'}`}>
+                  {r.aed === 0 ? <span className="text-slate-300">—</span> : fmt(r.aed)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {rows.length > shown.length && (
+        <div className="px-4 py-2 text-[9px] text-slate-400 border-t border-slate-100">
+          showing the top {shown.length} of {rows.length}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUps }) => {
   const [tab, setTab] = useState<ReportTab>('summary');
@@ -20,7 +96,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
   const [dateTo, setDateTo] = useState('');
 
   // Centralized stats — single source of truth, no duplicated calculations
-  const { totalIssued, totalRefunds, netTotal, bySource, missingReq, duplicates } = useReports(tickets, vendorBalances, topUps);
+  const { totalIssued, totalRefunds, netTotal, bySource, missingReq, duplicates, byAirline, byRoute } = useReports(tickets, vendorBalances, topUps);
 
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -206,6 +282,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   const TABS: { key: ReportTab; label: string; icon: React.ReactNode }[] = [
     { key: 'summary',        label: 'Vendor Summary',       icon: <Wallet className="w-3.5 h-3.5" /> },
+    { key: 'analytics',      label: 'Analytics',            icon: <BarChart3 className="w-3.5 h-3.5" /> },
     { key: 'overdraft',      label: 'Overdraft / Low',      icon: <TrendingDown className="w-3.5 h-3.5" /> },
     { key: 'ledger',         label: 'Wallet Ledger',        icon: <Wallet className="w-3.5 h-3.5" /> },
     { key: 'vendor_detail',  label: 'Transaction History',  icon: <FileText className="w-3.5 h-3.5" /> },
@@ -247,6 +324,26 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
       </div>
 
       <div className="flex-1 overflow-auto p-4">
+
+        {/* ── ANALYTICS TAB ── */}
+        {tab === 'analytics' && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ShareTable
+              title="By Airline"
+              subtitle="Share of tickets issued, and what each airline earned"
+              keyHeader="A/L"
+              rows={byAirline}
+              fmt={fmt}
+            />
+            <ShareTable
+              title="Most Issued Routes"
+              subtitle="Journeys ranked by how many tickets were issued on them"
+              keyHeader="Route"
+              rows={byRoute}
+              fmt={fmt}
+            />
+          </div>
+        )}
 
         {/* ── VENDOR SUMMARY TAB ── */}
         {tab === 'summary' && (
