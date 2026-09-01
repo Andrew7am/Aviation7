@@ -4,6 +4,7 @@ import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, C
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
+import { airlineName } from '../core/config/airlines';
 import * as XLSX from 'xlsx';
 
 interface TicketTableProps {
@@ -1055,7 +1056,10 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                   </td>
                   <td className="px-3 py-2 text-center">
                     {ticket.airlineCode
-                      ? <span className="font-mono font-black text-[11px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{ticket.airlineCode}</span>
+                      ? <span
+                          title={airlineName(ticket.airlineCode) || `Airline code ${ticket.airlineCode}`}
+                          className="font-mono font-black text-[11px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded"
+                        >{ticket.airlineCode}</span>
                       : <span className="text-slate-300 text-[9px]">—</span>
                     }
                   </td>

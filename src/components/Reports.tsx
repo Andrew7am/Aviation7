@@ -3,6 +3,7 @@ import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { Download, FileText, TrendingDown, Wallet, Database, BarChart3 } from 'lucide-react';
+import { airlineName } from '../core/config/airlines';
 import * as XLSX from 'xlsx';
 
 interface ReportsProps {
@@ -31,7 +32,11 @@ interface ShareRow {
 const ShareTable: React.FC<{
   title: string; subtitle: string; keyHeader: string;
   rows: ShareRow[]; fmt: (n: number) => string;
-}> = ({ title, subtitle, keyHeader, rows, fmt }) => {
+  /** Optional second line under the key — the carrier's name beside its code.
+   *  Returning '' leaves the code standing alone, which is what an airline
+   *  outside the supplied list should do rather than showing a guess. */
+  subLabel?: (key: string) => string;
+}> = ({ title, subtitle, keyHeader, rows, fmt, subLabel }) => {
   const top = rows[0]?.tickets || 1;
   const shown = rows.slice(0, 25);
   return (
@@ -56,7 +61,12 @@ const ShareTable: React.FC<{
           <tbody>
             {shown.map(r => (
               <tr key={r.key} className="border-b border-slate-50 hover:bg-slate-50">
-                <td className="px-3 py-2 font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap">{r.key}</td>
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <div className="font-mono text-[11px] font-bold text-slate-700">{r.key}</div>
+                  {subLabel?.(r.key) && (
+                    <div className="text-[9px] text-slate-400 leading-tight">{subLabel(r.key)}</div>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-600">{r.tickets}</td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex items-center justify-end gap-2">
@@ -334,6 +344,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
               keyHeader="A/L"
               rows={byAirline}
               fmt={fmt}
+              subLabel={airlineName}
             />
             <ShareTable
               title="Most Issued Routes"
