@@ -28,3 +28,4 @@ deleted-rows-*.json
 import-snapshot-*.json
 rts-currency-snapshot.json
 vendor-merge-*.json
+closed-status-snapshot-*.json
