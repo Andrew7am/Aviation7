@@ -16,7 +16,37 @@ type ReportTab = 'summary' | 'analytics' | 'overdraft' | 'vendor_detail' | 'miss
 
 interface ShareRow {
   key: string; tickets: number; pct: number; sar: number; aed: number; other: number;
+  sarIssued: number; sarRefunded: number; aedIssued: number; aedRefunded: number;
 }
+
+/**
+ * One currency's net, with the sales and refunds behind it.
+ *
+ * A net can be negative without anything being wrong: an airline that sells
+ * almost entirely in one currency can still take refunds in the other — for
+ * tickets issued in an earlier period, or as an airline credit memo — so the
+ * minus is the truth rather than a fault. The figures underneath say so,
+ * instead of leaving a bare minus sign to be read as a bug.
+ */
+const NetCell: React.FC<{
+  net: number; issued: number; refunded: number; fmt: (n: number) => string;
+}> = ({ net, issued, refunded, fmt }) => {
+  if (net === 0 && issued === 0 && refunded === 0) {
+    return <td className="px-3 py-2 text-right"><span className="text-slate-300 text-[11px]">—</span></td>;
+  }
+  return (
+    <td className="px-3 py-2 text-right">
+      <div className={`font-mono text-[11px] ${net < 0 ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
+        {fmt(net)}
+      </div>
+      {refunded < 0 && (
+        <div className="text-[9px] text-slate-400 leading-tight font-mono">
+          {fmt(issued)} − {fmt(Math.abs(refunded))} refunded
+        </div>
+      )}
+    </td>
+  );
+};
 
 /**
  * A ranked share table — who accounts for how much of the business.
@@ -79,12 +109,8 @@ const ShareTable: React.FC<{
                     </span>
                   </div>
                 </td>
-                <td className={`px-3 py-2 text-right font-mono text-[11px] ${r.sar < 0 ? 'text-red-600' : 'text-slate-600'}`}>
-                  {r.sar === 0 ? <span className="text-slate-300">—</span> : fmt(r.sar)}
-                </td>
-                <td className={`px-3 py-2 text-right font-mono text-[11px] ${r.aed < 0 ? 'text-red-600' : 'text-slate-600'}`}>
-                  {r.aed === 0 ? <span className="text-slate-300">—</span> : fmt(r.aed)}
-                </td>
+                <NetCell net={r.sar} issued={r.sarIssued} refunded={r.sarRefunded} fmt={fmt} />
+                <NetCell net={r.aed} issued={r.aedIssued} refunded={r.aedRefunded} fmt={fmt} />
               </tr>
             ))}
           </tbody>

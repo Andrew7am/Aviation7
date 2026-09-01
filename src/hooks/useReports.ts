@@ -43,15 +43,29 @@ export function useReports(tickets: Ticket[], vendors: VendorBalance[], topUps: 
       keyOf: (t: Ticket) => string,
       countable: (t: Ticket) => boolean,
     ) => {
-      const map = new Map<string, { key: string; tickets: number; sar: number; aed: number; other: number }>();
+      const blank = (key: string) => ({
+        key, tickets: 0, sar: 0, aed: 0, other: 0,
+        // Kept alongside the net so a negative total can explain itself. An
+        // airline selling mostly in SAR can still show a negative AED net —
+        // a handful of AED sales against refunds of tickets issued earlier,
+        // or an airline credit memo — and a bare minus sign reads as a bug.
+        sarIssued: 0, sarRefunded: 0, aedIssued: 0, aedRefunded: 0,
+      });
+      const map = new Map<string, ReturnType<typeof blank>>();
       for (const t of real) {
         const key = keyOf(t);
         if (key === null as unknown as string) continue;
-        const row = map.get(key) ?? { key, tickets: 0, sar: 0, aed: 0, other: 0 };
+        const row = map.get(key) ?? blank(key);
         if (countable(t)) row.tickets++;
-        if (t.currency === 'SAR')      row.sar += t.amount;
-        else if (t.currency === 'AED') row.aed += t.amount;
-        else                           row.other += t.amount;
+        if (t.currency === 'SAR') {
+          row.sar += t.amount;
+          if (t.amount < 0) row.sarRefunded += t.amount; else row.sarIssued += t.amount;
+        } else if (t.currency === 'AED') {
+          row.aed += t.amount;
+          if (t.amount < 0) row.aedRefunded += t.amount; else row.aedIssued += t.amount;
+        } else {
+          row.other += t.amount;
+        }
         map.set(key, row);
       }
       const rows = [...map.values()].sort((a, b) => b.tickets - a.tickets);
