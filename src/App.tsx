@@ -43,50 +43,12 @@ function MainApp({ user }: { user: User }) {
 
   React.useEffect(() => importSvc.subscribeHistory(setImportHistory), [user.id]);
 
-  /* ── Low balance alerts ──
-   * Keyed on a STRING of the low vendors and their balances, not on the
-   * lowVendors array: that array is rebuilt on every render, so depending on
-   * it directly re-ran this effect constantly and a dismissed banner came
-   * straight back. */
-  const lowKey = React.useMemo(
-    () => lowVendors.map(v => `${v.id}:${v.currentBalance.toFixed(2)}`).sort().join('|'),
-    [lowVendors]
-  );
-
-  React.useEffect(() => {
-    setAlerts(prev => {
-      const lowIds = new Set(lowVendors.map(v => v.id));
-      const vendorIdOf = (a: AppAlert) => a.id.startsWith('low_') ? a.id.slice(4) : a.id;
-
-      // A vendor that is no longer low loses its alert entirely, so if it
-      // dips again later a fresh (undismissed) banner is raised.
-      const next = prev.filter(a => a.type !== 'low_balance' || lowIds.has(vendorIdOf(a)));
-      let changed = next.length !== prev.length;
-
-      for (const v of lowVendors) {
-        const id = `low_${v.id}`;
-        const message = `⚠ ${v.vendorName} balance below 20% — ${v.currentBalance.toFixed(2)} remaining`;
-        const i = next.findIndex(a => a.id === id);
-        if (i === -1) {
-          next.push({
-            id, type: 'low_balance', message,
-            vendorName: v.vendorName, dismissed: false,
-            createdAt: new Date().toISOString(),
-          });
-          changed = true;
-        } else if (next[i].message !== message) {
-          // Refresh the figure in place. Spreading the existing alert keeps
-          // `dismissed` as it was — the previous code rebuilt the alert from
-          // scratch, which silently un-dismissed it.
-          next[i] = { ...next[i], message };
-          changed = true;
-        }
-      }
-      // Returning the same reference when nothing changed stops this from
-      // scheduling a pointless re-render on every pass.
-      return changed ? next : prev;
-    });
-  }, [lowKey]);
+  /* Low balance is no longer raised as a banner across the top of every
+   * screen. It was the same fact the Vendor Credit page already states more
+   * usefully — an amber figure, a LOW badge and a bar showing how far down it
+   * is — and a warning that follows you onto pages you cannot act from is one
+   * you learn to dismiss without reading. The sidebar still carries the count
+   * as a standing reminder, and lowVendors below still feeds it. */
 
   /* ── Import handler — now logs to ImportHistory + ErrorLog + AuditLog ── */
   const handleImport = async (

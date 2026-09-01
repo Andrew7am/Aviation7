@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppAlert } from '../types';
-import { X, AlertTriangle, Bell } from 'lucide-react';
+import { X, AlertTriangle } from 'lucide-react';
 
 interface AlertBannerProps {
   alerts: AppAlert[];
@@ -16,10 +16,7 @@ export const AlertBanner: React.FC<AlertBannerProps> = ({ alerts, onDismiss }) =
       {visible.map(alert => (
         <div key={alert.id} className="flex items-center justify-between">
           <div className="flex items-center space-x-2 text-xs">
-            {alert.type === 'low_balance'
-              ? <Bell className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            }
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             <span className="text-amber-200 font-mono">{alert.message}</span>
           </div>
           <button

@@ -69,7 +69,11 @@ export interface ImportBatch {
   userId: string;
 }
 
-export type AlertType = 'low_balance' | 'duplicate' | 'missing_req';
+/** The banner now carries one thing: what an import just skipped. Low balance
+ *  moved to where it can be acted on (the Vendor Credit page and the sidebar
+ *  count), and missing_req was never raised at all — the Action Required view
+ *  is how that surfaces. */
+export type AlertType = 'duplicate';
 
 export interface AppAlert {
   id: string;
