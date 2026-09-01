@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
+import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 
 export function useReports(tickets: Ticket[], vendors: VendorBalance[], topUps: BalanceTopUp[]) {
   const totalIssued = useMemo(
@@ -36,7 +37,15 @@ export function useReports(tickets: Ticket[], vendors: VendorBalance[], topUps: 
    * took back.
    */
   const analytics = useMemo(() => {
-    const real = tickets.filter(t => t.status !== 'FUND');
+    // Memos are not ticket sales. An ACM is the airline crediting the agency
+    // and an ADM is it billing back; neither was sold to a passenger, neither
+    // flew a route, and a single -30,699 credit memo was enough to drag
+    // British Airways to a negative total that looked like an error. They stay
+    // in the ledger and in every balance — they just do not belong in a
+    // ranking of what was sold.
+    const MEMO = new Set(['ACM', 'ADM']);
+    const real = tickets.filter(t =>
+      t.status !== 'FUND' && !MEMO.has((t.status || '').toUpperCase()));
     const issues = real.filter(t => t.status !== 'REFUND');
 
     const tally = (
@@ -57,10 +66,16 @@ export function useReports(tickets: Ticket[], vendors: VendorBalance[], topUps: 
         if (key === null as unknown as string) continue;
         const row = map.get(key) ?? blank(key);
         if (countable(t)) row.tickets++;
-        if (t.currency === 'SAR') {
+        // The currency a ticket is counted under is the VENDOR's — the rule the
+        // ticket table, the summary bar and every export already use. The
+        // stored `currency` column disagrees on 1,945 rows (IATA BSP tickets
+        // saved as SAR when that BSP settles in AED), so trusting it here made
+        // these totals contradict the screen they are read beside.
+        const cur = sourceToCurrency(t.source || '');
+        if (cur === 'SAR') {
           row.sar += t.amount;
           if (t.amount < 0) row.sarRefunded += t.amount; else row.sarIssued += t.amount;
-        } else if (t.currency === 'AED') {
+        } else if (cur === 'AED') {
           row.aed += t.amount;
           if (t.amount < 0) row.aedRefunded += t.amount; else row.aedIssued += t.amount;
         } else {
