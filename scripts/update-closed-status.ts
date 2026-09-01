@@ -6,16 +6,24 @@
  * guessed at. Matching is scoped to that sheet's vendor, so a PNR that two
  * airlines both happen to use cannot reach across.
  *
- * Three sheets are deliberately skipped, and the reasons matter:
- *   RTS IBTKAR / RTS DXB / NSA  — no status column at all.
- *   FlyAdeal DXB                — its "Status" holds event names and a stray
- *                                 booking code, not a closure state.
- *   FlyAdeal KSA                — its "status" is the AIRLINE's (CONFIRMED),
- *                                 which says nothing about the agency's books.
+ * Nine of the eleven sheets carry a closure state. Two do not, and are the only
+ * ones skipped:
+ *   RTS IBTKAR   — eight rows, no closure column.
+ *   FlyAdeal KSA — its "status" is the AIRLINE's (CONFIRMED), which says
+ *                  nothing about whether the agency has settled the ticket.
+ *
+ * Finding the column is the hard part, and a first pass got it wrong: it
+ * looked for a column NAMED "Status", which exists on six sheets. NSA, RTS DXB
+ * and FlyAdeal DXB keep theirs in a column with no header at all (or one
+ * called "Column1"), so 2,771 NSA closures and 256 RTS ones were silently
+ * missed. Those three are addressed by index now — hence statusCol accepting a
+ * number.
  *
  * A blank status means the sheet has no opinion, so the ticket is left alone
  * rather than being marked open. Values like "fund" and "dxb" are notes, not
- * states, and are ignored the same way.
+ * states, and are ignored the same way. An id the sheet marks BOTH ways is a
+ * contradiction rather than an instruction: it is skipped and listed, which is
+ * also what keeps re-running this from flipping those rows back and forth.
  *
  *   npx tsx scripts/update-closed-status.ts "<workbook.xlsx>" [--apply]
  */
@@ -28,16 +36,28 @@ import { ticketMatchKey } from '../src/core/helpers/ticketIdentity';
 const FILE = process.argv[2];
 const APPLY = process.argv.includes('--apply');
 
-/** How each sheet names its tickets, and which vendor its rows belong to. */
+/**
+ * How each sheet names its tickets, which vendor its rows belong to, and where
+ * its closure state lives.
+ *
+ * `statusCol` is a header name OR a column index, because three of these
+ * sheets keep the state in a column with no header at all and a fourth calls
+ * it "Column1". Searching for a column NAMED "Status" found six sheets and
+ * missed the largest one — NSA, 2,771 stated closures — so the columns are
+ * now identified the way the workbook actually stores them.
+ */
 const SHEETS: {
-  sheet: string; source: string; idCol: string; idKind: 'ticket' | 'pnr'; statusCol: string;
+  sheet: string; source: string; idCol: string; idKind: 'ticket' | 'pnr'; statusCol: string | number;
 }[] = [
-  { sheet: 'IATA',        source: 'IATA BSP',         idCol: 'ticket number',      idKind: 'ticket', statusCol: 'Status' },
-  { sheet: 'FLYDubai',    source: 'FlyDubai',         idCol: 'Booking reference',  idKind: 'pnr',    statusCol: 'Status' },
-  { sheet: 'Air Arabia ', source: 'AirArabia',        idCol: 'Ticket Number',      idKind: 'ticket', statusCol: 'Status' },
-  { sheet: 'FlyNas',      source: 'Flynas',           idCol: 'PNR2',               idKind: 'pnr',    statusCol: 'Status' },
-  { sheet: 'ibtekar',     source: 'Ibtekar',          idCol: 'PNR',                idKind: 'pnr',    statusCol: 'Status' },
-  { sheet: 'goldmedal',   source: 'Gold Medal',       idCol: 'Ticket Number',      idKind: 'ticket', statusCol: 'Status' },
+  { sheet: 'IATA',         source: 'IATA BSP',     idCol: 'ticket number',     idKind: 'ticket', statusCol: 'Status' },
+  { sheet: 'NSA',          source: 'NSA',          idCol: 'Doc No',            idKind: 'ticket', statusCol: 12 },
+  { sheet: 'RTS DXB',      source: 'RTS',          idCol: 'No',                idKind: 'ticket', statusCol: 5 },
+  { sheet: 'ibtekar',      source: 'Ibtekar',      idCol: 'PNR',               idKind: 'pnr',    statusCol: 'Status' },
+  { sheet: 'FlyAdeal DXB', source: 'FlyAdeal DXB', idCol: 'pnr',               idKind: 'pnr',    statusCol: 17 },
+  { sheet: 'FLYDubai',     source: 'FlyDubai',     idCol: 'Booking reference', idKind: 'pnr',    statusCol: 'Status' },
+  { sheet: 'Air Arabia ',  source: 'AirArabia',    idCol: 'Ticket Number',     idKind: 'ticket', statusCol: 'Status' },
+  { sheet: 'FlyNas',       source: 'Flynas',       idCol: 'PNR2',              idKind: 'pnr',    statusCol: 'Status' },
+  { sheet: 'goldmedal',    source: 'Gold Medal',   idCol: 'Ticket Number',     idKind: 'ticket', statusCol: 'Status' },
 ];
 
 /** Only an explicit closure state counts. Anything else means "no opinion". */
@@ -97,16 +117,37 @@ function normaliseTicket(raw: string): string {
 
     const norm = (s: string) => s.trim().toLowerCase();
     const iId = head.findIndex(h => norm(h) === norm(cfg.idCol));
-    const iSt = head.findIndex(h => norm(h) === norm(cfg.statusCol));
+    const wanted = cfg.statusCol;
+    const iSt = typeof wanted === 'number'
+      ? wanted
+      : head.findIndex(h => norm(h) === norm(wanted));
     if (iId === -1 || iSt === -1) {
       report.push({ sheet: cfg.sheet, note: `column missing (id=${iId} status=${iSt})` });
       continue;
     }
 
-    let stated = 0, matched = 0, already = 0, changed = 0, unmatched = 0, ambiguous = 0;
+    // An id the sheet marks BOTH ways is a contradiction, not an instruction.
+    // Letting whichever row is read first win would also make the script
+    // non-idempotent: each run would flip those tickets back the other way.
+    // They are skipped and listed instead, for a human to settle.
+    const states: Record<string, Set<boolean>> = {};
+    for (const r of body) {
+      const st = readClosed(String(r[iSt] ?? ''));
+      if (st === null) continue;
+      const id = String(r[iId] ?? '').trim().toUpperCase();
+      if (id) (states[id] ??= new Set()).add(st);
+    }
+    const contradictory = new Set(Object.entries(states).filter(([, s]) => s.size > 1).map(([k]) => k));
+    if (contradictory.size) {
+      console.log(`\n  ${cfg.sheet}: ${contradictory.size} id(s) marked both Closed and Not Closed — skipped:`);
+      [...contradictory].slice(0, 10).forEach(id => console.log(`      ${id}`));
+    }
+
+    let stated = 0, matched = 0, already = 0, changed = 0, unmatched = 0, ambiguous = 0, conflicted = 0;
     for (const r of body) {
       const closed = readClosed(String(r[iSt] ?? ''));
       if (closed === null) continue;
+      if (contradictory.has(String(r[iId] ?? '').trim().toUpperCase())) { conflicted++; continue; }
       stated++;
 
       const rawId = String(r[iId] ?? '').trim();
@@ -131,7 +172,7 @@ function normaliseTicket(raw: string): string {
       sheet: cfg.sheet, vendor: cfg.source, 'rows in sheet': body.length,
       'states a status': stated, 'ledger rows matched': matched,
       'already correct': already, 'would change': changed,
-      unmatched, 'one id, many tickets': ambiguous,
+      unmatched, 'one id, many tickets': ambiguous, 'contradictory (skipped)': conflicted,
     });
   }
 
