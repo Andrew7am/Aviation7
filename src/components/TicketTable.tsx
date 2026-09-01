@@ -265,6 +265,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       }
       // Closed status is only tracked for a subset of vendors — exclude
       // everyone else when the user filters on closure state.
+      // A top-up has no closure state, so it belongs to neither side of this
+      // filter rather than falling into "not closed" by default.
+      if (closedFilter !== 'ALL' && t.status === 'FUND') return false;
       if (closedFilter === 'CLOSED'     && !t.closed) return false;
       if (closedFilter === 'NOT_CLOSED' &&  t.closed) return false;
       // Domestic / international is read off the itinerary, so a ticket with
@@ -521,27 +524,62 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     XLSX.writeFile(wb, `${filenameForFilter()}_Export.xlsx`);
   };
 
+  /** One row of a worklist export. Shared so the two lists cannot drift into
+   *  describing the same ticket differently. */
+  const worklistRow = (t: Ticket) => ({
+    'A/L':        t.airlineCode || '',
+    'Route':      t.route || '',
+    'Travel':     travelText(t.route),
+    'Ticket No.': t.ticketNo,
+    'Source':     t.source || '',
+    'Status':     t.status || '',
+    'Date':       t.date,
+    'Balance Payable': t.amount,
+    'Currency':   sourceToCurrency(t.source || ''),
+    'PNR':        t.pnr || '',
+    'Passenger':  t.passengerName || '',
+  });
+
+  const writeSheet = (rows: object[], sheetName: string, fileName: string) => {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, fileName);
+  };
+
   const exportMissingReq = () => {
     const missing = tickets.filter(t => !t.reqNum && t.status !== 'FUND');
-    const data = missing.map(t => ({
-      'A/L':        t.airlineCode || '',
-      'Route':      t.route || '',
-      'Travel':     travelText(t.route),
-      'Ticket No.': t.ticketNo,
-      'Source':     t.source || '',
-      'Status':     t.status || '',
-      'Date':       t.date,
-      'Balance Payable': t.amount,
-      'Currency':   sourceToCurrency(t.source || ''),
-      'PNR':        t.pnr || '',
-      'Passenger':  t.passengerName || '',
-      'Req Num':    '',
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Missing REQ');
-    XLSX.writeFile(wb, 'Missing_REQ_Numbers.xlsx');
+    // Req Num is deliberately blank: this sheet exists to be filled in and
+    // re-imported, and a column with something already in it invites editing
+    // the wrong row.
+    writeSheet(missing.map(t => ({ ...worklistRow(t), 'Req Num': '' })),
+      'Missing REQ', 'Missing_REQ_Numbers.xlsx');
   };
+
+  /**
+   * Everything still outstanding, whatever the screen is currently filtered to.
+   *
+   * Deliberately ignores the filters, the way the missing-REQ export does: this
+   * is the "what is still open" list, and getting a partial one because a
+   * vendor or a month happened to be selected would be worse than useless. A
+   * narrower slice is still available by filtering and using Export XLS.
+   *
+   * Top-ups are left out — a balance payment is not a ticket that can be
+   * closed.
+   */
+  const exportNotClosed = () => {
+    const open = tickets
+      .filter(t => !t.closed && t.status !== 'FUND')
+      .sort((a, b) => (a.source || '').localeCompare(b.source || '')
+                   || (a.date || '').localeCompare(b.date || ''));
+    writeSheet(open.map(t => ({ ...worklistRow(t), 'Req Num': t.reqNum || '', 'Closed': 'Not Closed' })),
+      'Not Closed', 'Not_Closed_Tickets.xlsx');
+  };
+
+  const notClosedCount = useMemo(
+    () => tickets.filter(t => !t.closed && t.status !== 'FUND').length,
+    [tickets]
+  );
 
   const canEdit = !!onUpdateReqNum || !!onUpdateTicket;
 
@@ -827,6 +865,19 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             </button>
           )}
 
+          {/* Everything still open, regardless of the current filter. Hidden
+              when nothing is outstanding, so it never offers an empty file. */}
+          {notClosedCount > 0 && (
+            <button
+              onClick={exportNotClosed}
+              title="Export every ticket that is still Not Closed, ignoring the filters above"
+              className="px-2 py-1.5 bg-orange-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-orange-700 flex items-center gap-1"
+            >
+              <Download className="w-3 h-3" />
+              Not Closed ({notClosedCount})
+            </button>
+          )}
+
           {/* Export all */}
           <button
             onClick={exportToExcel}
@@ -933,8 +984,12 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <span className="text-slate-300">|</span>
         <span className="text-red-500">{filtered.filter(t => !t.reqNum).length} missing req</span>
         <span className="text-slate-300">|</span>
-        <span className="text-emerald-600">{filtered.filter(t => t.closed).length} closed</span>
-        <span className="text-orange-600">· {filtered.filter(t => !t.closed).length} not closed</span>
+        {/* Top-ups are excluded from both: a balance payment is not a ticket
+            that can be reconciled and closed, and counting it as outstanding
+            overstated the work left. This is the same rule the Not Closed
+            export uses, so the badge and the file agree. */}
+        <span className="text-emerald-600">{filtered.filter(t => t.closed && t.status !== 'FUND').length} closed</span>
+        <span className="text-orange-600">· {filtered.filter(t => !t.closed && t.status !== 'FUND').length} not closed</span>
       </div>
 
       {/* Table */}
