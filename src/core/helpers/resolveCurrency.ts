@@ -27,8 +27,3 @@ export function resolveCurrency(
   return defaultCurrency;
 }
 
-export function parseCurrencyAmount(raw: unknown): number {
-  if (!raw) return 0;
-  const s = String(raw).replace(/[A-Z]{3}/gi, '').replace(/,/g, '').replace(/\s/g, '').trim();
-  return parseFloat(s) || 0;
-}

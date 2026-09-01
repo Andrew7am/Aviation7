@@ -15,17 +15,6 @@ export const loginWithGoogle = () =>
 
 export const logout = () => supabase.auth.signOut();
 
-export enum OperationType {
-  CREATE = 'create', UPDATE = 'update', DELETE = 'delete',
-  LIST = 'list', GET = 'get', WRITE = 'write',
-}
-
-export function handleSupabaseError(error: unknown, op: OperationType, path: string | null) {
-  const msg = error instanceof Error ? error.message : String(error);
-  console.error(`Supabase [${op}] ${path}: ${msg}`);
-  throw new Error(msg);
-}
-
 const PAGE_SIZE = 1000;
 
 /**

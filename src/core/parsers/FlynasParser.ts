@@ -1,8 +1,7 @@
 import { VendorParser, ParserResult } from './types';
-import { col, cell, cleanPax, rowContentId } from './shared';
+import { col, cell, cleanPax, rowContentId, isValidPNR } from './shared';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
-import { isValidPNR } from '../helpers/isValidTicket';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 
 export const FlynasParser: VendorParser = {

@@ -46,6 +46,12 @@ export function pnrClean(raw: string): string {
   return raw.replace(/\s+/g, '').toUpperCase();
 }
 
+/** A booking reference: 5-6 alphanumeric with at least one letter, which is
+ *  what keeps a bare number from being mistaken for one. */
+export function isValidPNR(s: string): boolean {
+  return /^[A-Z0-9]{5,6}$/i.test(s) && /[A-Z]/i.test(s);
+}
+
 /**
  * cleanTk / airlineCode — thin wrappers over the canonical splitter in
  * core/helpers/ticketIdentity.ts. Every parser already calls this pair, so
