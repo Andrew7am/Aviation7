@@ -14,18 +14,14 @@ graphify-out/
 # Contains real passenger PII (names, PNRs, ticket data) — data lives safely
 # in Supabase already, no need to duplicate it in version control.
 supabase/seed_data/*.csv
-# Rollback snapshots produced by the IATA date audit — production row ids.
-iata-date-snapshot*.json
+# Rollback snapshots and one-off audit output from the migration scripts in
+# scripts/. Every one holds production row ids and some hold passenger data.
+# This is a PATTERN and not a list on purpose: the list it replaces had to be
+# extended by hand for each migration, and the first time that was forgotten a
+# snapshot of 1,944 live ticket ids was left sitting staged for commit.
+*snapshot*.json
+deleted-rows-*.json
+vendor-merge-*.json
 iata-phase4-report.json
 iata-commission-audit.json
 iata-commission-balance-preview.json
-ticket-identity-snapshot.json
-airline-code-snapshot.json
-settled-merge-snapshot.json
-void-purge-snapshot.json
-misread-cancellation-snapshot.json
-deleted-rows-*.json
-import-snapshot-*.json
-rts-currency-snapshot.json
-vendor-merge-*.json
-closed-status-snapshot-*.json
