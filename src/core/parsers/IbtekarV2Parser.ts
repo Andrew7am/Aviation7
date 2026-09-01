@@ -15,7 +15,13 @@ import { parseDate } from '../helpers/parseDate';
  */
 export const IbtekarV2Parser: VendorParser = {
   id: 'IBTEKAR_V2',
-  name: 'Ibtekar (New)',
+  // The same vendor as the legacy sheet, not a second one. `name` becomes the
+  // row's `source`, which is what decides the wallet a ticket is drawn against
+  // and how the vendor reads in every report — so a new REPORT FORMAT must not
+  // become a new VENDOR. Calling this "Ibtekar (New)" split one supplier into
+  // two rows in the vendor list while both were still drawn from the single
+  // Ibtekar wallet, because alias matching resolves on substrings.
+  name: 'Ibtekar',
   detect: (headers) => {
     const hj = headers.map(c => (c || '').toLowerCase().replace(/[^a-z0-9.]/g, '')).join('|');
     return hj.includes('tkdate') && hj.includes('recloc') && hj.includes('grandtotal') && hj.includes('route');
