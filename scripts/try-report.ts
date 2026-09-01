@@ -6,10 +6,22 @@
  */
 import { readFileSync } from 'fs';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import { smartDetect, runParser } from '../src/core/parsers';
 
 const file = process.argv[2];
-const csv = readFileSync(file, 'utf8');
+
+// Mirror readFileAsText(): a spreadsheet becomes CSV via SheetJS, with
+// rawNumbers so a long ticket number keeps its digits instead of arriving as
+// "9.1055E+12". Reading an .xlsx as utf8 text just yields binary noise.
+const csv = /\.xlsx?$/i.test(file)
+  ? XLSX.utils.sheet_to_csv(
+      XLSX.read(readFileSync(file), { type: 'buffer' }).Sheets[
+        XLSX.read(readFileSync(file), { type: 'buffer' }).SheetNames[0]
+      ],
+      { rawNumbers: true })
+  : readFileSync(file, 'utf8');
+
 const grid = Papa.parse<string[]>(csv, { skipEmptyLines: true }).data;
 
 const d = smartDetect(grid);

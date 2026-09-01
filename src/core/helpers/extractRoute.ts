@@ -14,15 +14,32 @@
  */
 /** Separators seen across the vendors: "JED-RUH", "AHB/JED/MED" and — in
  *  Turkish's agency sales export — "JED\IST\BER\IST\JED". */
-const ROUTE_RE = /[A-Z]{3}(?:\s*[\/\\-]\s*[A-Z]{3})+/;
+const ROUTE_RE = /[A-Z]{3}(?:\s*[\/\\-]\s*[A-Z]{3})+/g;
 
 export function extractRoute(raw: unknown): string {
   if (raw === null || raw === undefined) return '';
   const s = String(raw).trim();
   if (!s) return '';
-  const m = s.toUpperCase().match(ROUTE_RE);
-  // Backslashes are normalised to "-" so an itinerary reads the same however
-  // the vendor happened to punctuate it. "/" is left alone: several vendors
-  // already store routes that way and rewriting them would churn the ledger.
-  return m ? m[0].replace(/\s+/g, '').replace(/\\/g, '-') : '';
+  const matches = s.toUpperCase().match(ROUTE_RE);
+  if (!matches || matches.length === 0) return '';
+
+  // One run is the common case: return it as written, only tidying spaces and
+  // normalising backslashes so an itinerary reads the same however the vendor
+  // punctuated it. "/" is left alone — several vendors already store routes
+  // that way and rewriting them would churn the ledger.
+  if (matches.length === 1) return matches[0].replace(/\s+/g, '').replace(/\\/g, '-');
+
+  // Several runs means the vendor listed the journey a sector at a time —
+  // RTS writes "MCT-RUH;RUH-MCT", Ibtekar "RUH-JED; JED-RUH". Read as one run
+  // that would give only the outbound leg and lose the return, so the sectors
+  // are stitched back into a single itinerary. Where one sector ends and the
+  // next begins on the same airport it is written once, which turns the two
+  // sectors above into MCT-RUH-MCT rather than MCT-RUH-RUH-MCT.
+  const codes: string[] = [];
+  for (const run of matches) {
+    for (const code of run.split(/[^A-Z]+/).filter(Boolean)) {
+      if (codes[codes.length - 1] !== code) codes.push(code);
+    }
+  }
+  return codes.join('-');
 }
