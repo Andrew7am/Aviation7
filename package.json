@@ -14,7 +14,7 @@
     "test:bsp": "tsx scripts/test-bsp-invoice.ts",
     "test:wallet": "tsx scripts/test-websales-wallet.ts",
     "test:reconcile": "tsx scripts/test-bsp-reconcile.ts",
-    "test": "npm run test:identity && npm run test:topup && npm run test:crossvendor && npm run test:void && npm run test:recon && npm run test:merge && npm run test:turkish && npm run test:travel && npm run test:rts && npm run test:bsp && npm run test:commission && npm run test:wallet && npm run test:iata && npm run test:phase4 && npm run test:phase7 && npm run test:invariants",
+    "test": "npm run test:identity && npm run test:topup && npm run test:crossvendor && npm run test:void && npm run test:recon && npm run test:merge && npm run test:turkish && npm run test:travel && npm run test:rts && npm run test:bsp && npm run test:commission && npm run test:wallet && npm run test:iata && npm run test:phase4 && npm run test:phase7 && npm run test:bspflow && npm run test:invariants",
     "test:identity": "tsx scripts/test-ticket-identity.ts",
     "test:topup": "tsx scripts/test-topup.ts",
     "test:crossvendor": "tsx scripts/test-cross-vendor-import.ts",
@@ -32,7 +32,8 @@
     "iata:reconcile": "tsx scripts/iata-phase4-reconcile.ts",
     "iata:verify": "tsx scripts/verify-iata-phase4.ts",
     "test:phase7": "tsx scripts/test-iata-phase7.ts",
-    "iata:preview": "tsx scripts/preview-iata-corrections.ts"
+    "iata:preview": "tsx scripts/preview-iata-corrections.ts",
+    "test:bspflow": "tsx scripts/test-sales-report-then-invoice.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

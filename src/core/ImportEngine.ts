@@ -166,6 +166,47 @@ export function detectDuplicatesAgainstExisting(
       }
     }
 
+    // ── The weekly invoice for a document the SALES REPORT already recorded ──
+    //
+    // The branch above settles a row held by a DIFFERENT vendor, so it cannot
+    // see this case: the daily BSP sales report and the weekly BSP invoice
+    // both arrive under the same vendor, 'IATA BSP'. The agency uploads the
+    // sales report each day to watch what is running and waits for the invoice
+    // to state the commission, the tickets the report did not show, and the
+    // exact issue date. That is one sale reported twice, not two sales.
+    //
+    // Without this the invoice inserted a second row instead of settling the
+    // first: five refunds were held twice, 6,763.00 of credit that never
+    // happened, and they stayed invisible because one copy had no date and so
+    // matched nothing.
+    //
+    // The channel separates the two files. The invoice parser stamps one (BSP
+    // or WEBSALES-EDIS); the sales report never does. So this fires only for
+    // an invoice landing on a sales-report row — re-importing either file
+    // finds the channel already set and falls through to ordinary duplicate
+    // detection.
+    if (isSettlementSource(t.source) && t.channel && existing && !existing.channel) {
+      settlements.push({
+        ...existing,
+        amount:     t.amount,                       // the invoice's payable
+        commission: t.commission,                   // stated nowhere else
+        totalDoc:   t.totalDoc || existing.totalDoc,
+        // The report only bounds the issue date — where it covers several days
+        // it cannot say which. The invoice names the day, so it wins.
+        date:       t.date || existing.date,
+        status:     t.status || existing.status,
+        channel:    t.channel,
+        // The sales report carries the vendor's own sequence number and the
+        // PNR; the invoice carries neither. Keep what the ledger already has.
+        serial:     existing.serial ?? t.serial,
+        reqNum:        existing.reqNum?.trim()        ? existing.reqNum        : t.reqNum,
+        pnr:           existing.pnr?.trim()           ? existing.pnr           : t.pnr,
+        route:         existing.route?.trim()         ? existing.route         : t.route,
+        passengerName: existing.passengerName?.trim() ? existing.passengerName : t.passengerName,
+      });
+      return;
+    }
+
     // The mirror image: a portal report arriving for a document the invoice
     // already settled. The money on the settled row is the better figure, so
     // the portal row is not added — it may still contribute a req number.
