@@ -245,7 +245,9 @@ const ShareTable: React.FC<{
 const PeriodBar: React.FC<{
   from: string; to: string; months: string[];
   onChange: (from: string, to: string) => void;
-}> = ({ from, to, months, onChange }) => {
+  cabin: string;
+  onCabin: (c: string) => void;
+}> = ({ from, to, months, onChange, cabin, onCabin }) => {
   const monthSel = selectedMonth(from, to);
   const activePreset = PERIOD_PRESETS.find(p => {
     const r = p.range();
@@ -314,6 +316,28 @@ const PeriodBar: React.FC<{
           <X className="w-3 h-3" />
         </button>
       )}
+
+      <div className="h-4 w-px bg-slate-200" />
+
+      {/* Narrows every figure on the tab, not just the cabin card — the point
+          is to ask which airlines and routes a cabin was sold on. */}
+      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Cabin</span>
+      <select
+        value={cabin}
+        onChange={e => onCabin(e.target.value)}
+        title="Narrow everything on this tab to one cabin"
+        className={`px-2 py-1 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+          cabin === 'ALL' ? 'bg-white text-slate-500 border-slate-200'
+                          : 'bg-blue-600 text-white border-blue-600'
+        }`}
+      >
+        <option value="ALL">All cabins</option>
+        <option value="FIRST">First</option>
+        <option value="BUSINESS">Business</option>
+        <option value="PREMIUM_ECONOMY">Premium Economy</option>
+        <option value="ECONOMY">Economy</option>
+        <option value="NONE">Not recorded</option>
+      </select>
     </div>
   );
 };
@@ -358,6 +382,16 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
   // axis — two currencies against a single scale draw a picture that reads like
   // money and is not.
   const [trendMetric, setTrendMetric] = useState<'tickets' | 'SAR' | 'AED'>('tickets');
+  /**
+   * Narrow every figure on the tab to one cabin.
+   *
+   * "Which airlines do I sell business on" is a different question from "which
+   * airlines do I sell", and the period alone could not ask it. Refunds and
+   * memos carry no cabin, so a cabin filter necessarily drops them — which is
+   * right for "what did I sell in business" and is said on screen so a smaller
+   * net is not read as money going missing.
+   */
+  const [cabinFilter, setCabinFilter] = useState<string>('ALL');
 
   // Centralized stats — single source of truth, no duplicated calculations
   const { totalIssued, totalRefunds, netTotal, bySource, missingReq, duplicates } = useReports(tickets, vendorBalances, topUps);
@@ -380,8 +414,11 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   /** The same maths the whole-ledger figures use, over the chosen period. */
   const an = useMemo(
-    () => computeAnalytics(tickets.filter(t => inPeriod(t.date, anFrom, anTo))),
-    [tickets, anFrom, anTo],
+    () => computeAnalytics(tickets.filter(t =>
+      inPeriod(t.date, anFrom, anTo)
+      && (cabinFilter === 'ALL'
+          || (cabinFilter === 'NONE' ? !t.cabinClass : t.cabinClass === cabinFilter)))),
+    [tickets, anFrom, anTo, cabinFilter],
   );
 
   /**
@@ -637,7 +674,23 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             <PeriodBar
               from={anFrom} to={anTo} months={analyticsMonths}
               onChange={(f, t) => { setAnFrom(f); setAnTo(t); }}
+              cabin={cabinFilter} onCabin={setCabinFilter}
             />
+
+            {/* A cabin filter necessarily excludes refunds and memos, which
+                carry no cabin. Said out loud so a smaller net is read as a
+                narrower question rather than as money having gone missing. */}
+            {cabinFilter !== 'ALL' && (
+              <div className="flex items-start gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg">
+                <span className="text-blue-500 text-[11px] leading-none mt-0.5">▸</span>
+                <p className="text-[10px] text-blue-800 leading-relaxed">
+                  Showing <span className="font-bold">
+                    {cabinFilter === 'NONE' ? 'tickets with no cabin recorded'
+                      : `${CABIN_LABEL[cabinFilter as Exclude<Cabin, ''>]} only`}
+                  </span>. Refunds and memos carry no cabin, so they are not in these figures.
+                </p>
+              </div>
+            )}
 
             {/* Only while a period is active: under "All time" these rows ARE
                 counted, so the warning would be false. */}
