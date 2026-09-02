@@ -4,6 +4,7 @@ import { Ticket } from '../types';
 import { useImport, ImportMeta } from '../hooks/useImport';
 import { ClassifiedRow, ReconClass, RECON_LABEL } from '../core/ImportEngine';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
+import { knownSources } from '../core/config/sources';
 import { findHeaderRow } from '../core/helpers/columnResolver';
 import { LearnedProfile, bestHeaderRowForAI } from '../core/ai/learnedProfile';
 import { Upload, AlertTriangle, CheckCircle2, Info, Gauge, Sparkles } from 'lucide-react';
@@ -16,11 +17,6 @@ interface ImportDataProps {
   onImport: (newTickets: Ticket[], updateTickets: Ticket[], topUpTickets: Ticket[], settlementTickets: Ticket[], meta: ImportMeta) => void;
   vendorNames?: string[];
 }
-
-const BUILTIN_SOURCES = [
-  'IATA', 'NSA', 'FlyAdeal KSA', 'FlyAdeal DXB',
-  'Flynas', 'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal', 'Riyadh Air', 'Turkish Airlines',
-];
 
 const STATUS_COLORS: Record<string, string> = {
   ISSUE: 'bg-emerald-100 text-emerald-700', REFUND: 'bg-red-100 text-red-700',
@@ -66,8 +62,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const sourceOptions = useMemo(() => {
-    const builtinLower = new Set(BUILTIN_SOURCES.map(s => s.toLowerCase()));
-    return ['Auto-detect', ...BUILTIN_SOURCES, ...vendorNames.filter(vn => !builtinLower.has(vn.toLowerCase()))];
+    return ['Auto-detect', ...knownSources(vendorNames)];
   }, [vendorNames]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

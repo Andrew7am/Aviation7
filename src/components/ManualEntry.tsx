@@ -2,10 +2,16 @@ import React, { useState, useMemo } from 'react';
 import { Ticket } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
+import { knownSources } from '../core/config/sources';
 import { X, PlusCircle, AlertTriangle } from 'lucide-react';
 
 interface ManualEntryProps {
+  /** Vendors holding a credit wallet. Suggested first, but not a restriction:
+   *  plenty of tickets are bought from vendors that never hold a balance. */
   vendorNames: string[];
+  /** Vendors already present in the ledger, so one entered by hand once is a
+   *  suggestion the next time rather than something to retype exactly. */
+  ledgerSources?: string[];
   onSave: (t: Ticket) => Promise<void>;
   onClose: () => void;
 }
@@ -22,7 +28,9 @@ const TYPES = [
 
 type EntryType = typeof TYPES[number]['key'];
 
-export const ManualEntry: React.FC<ManualEntryProps> = ({ vendorNames, onSave, onClose }) => {
+export const ManualEntry: React.FC<ManualEntryProps> = ({
+  vendorNames, ledgerSources = [], onSave, onClose,
+}) => {
   const [type, setType]       = useState<EntryType>('ISSUE');
   const [vendor, setVendor]   = useState(vendorNames[0] ?? '');
   const [ticketNo, setTicketNo] = useState('');
@@ -36,6 +44,20 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({ vendorNames, onSave, o
   const [error, setError]     = useState('');
 
   const currency = useMemo(() => sourceToCurrency(vendor), [vendor]);
+
+  // Wallet holders first — they are what most entries are for — then the
+  // formats the app knows and every vendor already in the ledger.
+  const suggestions = useMemo(
+    () => knownSources(vendorNames, ledgerSources),
+    [vendorNames, ledgerSources],
+  );
+  /** Flagged, not blocked. A name the ledger has never seen is usually a real
+   *  new vendor and occasionally a typo, and the user is the one who can tell
+   *  the difference — so it is said plainly and the save goes ahead. */
+  const isNewVendor = useMemo(() => {
+    const v = vendor.trim().toLowerCase();
+    return !!v && !suggestions.some(s => s.toLowerCase() === v);
+  }, [vendor, suggestions]);
   const amountNum = Number(amount.replace(/[^0-9.-]/g, ''));
   const amountValid = amount.trim() !== '' && !Number.isNaN(amountNum) && amountNum !== 0;
 
@@ -126,12 +148,25 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({ vendorNames, onSave, o
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={label}>Vendor</label>
-              <select value={vendor} onChange={e => setVendor(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-                {vendorNames.length === 0 && <option value="">— no vendors yet —</option>}
-                {vendorNames.map(v => <option key={v} value={v}>{v}</option>)}
-              </select>
-              <p className="text-[10px] text-slate-400 mt-1 font-mono">Settles in {currency}</p>
+              {/* Type or pick. A dropdown of wallet holders left every ticket
+                  bought from a vendor without a balance unrecordable — IATA
+                  settles through BSP, Gold Medal invoices directly — so the
+                  list suggests and never restricts. */}
+              <input
+                list="manual-entry-vendors"
+                value={vendor}
+                onChange={e => setVendor(e.target.value)}
+                placeholder="Type or pick a vendor"
+                autoComplete="off"
+                className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+              <datalist id="manual-entry-vendors">
+                {suggestions.map(v => <option key={v} value={v} />)}
+              </datalist>
+              <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                Settles in {currency}
+                {vendor.trim() && isNewVendor && ' · new vendor'}
+              </p>
             </div>
             <div>
               <label className={label}>Date</label>

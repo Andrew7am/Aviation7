@@ -227,6 +227,7 @@ function MainApp({ user }: { user: User }) {
       {showManualEntry && (
         <ManualEntry
           vendorNames={vendorBalancesLive.map(v => v.vendorName)}
+          ledgerSources={[...new Set(tickets.map(t => t.source).filter(Boolean))]}
           onSave={handleAddManual}
           onClose={() => setShowManualEntry(false)}
         />

@@ -9,7 +9,9 @@
 import 'dotenv/config';
 import { readFileSync, writeFileSync } from 'fs';
 import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import { Client } from 'pg';
+import { extractPdfRows, pdfRowsToCsv } from '../src/core/helpers/pdfText';
 import { v4 as uuidv4 } from 'uuid';
 import { runParser, smartDetect } from '../src/core/parsers';
 import {
@@ -29,8 +31,25 @@ const USER_ID = process.env.IMPORT_USER_ID ?? '';
 
 const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** The same three shapes the import screen accepts, read the same way:
+ *  a spreadsheet through SheetJS, a PDF through its text layer, CSV as-is. */
+async function readGrid(path: string): Promise<string[][]> {
+  if (/\.pdf$/i.test(path)) {
+    const buf = readFileSync(path);
+    const rows = await extractPdfRows(
+      buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
+    return Papa.parse<string[]>(pdfRowsToCsv(rows), { skipEmptyLines: true }).data;
+  }
+  if (/\.xlsx?$/i.test(path)) {
+    const wb = XLSX.read(readFileSync(path), { type: 'buffer' });
+    return XLSX.utils.sheet_to_json<string[]>(wb.Sheets[wb.SheetNames[0]],
+      { header: 1, raw: false, defval: '' });
+  }
+  return Papa.parse<string[]>(readFileSync(path, 'utf8'), { skipEmptyLines: true }).data;
+}
+
 (async () => {
-  const grid = Papa.parse<string[]>(readFileSync(file, 'utf8'), { skipEmptyLines: true }).data;
+  const grid = await readGrid(file);
   const det = smartDetect(grid);
   console.log(`parser: ${det.parser?.name} (${det.parser?.id})  confidence: ${det.confidence}`);
 
