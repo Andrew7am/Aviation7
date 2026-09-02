@@ -1,0 +1,154 @@
+/**
+ * Check the analytics screen's arithmetic against the database itself.
+ *
+ * The screen's figures come from computeAnalytics(). This works the same
+ * numbers out independently in SQL and compares them line by line, so a
+ * mistake in that function shows up as a disagreement rather than as a
+ * plausible-looking percentage nobody questions.
+ *
+ *   npx tsx scripts/verify-analytics.ts
+ */
+import 'dotenv/config';
+import { Client } from 'pg';
+import { computeAnalytics } from '../src/core/helpers/analytics';
+import { airlineName } from '../src/core/config/airlines';
+import { sourceToCurrency } from '../src/core/helpers/sourceCurrency';
+import type { Ticket } from '../src/types';
+
+let pass = 0, fail = 0;
+const check = (name: string, got: unknown, want: unknown) => {
+  const ok = typeof want === 'number' && typeof got === 'number'
+    ? Math.abs(got - want) < 0.005 : JSON.stringify(got) === JSON.stringify(want);
+  if (ok) { pass++; console.log(`  PASS  ${name}`); }
+  else { fail++; console.log(`  FAIL  ${name}\n          got  ${JSON.stringify(got)}\n          want ${JSON.stringify(want)}`); }
+};
+const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+(async () => {
+  const c = new Client({ connectionString: process.env.DATABASE_URL });
+  await c.connect();
+
+  const { rows } = await c.query(
+    `select id, ticket_no, source, date, amount::float8 amount,
+            commission::float8 commission, total_doc::float8 total_doc,
+            coalesce(req_num,'') req_num, coalesce(airline_code,'') airline_code,
+            coalesce(route,'') route, status, coalesce(channel,'') channel
+     from tickets`);
+
+  const tickets: Ticket[] = (rows as any[]).map(r => ({
+    id: r.id, ticketNo: r.ticket_no, source: r.source, date: r.date ?? '',
+    amount: r.amount, commission: r.commission, totalDoc: r.total_doc,
+    reqNum: r.req_num, airlineCode: r.airline_code, route: r.route,
+    status: r.status, channel: r.channel, userId: 'x',
+  }));
+  console.log(`ledger: ${tickets.length} rows\n`);
+
+  const an = computeAnalytics(tickets);
+
+  // ── 1. What is actually being counted ──────────────────────────────────
+  // Written out in SQL rather than reusing the app's own predicate: a check
+  // that borrows the code it is checking proves only that the code equals
+  // itself. A ticket counts when it is a ticket and the money went out.
+  const IS_TICKET = `
+    upper(status) not in ('FUND','ACM','ADM','REFUND','EMD','EMDS','EMDA')
+    and amount >= 0`;
+  const IN_LEDGER = `upper(status) not in ('FUND','ACM','ADM')`;
+
+  console.log('1. What each status contributes to the airline ranking');
+  console.table((await c.query(
+    `select status, count(*)::int rows,
+            count(*) filter (where ${IS_TICKET})::int counted_as_ticket,
+            count(*) filter (where amount < 0)::int negative
+     from tickets group by 1 order by rows desc`)).rows);
+
+  // ── 2. The independent count ───────────────────────────────────────────
+  const { rows: sqlAirline } = await c.query(
+    `select coalesce(nullif(trim(airline_code),''),'No code') code,
+            count(*) filter (where ${IS_TICKET})::int issued
+     from tickets where ${IN_LEDGER}
+     group by 1 order by issued desc`);
+
+  console.log('\n2. Airline counts: the screen vs the database');
+  check('same number of airline rows', an.byAirline.length, sqlAirline.length);
+  let mismatched = 0;
+  for (const s of sqlAirline as any[]) {
+    const a = an.byAirline.find(x => x.key === s.code);
+    if (!a) { console.log(`  MISSING from the screen: ${s.code}`); mismatched++; continue; }
+    if (a.tickets !== s.issued) {
+      console.log(`  ${s.code}: screen says ${a.tickets}, database says ${s.issued}`);
+      mismatched++;
+    }
+  }
+  check('every airline count matches', mismatched, 0);
+
+  // ── 3. The percentages ─────────────────────────────────────────────────
+  console.log('\n3. The percentages');
+  const totalIssued = an.byAirline.reduce((s, r) => s + r.tickets, 0);
+  const pctSum = an.byAirline.reduce((s, r) => s + r.pct, 0);
+  check('percentages add up to 100', Math.round(pctSum * 100) / 100, 100);
+  check('the denominator is every issued ticket', totalIssued, an.issuedCount);
+
+  const { rows: [{ n: sqlIssued }] } = await c.query(
+    `select count(*)::int n from tickets where ${IS_TICKET}`);
+  check('issued count matches the database', an.issuedCount, sqlIssued);
+
+  const { rows: [{ n: sqlRefunds }] } = await c.query(
+    `select count(*)::int n from tickets where upper(status) = 'REFUND'`);
+  check('refund count matches the database', an.refundCount, sqlRefunds);
+
+  // Money is a separate question from counting: an EMD, a refund and a credit
+  // note are all excluded from the ticket count, and all three still belong in
+  // the totals.
+  const { rows: [{ s: sqlAll }] } = await c.query(
+    `select round(sum(amount)::numeric, 2)::text s from tickets where ${IN_LEDGER}`);
+  const anAll = an.byAirline.reduce((s, r) => s + r.sar + r.aed + r.other, 0);
+  check('no money is dropped by the ticket rule',
+    Math.round(anAll * 100) / 100, Number(sqlAll));
+
+  let recomputed = 0;
+  for (const r of an.byAirline) {
+    if (Math.abs(r.pct - (r.tickets / totalIssued) * 100) > 0.0001) recomputed++;
+  }
+  check('every percentage is its own share of the total', recomputed, 0);
+
+  // ── 4. The money, per currency ─────────────────────────────────────────
+  console.log('\n4. The money');
+  const sqlSar = { net: 0, issued: 0, refunded: 0 };
+  const sqlAed = { net: 0, issued: 0, refunded: 0 };
+  for (const t of tickets) {
+    const s = (t.status || '').toUpperCase();
+    if (s === 'FUND' || s === 'ACM' || s === 'ADM') continue;
+    const cur = sourceToCurrency(t.source || '');
+    const box = cur === 'SAR' ? sqlSar : cur === 'AED' ? sqlAed : null;
+    if (!box) continue;
+    box.net += t.amount;
+    if (t.amount < 0) box.refunded += t.amount; else box.issued += t.amount;
+  }
+  const anSar = an.byAirline.reduce((s, r) => s + r.sar, 0);
+  const anAed = an.byAirline.reduce((s, r) => s + r.aed, 0);
+  check('SAR across all airlines equals the ledger', Math.round(anSar * 100) / 100, Math.round(sqlSar.net * 100) / 100);
+  check('AED across all airlines equals the ledger', Math.round(anAed * 100) / 100, Math.round(sqlAed.net * 100) / 100);
+  check('SAR total matches the totals block', Math.round(an.totals.sar * 100) / 100, Math.round(sqlSar.net * 100) / 100);
+  check('AED total matches the totals block', Math.round(an.totals.aed * 100) / 100, Math.round(sqlAed.net * 100) / 100);
+  check('no money lands outside SAR or AED',
+    Math.round(an.byAirline.reduce((s, r) => s + r.other, 0) * 100) / 100, 0);
+
+  // ── 5. Every code, named or not ────────────────────────────────────────
+  console.log('\n5. Every airline in the ranking');
+  console.table(an.byAirline.map(r => ({
+    code: r.key,
+    airline: r.key === 'No code' ? '—' : (airlineName(r.key) || '(name unknown)'),
+    tickets: r.tickets,
+    share: `${r.pct.toFixed(2)}%`,
+    'net SAR': r.sar ? money(r.sar) : '—',
+    'net AED': r.aed ? money(r.aed) : '—',
+  })));
+
+  const unnamed = an.byAirline.filter(r => r.key !== 'No code' && !airlineName(r.key));
+  console.log(`\ncodes still without a name: ${unnamed.length}` +
+    (unnamed.length ? ` (${unnamed.reduce((s, r) => s + r.tickets, 0)} tickets)` : ''));
+
+  console.log(`\n${pass} passed, ${fail} failed`);
+  await c.end();
+  process.exit(fail ? 1 : 0);
+})().catch(e => { console.error(e); process.exit(1); });

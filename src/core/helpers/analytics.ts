@@ -64,6 +64,36 @@ export interface Analytics {
  */
 const MEMO = new Set(['ACM', 'ADM']);
 
+/**
+ * Documents that are not tickets.
+ *
+ * An EMD is a service charge — a seat, excess baggage, a change fee. Six of
+ * them in this ledger are Riyadh Air charges of 420 and 450 sitting beside the
+ * very passengers and dates of the tickets they belong to; three more are 80,
+ * 100 and 400 against a fare. They are real money owed to the airline and stay
+ * in every total, but calling them tickets counted a seat fee as a sale.
+ */
+const NOT_A_TICKET = new Set(['EMD', 'EMDS', 'EMDA']);
+
+/**
+ * Does this document count as a ticket the agency issued?
+ *
+ * It has to be a ticket, and the money has to have gone out. A refund is a
+ * credit, an EMD is a service, and an ISSUE carrying a negative amount is a
+ * credit note however it was typed — two AirArabia rows are exactly that, one
+ * of them -20,000. All three still carry their money into the totals; none of
+ * them is a sale.
+ *
+ * A ticket worth zero still counts: eighteen of those are genuine documents
+ * issued at no fare, and dropping them would understate what was sold.
+ */
+function countsAsTicket(t: Ticket): boolean {
+  const s = (t.status || '').toUpperCase();
+  if (s === 'REFUND') return false;
+  if (NOT_A_TICKET.has(s)) return false;
+  return t.amount >= 0;
+}
+
 /** The rows a share ranking is built from: real sales, no memos, no funding. */
 export function analysable(tickets: Ticket[]): Ticket[] {
   return tickets.filter(t =>
@@ -90,7 +120,7 @@ function addMoney(row: ShareRow, t: Ticket) {
   }
 }
 
-const isIssue = (t: Ticket) => t.status !== 'REFUND';
+const isRefund = (t: Ticket) => (t.status || '').toUpperCase() === 'REFUND';
 
 /** Rank rows by ticket count. `keyOf` returning '' drops the ticket, which is
  *  how tickets with no route stay out of a route ranking instead of forming a
@@ -101,7 +131,7 @@ function tally(rows: Ticket[], keyOf: (t: Ticket) => string): ShareRow[] {
     const key = keyOf(t);
     if (!key) continue;
     const row = map.get(key) ?? blank(key);
-    if (isIssue(t)) row.tickets++;
+    if (countsAsTicket(t)) row.tickets++;
     addMoney(row, t);
     map.set(key, row);
   }
@@ -126,7 +156,8 @@ export function computeAnalytics(tickets: Ticket[]): Analytics {
     if (!/^\d{4}-\d{2}/.test(t.date || '')) continue;
     const m = t.date.slice(0, 7);
     const p = monthMap.get(m) ?? { month: m, tickets: 0, refunds: 0, sar: 0, aed: 0 };
-    if (isIssue(t)) p.tickets++; else p.refunds++;
+    if (countsAsTicket(t)) p.tickets++;
+    else if (isRefund(t)) p.refunds++;
     const cur = sourceToCurrency(t.source || '');
     if (cur === 'SAR') p.sar += t.amount;
     else if (cur === 'AED') p.aed += t.amount;
@@ -141,8 +172,8 @@ export function computeAnalytics(tickets: Ticket[]): Analytics {
     byAirline,
     byRoute,
     months,
-    issuedCount: real.filter(isIssue).length,
-    refundCount: real.length - real.filter(isIssue).length,
+    issuedCount: real.filter(countsAsTicket).length,
+    refundCount: real.filter(isRefund).length,
     totals: {
       sar: all.sar, aed: all.aed,
       sarIssued: all.sarIssued, sarRefunded: all.sarRefunded,
