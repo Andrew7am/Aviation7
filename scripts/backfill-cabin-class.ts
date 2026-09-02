@@ -42,11 +42,27 @@ export function documentsIn(cell: string): string[] {
     .map(d => d.slice(-10));
 }
 
+/**
+ * Booking references in a cell.
+ *
+ * The PNR column can hold several — "PKRM2/9MQU5X" — and the ticket column
+ * sometimes holds one instead of a ticket number, which is exactly the case
+ * this exists for. A PNR is five to seven characters with at least one letter,
+ * which is what keeps a bare number from being mistaken for one.
+ */
+export function pnrsIn(cell: string): string[] {
+  return (cell || '')
+    .split(/[/|,;\s]+/)
+    .map(s => s.trim().toUpperCase())
+    .filter(s => /^[A-Z0-9]{5,7}$/.test(s) && /[A-Z]/.test(s));
+}
+
 (async () => {
   const grid = Papa.parse<string[]>(readFileSync(FILE, 'utf8'), { skipEmptyLines: true }).data;
   const head = grid[0].map(h => h.trim());
   const iTk = head.indexOf('Ticket Number');
   const iCabin = head.findIndex(h => /cabin/i.test(h));
+  const iPnr   = head.indexOf('PNR');
   if (iTk < 0 || iCabin < 0) {
     console.error(`need a "Ticket Number" and a cabin column; found: ${head.join(' | ')}`);
     process.exit(1);
@@ -69,7 +85,7 @@ export function documentsIn(cell: string): string[] {
   const c = new Client({ connectionString: process.env.DATABASE_URL });
   await c.connect();
   const { rows: led } = await c.query(
-    `select id, ticket_no, airline_code, source, status,
+    `select id, ticket_no, airline_code, source, status, coalesce(pnr,'') pnr,
             coalesce(cabin_class,'') cabin_class, coalesce(cabin_raw,'') cabin_raw
      from tickets`);
   const byDoc = new Map<string, any[]>();
@@ -109,6 +125,58 @@ export function documentsIn(cell: string): string[] {
       fix.push({ id: t.id, ticket_no: t.ticket_no, cabin, raw });
     }
   }
+
+  /**
+   * Second pass: rows whose ticket number is unusable, matched on the booking
+   * reference instead.
+   *
+   * 283 rows have no readable document — ninety were opened in Excel and now
+   * read "1.57551E+12", the rest hold a PNR or free text. The booking
+   * reference is still there, and the ledger stores it, so the cabin can reach
+   * its tickets that way.
+   *
+   * The care needed is that a PNR is not a document: one booking can hold
+   * nineteen tickets. That is fine when the booking flew one cabin, which is
+   * the normal case and what the export's single cabin value asserts. It is
+   * not fine when the export itself gives that PNR two different cabins — then
+   * nobody can say which ticket was which, so the whole booking is skipped.
+   */
+  const pnrClaims = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (documentsIn(r[iTk] ?? '').length) continue;
+    const cab = (r[iCabin] ?? '').trim();
+    if (!cab || UNKNOWN_TEXT.test(cab)) continue;
+    for (const p of new Set([...pnrsIn(r[iPnr] ?? ''), ...pnrsIn(r[iTk] ?? '')])) {
+      (pnrClaims.get(p) ?? pnrClaims.set(p, new Set()).get(p)!).add(cab);
+    }
+  }
+
+  const byPnr = new Map<string, any[]>();
+  for (const t of led as any[]) {
+    const p = (t.pnr || '').trim().toUpperCase();
+    if (p) (byPnr.get(p) ?? byPnr.set(p, []).get(p)!).push(t);
+  }
+
+  let viaPnr = 0, pnrDisagreed = 0, pnrUnknownCabin = 0;
+  const alreadyFixed = new Set(fix.map(f => f.id));
+  for (const [pnr, set] of pnrClaims) {
+    const held = byPnr.get(pnr);
+    if (!held) continue;
+    if (new Set([...set].map(toCabin)).size > 1) { pnrDisagreed++; continue; }
+    const raw = [...set][0];
+    const cabin = toCabin(raw);
+    if (!cabin) { pnrUnknownCabin++; continue; }
+    for (const t of held) {
+      if (t.cabin_class || alreadyFixed.has(t.id)) continue;
+      fix.push({ id: t.id, ticket_no: t.ticket_no, cabin, raw });
+      alreadyFixed.add(t.id);
+      viaPnr++;
+    }
+  }
+  console.log(`matched on the booking reference where the ticket number was unusable: ${viaPnr}`);
+  if (pnrDisagreed) console.log(`  bookings skipped for holding two different cabins: ${pnrDisagreed}`);
+  if (pnrUnknownCabin) console.log(`  bookings whose cabin name is unmapped: ${pnrUnknownCabin}`);
+  console.log('');
 
   console.log('--- outcome ---');
   console.table([{

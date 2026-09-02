@@ -3,6 +3,7 @@ import { Ticket } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { knownSources } from '../core/config/sources';
+import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { X, PlusCircle, AlertTriangle } from 'lucide-react';
 
 interface ManualEntryProps {
@@ -46,6 +47,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
   const [date, setDate]       = useState(new Date().toISOString().split('T')[0]);
   const [amount, setAmount]   = useState('');
   const [reqNum, setReqNum]   = useState('');
+  const [cabin, setCabin]     = useState('');
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
 
@@ -95,6 +97,10 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
         totalDoc:        Math.abs(amountNum) || 0,
         commission:      0,
         reqNum:          reqNum.trim().toUpperCase(),
+        // The raw carries the same wording, because it is the wording: a
+        // cabin picked from a list has nothing else behind it.
+        cabinClass:      cabin || undefined,
+        cabinRaw:        cabin ? CABIN_LABEL[cabin as Exclude<Cabin, ''>] : undefined,
         vendorReference: '',
         // REISSUE settles like an issue, so it is stored as ISSUE for the
         // balance but keeps "REISSUE" as its transaction type for the record.
@@ -203,6 +209,20 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
             <div>
               <label className={label}>Date</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} className={field} />
+            </div>
+            <div>
+              {/* Recorded at the point of sale, which is the only place it is
+                  ever known for certain. The ledger's older tickets have no
+                  cabin because nothing asked for one, and the analytics can
+                  only report what was written down. */}
+              <label className={label}>Cabin</label>
+              <select value={cabin} onChange={e => setCabin(e.target.value)} className={field}>
+                <option value="">— not recorded —</option>
+                <option value="ECONOMY">Economy</option>
+                <option value="PREMIUM_ECONOMY">Premium Economy</option>
+                <option value="BUSINESS">Business</option>
+                <option value="FIRST">First</option>
+              </select>
             </div>
           </div>
 
