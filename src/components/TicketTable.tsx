@@ -4,6 +4,7 @@ import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, C
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
+import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { airlineName } from '../core/config/airlines';
 import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers/period';
 import * as XLSX from 'xlsx';
@@ -156,6 +157,12 @@ const travelText = (route?: string): string => {
   return s ? TRAVEL_LABEL[s] : '';
 };
 
+/** The cabin as text for a spreadsheet: the reading when there is one, and
+ *  otherwise the wording the source used, so nothing is exported as blank that
+ *  the source actually said something about. */
+const cabinText = (t: Ticket): string =>
+  t.cabinClass ? (CABIN_LABEL[t.cabinClass as Exclude<Cabin, ''>] ?? t.cabinClass) : (t.cabinRaw || '');
+
 /** Domestic / International, or an em-dash when there is no route to read. */
 const TravelBadge: React.FC<{ route?: string }> = ({ route }) => {
   const scope = classifyTravel(route);
@@ -165,6 +172,40 @@ const TravelBadge: React.FC<{ route?: string }> = ({ route }) => {
       scope === 'DOMESTIC' ? 'bg-teal-100 text-teal-700' : 'bg-blue-100 text-blue-700'
     }`}>
       {TRAVEL_LABEL[scope]}
+    </span>
+  );
+};
+
+/**
+ * The cabin the ticket was sold in.
+ *
+ * Hovering shows what the source actually called it, which is often longer
+ * than the badge — "Economy; Business" for a journey that ran through both, or
+ * "Business Elite" for a name the airline invented. The badge shows the cabin;
+ * the tooltip shows the wording it was read from.
+ */
+const CABIN_STYLE: Record<string, string> = {
+  FIRST:           'bg-purple-100 text-purple-700',
+  BUSINESS:        'bg-blue-100 text-blue-700',
+  PREMIUM_ECONOMY: 'bg-teal-100 text-teal-700',
+  ECONOMY:         'bg-slate-100 text-slate-600',
+};
+
+const CabinBadge: React.FC<{ cabin?: string; raw?: string }> = ({ cabin, raw }) => {
+  if (!cabin) {
+    // A cabin name the reader could not place still gets shown, greyed, rather
+    // than reduced to an em-dash as if the source had said nothing.
+    return raw
+      ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-50 text-amber-700 whitespace-nowrap"
+              title={`Not recognised as a cabin: ${raw}`}>{raw}</span>
+      : <span className="text-slate-300 text-[9px]">—</span>;
+  }
+  const label = CABIN_LABEL[cabin as Exclude<Cabin, ''>] ?? cabin;
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap ${
+      CABIN_STYLE[cabin] ?? 'bg-slate-100 text-slate-600'}`}
+      title={raw && raw.toLowerCase() !== label.toLowerCase() ? `Source: ${raw}` : label}>
+      {label}
     </span>
   );
 };
@@ -183,6 +224,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [dateTo, setDateTo]             = useState('');
   const [closedFilter, setClosedFilter] = useState<'ALL' | 'CLOSED' | 'NOT_CLOSED'>(defaultClosed);
   const [travelFilter, setTravelFilter] = useState<'ALL' | TravelScope>('ALL');
+  const [cabinFilter, setCabinFilter]   = useState<string>('ALL');
   const [filterTicket, setFilterTicket] = useState('');
   const [filterAL, setFilterAL]         = useState('');
   const [filterPax, setFilterPax]       = useState('');
@@ -258,6 +300,12 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       // Domestic / international is read off the itinerary, so a ticket with
       // no route satisfies neither — it is unknown, not one or the other.
       if (travelFilter !== 'ALL' && classifyTravel(t.route) !== travelFilter) return false;
+      // "Not recorded" finds the tickets nobody wrote a cabin for, which is
+      // how that gap gets closed rather than just counted.
+      if (cabinFilter !== 'ALL') {
+        if (cabinFilter === 'NONE') { if (t.cabinClass) return false; }
+        else if (t.cabinClass !== cabinFilter) return false;
+      }
       // Ticket numbers are stored as the bare 10-digit serial, but the number
       // to hand is often the full 13-digit one off the airline's site or an
       // older report. Both are matched, so pasting either finds the document.
@@ -289,9 +337,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       });
     }
     return rows;
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
-  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = useMemo(
@@ -425,6 +473,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       pnr:    filtered.some(t => !!t.pnr),
       pax:    filtered.some(t => !!t.passengerName),
       comm:   filtered.some(t => !!t.commission),
+      cabin:  filtered.some(t => !!t.cabinClass || !!t.cabinRaw),
       // Total Doc only earns a column when it differs from the net somewhere.
       total:  filtered.some(t => Math.abs((t.totalDoc ?? 0) - Math.abs(t.amount)) > 0.005),
       closed: filtered.length > 0,
@@ -445,6 +494,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       { key: 'Status',      get: (t: Ticket) => t.status || '',          w: 9 },
       ...(has.route ? [{ key: 'Route',       get: (t: Ticket) => t.route || '',  w: 18 }] : []),
       ...(has.route ? [{ key: 'Travel',      get: (t: Ticket) => travelText(t.route), w: 13 }] : []),
+      ...(has.cabin ? [{ key: 'Cabin',       get: (t: Ticket) => cabinText(t), w: 15 }] : []),
       ...(has.pnr   ? [{ key: 'PNR',         get: (t: Ticket) => t.pnr || '',    w: 9 }] : []),
       ...(has.pax   ? [{ key: 'Passenger',   get: (t: Ticket) => t.passengerName || '', w: 26 }] : []),
       ...(has.total ? [{ key: 'Fare',        get: (t: Ticket) => t.totalDoc ?? 0, w: 12, money: true }] : []),
@@ -774,6 +824,25 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             <option value="INTERNATIONAL">International</option>
           </select>
 
+          {/* Cabin. "Not recorded" is a choice of its own, because finding the
+              tickets nobody wrote a cabin for is the way that gap gets closed. */}
+          <select
+            value={cabinFilter}
+            onChange={e => setCabinFilter(e.target.value)}
+            title="Cabin the ticket was sold in"
+            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+              cabinFilter === 'ALL' ? 'bg-white text-slate-500 border-slate-200'
+                                    : 'bg-blue-50 text-blue-700 border-blue-200'
+            }`}
+          >
+            <option value="ALL">All Cabins</option>
+            <option value="FIRST">First</option>
+            <option value="BUSINESS">Business</option>
+            <option value="PREMIUM_ECONOMY">Premium Economy</option>
+            <option value="ECONOMY">Economy</option>
+            <option value="NONE">Not recorded</option>
+          </select>
+
           {/* Closed / Not Closed filter */}
           <select
             value={closedFilter}
@@ -994,6 +1063,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                 ['Date',       'date'],
                 ['Route',      null],
                 ['Travel',     null],
+                ['Cabin',      null],
                 ['Fare',       null],
                 ['Commission', null],
                 ['Balance Payable', 'amount'],
@@ -1065,6 +1135,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                   <td className="px-3 py-2 text-[10px] text-slate-400">{ticket.route || '—'}</td>
                   <td className="px-3 py-2">
                     <TravelBadge route={ticket.route} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <CabinBadge cabin={ticket.cabinClass} raw={ticket.cabinRaw} />
                   </td>
                   {/* Negative values must render, not collapse to an em-dash:
                       a refund's clawed-back commission is real data, and
