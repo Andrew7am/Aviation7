@@ -75,10 +75,17 @@ const AIRLINE_NAMES: Record<number, { name: string; iata: string }> = {
   603: { name: 'SriLankan Airlines',             iata: 'UL' },
   607: { name: 'Etihad Airways',                 iata: 'EY' },
   618: { name: 'Singapore Airlines',             iata: 'SQ' },
+  624: { name: 'Pegasus Airlines',               iata: 'PC' },
   724: { name: 'SWISS',                          iata: 'LX' },
   971: { name: 'Ethiopian Mozambique Airlines',  iata: 'ZU' },
+  781: { name: 'China Eastern Airlines',         iata: 'MU' },
   784: { name: 'China Southern Airlines',        iata: 'CZ' },
+  910: { name: 'Oman Air',                       iata: 'WY' },
   932: { name: 'Virgin Atlantic',                iata: 'VS' },
+  // Not a carrier: IATA issues documents under this code to test ticketing and
+  // BSP settlement. Named so it reads as what it is rather than as an unknown
+  // airline — anything under it is a test document, not a sale.
+  953: { name: 'IATA Test Carrier',              iata: '' },
   999: { name: 'Air China',                      iata: 'CA' },
 };
 
