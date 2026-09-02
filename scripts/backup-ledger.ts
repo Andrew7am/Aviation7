@@ -16,9 +16,22 @@
  *         manifest.json         row counts and when it ran
  *
  * The folder is chosen in this order: --out=, then BACKUP_DIR in .env, then
- * Documents\Aviation Backups. Point it at a OneDrive or Google Drive folder
- * and the copy leaves the building for free — a backup sitting on the same
- * disk as nothing else survives the disk dying.
+ * Documents\Aviation Backups.
+ *
+ * MORE THAN ONE PLACE. Separate folders with a semicolon and every one gets a
+ * copy:
+ *
+ *     BACKUP_DIR=C:\Users\me\Documents\Aviation Backups;G:\My Drive\Aviation Backups
+ *
+ * The first is where the backup is written and verified, so it should be a
+ * local disk that is always there. The others are copies of that finished,
+ * checked folder — put a cloud-synced folder among them and the backup leaves
+ * the building on its own, because a copy on the same disk as nothing else
+ * does not survive that disk failing.
+ *
+ * A cloud folder that is offline fails only itself. The run still counts as a
+ * success if the primary was written, because a backup on one disk beats no
+ * backup at all — but the failure is reported and logged, never swallowed.
  *
  * This has to run ON the machine that keeps the files. The web app cannot do
  * it: a page in a browser is not allowed to write to a folder unattended, and
@@ -28,7 +41,7 @@
  */
 import 'dotenv/config';
 import { Client, types } from 'pg';
-import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, statSync } from 'fs';
+import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, statSync, cpSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { gzipSync, gunzipSync } from 'zlib';
@@ -37,7 +50,13 @@ import * as XLSX from 'xlsx';
 const arg = (name: string) => process.argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const QUIET = process.argv.includes('--quiet');
 const KEEP = Number(arg('keep') ?? 30);
-const ROOT = arg('out') ?? process.env.BACKUP_DIR ?? join(homedir(), 'Documents', 'Aviation Backups');
+/** Every destination, in order. The first is written and verified; the rest
+ *  receive a copy of it. Blank entries and stray spaces are ignored so a
+ *  trailing semicolon in .env is not an error. */
+const DESTS = (arg('out') ?? process.env.BACKUP_DIR ?? join(homedir(), 'Documents', 'Aviation Backups'))
+  .split(';').map(s => s.trim()).filter(Boolean);
+const ROOT = DESTS[0];
+const MIRRORS = DESTS.slice(1);
 
 const say = (...m: unknown[]) => { if (!QUIET) console.log(...m); };
 const fail = (m: string) => { console.error(`BACKUP FAILED: ${m}`); process.exit(1); };
@@ -66,7 +85,7 @@ function stamp(d = new Date()): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
 }
 
-(async () => {
+async function main() {
   const started = Date.now();
   const c = new Client({ connectionString: process.env.DATABASE_URL });
   try { await c.connect(); } catch (e) { fail(`cannot reach the database — ${(e as Error).message}`); }
@@ -77,8 +96,11 @@ function stamp(d = new Date()): string {
   const tables = (tableRows as any[]).map(r => r.table_name as string);
   if (!tables.length) fail('the database reports no tables — refusing to write an empty backup');
 
-  const dir = join(ROOT, stamp());
-  mkdirSync(dir, { recursive: true });
+  // One stamp for the whole run, so every copy carries the same folder name.
+  const stampUsed = stamp();
+  const dir = join(ROOT, stampUsed);
+  try { mkdirSync(dir, { recursive: true }); }
+  catch (e) { fail(`cannot write to ${ROOT} — ${(e as Error).message}`); }
   say(`writing to ${dir}\n`);
 
   // Gzipped by default: the audit log alone is 7MB of JSON and compresses
@@ -142,17 +164,47 @@ function stamp(d = new Date()): string {
 
   say(`\nverified ${verified} tables, ${total.toLocaleString('en-US')} rows total`);
 
-  // Keep the last KEEP runs. Only folders this script made are considered, so
-  // nothing else living in the backup folder is ever touched.
-  const mine = readdirSync(ROOT)
-    .filter(n => /^\d{4}-\d{2}-\d{2}_\d{4}$/.test(n))
-    .filter(n => { try { return statSync(join(ROOT, n)).isDirectory(); } catch { return false; } })
-    .sort();
-  const stale = mine.slice(0, Math.max(0, mine.length - KEEP));
-  for (const s of stale) {
-    rmSync(join(ROOT, s), { recursive: true, force: true });
-    say(`  removed old backup ${s}`);
+  // Copy the finished, checked folder everywhere else. Verification already
+  // happened once on the primary, so a mirror is a plain file copy.
+  const mirrored: string[] = [];
+  for (const m of MIRRORS) {
+    try {
+      mkdirSync(m, { recursive: true });
+      cpSync(dir, join(m, stampUsed), { recursive: true });
+      mirrored.push(m);
+      say(`  copied to ${m}`);
+    } catch (e) {
+      // One unreachable copy — a cloud drive not running, a disconnected
+      // disk — must not throw away a backup that already succeeded. Say so
+      // loudly and carry on.
+      console.error(`  ! could not copy to ${m} — ${(e as Error).message}`);
+    }
   }
 
-  say(`\nOK — ${mine.length - stale.length} backups kept in ${ROOT}`);
-})().catch(e => fail((e as Error).message));
+  /** Keep the last KEEP runs. Only folders this script made are considered, so
+   *  nothing else living alongside them is ever touched. */
+  const sweep = (root: string) => {
+    let mine: string[];
+    try {
+      mine = readdirSync(root)
+        .filter(n => /^\d{4}-\d{2}-\d{2}_\d{4}$/.test(n))
+        .filter(n => { try { return statSync(join(root, n)).isDirectory(); } catch { return false; } })
+        .sort();
+    } catch { return 0; }
+    for (const s of mine.slice(0, Math.max(0, mine.length - KEEP))) {
+      try { rmSync(join(root, s), { recursive: true, force: true }); say(`  removed old backup ${s} from ${root}`); }
+      catch { /* a locked folder is not worth failing a good backup over */ }
+    }
+    return Math.min(mine.length, KEEP);
+  };
+
+  say('');
+  for (const root of [ROOT, ...mirrored]) {
+    say(`OK — ${sweep(root)} backups kept in ${root}`);
+  }
+  if (mirrored.length < MIRRORS.length) {
+    console.error(`WARNING: ${MIRRORS.length - mirrored.length} of ${MIRRORS.length} copies did not go through.`);
+  }
+}
+
+main().catch(e => fail((e as Error).message));

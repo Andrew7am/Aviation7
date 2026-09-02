@@ -5,31 +5,45 @@ PC, every day, and proves it can be put back.
 
 ## Where it goes
 
-```
-C:\Users\<you>\Documents\Aviation Backups\
-    2026-09-02_1140\
-        tickets.json.gz            every row, exactly as stored
-        vendor_balances.json.gz
-        ... one file per table (23 of them) ...
-        Aviation-Backup-2026-09-02.xlsx   the readable version
-        manifest.json              row counts, and proof it verified
-```
-
-About **6 MB** per run, 30 runs kept — roughly 190 MB of history.
-
-### Putting it somewhere else
-
-Add a line to `.env`:
+Two places, every run. This is already configured in `.env`:
 
 ```
-BACKUP_DIR=D:\Backups\Aviation
+BACKUP_DIR=C:\Users\LE.Andrew\Documents\Aviation Backups;G:\Shared drives\Luxury Explorers Business Services\Accounting Department\New folder\Aviation Backups
 ```
 
-Or pass it per run: `npx tsx scripts/backup-ledger.ts --out="D:\Backups\Aviation"`
+Each run produces one folder, named by date and time:
 
-**Worth doing:** point it at a OneDrive or Google Drive folder. The copy then
-leaves the building on its own, and a backup on the same disk as nothing else
-does not survive that disk failing.
+```
+2026-09-02_1158\
+    tickets.json.gz            every row, exactly as stored
+    vendor_balances.json.gz
+    ... one file per table (23 of them) ...
+    Aviation-Backup-2026-09-02.xlsx   the readable version
+    manifest.json              row counts, and proof it verified
+```
+
+About **6 MB** per run, 30 runs kept in each place — roughly 190 MB of history.
+
+**The order matters.** The first folder is where the backup is written and
+verified, so it is the local disk, which is always there. The rest are copies
+of that finished, checked folder. Google Drive is second on purpose:
+
+- Drive offline or not signed in → the local backup still succeeds, and the
+  failed copy is reported and logged. Exit code stays 0, because a backup on
+  one disk beats no backup at all.
+- The local disk unwritable → the whole run fails loudly, exit code 1.
+
+Add or remove destinations by editing that line; separate them with `;`. Or
+override for one run:
+
+```
+npx tsx scripts/backup-ledger.ts --out="D:\Somewhere Else"
+```
+
+> The Drive folder is a **Shared drive**, so anyone with access to the
+> Accounting Department folder can read these files — and they contain
+> passenger names, PNRs and every ticket. That is appropriate for the
+> accounting team; it is worth knowing before the folder is shared wider.
 
 ## Running it every day
 

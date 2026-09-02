@@ -27,11 +27,12 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { gunzipSync } from 'zlib';
+import { primaryBackupRoot } from './backup-paths';
 
 const arg = (n: string) => process.argv.find(a => a.startsWith(`--${n}=`))?.slice(n.length + 3);
 const APPLY = process.argv.includes('--apply');
 const CONFIRMED = process.argv.includes('--i-know-this-replaces-live-data');
-const ROOT = process.env.BACKUP_DIR ?? join(homedir(), 'Documents', 'Aviation Backups');
+const ROOT = primaryBackupRoot();
 const ONLY = arg('tables')?.split(',').map(s => s.trim()).filter(Boolean);
 
 const fail = (m: string) => { console.error(`RESTORE FAILED: ${m}`); process.exit(1); };

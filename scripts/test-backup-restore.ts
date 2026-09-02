@@ -16,9 +16,10 @@ import { readdirSync, existsSync, statSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { readTable, dependencyOrder, insertRows } from './restore-backup';
+import { primaryBackupRoot } from './backup-paths';
 
 const arg = (n: string) => process.argv.find(a => a.startsWith(`--${n}=`))?.slice(n.length + 3);
-const ROOT = process.env.BACKUP_DIR ?? join(homedir(), 'Documents', 'Aviation Backups');
+const ROOT = primaryBackupRoot();
 const SCHEMA = 'backup_restore_test';
 
 let pass = 0, fail = 0;
