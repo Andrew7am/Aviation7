@@ -37,7 +37,12 @@ export const CABIN_LABEL: Record<Exclude<Cabin, ''>, string> = {
  * itself until someone says what it is.
  */
 const CONFIRMED_BRANDS: Record<string, Cabin> = {
-  'fly+': 'ECONOMY',   // flynas — confirmed by the agency
+  'fly+':          'ECONOMY',
+  'go basic':      'ECONOMY',
+  'guest basic':   'ECONOMY',
+  'flymax':        'PREMIUM_ECONOMY',
+  'plus':          'PREMIUM_ECONOMY',
+  'premium class': 'PREMIUM_ECONOMY',
 };
 
 /** What one cabin name says, if anything. */
@@ -48,8 +53,10 @@ function readOne(text: string): Cabin {
   if (brand) return brand;
   if (/\bfirst\b/.test(s)) return 'FIRST';
   if (/\bbusiness\b/.test(s)) return 'BUSINESS';
-  // Both orders appear in the data, and "premium" alone is not enough: a
-  // "Premium Class" could be either premium economy or business.
+  // Both orders appear in the data. "Premium" on its own is still not enough
+  // to read a cabin from — Premium Class is premium economy only because the
+  // agency said so, which is why it sits in the brand list above rather than
+  // being matched loosely here.
   if (/premium\s+economy|economy\s+premium/.test(s)) return 'PREMIUM_ECONOMY';
   if (/\beconomy\b|\bmain cabin\b|\bcoach\b/.test(s)) return 'ECONOMY';
   return '';

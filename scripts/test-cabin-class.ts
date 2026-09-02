@@ -45,15 +45,31 @@ check('a known cabin beside it still reads',
 check("Economy; Class couldn't be determined",
   toCabin("Economy; Class couldn't be determined"), 'ECONOMY');
 
-console.log('\n5. Brand names the agency has confirmed');
-// flynas sells fly+ as an economy bundle; the agency said so, and that is the
-// only reason it is mapped.
-check('fly+ is economy', toCabin('fly+'), 'ECONOMY');
-check('Fly+ in any casing', toCabin('Fly+'), 'ECONOMY');
-check('and it is no longer reported as unreadable', isUnreadableCabin('fly+'), false);
+console.log('\n5. Fare brands, as the agency named them');
+// None of these can be read from the words. Each is mapped only because the
+// people selling the tickets said what it is.
+for (const [name, want] of [
+  ['fly+',          'ECONOMY'],
+  ['Fly+',          'ECONOMY'],          // casing must not matter
+  ['GO Basic',      'ECONOMY'],
+  ['Guest Basic',   'ECONOMY'],
+  ['flyMax',        'PREMIUM_ECONOMY'],
+  ['Plus',          'PREMIUM_ECONOMY'],
+  ['Premium Class', 'PREMIUM_ECONOMY'],
+] as const) {
+  check(`${name} -> ${want}`, toCabin(name), want);
+  check(`  and is no longer unreadable`, isUnreadableCabin(name), false);
+}
 
-console.log('\n6. Brand names nobody has confirmed are left alone, not guessed');
-for (const name of ['flyMax', 'Guest Basic', 'GO Basic', 'Plus', 'Premium Class']) {
+console.log('\n6. A brand name must not capture a phrase that merely contains it');
+// "Economy Plus" is extra-legroom economy, not the flynas Plus bundle: the
+// brand list matches a whole value, and the words decide the rest.
+check('Economy Plus stays economy', toCabin('Economy Plus'), 'ECONOMY');
+check('Economy Plus; Economy', toCabin('Economy Plus; Economy'), 'ECONOMY');
+check('Business Elite is still business', toCabin('Business Elite'), 'BUSINESS');
+
+console.log('\n6b. Names still nobody has confirmed are left alone');
+for (const name of ['Saver', 'Comfort', 'Value Fare']) {
   check(`${name} is not assigned a cabin`, toCabin(name), '');
   check(`${name} is reported as unreadable`, isUnreadableCabin(name), true);
 }
