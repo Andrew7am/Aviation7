@@ -47,6 +47,39 @@ const PRESET_VENDORS = [
 
 type ModalMode = null | 'add_existing' | 'add_new' | 'topup';
 
+/**
+ * When the opening balance starts counting.
+ *
+ * Without this the balance was charged for every ticket the vendor had ever
+ * issued, including the ones settled long before it was opened — an IATA
+ * balance of 817,284.78 immediately met 1,884 old tickets worth 6.29 million
+ * and reported the account millions in the red.
+ *
+ * Today by default, because that is what opening a balance now means. Clearing
+ * it charges the whole history, which is what a wallet created alongside the
+ * data actually wants — so the field says both, rather than leaving the empty
+ * case to be discovered.
+ */
+const OpeningDateField: React.FC<{ value: string; onChange: (v: string) => void }> =
+({ value, onChange }) => (
+  <div>
+    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+      Balance starts from
+    </label>
+    <input
+      type="date"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+    />
+    <p className="text-[9px] text-slate-400 mt-1 leading-tight">
+      {value
+        ? 'Only tickets from this date onward are charged to this balance.'
+        : 'Empty — every ticket this vendor ever issued is charged to it.'}
+    </p>
+  </div>
+);
+
 export const VendorBalances: React.FC<VendorBalancesProps> = ({
   vendorBalances, topUps, tickets, onSaveVendor, onDeleteVendor, onTopUp, canEdit = true,
 }) => {
@@ -61,6 +94,16 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
   // Add new (custom) vendor modal state
   const [customName, setCustomName] = useState('');
   const [customBalance, setCustomBalance] = useState('');
+
+  /**
+   * The day the opening balance is true as of.
+   *
+   * Defaults to today, which is what opening a balance now means: tickets
+   * already in the ledger were settled beforehand and must not be charged to
+   * it. Clearing the field charges every ticket the vendor ever issued, which
+   * is right for a wallet that opened with the data itself.
+   */
+  const [openingDate, setOpeningDate] = useState(new Date().toISOString().slice(0, 10));
 
   // Top-up modal state
   const [topUpAmount, setTopUpAmount] = useState('');
@@ -100,6 +143,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
     onSaveVendor({
       id, vendorName: selectedPreset,
       initialBalance: initial, currentBalance: initial, userId: 'temp',
+      openingDate: openingDate || undefined,
     });
     closeModal();
   };
@@ -111,6 +155,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
     onSaveVendor({
       id, vendorName: customName.trim(),
       initialBalance: initial, currentBalance: initial, userId: 'temp',
+      openingDate: openingDate || undefined,
     });
     closeModal();
   };
@@ -430,6 +475,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                           className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                         />
                       </div>
+                      <OpeningDateField value={openingDate} onChange={setOpeningDate} />
                       <button
                         onClick={handleAddPreset}
                         disabled={!selectedPreset || isNaN(Number(presetBalance)) || presetBalance === ''}
@@ -465,6 +511,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                           className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                         />
                       </div>
+                      <OpeningDateField value={openingDate} onChange={setOpeningDate} />
                       <button
                         onClick={handleAddCustom}
                         disabled={!customName.trim() || isNaN(Number(customBalance)) || customBalance === ''}

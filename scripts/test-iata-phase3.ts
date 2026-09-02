@@ -231,9 +231,32 @@ async function dbChecks() {
   }
 
   console.log('\n     no wallet exists for a settlement channel');
-  const { rows: w } = await c.query(`select vendor_name from vendor_balances order by vendor_name`);
-  check('  no IATA wallet exists (none created)', w.some((r: any) => /^iata/i.test(r.vendor_name)), false);
-  check('  no WEBSALES wallet exists (none created)', w.some((r: any) => /websales/i.test(r.vendor_name)), false);
+  const { rows: w } = await c.query(
+    `select vendor_name, created_at, opening_date::text opening_date from vendor_balances order by vendor_name`);
+  // A channel is not a vendor. BSP and WEBSALES-EDIS are how an IATA ticket
+  // settles, not who it was bought from, and a wallet named after one would
+  // draw rows that already belong to the IATA wallet.
+  check('  no WEBSALES wallet exists', w.some((r: any) => /websales/i.test(r.vendor_name)), false);
+  check('  no BSP wallet exists', w.some((r: any) => /^bsp$/i.test(r.vendor_name)), false);
+
+  // An IATA wallet DOES exist now, which this used to assert against. What
+  // matters is not that it exists but that it cannot inherit history it was
+  // never opened against: adding one with a balance of 817,284.78 charged it
+  // 1,884 tickets worth 6.29 million that had been settled months earlier and
+  // reported the account 5.4 million in the red.
+  //
+  // So: a wallet opened after the original migration must say what day its
+  // balance starts from. The seven created with the data on 2026-07-10 carry
+  // opening figures taken from the vendors' own statements, which already
+  // account for everything before them, and correctly have no date.
+  console.log('\n     a wallet cannot inherit history it was not opened against');
+  const MIGRATION_DAY = '2026-07-10';
+  for (const v of w as any[]) {
+    const createdOn = new Date(v.created_at).toISOString().slice(0, 10);
+    if (createdOn <= MIGRATION_DAY) continue;
+    check(`  ${v.vendor_name} (opened ${createdOn}) declares an opening date`,
+      !!v.opening_date, true);
+  }
 
   console.log('\n17. Date update touches only the date column');
   // The correction statement is: update tickets set date = $1 where id = $2 and source = 'IATA BSP'

@@ -9,6 +9,7 @@ type VendorBalanceRow = {
   initial_balance: number;
   current_balance: number;
   created_at: string;
+  opening_date: string | null;
 };
 
 type BalanceTopUpRow = {
@@ -28,6 +29,7 @@ const rowToVendor = (r: VendorBalanceRow): VendorBalance => ({
   currentBalance: r.current_balance,
   userId: r.user_id,
   createdAt: r.created_at,
+  openingDate: r.opening_date ?? undefined,
 });
 
 const rowToTopUp = (r: BalanceTopUpRow): BalanceTopUp => ({
@@ -90,6 +92,9 @@ export class WalletService {
       vendor_name: vendor.vendorName,
       initial_balance: vendor.initialBalance,
       current_balance: vendor.currentBalance,
+      // Null rather than omitted: a wallet edited back to "charge everything"
+      // has to be able to clear the date it was given.
+      opening_date: vendor.openingDate?.trim() || null,
     }, { onConflict: 'id' });
     if (error) throw new Error(error.message);
   }

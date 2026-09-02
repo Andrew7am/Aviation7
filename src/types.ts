@@ -48,6 +48,11 @@ export interface VendorBalance {
   currentBalance: number;
   userId: string;
   createdAt?: string;
+  /** The day the opening balance is true as of, YYYY-MM-DD. Tickets dated
+   *  before it were settled beforehand and are not charged to this wallet.
+   *  Unset charges every ticket the vendor ever issued — what wallets opened
+   *  alongside the data need, and what they all did before this existed. */
+  openingDate?: string;
 }
 
 export interface BalanceTopUp {

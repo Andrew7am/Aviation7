@@ -12,9 +12,10 @@
  */
 import 'dotenv/config';
 import { Client } from 'pg';
-import { readdirSync, existsSync, statSync } from 'fs';
+import { readdirSync, existsSync, statSync, mkdtempSync, rmSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { join } from 'path';
-import { homedir } from 'os';
+import { tmpdir } from 'os';
 import { readTable, dependencyOrder, insertRows } from './restore-backup';
 import { primaryBackupRoot } from './backup-paths';
 
@@ -29,12 +30,29 @@ const check = (name: string, got: unknown, want: unknown) => {
   else { fail++; console.log(`  FAIL  ${name}\n          got  ${JSON.stringify(got)}\n          want ${JSON.stringify(want)}`); }
 };
 
-function newest(): string {
-  const dirs = readdirSync(ROOT)
+function newestIn(root: string): string {
+  const dirs = readdirSync(root)
     .filter(n => /^\d{4}-\d{2}-\d{2}_\d{4}$/.test(n))
-    .filter(n => statSync(join(ROOT, n)).isDirectory()).sort();
-  if (!dirs.length) { console.error(`no backups in ${ROOT} — run backup-ledger.ts first`); process.exit(1); }
-  return join(ROOT, dirs[dirs.length - 1]);
+    .filter(n => statSync(join(root, n)).isDirectory()).sort();
+  if (!dirs.length) { console.error(`no backups in ${root}`); process.exit(1); }
+  return join(root, dirs[dirs.length - 1]);
+}
+
+/**
+ * Take a backup now, into a throwaway folder.
+ *
+ * The comparison that gives this test its teeth is against the LIVE database —
+ * that is how it caught the backup truncating microseconds off every
+ * timestamp. But the newest saved backup is only as current as the last time
+ * one ran, so comparing that to live fails the moment anybody adds a ticket,
+ * which says nothing about whether backups work. Taking one here keeps the two
+ * sides in step by construction.
+ */
+function freshBackup(): { dir: string; cleanup: () => void } {
+  const tmp = mkdtempSync(join(tmpdir(), 'aviation-backup-test-'));
+  execFileSync('npx', ['tsx', 'scripts/backup-ledger.ts', `--out=${tmp}`, '--quiet'],
+    { stdio: 'inherit', shell: process.platform === 'win32' });
+  return { dir: newestIn(tmp), cleanup: () => rmSync(tmp, { recursive: true, force: true }) };
 }
 
 console.log('\n1. Dependency order puts parents before children');
@@ -60,7 +78,9 @@ console.log('\n2. A cycle still lists every table rather than dropping any');
 }
 
 (async () => {
-  const dir = arg('from') ?? newest();
+  const named = arg('from');
+  const taken = named ? null : freshBackup();
+  const dir = named ?? taken!.dir;
   if (!existsSync(join(dir, 'manifest.json'))) { console.error(`not a backup: ${dir}`); process.exit(1); }
   console.log(`\n3. Real backup restored into scratch tables\n  using ${dir}`);
 
@@ -114,6 +134,7 @@ console.log('\n2. A cycle still lists every table rather than dropping any');
   } finally {
     await c.query(`drop schema if exists ${SCHEMA} cascade`);
     await c.end();
+    taken?.cleanup();
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);

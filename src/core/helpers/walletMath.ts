@@ -22,6 +22,62 @@ export function vendorMatchesSource(vendorName: string, ticketSource: string): b
 }
 
 /**
+ * Is this ticket drawn against the wallet, or was it settled before it opened?
+ *
+ * An opening balance is a statement about a moment: "as of this day, we hold
+ * this much credit". Tickets issued before that day were paid for out of
+ * whatever came before, and charging them again to a balance opened afterwards
+ * double-counts them. Adding an IATA balance of 817,284.78 subtracted 1,884
+ * historical tickets worth 6.29 million and reported the account five and a
+ * half million in the red.
+ *
+ * No opening date means the wallet covers the whole ledger, which is what
+ * every wallet did before this existed and what the ones opened alongside the
+ * data still want.
+ *
+ * A ticket with no date cannot be shown to fall after the opening day, so a
+ * dated wallet does not charge it. Every undated ticket left in this ledger is
+ * old — the forty that remain are legacy rows, and the sales report parser now
+ * dates everything it imports — so charging them to a balance opened later
+ * would double-count exactly the sales that balance already accounts for.
+ * A wallet with NO opening date still charges them, because it charges
+ * everything.
+ *
+ * They are not lost: undatedCharged() counts them so a balance never quietly
+ * omits money without saying so.
+ */
+export function drawsOnWallet(
+  vendor: { openingDate?: string },
+  ticketDate?: string,
+): boolean {
+  const from = (vendor.openingDate || '').trim();
+  if (!from) return true;
+  const d = (ticketDate || '').slice(0, 10);
+  if (!d) return false;
+  return d >= from;
+}
+
+/**
+ * Tickets this wallet skipped for having no date — the figure that keeps the
+ * rule above honest. A balance that silently drops rows is the same fault as
+ * one that silently charges them twice.
+ */
+export function undatedSkipped(
+  vendor: VendorBalance,
+  tickets: { source: string; amount: number; status?: string; date?: string }[],
+): { count: number; amount: number } {
+  if (!(vendor.openingDate || '').trim()) return { count: 0, amount: 0 };
+  const skipped = tickets.filter(t =>
+    vendorMatchesSource(vendor.vendorName, t.source)
+    && (t.status || '').toUpperCase() !== 'FUND'
+    && !(t.date || '').slice(0, 10));
+  return {
+    count: skipped.length,
+    amount: skipped.reduce((s, t) => s + t.amount, 0),
+  };
+}
+
+/**
  * Recalculate a vendor balance from the ledger.
  *
  * Note what this does NOT do: it never looks at the settlement channel.
@@ -34,12 +90,13 @@ export function vendorMatchesSource(vendorName: string, ticketSource: string): b
  */
 export function calcVendorBalance(
   vendor: VendorBalance,
-  tickets: { source: string; amount: number; status?: string }[],
+  tickets: { source: string; amount: number; status?: string; date?: string }[],
   topUps: BalanceTopUp[],
 ): number {
   const linked = tickets.filter(t => vendorMatchesSource(vendor.vendorName, t.source));
   const issued = linked
     .filter(t => (t.status || '').toUpperCase() !== 'FUND')
+    .filter(t => drawsOnWallet(vendor, t.date))
     .reduce((s, t) => s + t.amount, 0);
   const topUpTotal = topUps
     .filter(tu => tu.vendorId === vendor.id)

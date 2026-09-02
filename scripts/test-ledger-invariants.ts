@@ -112,8 +112,19 @@ function check(name: string, got: unknown, want: unknown, detail?: string) {
     'WEBSALES-EDIS is a channel within IATA; as a vendor it would draw against a wallet of its own.');
   await none('no wallet exists for a settlement channel',
     `select count(*)::int n, min(vendor_name) sample from vendor_balances
-     where vendor_name ilike '%iata%' or vendor_name ilike '%websales%'`,
-    'BSP settles centrally; a wallet for it would be drawn down by every airline at once.');
+     where vendor_name ilike '%websales%' or vendor_name ~* '^bsp$'`,
+    'WEBSALES-EDIS and BSP are how an IATA ticket settles, not who it was bought from. '
+    + 'A wallet named after either would draw rows the IATA wallet already holds.');
+
+  // An IATA wallet used to be forbidden here on the same reasoning. It is not
+  // any more, because the agency keeps a real IATA credit balance and needs to
+  // see it. What must stay true is that such a wallet cannot silently inherit
+  // the history it was opened after — see test-iata-phase3, which requires an
+  // opening date on every wallet created since the migration.
+  await none('a wallet opened since the migration always declares its start date',
+    `select count(*)::int n, min(vendor_name) sample from vendor_balances
+     where created_at::date > date '2026-07-10' and opening_date is null`,
+    'Without one, a balance added today is charged for every ticket the vendor ever issued.');
 
   console.log('\n6. Wallet arithmetic is the same for every vendor');
   const { rows: vRows } = await c.query(
