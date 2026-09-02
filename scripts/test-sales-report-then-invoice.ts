@@ -96,5 +96,71 @@ console.log('\n5. A document the report never saw still arrives as a new row');
   check('nothing is settled', r.settlements.length, 0);
 }
 
+console.log('\n6. A refund the ledger never saw arrives with the invoice');
+{
+  // Refund Applications do not appear on the daily sales report — the agency
+  // only learns of them when BSP bills them. The ledger has the sale and
+  // nothing else, so the credit must be ADDED, not matched to the sale.
+  const existing = [fromSalesReport({ id: 'sale', amount: 2810, status: 'ISSUE' })];
+  const r = detectDuplicatesAgainstExisting(
+    [fromInvoice({ amount: -940, status: 'REFUND', commission: 0 })], existing);
+  check('the refund is added as its own row', r.fresh.length, 1);
+  check('it is not settled onto the sale', r.settlements.length, 0);
+  check('it is not discarded as a duplicate', r.duplicates.length, 0);
+  check('it keeps its credit sign', r.fresh[0]?.amount, -940);
+}
+
+console.log('\n7. A debit memo (ADM) the ledger never saw');
+{
+  const existing = [fromSalesReport({ id: 'sale' })];
+  const r = detectDuplicatesAgainstExisting(
+    [fromInvoice({ ticketNo: '6000088327', amount: 22.08, status: 'ADM', commission: 0 })],
+    existing);
+  check('the memo is added', r.fresh.length, 1);
+  check('nothing is settled', r.settlements.length, 0);
+  check('it keeps its status', r.fresh[0]?.status, 'ADM');
+}
+
+console.log('\n8. A Turkish ticket the invoice later settles');
+{
+  // Issued on the portal, uploaded from Turkish\'s own report, then billed by
+  // BSP. One sale: the invoice supersedes the money but the ticket stays a
+  // Turkish sale.
+  const existing = [t({
+    id: 'tk', source: 'Turkish Airlines', date: '2026-08-14',
+    amount: 2900, commission: 0, route: 'RUH-IST', passengerName: 'A PASSENGER',
+  })];
+  const r = detectDuplicatesAgainstExisting(
+    [fromInvoice({ amount: 2810, commission: 180, date: '2026-08-16' })], existing);
+  check('no second row for the same sale', r.fresh.length, 0);
+  check('the Turkish row is settled', r.settlements.length, 1);
+  check('the vendor stays Turkish Airlines', r.settlements[0]?.source, 'Turkish Airlines');
+  check("takes the invoice's payable", r.settlements[0]?.amount, 2810);
+  check("takes the invoice's commission", r.settlements[0]?.commission, 180);
+  check("takes the invoice's date", r.settlements[0]?.date, '2026-08-16');
+  check('keeps the route the portal gave', r.settlements[0]?.route, 'RUH-IST');
+}
+
+console.log('\n9. A Riyadh Air ticket the invoice later settles');
+{
+  const existing = [t({ id: 'rx', source: 'Riyadh Air', date: '2026-08-14', commission: 0 })];
+  const r = detectDuplicatesAgainstExisting(
+    [fromInvoice({ commission: 95, date: '2026-08-16' })], existing);
+  check('settled, not duplicated', r.settlements.length, 1);
+  check('vendor stays Riyadh Air', r.settlements[0]?.source, 'Riyadh Air');
+  check('date updated', r.settlements[0]?.date, '2026-08-16');
+}
+
+console.log('\n10. A sales-report row the invoice does not mention is left alone');
+{
+  const untouched = fromSalesReport({ id: 'later', ticketNo: '5513059900', date: '2026-08-20' });
+  const existing = [fromSalesReport({ id: 'billed' }), untouched];
+  const r = detectDuplicatesAgainstExisting([fromInvoice()], existing);
+  check('only the billed document is settled', r.settlements.length, 1);
+  check('and it is the billed one', r.settlements[0]?.id, 'billed');
+  check('the unbilled row is not in any result',
+    [...r.fresh, ...r.settlements, ...r.updates, ...r.duplicates].some(x => x.id === 'later'), false);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
