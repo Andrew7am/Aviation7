@@ -26,10 +26,26 @@ export const CABIN_LABEL: Record<Exclude<Cabin, ''>, string> = {
   ECONOMY:         'Economy',
 };
 
+/**
+ * Fare brands the agency has told us the cabin for.
+ *
+ * Kept apart from the word-reading below on purpose. Reading "Business Elite"
+ * as business is the words doing the work; knowing that flynas's fly+ is an
+ * economy bundle is knowledge from outside the text, and the only safe source
+ * for it is the people who sell the tickets. Nothing is added here on a
+ * reasonable guess — an unrecognised brand stays blank and shows on screen as
+ * itself until someone says what it is.
+ */
+const CONFIRMED_BRANDS: Record<string, Cabin> = {
+  'fly+': 'ECONOMY',   // flynas — confirmed by the agency
+};
+
 /** What one cabin name says, if anything. */
 function readOne(text: string): Cabin {
   const s = text.toLowerCase();
   if (/couldn'?t be determined|not determined|unknown/.test(s)) return '';
+  const brand = CONFIRMED_BRANDS[s];
+  if (brand) return brand;
   if (/\bfirst\b/.test(s)) return 'FIRST';
   if (/\bbusiness\b/.test(s)) return 'BUSINESS';
   // Both orders appear in the data, and "premium" alone is not enough: a

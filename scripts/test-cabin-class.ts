@@ -45,8 +45,15 @@ check('a known cabin beside it still reads',
 check("Economy; Class couldn't be determined",
   toCabin("Economy; Class couldn't be determined"), 'ECONOMY');
 
-console.log('\n5. Brand names that state no cabin are left alone, not guessed');
-for (const name of ['fly+', 'Fly+', 'flyMax', 'Guest Basic', 'GO Basic', 'Plus', 'Premium Class']) {
+console.log('\n5. Brand names the agency has confirmed');
+// flynas sells fly+ as an economy bundle; the agency said so, and that is the
+// only reason it is mapped.
+check('fly+ is economy', toCabin('fly+'), 'ECONOMY');
+check('Fly+ in any casing', toCabin('Fly+'), 'ECONOMY');
+check('and it is no longer reported as unreadable', isUnreadableCabin('fly+'), false);
+
+console.log('\n6. Brand names nobody has confirmed are left alone, not guessed');
+for (const name of ['flyMax', 'Guest Basic', 'GO Basic', 'Plus', 'Premium Class']) {
   check(`${name} is not assigned a cabin`, toCabin(name), '');
   check(`${name} is reported as unreadable`, isUnreadableCabin(name), true);
 }

@@ -97,14 +97,15 @@ export function documentsIn(cell: string): string[] {
     if (!raw) { saidUnknown++; continue; }
 
     const cabin = toCabin(raw);
-    if (!cabin) {
-      unreadable.set(raw, (unreadable.get(raw) ?? 0) + held.length);
-      continue;
-    }
-    if (isMixedCabin(raw)) mixed++;
+    // A name nobody has mapped still has its text written down. Dropping the
+    // row entirely was wrong: it left the ledger unable to show what the
+    // source had actually said, so the name could never be looked at and
+    // named. The reading stays blank; the wording is kept.
+    if (!cabin) unreadable.set(raw, (unreadable.get(raw) ?? 0) + held.length);
+    else if (isMixedCabin(raw)) mixed++;
 
     for (const t of held) {
-      if (t.cabin_class) { alreadySet++; continue; }
+      if (t.cabin_class || (!cabin && t.cabin_raw)) { alreadySet++; continue; }
       fix.push({ id: t.id, ticket_no: t.ticket_no, cabin, raw });
     }
   }
@@ -151,10 +152,12 @@ export function documentsIn(cell: string): string[] {
   try {
     let n = 0;
     for (const f of fix) {
+      // NULL rather than '' for an unread name, so the check constraint holds
+      // and "no reading" is one value rather than two.
       const { rowCount } = await c.query(
         `update tickets set cabin_class = $2, cabin_raw = $3
          where id = $1 and cabin_class is null`,
-        [f.id, f.cabin, f.raw]);
+        [f.id, f.cabin || null, f.raw]);
       n += rowCount ?? 0;
     }
     await c.query('commit');
