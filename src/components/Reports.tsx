@@ -290,6 +290,19 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   const analyticsMonths = useMemo(() => monthsIn(tickets.map(t => t.date)), [tickets]);
 
+  /**
+   * Tickets carrying no date at all.
+   *
+   * They cannot belong to any period, so every range silently excludes them
+   * and the months never add up to the all-time total. That gap is invisible
+   * unless it is said out loud, which is what this counts for.
+   */
+  const undated = useMemo(
+    () => tickets.filter(t =>
+      t.status !== 'FUND' && !/^\d{4}-\d{2}-\d{2}$/.test(t.date || '')).length,
+    [tickets],
+  );
+
   /** The same maths the whole-ledger figures use, over the chosen period. */
   const an = useMemo(
     () => computeAnalytics(tickets.filter(t => inPeriod(t.date, anFrom, anTo))),
@@ -530,6 +543,19 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
               from={anFrom} to={anTo} months={analyticsMonths}
               onChange={(f, t) => { setAnFrom(f); setAnTo(t); }}
             />
+
+            {/* Only while a period is active: under "All time" these rows ARE
+                counted, so the warning would be false. */}
+            {undated > 0 && (anFrom || anTo) && (
+              <div className="flex items-start gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
+                <span className="text-amber-500 text-[11px] leading-none mt-0.5">▲</span>
+                <p className="text-[10px] text-amber-800 leading-relaxed">
+                  <span className="font-bold">{undated.toLocaleString('en-US')} tickets carry no date</span>
+                  {' '}and cannot fall inside any period, so they are missing from the figures above.
+                  They are counted under <span className="font-bold">All time</span>.
+                </p>
+              </div>
+            )}
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <Kpi label="Tickets issued" tone="blue"

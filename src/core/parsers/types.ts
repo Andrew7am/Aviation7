@@ -54,6 +54,10 @@ export interface VendorParser {
     rows:            string[][],
     headers:         string[],
     defaultCurrency: SupportedCurrency,
-    defaultSource?:  string
+    defaultSource?:  string,
+    /** Whatever sat ABOVE the header row. Most formats put nothing there, but
+     *  a BSP sales report prints its date range and currency in that block and
+     *  nowhere else — see helpers/reportPeriod. */
+    preamble?:       string[][]
   ) => ParserResult;
 }

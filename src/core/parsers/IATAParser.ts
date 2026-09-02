@@ -5,6 +5,7 @@ import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency, resolveCurrency } from '../helpers/resolveCurrency';
 import { normalizeStatus, type NormalizedStatus } from '../helpers/normalizeStatus';
+import { readReportPeriod } from '../helpers/reportPeriod';
 
 export const IATAParser: VendorParser = {
   id:   'IATA',
@@ -16,10 +17,21 @@ export const IATAParser: VendorParser = {
            (hj.includes('seqno') && hj.includes('trnc') && hj.includes('docnumber'));
   },
 
-  parse: (rows, headers, defaultCurrency): ParserResult => {
+  parse: (rows, headers, defaultCurrency, _defaultSource, preamble): ParserResult => {
     const errors:   string[] = [];
     const warnings: string[] = [];
     const result = [];
+
+    /**
+     * The BSP sales report (TJQ) has no date column — across forty of them,
+     * not one does. Its only date is the range printed above the table, and
+     * ignoring it saved every row undated: an undated row belongs to no month,
+     * so it vanished from every period filter while still counting in the
+     * all-time totals. The same block is also the only place the report names
+     * its currency, which is why BSP rows kept being stored as SAR.
+     */
+    const period = readReportPeriod(preamble ?? []);
+    let fromPeriod = 0, approximate = 0;
 
     const iTicket = col(headers, 'ticket number', 'DOC NUMBER', 'DOCNUMBER');
     const iTax    = col(headers, 'tax', 'TAX');
@@ -94,7 +106,19 @@ export const IATAParser: VendorParser = {
                      : status === 'REFUND' ? -Math.abs(amount)
                      : Math.abs(amount);
 
-      const currency = resolveCurrency(row, headers, defaultCurrency);
+      // A currency column on the row wins; otherwise what the report itself
+      // declares, and only then the default chosen on the import screen.
+      const currency = resolveCurrency(row, headers, period.currency ?? defaultCurrency);
+
+      // A date on the row always wins. Only when the format carries none does
+      // the report's own range stand in for it.
+      const rowDate = parseDate(cell(row, iDate));
+      let date = rowDate;
+      if (!date && period.from) {
+        date = period.from;
+        fromPeriod++;
+        if (!period.exact) approximate++;
+      }
 
       const req = resolveReq(cell(row, iReq));
       if (!req) warnings.push(`Ticket ${rawTk}: Missing Req Num`);
@@ -107,7 +131,7 @@ export const IATAParser: VendorParser = {
         pnr:            cell(row, iPNR).replace(/\s+/g,'').toUpperCase(),
         passengerName:  cleanPax(cell(row, iPax)),
         airlineCode:    alCode,
-        date:           parseDate(cell(row, iDate)),
+        date,
         amount:         finalAmt,
         totalDoc:       Math.abs(total) || Math.abs(finalAmt),
         commission:     comm,
@@ -118,6 +142,16 @@ export const IATAParser: VendorParser = {
         serial,
       });
     });
+
+    // Said once for the file rather than once per ticket, which would bury
+    // every other warning under a hundred identical lines.
+    if (fromPeriod) {
+      warnings.push(approximate
+        ? `${fromPeriod} rows have no date of their own and took the report's range ` +
+          `${period.from} to ${period.to}; the report does not say which day inside it ` +
+          `each ticket was issued, so ${period.from} was used. The BSP invoice gives the exact day.`
+        : `${fromPeriod} rows have no date of their own and took the report's date, ${period.from}.`);
+    }
 
     return { rows: result, errors, warnings };
   },

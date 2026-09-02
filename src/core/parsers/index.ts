@@ -122,7 +122,10 @@ export function runParser(
   // as a header row would silently drop a real transaction.
   const dataRows = (parser.headerless ? allRows : allRows.slice(headerRowIdx + 1))
     .filter(r => r.some(c => c?.trim()));
-  const result   = parser.parse(dataRows, headers, defaultCurrency, defaultSource);
+  // The block above the header. Discarded for most vendors, but a BSP sales
+  // report states its date range and currency there and in no other place.
+  const preamble = parser.headerless ? [] : allRows.slice(0, headerRowIdx);
+  const result   = parser.parse(dataRows, headers, defaultCurrency, defaultSource, preamble);
 
   return { ...result, parserName: parser.name, confidence };
 }
