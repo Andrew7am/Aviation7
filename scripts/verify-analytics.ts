@@ -160,18 +160,31 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
      from tickets where ${IS_TICKET} group by 1 order by tickets desc`);
   console.table(sqlCabin);
 
-  const cabinTotal = an.byCabin.reduce((s, r) => s + r.tickets, 0);
-  check('the cabin table counts every issued ticket', cabinTotal, an.issuedCount);
-  check('cabin percentages add to 100',
+  // The shares are of tickets that HAVE a cabin, not of every ticket — a
+  // "Not recorded" slice at three quarters buried every real cabin.
+  const { rows: [{ known: sqlKnown }] } = await c.query(
+    `select count(*)::int known from tickets
+     where ${IS_TICKET} and cabin_class is not null`);
+  check('the cabin table counts every ticket that HAS a cabin', an.cabinKnown, sqlKnown);
+  check('and reports the total it was measured against', an.cabinTotal, an.issuedCount);
+  check('no "not recorded" row is in the ranking',
+    an.byCabin.some(r => /not recorded/i.test(r.key)), false);
+  check('cabin percentages add to 100 across the known ones',
     Math.round(an.byCabin.reduce((s, r) => s + r.pct, 0) * 100) / 100, 100);
 
-  for (const s of sqlCabin as any[]) {
-    const label = s.cabin === '(none)' ? 'Not recorded'
-      : { FIRST: 'First', BUSINESS: 'Business',
-          PREMIUM_ECONOMY: 'Premium Economy', ECONOMY: 'Economy' }[s.cabin as string]!;
+  for (const s of (sqlCabin as any[]).filter(r => r.cabin !== '(none)')) {
+    const label = { FIRST: 'First', BUSINESS: 'Business',
+                    PREMIUM_ECONOMY: 'Premium Economy', ECONOMY: 'Economy' }[s.cabin as string]!;
     const row = an.byCabin.find(r => r.key === label);
     check(`  ${label}: ${s.tickets}`, row?.tickets ?? 0, s.tickets);
   }
+
+  // The tickets left out of the ranking must still be accounted for, or the
+  // coverage line would be quietly wrong.
+  const { rows: [{ n: sqlNoCabin }] } = await c.query(
+    `select count(*)::int n from tickets where ${IS_TICKET} and cabin_class is null`);
+  check('known plus unrecorded is every issued ticket',
+    an.cabinKnown + sqlNoCabin, an.issuedCount);
 
   // The per-airline split has to add back up to that airline's own count, or
   // a cabin has been counted against the wrong carrier.

@@ -364,6 +364,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   const analyticsMonths = useMemo(() => monthsIn(tickets.map(t => t.date)), [tickets]);
 
+
   /**
    * Tickets carrying no date at all.
    *
@@ -382,6 +383,22 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
     () => computeAnalytics(tickets.filter(t => inPeriod(t.date, anFrom, anTo))),
     [tickets, anFrom, anTo],
   );
+
+  /**
+   * How much of the period the cabin shares were measured over.
+   *
+   * The shares are of tickets that HAVE a cabin, so they answer "of what we
+   * know, how much was business" — the useful question, and an honest one only
+   * while the reader can see how much that is. Said on both the chart and the
+   * table rather than once, because either can be read alone.
+   */
+  const cabinCoverage = useMemo(() => {
+    const known = an.cabinKnown, total = an.cabinTotal;
+    if (!total) return 'No tickets in this period';
+    if (!known) return `No cabin recorded for any of the ${total.toLocaleString('en-US')} tickets`;
+    return `Share of the ${known.toLocaleString('en-US')} tickets with a cabin recorded`
+         + ` — ${((known / total) * 100).toFixed(0)}% of ${total.toLocaleString('en-US')} issued`;
+  }, [an]);
 
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -680,23 +697,27 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <ChartCard
-                title="Cabin"
-                subtitle="What was sold — with the tickets whose cabin nobody recorded shown as their own slice, not hidden">
-                <Donut
-                  slices={an.byCabin.map(r => ({ key: r.key, label: r.key, value: r.tickets }))}
-                  max={5}
-                  centerLabel="Tickets"
-                />
+              <ChartCard title="Cabin" subtitle={cabinCoverage}>
+                {an.cabinKnown === 0 ? (
+                  <p className="px-4 py-8 text-xs text-slate-400 italic text-center">
+                    No ticket in this period has a cabin recorded.
+                  </p>
+                ) : (
+                  <Donut
+                    slices={an.byCabin.map(r => ({ key: r.key, label: r.key, value: r.tickets }))}
+                    max={4}
+                    centerLabel="With a cabin"
+                  />
+                )}
               </ChartCard>
 
               <ShareTable
                 title="By Cabin"
-                subtitle="Every ticket, by the cabin it was sold in"
+                subtitle={cabinCoverage}
                 keyHeader="Cabin"
                 rows={an.byCabin}
                 fmt={fmt}
-                colored={5}
+                colored={4}
               />
             </div>
 

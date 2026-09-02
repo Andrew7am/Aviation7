@@ -56,9 +56,14 @@ export interface MonthPoint {
 export interface Analytics {
   byAirline: ShareRow[];
   byRoute: ShareRow[];
-  /** Tickets by cabin — First, Business, Premium Economy, Economy, and the
-   *  ones whose cabin was never recorded. */
+  /** Tickets by cabin — First, Business, Premium Economy, Economy. Tickets
+   *  with no cabin recorded are NOT a row here; the shares are of what is
+   *  known. Read them next to cabinKnown / cabinTotal. */
   byCabin: ShareRow[];
+  /** Issued tickets carrying a cabin, and issued tickets in total — the
+   *  coverage every cabin percentage should be read against. */
+  cabinKnown: number;
+  cabinTotal: number;
   months: MonthPoint[];
   issuedCount: number;
   refundCount: number;
@@ -178,12 +183,17 @@ export function computeAnalytics(tickets: Ticket[]): Analytics {
   const byRoute = tally(real, t =>
     (t.route || '').trim().toUpperCase().replace(/[\\/]/g, '-').replace(/\s+/g, ''));
 
-  // Unlike the other two, this one keeps a row for what is NOT known. A cabin
-  // is recorded for about a quarter of the ledger, and a Business figure read
-  // without that context looks like a fact about what was sold when it is
-  // partly a fact about what was written down.
+  // Only tickets whose cabin is known, so the percentages answer "of what we
+  // know, how much was business". A cabin is recorded for about a quarter of
+  // the ledger, and including the rest as a slice made "Not recorded" three
+  // quarters of the chart and squeezed every real cabin into a sliver — the
+  // question being asked is what is sold, not how complete the data entry is.
+  //
+  // The unknown are not swept away: cabinKnown and cabinTotal below carry the
+  // coverage, and the screen states it beside the chart, so a Business share
+  // is always read next to how much of the ledger it was measured over.
   const byCabin = tally(real, t =>
-    CABIN_LABEL[(t.cabinClass || '') as Exclude<Cabin, ''>] ?? 'Not recorded');
+    CABIN_LABEL[(t.cabinClass || '') as Exclude<Cabin, ''>] ?? '');
 
   const monthMap = new Map<string, MonthPoint>();
   for (const t of real) {
@@ -206,6 +216,8 @@ export function computeAnalytics(tickets: Ticket[]): Analytics {
     byAirline,
     byRoute,
     byCabin,
+    cabinKnown: byCabin.reduce((s, r) => s + r.tickets, 0),
+    cabinTotal: real.filter(countsAsTicket).length,
     months,
     issuedCount: real.filter(countsAsTicket).length,
     refundCount: real.filter(isRefund).length,

@@ -28,11 +28,17 @@ const TYPES = [
 
 type EntryType = typeof TYPES[number]['key'];
 
+/** Sentinel for the dropdown entry that opens a free-text vendor name. Not a
+ *  value anything is ever saved under. */
+const OTHER = '__other__';
+
 export const ManualEntry: React.FC<ManualEntryProps> = ({
   vendorNames, ledgerSources = [], onSave, onClose,
 }) => {
   const [type, setType]       = useState<EntryType>('ISSUE');
   const [vendor, setVendor]   = useState(vendorNames[0] ?? '');
+  /** True once "Other" is picked, swapping the dropdown for a text box. */
+  const [typingVendor, setTypingVendor] = useState(false);
   const [ticketNo, setTicketNo] = useState('');
   const [pnr, setPnr]         = useState('');
   const [pax, setPax]         = useState('');
@@ -148,24 +154,50 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={label}>Vendor</label>
-              {/* Type or pick. A dropdown of wallet holders left every ticket
-                  bought from a vendor without a balance unrecordable — IATA
-                  settles through BSP, Gold Medal invoices directly — so the
-                  list suggests and never restricts. */}
-              <input
-                list="manual-entry-vendors"
-                value={vendor}
-                onChange={e => setVendor(e.target.value)}
-                placeholder="Type or pick a vendor"
-                autoComplete="off"
-                className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
-              <datalist id="manual-entry-vendors">
-                {suggestions.map(v => <option key={v} value={v} />)}
-              </datalist>
+              {/* A real dropdown, listing every vendor, plus one entry that
+                  opens a text box.
+
+                  This was briefly a text input backed by a datalist, so that a
+                  ticket from a vendor with no credit wallet could still be
+                  recorded — IATA settles through BSP, Gold Medal invoices
+                  directly, and neither holds a balance. But a datalist filters
+                  itself against whatever is already typed, and the field starts
+                  filled with a vendor name, so opening it showed that one
+                  vendor and nothing else. The list has to be visible to be a
+                  list. */}
+              {typingVendor ? (
+                <input
+                  autoFocus
+                  value={vendor}
+                  onChange={e => setVendor(e.target.value)}
+                  placeholder="Vendor name"
+                  autoComplete="off"
+                  className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              ) : (
+                <select
+                  value={vendor}
+                  onChange={e => {
+                    if (e.target.value === OTHER) { setTypingVendor(true); setVendor(''); }
+                    else setVendor(e.target.value);
+                  }}
+                  className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  {suggestions.length === 0 && <option value="">— no vendors yet —</option>}
+                  {suggestions.map(v => <option key={v} value={v}>{v}</option>)}
+                  <option value={OTHER}>Other — type a name…</option>
+                </select>
+              )}
               <p className="text-[10px] text-slate-400 mt-1 font-mono">
-                Settles in {currency}
+                {vendor.trim() ? `Settles in ${currency}` : 'Pick or type a vendor'}
                 {vendor.trim() && isNewVendor && ' · new vendor'}
+                {typingVendor && (
+                  <button type="button"
+                          onClick={() => { setTypingVendor(false); setVendor(suggestions[0] ?? ''); }}
+                          className="ml-2 text-blue-600 hover:underline">
+                    back to the list
+                  </button>
+                )}
               </p>
             </div>
             <div>
