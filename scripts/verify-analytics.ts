@@ -32,14 +32,17 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
     `select id, ticket_no, source, date, amount::float8 amount,
             commission::float8 commission, total_doc::float8 total_doc,
             coalesce(req_num,'') req_num, coalesce(airline_code,'') airline_code,
-            coalesce(route,'') route, status, coalesce(channel,'') channel
+            coalesce(route,'') route, status, coalesce(channel,'') channel,
+            coalesce(cabin_class,'') cabin_class, coalesce(cabin_raw,'') cabin_raw
      from tickets`);
 
   const tickets: Ticket[] = (rows as any[]).map(r => ({
     id: r.id, ticketNo: r.ticket_no, source: r.source, date: r.date ?? '',
     amount: r.amount, commission: r.commission, totalDoc: r.total_doc,
     reqNum: r.req_num, airlineCode: r.airline_code, route: r.route,
-    status: r.status, channel: r.channel, userId: 'x',
+    status: r.status, channel: r.channel,
+    cabinClass: r.cabin_class || undefined, cabinRaw: r.cabin_raw || undefined,
+    userId: 'x',
   }));
   console.log(`ledger: ${tickets.length} rows\n`);
 
@@ -149,6 +152,35 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
   check('AED total matches the totals block', Math.round(an.totals.aed * 100) / 100, Math.round(sqlAed.net * 100) / 100);
   check('no money lands outside SAR or AED',
     Math.round(an.byAirline.reduce((s, r) => s + r.other, 0) * 100) / 100, 0);
+
+  // ── 4b. Cabins ─────────────────────────────────────────────────────────
+  console.log('\n4b. Cabin');
+  const { rows: sqlCabin } = await c.query(
+    `select coalesce(cabin_class,'(none)') cabin, count(*)::int tickets
+     from tickets where ${IS_TICKET} group by 1 order by tickets desc`);
+  console.table(sqlCabin);
+
+  const cabinTotal = an.byCabin.reduce((s, r) => s + r.tickets, 0);
+  check('the cabin table counts every issued ticket', cabinTotal, an.issuedCount);
+  check('cabin percentages add to 100',
+    Math.round(an.byCabin.reduce((s, r) => s + r.pct, 0) * 100) / 100, 100);
+
+  for (const s of sqlCabin as any[]) {
+    const label = s.cabin === '(none)' ? 'Not recorded'
+      : { FIRST: 'First', BUSINESS: 'Business',
+          PREMIUM_ECONOMY: 'Premium Economy', ECONOMY: 'Economy' }[s.cabin as string]!;
+    const row = an.byCabin.find(r => r.key === label);
+    check(`  ${label}: ${s.tickets}`, row?.tickets ?? 0, s.tickets);
+  }
+
+  // The per-airline split has to add back up to that airline's own count, or
+  // a cabin has been counted against the wrong carrier.
+  const badSplit = an.byAirline.filter(r => {
+    const sum = r.cabins.FIRST + r.cabins.BUSINESS + r.cabins.PREMIUM_ECONOMY
+              + r.cabins.ECONOMY + r.cabins.unknown;
+    return sum !== r.tickets;
+  });
+  check('every airline\'s cabin split adds up to its ticket count', badSplit.length, 0);
 
   // ── 5. Every code, named or not ────────────────────────────────────────
   console.log('\n5. Every airline in the ranking');

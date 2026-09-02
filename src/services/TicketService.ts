@@ -28,6 +28,8 @@ type TicketRow = {
   serial: number | null;
   closed: boolean | null;
   channel: string | null;
+  cabin_class: string | null;
+  cabin_raw: string | null;
 };
 
 function rowToTicket(r: TicketRow): Ticket {
@@ -58,6 +60,8 @@ function rowToTicket(r: TicketRow): Ticket {
     serial: r.serial ?? undefined,
     closed: r.closed ?? false,
     channel: r.channel ?? undefined,
+    cabinClass: r.cabin_class ?? undefined,
+    cabinRaw: r.cabin_raw ?? undefined,
   };
 }
 
@@ -87,6 +91,8 @@ function ticketToRow(t: Ticket, userId: string) {
     serial: t.serial ?? null,
     closed: t.closed ?? false,
     channel: t.channel ?? null,
+    cabin_class: t.cabinClass ?? null,
+    cabin_raw: t.cabinRaw ?? null,
   };
 }
 
@@ -172,6 +178,13 @@ export class TicketService {
       if (ticket.route?.trim())         patch.route          = ticket.route;
       if (ticket.passengerName?.trim()) patch.passenger_name = ticket.passengerName;
       if (ticket.pnr?.trim())           patch.pnr            = ticket.pnr;
+      // Cabin travels as a pair, and only when the incoming row actually
+      // carries one — a report with no cabin column must not blank a cabin
+      // the ledger already holds.
+      if (ticket.cabinRaw?.trim()) {
+        patch.cabin_raw = ticket.cabinRaw;
+        if (ticket.cabinClass) patch.cabin_class = ticket.cabinClass;
+      }
       if (Object.keys(patch).length === 0) continue;
       const { error } = await supabase
         .from('tickets')
@@ -341,6 +354,8 @@ export class TicketService {
       serial:          'serial',
       closed:          'closed',
       channel:         'channel',
+      cabinClass:      'cabin_class',
+      cabinRaw:        'cabin_raw',
     };
     const row: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(patch)) {

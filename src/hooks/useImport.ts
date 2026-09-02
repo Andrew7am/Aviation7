@@ -99,6 +99,8 @@ export function useImport(userId: string) {
         transactionType: r.status,
         closed:          r.closed ?? false,
         channel:         r.channel,
+        cabinClass:      r.cabinClass,
+        cabinRaw:        r.cabinRaw,
         reportName:      reportName || defaultSource || parserName,
         importTime:      new Date().toISOString(),
         isDuplicate:     false,

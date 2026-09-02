@@ -32,6 +32,13 @@ export interface Ticket {
   /** Follow-up workflow status independent of ISSUE/REFUND: true = Closed
    *  (reconciled/finalized with client), false = Not Closed (pending). */
   closed?: boolean;
+  /** Cabin sold: FIRST | BUSINESS | PREMIUM_ECONOMY | ECONOMY. Unset when the
+   *  source said nothing, said it could not tell, or used a brand name that
+   *  states no cabin — see core/helpers/cabinClass. */
+  cabinClass?: string;
+  /** The cabin exactly as the source wrote it, mixed journeys included
+   *  ("Economy; Business"), so a reading can be revisited without the file. */
+  cabinRaw?: string;
   /** Settlement channel within a vendor (IATA: 'BSP' | 'WEBSALES-EDIS').
    *  Kept separate from `source`: source names the VENDOR and is what wallet
    *  matching keys on, so putting a channel there would move the row to a

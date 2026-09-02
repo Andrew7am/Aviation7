@@ -1,5 +1,6 @@
 import { Ticket } from '../../types';
 import { sourceToCurrency } from './sourceCurrency';
+import { CABIN_LABEL, type Cabin } from './cabinClass';
 
 /**
  * Share of business by airline, by route, and over time.
@@ -30,6 +31,10 @@ export interface ShareRow {
    *  was never a ticket. Shown rather than folded in, so a total that a memo
    *  moved can be traced to the memo. */
   otherDocs: number;
+  /** Tickets by cabin, for this airline or route. `unknown` counts the ones
+   *  whose cabin was never recorded, so a small business figure can be read as
+   *  "few sold" or "few known" rather than mistaken for the first. */
+  cabins: { FIRST: number; BUSINESS: number; PREMIUM_ECONOMY: number; ECONOMY: number; unknown: number };
   sar: number; aed: number; other: number;
   /** Kept alongside the net so a negative total can explain itself. An airline
    *  selling mostly in SAR can still show a negative AED net — a few AED sales
@@ -51,6 +56,9 @@ export interface MonthPoint {
 export interface Analytics {
   byAirline: ShareRow[];
   byRoute: ShareRow[];
+  /** Tickets by cabin — First, Business, Premium Economy, Economy, and the
+   *  ones whose cabin was never recorded. */
+  byCabin: ShareRow[];
   months: MonthPoint[];
   issuedCount: number;
   refundCount: number;
@@ -108,6 +116,7 @@ export function analysable(tickets: Ticket[]): Ticket[] {
 
 const blank = (key: string): ShareRow => ({
   key, tickets: 0, pct: 0, refunds: 0, otherDocs: 0,
+  cabins: { FIRST: 0, BUSINESS: 0, PREMIUM_ECONOMY: 0, ECONOMY: 0, unknown: 0 },
   sar: 0, aed: 0, other: 0,
   sarIssued: 0, sarRefunded: 0, aedIssued: 0, aedRefunded: 0,
 });
@@ -140,7 +149,14 @@ function tally(rows: Ticket[], keyOf: (t: Ticket) => string): ShareRow[] {
     const row = map.get(key) ?? blank(key);
     // Every document lands in exactly one column, and every document's money
     // lands in the totals — nothing is counted twice and nothing is dropped.
-    if (countsAsTicket(t)) row.tickets++;
+    if (countsAsTicket(t)) {
+      row.tickets++;
+      // Cabin is a fact about a sale, so only sales are counted by it. A
+      // refund does not un-sell a business seat, and a memo was never in one.
+      const cab = (t.cabinClass || '') as keyof ShareRow['cabins'];
+      if (cab && cab in row.cabins) row.cabins[cab]++;
+      else row.cabins.unknown++;
+    }
     else if (isRefund(t)) row.refunds++;
     else row.otherDocs++;
     addMoney(row, t);
@@ -162,6 +178,13 @@ export function computeAnalytics(tickets: Ticket[]): Analytics {
   const byRoute = tally(real, t =>
     (t.route || '').trim().toUpperCase().replace(/[\\/]/g, '-').replace(/\s+/g, ''));
 
+  // Unlike the other two, this one keeps a row for what is NOT known. A cabin
+  // is recorded for about a quarter of the ledger, and a Business figure read
+  // without that context looks like a fact about what was sold when it is
+  // partly a fact about what was written down.
+  const byCabin = tally(real, t =>
+    CABIN_LABEL[(t.cabinClass || '') as Exclude<Cabin, ''>] ?? 'Not recorded');
+
   const monthMap = new Map<string, MonthPoint>();
   for (const t of real) {
     if (!/^\d{4}-\d{2}/.test(t.date || '')) continue;
@@ -182,6 +205,7 @@ export function computeAnalytics(tickets: Ticket[]): Analytics {
   return {
     byAirline,
     byRoute,
+    byCabin,
     months,
     issuedCount: real.filter(countsAsTicket).length,
     refundCount: real.filter(isRefund).length,

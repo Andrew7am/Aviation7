@@ -9,6 +9,7 @@ import {
   PERIOD_PRESETS, endOfMonth, inPeriod, monthLabel, monthsIn, periodLabel, selectedMonth,
 } from '../core/helpers/period';
 import { Donut, TrendBars, paletteAt } from './Charts';
+import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import * as XLSX from 'xlsx';
 
 interface ReportsProps {
@@ -76,6 +77,51 @@ const NetCell: React.FC<{
 };
 
 /**
+ * The cabin split for one airline or route.
+ *
+ * Compact on purpose — three or four numbers in a table column, not a chart —
+ * and it names what is NOT known rather than leaving it out. A cabin is
+ * recorded for roughly a quarter of the ledger, so "2 business" could mean two
+ * business seats sold or two that anyone wrote down, and only saying so
+ * distinguishes them.
+ */
+const CABIN_SHORT: [keyof ShareRow['cabins'], string, string][] = [
+  ['FIRST',           'F',  'text-purple-600'],
+  ['BUSINESS',        'J',  'text-blue-600'],
+  ['PREMIUM_ECONOMY', 'W',  'text-teal-600'],
+  ['ECONOMY',         'Y',  'text-slate-500'],
+];
+
+const CabinCell: React.FC<{ cabins: ShareRow['cabins'] }> = ({ cabins }) => {
+  const shown = CABIN_SHORT.filter(([k]) => cabins[k] > 0);
+  if (!shown.length) {
+    return (
+      <td className="px-3 py-2 text-right">
+        <span className="text-slate-300 text-[11px]"
+              title={`${cabins.unknown} ticket(s), no cabin recorded`}>—</span>
+      </td>
+    );
+  }
+  return (
+    <td className="px-3 py-2 text-right whitespace-nowrap">
+      <span className="font-mono text-[11px] space-x-1.5">
+        {shown.map(([k, letter, tone]) => (
+          <span key={k} className={tone} title={CABIN_LABEL[k as Exclude<Cabin, ''>]}>
+            {cabins[k]}{letter}
+          </span>
+        ))}
+      </span>
+      {cabins.unknown > 0 && (
+        <div className="text-[9px] text-slate-400 leading-tight font-mono"
+             title="Tickets with no cabin recorded">
+          {cabins.unknown} not recorded
+        </div>
+      )}
+    </td>
+  );
+};
+
+/**
  * A ranked share table — who accounts for how much of the business.
  *
  * SAR and AED are separate columns rather than one total. Twenty-eight
@@ -100,7 +146,10 @@ const ShareTable: React.FC<{
   subLabel?: (key: string) => string;
   /** How many leading rows the donut gave a colour to. */
   colored?: number;
-}> = ({ title, subtitle, keyHeader, rows, fmt, subLabel, colored = 0 }) => {
+  /** Show the cabin split. Off for the cabin table itself, where it would
+   *  simply repeat the row's own name back at it. */
+  showCabins?: boolean;
+}> = ({ title, subtitle, keyHeader, rows, fmt, subLabel, colored = 0, showCabins = false }) => {
   const top = rows[0]?.tickets || 1;
   const shown = rows.slice(0, 25);
   return (
@@ -121,6 +170,11 @@ const ShareTable: React.FC<{
                 Other docs
               </th>
               <th className="px-3 py-2 text-right">Share</th>
+              {showCabins && (
+                <th className="px-3 py-2 text-right" title="Tickets by cabin. A dash means no cabin was recorded for any of them.">
+                  Cabin
+                </th>
+              )}
               <th className="px-3 py-2 text-right">Net SAR</th>
               <th className="px-3 py-2 text-right">Net AED</th>
             </tr>
@@ -163,6 +217,7 @@ const ShareTable: React.FC<{
                     </span>
                   </div>
                 </td>
+                {showCabins && <CabinCell cabins={r.cabins} />}
                 <NetCell net={r.sar} issued={r.sarIssued} refunded={r.sarRefunded} fmt={fmt} />
                 <NetCell net={r.aed} issued={r.aedIssued} refunded={r.aedRefunded} fmt={fmt} />
               </tr>
@@ -382,6 +437,10 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
     'Currency':     sourceToCurrency(t.source || ''),
     'Req Num':      t.reqNum || '',
     'Closed':       t.closed ? 'Closed' : 'Not Closed',
+    // The reading and the text it came from, so a re-import can restore both
+    // and a cabin name nobody has mapped is still carried through.
+    'Cabin':        t.cabinClass ? CABIN_LABEL[t.cabinClass as Exclude<Cabin, ''>] ?? t.cabinClass : '',
+    'Cabin Class':  t.cabinRaw || '',
     'Report Name':  t.reportName || '',
     'Import Time':  t.importTime || '',
   });
@@ -620,6 +679,27 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
               </ChartCard>
             </div>
 
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ChartCard
+                title="Cabin"
+                subtitle="What was sold — with the tickets whose cabin nobody recorded shown as their own slice, not hidden">
+                <Donut
+                  slices={an.byCabin.map(r => ({ key: r.key, label: r.key, value: r.tickets }))}
+                  max={5}
+                  centerLabel="Tickets"
+                />
+              </ChartCard>
+
+              <ShareTable
+                title="By Cabin"
+                subtitle="Every ticket, by the cabin it was sold in"
+                keyHeader="Cabin"
+                rows={an.byCabin}
+                fmt={fmt}
+                colored={5}
+              />
+            </div>
+
             <ChartCard
               title="Activity by month"
               subtitle={
@@ -661,12 +741,13 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             <div className="grid gap-4 lg:grid-cols-2">
               <ShareTable
                 title="By Airline"
-                subtitle="Share of tickets issued, and what each airline earned"
+                subtitle="Share of tickets issued, what each airline earned, and in which cabin"
                 keyHeader="A/L"
                 rows={an.byAirline}
                 fmt={fmt}
                 subLabel={airlineName}
                 colored={DONUT_MAX}
+                showCabins
               />
               <ShareTable
                 title="Most Issued Routes"

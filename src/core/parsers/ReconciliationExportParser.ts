@@ -3,6 +3,7 @@ import { col, cell, num, cleanPax, airlineCode, cleanTk, pnrClean } from './shar
 import { resolveReq } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { extractRoute } from '../helpers/extractRoute';
+import { toCabin } from '../helpers/cabinClass';
 
 /**
  * Re-import of a sheet THIS system exported.
@@ -59,6 +60,10 @@ export const ReconciliationExportParser: VendorParser = {
     const iComm   = col(headers, 'Commission');
     const iSerial = col(headers, 'Serial');
     const iClosed = col(headers, 'Closed');
+    // "Cabin Class (Automated)" in the agency's own export; the plain names
+    // are accepted too so a hand-made sheet works without renaming a column.
+    const iCabin  = col(headers, 'Cabin Class', 'Cabin', 'Class');
+    const cabinRaw = (row: string[]) => iCabin !== -1 ? cell(row, iCabin).trim() : '';
 
     let skippedSummary = 0;
 
@@ -136,6 +141,11 @@ export const ReconciliationExportParser: VendorParser = {
         currency: (cur === 'AED' || cur === 'SAR' ? cur : defaultCurrency) as typeof defaultCurrency,
         serial: serialRaw ? parseInt(serialRaw, 10) : undefined,
         closed: iClosed !== -1 ? /^closed$/i.test(cell(row, iClosed).trim()) : undefined,
+        // Both together, or neither: the reading is only meaningful beside the
+        // text it was read from, and a cabin name nobody has mapped must still
+        // arrive so it can be named later rather than silently dropped.
+        cabinClass: cabinRaw(row) ? toCabin(cabinRaw(row)) || undefined : undefined,
+        cabinRaw:   cabinRaw(row) || undefined,
         source,
       });
     }
