@@ -24,6 +24,12 @@ export interface ShareRow {
   key: string;
   tickets: number;
   pct: number;
+  /** Refunds against this airline. Not sales, but money that moved. */
+  refunds: number;
+  /** Credit and debit memos and EMDs — money owed to or from the airline that
+   *  was never a ticket. Shown rather than folded in, so a total that a memo
+   *  moved can be traced to the memo. */
+  otherDocs: number;
   sar: number; aed: number; other: number;
   /** Kept alongside the net so a negative total can explain itself. An airline
    *  selling mostly in SAR can still show a negative AED net — a few AED sales
@@ -48,6 +54,8 @@ export interface Analytics {
   months: MonthPoint[];
   issuedCount: number;
   refundCount: number;
+  /** Memos and EMDs — airline money that was never a ticket. */
+  otherDocCount: number;
   totals: {
     sar: number; aed: number;
     sarIssued: number; sarRefunded: number;
@@ -56,33 +64,26 @@ export interface Analytics {
 }
 
 /**
- * Memos are not ticket sales. An ACM is the airline crediting the agency and
- * an ADM is it billing back; neither was sold to a passenger, neither flew a
- * route, and a single -30,699 credit memo was enough to drag British Airways
- * to a negative total that looked like an error. They stay in the ledger and
- * in every balance — they just do not belong in a ranking of what was sold.
- */
-const MEMO = new Set(['ACM', 'ADM']);
-
-/**
- * Documents that are not tickets.
+ * Documents that are money owed to or from an airline without being a sale.
  *
- * An EMD is a service charge — a seat, excess baggage, a change fee. Six of
- * them in this ledger are Riyadh Air charges of 420 and 450 sitting beside the
- * very passengers and dates of the tickets they belong to; three more are 80,
- * 100 and 400 against a fare. They are real money owed to the airline and stay
- * in every total, but calling them tickets counted a seat fee as a sale.
+ * An ACM is the airline crediting the agency, an ADM is it billing back, an
+ * EMD is a service charge. None of them is a ticket, and none of them is
+ * excluded: every one carries an airline code and real money, so leaving them
+ * out understated what each airline actually cost. They are counted in their
+ * own column and their money lands in the same totals as everything else.
  */
-const NOT_A_TICKET = new Set(['EMD', 'EMDS', 'EMDA']);
+const NOT_A_SALE = new Set(['ACM', 'ADM', 'EMD', 'EMDS', 'EMDA']);
 
 /**
  * Does this document count as a ticket the agency issued?
  *
  * It has to be a ticket, and the money has to have gone out. A refund is a
- * credit, an EMD is a service, and an ISSUE carrying a negative amount is a
- * credit note however it was typed — two AirArabia rows are exactly that, one
- * of them -20,000. All three still carry their money into the totals; none of
- * them is a sale.
+ * credit, a memo or an EMD is not a sale, and an ISSUE carrying a negative
+ * amount is a credit note however it was typed — two AirArabia rows are
+ * exactly that, one of them -20,000.
+ *
+ * None of them is dropped. Each is counted in the column it belongs to, and
+ * every one of their amounts lands in the same money totals as a sale.
  *
  * A ticket worth zero still counts: eighteen of those are genuine documents
  * issued at no fare, and dropping them would understate what was sold.
@@ -90,18 +91,24 @@ const NOT_A_TICKET = new Set(['EMD', 'EMDS', 'EMDA']);
 function countsAsTicket(t: Ticket): boolean {
   const s = (t.status || '').toUpperCase();
   if (s === 'REFUND') return false;
-  if (NOT_A_TICKET.has(s)) return false;
+  if (NOT_A_SALE.has(s)) return false;
   return t.amount >= 0;
 }
 
-/** The rows a share ranking is built from: real sales, no memos, no funding. */
+/**
+ * Everything an airline's figures are built from.
+ *
+ * Only wallet funding is left out, and only because it is money paid to a
+ * vendor rather than anything an airline issued — it carries no airline code
+ * at all. Every other document does, so every other document is in.
+ */
 export function analysable(tickets: Ticket[]): Ticket[] {
-  return tickets.filter(t =>
-    t.status !== 'FUND' && !MEMO.has((t.status || '').toUpperCase()));
+  return tickets.filter(t => (t.status || '').toUpperCase() !== 'FUND');
 }
 
 const blank = (key: string): ShareRow => ({
-  key, tickets: 0, pct: 0, sar: 0, aed: 0, other: 0,
+  key, tickets: 0, pct: 0, refunds: 0, otherDocs: 0,
+  sar: 0, aed: 0, other: 0,
   sarIssued: 0, sarRefunded: 0, aedIssued: 0, aedRefunded: 0,
 });
 
@@ -131,7 +138,11 @@ function tally(rows: Ticket[], keyOf: (t: Ticket) => string): ShareRow[] {
     const key = keyOf(t);
     if (!key) continue;
     const row = map.get(key) ?? blank(key);
+    // Every document lands in exactly one column, and every document's money
+    // lands in the totals — nothing is counted twice and nothing is dropped.
     if (countsAsTicket(t)) row.tickets++;
+    else if (isRefund(t)) row.refunds++;
+    else row.otherDocs++;
     addMoney(row, t);
     map.set(key, row);
   }
@@ -174,6 +185,7 @@ export function computeAnalytics(tickets: Ticket[]): Analytics {
     months,
     issuedCount: real.filter(countsAsTicket).length,
     refundCount: real.filter(isRefund).length,
+    otherDocCount: real.filter(t => !countsAsTicket(t) && !isRefund(t)).length,
     totals: {
       sar: all.sar, aed: all.aed,
       sarIssued: all.sarIssued, sarRefunded: all.sarRefunded,

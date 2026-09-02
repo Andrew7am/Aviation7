@@ -41,13 +41,19 @@ const ChartCard: React.FC<{
 );
 
 /**
- * One currency's net, with the sales and refunds behind it.
+ * One currency's net, with the money in and the money out behind it.
  *
  * A net can be negative without anything being wrong: an airline that sells
- * almost entirely in one currency can still take refunds in the other — for
- * tickets issued in an earlier period, or as an airline credit memo — so the
- * minus is the truth rather than a fault. The figures underneath say so,
+ * almost entirely in one currency can still take credits in the other — a
+ * refund of a ticket issued in an earlier period, or a credit memo — so the
+ * minus is the truth rather than a fault. One ACM of -30,699 is most of
+ * British Airways' AED credits on its own. The figures underneath say so,
  * instead of leaving a bare minus sign to be read as a bug.
+ *
+ * "Credited" rather than "refunded" because this bucket is everything that
+ * came back — refunds, credit memos, and credit notes booked as sales — and
+ * calling all of it refunds would send someone hunting for refunds that do not
+ * exist.
  */
 const NetCell: React.FC<{
   net: number; issued: number; refunded: number; fmt: (n: number) => string;
@@ -62,7 +68,7 @@ const NetCell: React.FC<{
       </div>
       {refunded < 0 && (
         <div className="text-[9px] text-slate-400 leading-tight font-mono">
-          {fmt(issued)} − {fmt(Math.abs(refunded))} refunded
+          {fmt(issued)} − {fmt(Math.abs(refunded))} credited
         </div>
       )}
     </td>
@@ -111,6 +117,9 @@ const ShareTable: React.FC<{
             <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">{keyHeader}</th>
               <th className="px-3 py-2 text-right">Tickets</th>
+              <th className="px-3 py-2 text-right" title="Refunds, and memos or EMDs — money that moved without a ticket being sold. Their amounts are already in the totals.">
+                Other docs
+              </th>
               <th className="px-3 py-2 text-right">Share</th>
               <th className="px-3 py-2 text-right">Net SAR</th>
               <th className="px-3 py-2 text-right">Net AED</th>
@@ -132,6 +141,16 @@ const ShareTable: React.FC<{
                   </div>
                 </td>
                 <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-600">{r.tickets}</td>
+                <td className="px-3 py-2 text-right font-mono text-[11px]">
+                  {r.refunds + r.otherDocs === 0
+                    ? <span className="text-slate-300">—</span>
+                    : (
+                      <span className="text-slate-500"
+                            title={`${r.refunds} refund(s), ${r.otherDocs} memo/EMD`}>
+                        {r.refunds + r.otherDocs}
+                      </span>
+                    )}
+                </td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex items-center justify-end gap-2">
                     <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -563,16 +582,18 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                    sub={periodLabel(anFrom, anTo)} />
               <Kpi label="Refunds" tone="red"
                    value={an.refundCount.toLocaleString('en-US')}
-                   sub={an.issuedCount ? `${((an.refundCount / an.issuedCount) * 100).toFixed(1)}% of issues` : '—'} />
+                   sub={an.otherDocCount
+                     ? `+ ${an.otherDocCount} memo/EMD, all in the totals`
+                     : (an.issuedCount ? `${((an.refundCount / an.issuedCount) * 100).toFixed(1)}% of issues` : '—')} />
               <Kpi label="Net SAR" tone={an.totals.sar < 0 ? 'red' : 'green'}
                    value={fmt(an.totals.sar)}
                    sub={an.totals.sarRefunded < 0
-                     ? `${fmt(an.totals.sarIssued)} − ${fmt(Math.abs(an.totals.sarRefunded))} refunded`
+                     ? `${fmt(an.totals.sarIssued)} − ${fmt(Math.abs(an.totals.sarRefunded))} credited`
                      : undefined} />
               <Kpi label="Net AED" tone={an.totals.aed < 0 ? 'red' : 'green'}
                    value={fmt(an.totals.aed)}
                    sub={an.totals.aedRefunded < 0
-                     ? `${fmt(an.totals.aedIssued)} − ${fmt(Math.abs(an.totals.aedRefunded))} refunded`
+                     ? `${fmt(an.totals.aedIssued)} − ${fmt(Math.abs(an.totals.aedRefunded))} credited`
                      : undefined} />
             </div>
 

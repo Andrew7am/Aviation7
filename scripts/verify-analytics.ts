@@ -52,7 +52,9 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
   const IS_TICKET = `
     upper(status) not in ('FUND','ACM','ADM','REFUND','EMD','EMDS','EMDA')
     and amount >= 0`;
-  const IN_LEDGER = `upper(status) not in ('FUND','ACM','ADM')`;
+  // Everything an airline's figures are built from. Only wallet funding is
+  // out, because it carries no airline code — every other document does.
+  const IN_LEDGER = `upper(status) <> 'FUND'`;
 
   console.log('1. What each status contributes to the airline ranking');
   console.table((await c.query(
@@ -96,6 +98,20 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
     `select count(*)::int n from tickets where upper(status) = 'REFUND'`);
   check('refund count matches the database', an.refundCount, sqlRefunds);
 
+  const { rows: [{ n: sqlOther }] } = await c.query(
+    `select count(*)::int n from tickets
+     where ${IN_LEDGER} and not (${IS_TICKET}) and upper(status) <> 'REFUND'`);
+  check('memo/EMD count matches the database', an.otherDocCount, sqlOther);
+
+  // Nothing may fall between the three columns, and nothing may sit in two.
+  const { rows: [{ n: sqlAllDocs }] } = await c.query(
+    `select count(*)::int n from tickets where ${IN_LEDGER}`);
+  check('every document is counted exactly once',
+    an.issuedCount + an.refundCount + an.otherDocCount, sqlAllDocs);
+
+  const perRow = an.byAirline.reduce((s, r) => s + r.tickets + r.refunds + r.otherDocs, 0);
+  check('the airline rows account for every document', perRow, sqlAllDocs);
+
   // Money is a separate question from counting: an EMD, a refund and a credit
   // note are all excluded from the ticket count, and all three still belong in
   // the totals.
@@ -116,8 +132,9 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
   const sqlSar = { net: 0, issued: 0, refunded: 0 };
   const sqlAed = { net: 0, issued: 0, refunded: 0 };
   for (const t of tickets) {
-    const s = (t.status || '').toUpperCase();
-    if (s === 'FUND' || s === 'ACM' || s === 'ADM') continue;
+    // Only funding is out. A memo and an EMD are airline money and belong in
+    // these totals exactly as a refund does.
+    if ((t.status || '').toUpperCase() === 'FUND') continue;
     const cur = sourceToCurrency(t.source || '');
     const box = cur === 'SAR' ? sqlSar : cur === 'AED' ? sqlAed : null;
     if (!box) continue;

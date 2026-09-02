@@ -68,7 +68,9 @@ const AIRLINE_NAMES: Record<number, { name: string; iata: string }> = {
   390: { name: 'Aegean Airlines',                iata: 'A3' },
   406: { name: 'UPS Airlines',                   iata: '5X' },
   555: { name: 'Aeroflot',                       iata: 'SU' },
-  560: { name: 'Dalavia Far East Airways',       iata: 'H8' },
+  // IATA reassigned this code. It belonged to Dalavia Far East Airways, gone
+  // since 2008; the agency confirms every ticket under it is flyadeal.
+  560: { name: 'flyadeal',                       iata: 'F3' },
   593: { name: 'Flynas',                         iata: 'XY' },
   603: { name: 'SriLankan Airlines',             iata: 'UL' },
   607: { name: 'Etihad Airways',                 iata: 'EY' },
