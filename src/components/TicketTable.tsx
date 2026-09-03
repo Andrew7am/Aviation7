@@ -5,6 +5,7 @@ import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
+import { classifyOffice, OFFICE_LABEL, type Office } from '../core/helpers/reqOffice';
 import { airlineName } from '../core/config/airlines';
 import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers/period';
 import * as XLSX from 'xlsx';
@@ -257,6 +258,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [closedFilter, setClosedFilter] = useState<'ALL' | 'CLOSED' | 'NOT_CLOSED'>(defaultClosed);
   const [travelFilter, setTravelFilter] = useState<'ALL' | TravelScope>('ALL');
   const [cabinFilter, setCabinFilter]   = useState<string>('ALL');
+  /** Which office raised the request, read off the req number's prefix. */
+  const [officeFilter, setOfficeFilter] = useState<string>('ALL');
   const [filterTicket, setFilterTicket] = useState('');
   const [filterAL, setFilterAL]         = useState('');
   const [filterPax, setFilterPax]       = useState('');
@@ -338,6 +341,14 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         if (cabinFilter === 'NONE') { if (t.cabinClass) return false; }
         else if (t.cabinClass !== cabinFilter) return false;
       }
+      // "Other" is the useful half of this filter as much as the three
+      // offices: it is how the req numbers that are markers rather than
+      // requests — ADM, VOID, CREDIT MEMO, someone's name — get found.
+      if (officeFilter !== 'ALL') {
+        const office = classifyOffice(t.reqNum);
+        if (officeFilter === 'OTHER') { if (office) return false; }
+        else if (office !== officeFilter) return false;
+      }
       // Ticket numbers are stored as the bare 10-digit serial, but the number
       // to hand is often the full 13-digit one off the airline's site or an
       // older report. Both are matched, so pasting either finds the document.
@@ -369,9 +380,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       });
     }
     return rows;
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
-  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = useMemo(
@@ -511,6 +522,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       pax:    filtered.some(t => !!t.passengerName),
       comm:   filtered.some(t => !!t.commission),
       cabin:  filtered.some(t => !!t.cabinClass || !!t.cabinRaw),
+      office: filtered.some(t => !!classifyOffice(t.reqNum)),
       // Total Doc only earns a column when it differs from the net somewhere.
       total:  filtered.some(t => Math.abs((t.totalDoc ?? 0) - Math.abs(t.amount)) > 0.005),
       closed: filtered.length > 0,
@@ -539,6 +551,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       { key: 'Balance Payable', get: (t: Ticket) => t.amount ?? 0,           w: 13, money: true },
       { key: 'Cur',         get: (t: Ticket) => sourceToCurrency(t.source || ''), w: 6 },
       { key: 'Req Num',     get: (t: Ticket) => t.reqNum || '',          w: 14 },
+      ...(has.office ? [{ key: 'Office',
+        get: (t: Ticket) => OFFICE_LABEL[classifyOffice(t.reqNum) as Exclude<Office, ''>] ?? '',
+        w: 10 }] : []),
       ...(has.closed ? [{ key: 'Closed', get: (t: Ticket) => t.closed ? 'Closed' : 'Not Closed', w: 11 }] : []),
     ];
 
@@ -878,6 +893,23 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             <option value="PREMIUM_ECONOMY">Premium Economy</option>
             <option value="ECONOMY">Economy</option>
             <option value="NONE">Not recorded</option>
+          </select>
+
+          {/* Office, from the req number's prefix. */}
+          <select
+            value={officeFilter}
+            onChange={e => setOfficeFilter(e.target.value)}
+            title="Office that raised the request, read from the req number"
+            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+              officeFilter === 'ALL' ? 'bg-white text-slate-500 border-slate-200'
+                                     : 'bg-violet-50 text-violet-700 border-violet-200'
+            }`}
+          >
+            <option value="ALL">All Offices</option>
+            <option value="DUBAI">Dubai</option>
+            <option value="SAUDI">Saudi</option>
+            <option value="EGYPT">Egypt</option>
+            <option value="OTHER">Other / not an office</option>
           </select>
 
           {/* Closed / Not Closed filter */}
