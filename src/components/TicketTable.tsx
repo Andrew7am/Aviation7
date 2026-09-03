@@ -670,6 +670,63 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   const canEdit = !!onUpdateReqNum || !!onUpdateTicket;
 
+  /**
+   * Click a cell to copy it.
+   *
+   * A viewer cannot change anything, which left them dragging a selection
+   * across a monospace table to lift a PNR — and the passenger column is
+   * truncated, so the full name could not be selected at all. Clicking copies
+   * the whole value, truncated or not.
+   *
+   * It applies to anyone on any cell they cannot edit: for a viewer that is
+   * every cell, and for an admin it is everything except the four that open an
+   * editor, which keep their own click.
+   */
+  const [copied, setCopied] = useState('');
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(''), 1400);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  const handleCellClick = async (e: React.MouseEvent<HTMLTableSectionElement>) => {
+    const el = e.target as HTMLElement;
+    // An editor's own controls, the delete button, the closed toggle: those
+    // clicks mean something already.
+    if (el.closest('button, input, select, textarea, a')) return;
+    // On an editable cell the admin's click opens the editor instead.
+    if (canEdit && el.closest('[data-editable]')) return;
+
+    const cell = el.closest('td');
+    if (!cell) return;
+    // What the eye sees, minus the decorations a badge stacks underneath it.
+    let text = (cell.innerText || '').trim().split('\n')[0].trim();
+    if (!text || text === '—' || text === '[+ ADD]') return;
+    // A money cell copies the plain number — "2810.00", not "2,810.00" — so it
+    // pastes into a spreadsheet as a value rather than as text a locale has to
+    // re-interpret. The separators are only there to be read.
+    if (/^-?[\d,]+\.\d{2}$/.test(text)) text = text.replace(/,/g, '');
+
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(text);
+    } catch {
+      // navigator.clipboard needs a secure context, which a plain http origin
+      // is not. The old textarea trick still works there.
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        setCopied(ok ? text : '');
+      } catch { /* nothing more to try; stay silent rather than alarm */ }
+    }
+  };
+
   const startEdit = (ticket: Ticket, field: EditableField) => {
     if (!canEdit) return;
     const current =
@@ -717,6 +774,17 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-slate-100">
+      {/* Says what landed on the clipboard, not just that something did — a
+          click near a cell edge could otherwise copy the neighbour without
+          anyone noticing. */}
+      {copied && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
+                        bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg
+                        text-[11px] font-mono max-w-md">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span className="truncate">Copied <span className="font-bold">{copied}</span></span>
+        </div>
+      )}
       {/* Header */}
       <div className="p-4 flex flex-wrap justify-between items-center gap-2 shrink-0 bg-white border-b border-slate-200">
         <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">{title}</h2>
@@ -1115,6 +1183,11 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             export uses, so the badge and the file agree. */}
         <span className="text-emerald-600">{filtered.filter(t => t.closed && t.status !== 'FUND').length} closed</span>
         <span className="text-orange-600">· {filtered.filter(t => !t.closed && t.status !== 'FUND').length} not closed</span>
+        {/* Nothing on screen would otherwise suggest a cell is clickable. */}
+        <span className="text-slate-300">|</span>
+        <span className="text-slate-400">
+          click a cell to copy it{canEdit && ' · the editable ones open for editing'}
+        </span>
       </div>
 
       {/* Table */}
@@ -1162,7 +1235,11 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               {onDelete && <th className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase text-right">Del</th>}
             </tr>
           </thead>
-          <tbody className="text-xs font-mono">
+          {/* Click any cell you cannot edit to copy what it says.
+              Delegated to the tbody rather than attached per cell, so it
+              covers every column — including ones added later — without
+              eighteen near-identical handlers. */}
+          <tbody className="text-xs font-mono" onClick={handleCellClick}>
             {paged.map(ticket => {
               const ticketCurrency = sourceToCurrency(ticket.source || '');
               return (
@@ -1222,6 +1299,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     {isEditing(ticket.id, 'amount') ? editorInput : (
                       <span
                         className={canEdit ? 'cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded' : ''}
+                        data-editable
                         onClick={() => startEdit(ticket, 'amount')}
                         title={canEdit ? 'Click to edit amount' : undefined}
                       >
@@ -1234,6 +1312,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     {isEditing(ticket.id, 'pnr') ? editorInput : (
                       <span
                         className={canEdit ? 'cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded' : ''}
+                        data-editable
                         onClick={() => startEdit(ticket, 'pnr')}
                         title={canEdit ? 'Click to edit PNR' : undefined}
                       >
@@ -1245,6 +1324,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     {isEditing(ticket.id, 'passengerName') ? editorInput : (
                       <span
                         className={`block truncate ${canEdit ? 'cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded' : ''}`}
+                        data-editable
                         onClick={() => startEdit(ticket, 'passengerName')}
                         title={canEdit ? (ticket.passengerName || 'Click to edit name') : ticket.passengerName}
                       >
@@ -1256,6 +1336,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     {isEditing(ticket.id, 'reqNum') ? editorInput : (
                       <div
                         className={`font-bold inline-block px-1 py-0.5 rounded ${canEdit ? 'cursor-pointer hover:bg-slate-100' : ''} ${ticket.reqNum ? 'text-blue-600 underline' : 'text-red-400 italic'}`}
+                        data-editable
                         onClick={() => startEdit(ticket, 'reqNum')}
                         title={canEdit ? 'Click to edit' : undefined}
                       >
