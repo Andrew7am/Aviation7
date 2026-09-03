@@ -127,11 +127,37 @@ export function useImport(userId: string) {
       const { fresh, updates, duplicates, settlements } = detectDuplicatesAgainstExisting(realTkts, existingFromDB);
       const classified = classifyAgainstExisting(realTkts, existingFromDB);
 
+      /**
+       * Dates that cannot be true, said before the import is confirmed.
+       *
+       * parseDate deliberately keeps whatever the vendor wrote rather than
+       * inventing a replacement, which is right — but nothing then pointed at
+       * the result. Two Ibtekar tickets sat in the ledger dated 1970-01-01 and
+       * 2070-01-01 for months, out of reach of every period filter and sitting
+       * at either end of the month picker, until someone happened to open that
+       * dropdown and notice.
+       *
+       * A warning rather than a rejection: the row is real and its money is
+       * real, and the vendor is the one who has to correct the date.
+       */
+      const YEAR = new Date().getFullYear();
+      const odd = keepable.filter(t => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(t.date || '')) return false;
+        const y = Number(t.date.slice(0, 4));
+        return y < YEAR - 3 || y > YEAR + 1;
+      });
+      const dateWarnings = odd.length
+        ? [`${odd.length} row(s) carry a date that cannot be right — ` +
+           `${[...new Set(odd.map(t => t.date))].slice(0, 4).join(', ')}` +
+           `${new Set(odd.map(t => t.date)).size > 4 ? ' and more' : ''}. ` +
+           `They will import with the date the report gave them; check it with the vendor.`]
+        : [];
+
       setPreview({
         fresh, updates, duplicates, topUps, settlements, voided,
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
-        warnings, parserName, confidence,
+        warnings: [...dateWarnings, ...warnings], parserName, confidence,
         totalRows: allRows.length,
       });
     } finally {
