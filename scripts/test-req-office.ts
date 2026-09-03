@@ -20,6 +20,14 @@ for (const r of ['UAEVP105', 'UAECO98', 'UAEMLMI1655', 'UAEC125', 'UAEFM2296',
   check(r, classifyOffice(r), 'DUBAI');
 }
 
+console.log('\n1b. Dubai written some other way, as the agency confirmed');
+// The airport code, REQ with two letters transposed, and the office named in
+// brackets at the end instead of at the front.
+check('DXB', classifyOffice('DXB'), 'DUBAI');
+check('DXB-KHALED', classifyOffice('DXB-KHALED'), 'DUBAI');
+check('RQE11660', classifyOffice('RQE11660'), 'DUBAI');
+check('EXPENSE(UAE)', classifyOffice('EXPENSE(UAE)'), 'DUBAI');
+
 console.log('\n2. Saudi — SA and everything under KSA');
 for (const r of ['SA0293', 'SA998', 'KSAML644', 'KSACO363', 'KSAMLMI1446-SA1196',
                  'KSAFM2440', 'KSAMI1643']) {
@@ -36,18 +44,23 @@ check('a bare KSA', classifyOffice('KSA'), 'SAUDI');
 console.log('\n4. Egypt');
 check('EGPML1909', classifyOffice('EGPML1909'), 'EGYPT');
 
-console.log('\n5. Prefix, never substring');
-// "MISA123" contains SA but does not start with it; nothing should claim it.
+console.log('\n5. A code buried inside letters is not a code');
+// The fallback that reads EXPENSE(UAE) must not turn every string containing
+// the letters into an office. A code only counts where it stands alone.
 check('MISA123 is not Saudi', classifyOffice('MISA123'), '');
 check('XUAE9 is not Dubai', classifyOffice('XUAE9'), '');
+check('PURCHASE1 is not Saudi', classifyOffice('PURCHASE1'), '');
+check('but a bracketed code is read', classifyOffice('EXPENSE(KSA)'), 'SAUDI');
+check('and one after a dash', classifyOffice('EXPENSE-EGP'), 'EGYPT');
+// REQ is a prefix rule only: it is a series, not a place, so it must not be
+// picked up from the middle of a word the way a country code is.
 check('A-REQ-5 is not Dubai', classifyOffice('A-REQ-5'), '');
 
 console.log('\n6. Everything that is not an office code stays unclassified');
 for (const r of ['ADM', 'ADM-SHYMAA', 'ACM', 'VOID', 'CANXX', 'REFUNDED',
                  'REFNDAPPLICATION', 'CREDIT MEMO', 'COMPANY EXPENSE',
                  'COMPANYEXPENSE', 'COMEXP', 'COM EXP', 'GIHANEXPENSE',
-                 'LEC&WLS', 'VIP', 'BOSS', 'MR.KHALED', '1', 'DXB', 'DXB-KHALED',
-                 'RQE11660', 'EXPENSE(UAE)']) {
+                 'LEC&WLS', 'VIP', 'BOSS', 'MR.KHALED', 'MR.KHALID', '1']) {
   check(`${r} -> unclassified`, classifyOffice(r), '');
 }
 

@@ -27,12 +27,29 @@ export const OFFICE_LABEL: Record<Exclude<Office, ''>, string> = {
 };
 
 /** Prefixes in the order they must be tested: the longer, more specific ones
- *  first, so KSA never falls through to SA. */
+ *  first, so KSA never falls through to SA.
+ *
+ *  DXB is Dubai's airport code and RQE is REQ typed with two letters
+ *  transposed; the agency confirmed both belong to Dubai. */
 const RULES: [string[], Exclude<Office, ''>][] = [
   [['KSA'], 'SAUDI'],
-  [['UAE', 'REQ'], 'DUBAI'],
+  [['UAE', 'REQ', 'RQE', 'DXB'], 'DUBAI'],
   [['EGP'], 'EGYPT'],
   [['SA'], 'SAUDI'],
+];
+
+/**
+ * The same codes, but written somewhere other than the front.
+ *
+ * "EXPENSE(UAE)" names its office in brackets at the end. The code has to
+ * stand alone — bounded by something that is not a letter — so this reads that
+ * one and does not sweep in a req number that merely contains the letters, the
+ * way a plain substring search would make MISA123 Saudi.
+ */
+const TOKEN_RULES: [string[], Exclude<Office, ''>][] = [
+  [['KSA'], 'SAUDI'],
+  [['UAE', 'DXB'], 'DUBAI'],
+  [['EGP'], 'EGYPT'],
 ];
 
 export function classifyOffice(reqNum: string | undefined | null): Office {
@@ -40,6 +57,9 @@ export function classifyOffice(reqNum: string | undefined | null): Office {
   if (!s) return '';
   for (const [prefixes, office] of RULES) {
     if (prefixes.some(p => s.startsWith(p))) return office;
+  }
+  for (const [codes, office] of TOKEN_RULES) {
+    if (codes.some(code => new RegExp(`(^|[^A-Z])${code}([^A-Z]|$)`).test(s))) return office;
   }
   return '';
 }
