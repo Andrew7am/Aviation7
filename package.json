@@ -41,7 +41,8 @@
     "test:walletdate": "tsx scripts/test-wallet-opening-date.ts",
     "test:balanceflow": "tsx scripts/test-balance-after-invoice.ts",
     "test:cabin": "tsx scripts/test-cabin-class.ts",
-    "test:office": "tsx scripts/test-req-office.ts"
+    "test:office": "tsx scripts/test-req-office.ts",
+    "reconcile:nsa": "tsx scripts/reconcile-nsa-statements.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
