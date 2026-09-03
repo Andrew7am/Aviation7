@@ -4,6 +4,7 @@ import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, C
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
+import { extractRoute } from '../core/helpers/extractRoute';
 import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { classifyOffice, OFFICE_LABEL, type Office } from '../core/helpers/reqOffice';
 import { airlineName } from '../core/config/airlines';
@@ -25,7 +26,7 @@ interface TicketTableProps {
   onBulkUpdateClosed?: (ids: string[], closed: boolean) => Promise<void>;
 }
 
-type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr';
+type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr' | 'route' | 'cabinClass';
 
 type SortKey =
   | 'serial' | 'airlineCode' | 'ticketNo' | 'source' | 'status' | 'date'
@@ -730,9 +731,11 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const startEdit = (ticket: Ticket, field: EditableField) => {
     if (!canEdit) return;
     const current =
-      field === 'reqNum'        ? (ticket.reqNum || '')
+      field === 'reqNum'          ? (ticket.reqNum || '')
       : field === 'passengerName' ? (ticket.passengerName || '')
-      : field === 'pnr'         ? (ticket.pnr || '')
+      : field === 'pnr'           ? (ticket.pnr || '')
+      : field === 'route'         ? (ticket.route || '')
+      : field === 'cabinClass'    ? (ticket.cabinClass || '')
       : String(ticket.amount ?? '');
     setEditingCell({ id: ticket.id, field });
     setEditValue(current);
@@ -751,6 +754,20 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       onUpdateTicket?.(id, { passengerName: raw.toUpperCase() });
     } else if (field === 'pnr') {
       onUpdateTicket?.(id, { pnr: raw.toUpperCase() });
+    } else if (field === 'route') {
+      // Normalised the way every parser normalises a route, so one typed by
+      // hand groups with the imported ones in the route ranking instead of
+      // sitting beside them as a near-duplicate.
+      onUpdateTicket?.(id, { route: extractRoute(raw) || raw.toUpperCase() });
+    } else if (field === 'cabinClass') {
+      // Both columns move together. cabin_raw is what the source called it,
+      // and for a cabin chosen from this list the source IS this list — so
+      // leaving the old wording behind would have the row claiming it came
+      // from a report that said something else.
+      const cabin = raw as Exclude<Cabin, ''>;
+      onUpdateTicket?.(id, CABIN_LABEL[cabin]
+        ? { cabinClass: cabin, cabinRaw: CABIN_LABEL[cabin] }
+        : { cabinClass: '', cabinRaw: '' });
     }
     setEditingCell(null);
   };
@@ -768,6 +785,31 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       className="w-24 px-1.5 py-0.5 text-xs font-bold border border-blue-400 rounded focus:outline-none focus:ring-1 ring-blue-400"
       autoFocus
     />
+  );
+
+  /**
+   * The cabin editor is a list, not a text box.
+   *
+   * Cabin is one of four values and the analytics count on it being exactly
+   * those — a hand-typed "buisness" would land in the ranking as its own
+   * cabin. Blank is offered too, so a cabin entered in error can be taken back
+   * out rather than being stuck as whatever was picked first.
+   */
+  const editorSelect = (
+    <select
+      value={editValue}
+      onChange={e => { setEditValue(e.target.value); }}
+      onKeyDown={e => { if (e.key === 'Escape') cancelEdit(); }}
+      onBlur={commitEdit}
+      className="px-1.5 py-0.5 text-xs font-bold border border-blue-400 rounded focus:outline-none focus:ring-1 ring-blue-400"
+      autoFocus
+    >
+      <option value="">— not recorded —</option>
+      <option value="ECONOMY">Economy</option>
+      <option value="PREMIUM_ECONOMY">Premium Economy</option>
+      <option value="BUSINESS">Business</option>
+      <option value="FIRST">First</option>
+    </select>
   );
 
   const activeColFilters = [filterTicket, filterAL, filterPax, filterPNR].filter(Boolean).length;
@@ -1281,12 +1323,34 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     }
                   </td>
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{ticket.date}</td>
-                  <td className="px-3 py-2 text-[10px] text-slate-400">{ticket.route || '—'}</td>
+                  <td className="px-3 py-2 text-[10px] text-slate-400">
+                    {isEditing(ticket.id, 'route') ? editorInput : (
+                      <span
+                        data-editable
+                        onClick={() => startEdit(ticket, 'route')}
+                        className={canEdit ? 'cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded' : ''}
+                        title={canEdit ? 'Click to edit route' : undefined}
+                      >
+                        {ticket.route || '—'}
+                      </span>
+                    )}
+                  </td>
+                  {/* Travel is read off the route, so editing the route above
+                      is how this changes; it has no editor of its own. */}
                   <td className="px-3 py-2">
                     <TravelBadge route={ticket.route} />
                   </td>
                   <td className="px-3 py-2">
-                    <CabinBadge cabin={ticket.cabinClass} raw={ticket.cabinRaw} />
+                    {isEditing(ticket.id, 'cabinClass') ? editorSelect : (
+                      <span
+                        data-editable
+                        onClick={() => startEdit(ticket, 'cabinClass')}
+                        className={canEdit ? 'cursor-pointer hover:bg-slate-100 px-1 py-0.5 rounded inline-block' : ''}
+                        title={canEdit ? 'Click to set the cabin' : undefined}
+                      >
+                        <CabinBadge cabin={ticket.cabinClass} raw={ticket.cabinRaw} />
+                      </span>
+                    )}
                   </td>
                   {/* Negative values must render, not collapse to an em-dash:
                       a refund's clawed-back commission is real data, and
