@@ -168,9 +168,26 @@ function check(name: string, got: unknown, want: unknown, detail?: string) {
       Number((after - before).toFixed(2)), 100);
   }
 
-  console.log('\n8. Access is restricted to a single administrator');
+  console.log('\n8. Write access belongs to the people the owner named');
+  /**
+   * The admins the owner has approved, by name.
+   *
+   * This used to assert a single admin, from when there was one. A second was
+   * added on 2026-08-17 and the owner confirmed it — so the rule is not "how
+   * many" but "which": listing them means a THIRD appearing still fails this,
+   * which is the thing worth catching. Relaxing it to a count would have
+   * turned the check off.
+   *
+   * app_users carries no audit trail, so an unexpected name here is the only
+   * warning there would be. Add to this list only on the owner's say-so.
+   */
+  const APPROVED_ADMINS = [
+    'accounting3@events-explorers.com',
+    'accounting1@events-explorers.com',
+  ];
   const { rows: admins } = await c.query(`select email from app_users where role = 'admin'`);
-  check('  exactly one admin', admins.length, 1);
+  const names = (admins as any[]).map(a => String(a.email).toLowerCase()).sort();
+  check('  the admins are exactly the approved ones', names, [...APPROVED_ADMINS].sort());
   const { rows: pol } = await c.query(
     `select tablename, count(*)::int n from pg_policies
      where schemaname='public' and tablename in
