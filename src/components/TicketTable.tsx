@@ -26,19 +26,51 @@ interface TicketTableProps {
 
 type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr';
 
-type SortKey = 'serial' | 'date' | 'amount' | 'ticketNo' | 'source' | null;
+type SortKey =
+  | 'serial' | 'airlineCode' | 'ticketNo' | 'source' | 'status' | 'date'
+  | 'route' | 'travel' | 'cabin' | 'totalDoc' | 'commission' | 'amount'
+  | 'currency' | 'pnr' | 'passengerName' | 'reqNum' | 'closed'
+  | null;
+
+/** Cabins sort by where they sit on the aircraft, not alphabetically — First
+ *  above Business above Economy is the order anyone means by "sort by cabin",
+ *  and A-before-B would put Business above First. */
+const CABIN_ORDER: Record<string, number> = {
+  FIRST: 0, BUSINESS: 1, PREMIUM_ECONOMY: 2, ECONOMY: 3,
+};
 
 /** Comparable value for a sort key, or null when the row has nothing to sort
  *  by. Amount sorts on the SIGNED value so refunds group at one end rather
  *  than interleaving with issues of a similar size. Dates are ISO strings,
- *  so a plain string compare is already chronological. */
+ *  so a plain string compare is already chronological.
+ *
+ *  Every column on screen is here. A column that shows something derived
+ *  rather than stored — Travel from the route, Cabin from its class — sorts on
+ *  what the eye sees, not on the field behind it. */
 function sortValue(t: Ticket, key: Exclude<SortKey, null>): number | string | null {
   switch (key) {
-    case 'serial':   return t.serial ?? null;
-    case 'date':     return t.date || null;
-    case 'amount':   return t.amount ?? null;
-    case 'ticketNo': return t.ticketNo || null;
-    case 'source':   return t.source || null;
+    case 'serial':        return t.serial ?? null;
+    case 'airlineCode':   return t.airlineCode || null;
+    case 'ticketNo':      return t.ticketNo || null;
+    case 'source':        return t.source || null;
+    case 'status':        return t.status || null;
+    case 'date':          return t.date || null;
+    case 'route':         return t.route || null;
+    case 'travel':        return classifyTravel(t.route) || null;
+    case 'cabin':         return t.cabinClass ? (CABIN_ORDER[t.cabinClass] ?? 9) : null;
+    // Zero is a real fare and a real commission — a ticket issued at no charge,
+    // a sale that earned nothing — so they sort as zero rather than sinking to
+    // the bottom with the rows that never had the column at all.
+    case 'totalDoc':      return t.totalDoc ?? null;
+    case 'commission':    return t.commission ?? null;
+    case 'amount':        return t.amount ?? null;
+    case 'currency':      return sourceToCurrency(t.source || '') || null;
+    case 'pnr':           return t.pnr || null;
+    case 'passengerName': return t.passengerName || null;
+    case 'reqNum':        return t.reqNum || null;
+    // Not Closed first when ascending: the outstanding ones are what anyone
+    // sorting this column is looking for.
+    case 'closed':        return t.closed ? 1 : 0;
   }
 }
 
@@ -386,13 +418,18 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   /** Click a sortable header to cycle: ascending -> descending -> unsorted. */
   const toggleSort = (key: Exclude<SortKey, null>) => {
-    // Money and dates are most often wanted biggest/newest first, so that is
-    // the opening direction; serial reads naturally low-to-high. Whichever it
-    // starts on, the second click gives the OPPOSITE direction and only the
-    // third turns sorting off — otherwise one of the two directions is
-    // unreachable, which is what happened here: every non-serial column went
-    // descending -> off and could never be sorted ascending at all.
-    const first: 'asc' | 'desc' = key === 'serial' ? 'asc' : 'desc';
+    // Whichever direction it starts on, the second click gives the OPPOSITE
+    // one and only the third turns sorting off — otherwise one of the two is
+    // unreachable, which is what used to happen here: every column but serial
+    // went descending -> off and could never be sorted ascending at all.
+    //
+    // Which direction opens depends on the column. Money and dates are wanted
+    // biggest and newest first; a name, a route or a PNR is wanted A-to-Z, and
+    // opening those on Z-to-A would be answering a question nobody asked.
+    const DESC_FIRST = new Set<Exclude<SortKey, null>>([
+      'date', 'amount', 'totalDoc', 'commission',
+    ]);
+    const first: 'asc' | 'desc' = DESC_FIRST.has(key) ? 'desc' : 'asc';
     const second: 'asc' | 'desc' = first === 'asc' ? 'desc' : 'asc';
     if (sortKey !== key)          { setSortKey(key); setSortDir(first); }
     else if (sortDir === first)   { setSortDir(second); }
@@ -1056,23 +1093,26 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               {/* Sortable headers cycle ascending -> descending -> unsorted. */}
               {([
                 ['Serial',     'serial'],
-                ['A/L',        null],
+                ['A/L',        'airlineCode'],
                 ['Ticket No.', 'ticketNo'],
                 ['Source',     'source'],
-                ['Status',     null],
+                ['Status',     'status'],
                 ['Date',       'date'],
-                ['Route',      null],
-                ['Travel',     null],
-                ['Cabin',      null],
-                ['Fare',       null],
-                ['Commission', null],
+                ['Route',      'route'],
+                ['Travel',     'travel'],
+                ['Cabin',      'cabin'],
+                ['Fare',       'totalDoc'],
+                ['Commission', 'commission'],
                 ['Balance Payable', 'amount'],
-                ['Curr',       null],
-                ['PNR',        null],
-                ['Passenger',  null],
-                ['Req Num',    null],
+                ['Curr',       'currency'],
+                ['PNR',        'pnr'],
+                ['Passenger',  'passengerName'],
+                ['Req Num',    'reqNum'],
+                // Recon is derived entirely from Req Num — a row is MATCHED
+                // exactly when it has one — so sorting it would just be the
+                // Req Num sort with less information in it.
                 ['Recon',      null],
-                ['Closed',     null],
+                ['Closed',     'closed'],
               ] as [string, Exclude<SortKey, null> | null][]).map(([label, key]) => (
                 <th
                   key={label}
