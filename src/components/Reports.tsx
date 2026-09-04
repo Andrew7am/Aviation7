@@ -824,6 +824,10 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                     value: airlineShareCurrency === 'SAR' ? r.sarIssued
                          : airlineShareCurrency === 'AED' ? r.aedIssued
                          :                                   r.totalAedEq,
+                    // Money says what a slice earned; this says how many
+                    // tickets it took, so the two are never confused for
+                    // each other now that the donut ranks by money.
+                    count: r.tickets,
                   }))}
                   max={DONUT_MAX}
                   centerLabel={airlineShareCurrency === 'TOTAL' ? 'AED total' : `${airlineShareCurrency} issued`}

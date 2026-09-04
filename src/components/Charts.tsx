@@ -33,7 +33,14 @@ function short(n: number): string {
   return String(Math.round(n));
 }
 
-export interface Slice { key: string; label: string; value: number }
+export interface Slice {
+  key: string; label: string; value: number;
+  /** Ticket count, shown alongside `value` when the slice is ranked by money
+   *  rather than by ticket count — money says how much a slice earned, this
+   *  says how many tickets it took to earn it. Omit when `value` already is
+   *  the ticket count, so it isn't printed twice. */
+  count?: number;
+}
 
 /**
  * Share as a donut, with the long tail folded into one "Others" slice.
@@ -50,10 +57,15 @@ export const Donut: React.FC<{
 }> = ({ slices, max = 8, centerLabel = 'Tickets', centerValue }) => {
   const sorted = [...slices].filter(s => s.value > 0).sort((a, b) => b.value - a.value);
   const head = sorted.slice(0, max);
-  const tailValue = sorted.slice(max).reduce((s, x) => s + x.value, 0);
+  const tail = sorted.slice(max);
+  const tailValue = tail.reduce((s, x) => s + x.value, 0);
+  const tailCount = tail.reduce((s, x) => s + (x.count ?? 0), 0);
   const shown: (Slice & { color: string })[] = head.map((s, i) => ({ ...s, color: paletteAt(i) }));
   if (tailValue > 0) {
-    shown.push({ key: '__others', label: `Others (${sorted.length - head.length})`, value: tailValue, color: MUTED });
+    shown.push({
+      key: '__others', label: `Others (${sorted.length - head.length})`, value: tailValue, color: MUTED,
+      count: tail.some(x => x.count !== undefined) ? tailCount : undefined,
+    });
   }
   const total = shown.reduce((s, x) => s + x.value, 0);
 
@@ -76,7 +88,7 @@ export const Donut: React.FC<{
                 key={s.key} r={R} fill="none" stroke={s.color} strokeWidth={SW}
                 strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-acc}
               >
-                <title>{`${s.label} — ${fmtInt(s.value)} (${((s.value / total) * 100).toFixed(1)}%)`}</title>
+                <title>{`${s.label} — ${fmtInt(s.value)}${s.count !== undefined ? ` · ${fmtInt(s.count)} ticket${s.count === 1 ? '' : 's'}` : ''} (${((s.value / total) * 100).toFixed(1)}%)`}</title>
               </circle>
             );
             acc += len;
@@ -99,6 +111,11 @@ export const Donut: React.FC<{
             <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: s.color }} />
             <span className="flex-1 truncate text-slate-600" title={s.label}>{s.label}</span>
             <span className="font-mono text-slate-500">{fmtInt(s.value)}</span>
+            {s.count !== undefined && (
+              <span className="font-mono text-slate-400" title="Tickets issued">
+                ({fmtInt(s.count)})
+              </span>
+            )}
             <span className="font-mono font-bold text-slate-700 w-11 text-right">
               {((s.value / total) * 100).toFixed(1)}%
             </span>
