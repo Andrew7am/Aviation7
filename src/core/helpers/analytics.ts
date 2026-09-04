@@ -13,18 +13,39 @@ import { CABIN_LABEL, type Cabin } from './cabinClass';
  * Amounts are kept PER CURRENCY, never summed into one figure. Airlines in
  * this ledger sell in both SAR and AED, and adding those together produces a
  * number that looks like money and is not — the reason the vendor totals
- * elsewhere are split the same way.
+ * elsewhere are split the same way. This is why a row's "share" is not one
+ * number: pct is its share of ticket COUNT, pctSar and pctAed are its share of
+ * SAR and AED issued VOLUME, each a complete 100% on its own within that
+ * currency. An airline with few tickets but high fares can rank near the top
+ * by volume and near the bottom by count — both are correct, they are
+ * answering different questions.
  *
  * Refunds are excluded from the ticket COUNT so "how many did we issue" means
  * issued, but their money still nets off the amounts, so the value shown is
  * what was actually earned rather than a gross a cancellation already took
- * back.
+ * back. Volume share (pctSar/pctAed) is measured on gross ISSUED money only
+ * (sarIssued/aedIssued) — refunds are excluded from it the same way, so a
+ * heavily-refunded airline is not read as having negative or reduced "share of
+ * the business" for having taken money back on tickets that were sold.
  */
 
 export interface ShareRow {
   key: string;
   tickets: number;
+  /** This row's share of the ranking's TICKET COUNT — "how many of the
+   *  tickets we issued were this airline's". Kept for rankings that have no
+   *  honest money figure to rank by (routes, cabins) and for anyone who wants
+   *  volume in the ticket sense. For "how much of the business this airline
+   *  is" by money, use pctSar / pctAed instead. */
   pct: number;
+  /** This row's share of the ranking's total SAR (respectively AED) issued
+   *  volume — sarIssued / (sum of sarIssued across every row), as a
+   *  percentage. This is what "market share" means in money: an airline with
+   *  few tickets but high fares can outrank one with many cheap ones. Zero
+   *  when the ranking has no SAR (AED) volume at all, rather than dividing by
+   *  zero. Never combined with the other currency — see the module note. */
+  pctSar: number;
+  pctAed: number;
   /** Refunds against this airline. Not sales, but money that moved. */
   refunds: number;
   /** Credit and debit memos and EMDs — money owed to or from the airline that
@@ -120,7 +141,7 @@ export function analysable(tickets: Ticket[]): Ticket[] {
 }
 
 const blank = (key: string): ShareRow => ({
-  key, tickets: 0, pct: 0, refunds: 0, otherDocs: 0,
+  key, tickets: 0, pct: 0, pctSar: 0, pctAed: 0, refunds: 0, otherDocs: 0,
   cabins: { FIRST: 0, BUSINESS: 0, PREMIUM_ECONOMY: 0, ECONOMY: 0, unknown: 0 },
   sar: 0, aed: 0, other: 0,
   sarIssued: 0, sarRefunded: 0, aedIssued: 0, aedRefunded: 0,
@@ -169,7 +190,16 @@ function tally(rows: Ticket[], keyOf: (t: Ticket) => string): ShareRow[] {
   }
   const out = [...map.values()].sort((a, b) => b.tickets - a.tickets);
   const total = out.reduce((s, r) => s + r.tickets, 0) || 1;
-  return out.map(r => ({ ...r, pct: (r.tickets / total) * 100 }));
+  // Guarded the same way as `total`: if nothing in this ranking has any SAR
+  // (AED) volume, every row's share of it is 0 rather than 0/0.
+  const totalSar = out.reduce((s, r) => s + r.sarIssued, 0) || 1;
+  const totalAed = out.reduce((s, r) => s + r.aedIssued, 0) || 1;
+  return out.map(r => ({
+    ...r,
+    pct: (r.tickets / total) * 100,
+    pctSar: (r.sarIssued / totalSar) * 100,
+    pctAed: (r.aedIssued / totalAed) * 100,
+  }));
 }
 
 export function computeAnalytics(tickets: Ticket[]): Analytics {

@@ -153,6 +153,52 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
   check('no money lands outside SAR or AED',
     Math.round(an.byAirline.reduce((s, r) => s + r.other, 0) * 100) / 100, 0);
 
+  // ── 4a. Share by VOLUME, not ticket count ──────────────────────────────
+  // Recomputed independently here rather than by calling tally()/addMoney()
+  // again: iterate the raw ticket rows directly, same as section 4 above does
+  // for the SAR/AED totals, reusing only sourceToCurrency (the shared mapping
+  // every screen already uses) — never the function actually under test.
+  console.log('\n4a. Airline share by volume (SAR / AED), not ticket count');
+  const volSar = new Map<string, number>();
+  const volAed = new Map<string, number>();
+  for (const t of tickets) {
+    if ((t.status || '').toUpperCase() === 'FUND') continue;
+    if (t.amount < 0) continue;           // sarIssued/aedIssued: gross ISSUED only
+    const key = (t.airlineCode || '').trim() || 'No code';
+    const cur = sourceToCurrency(t.source || '');
+    if (cur === 'SAR') volSar.set(key, (volSar.get(key) ?? 0) + t.amount);
+    else if (cur === 'AED') volAed.set(key, (volAed.get(key) ?? 0) + t.amount);
+  }
+  const totalVolSar = [...volSar.values()].reduce((s, n) => s + n, 0) || 1;
+  const totalVolAed = [...volAed.values()].reduce((s, n) => s + n, 0) || 1;
+
+  let sarMismatch = 0, aedMismatch = 0;
+  for (const r of an.byAirline) {
+    const wantSar = ((volSar.get(r.key) ?? 0) / totalVolSar) * 100;
+    const wantAed = ((volAed.get(r.key) ?? 0) / totalVolAed) * 100;
+    if (Math.abs(r.pctSar - wantSar) > 0.005) {
+      console.log(`  ${r.key}: pctSar got ${r.pctSar.toFixed(3)}, want ${wantSar.toFixed(3)}`);
+      sarMismatch++;
+    }
+    if (Math.abs(r.pctAed - wantAed) > 0.005) {
+      console.log(`  ${r.key}: pctAed got ${r.pctAed.toFixed(3)}, want ${wantAed.toFixed(3)}`);
+      aedMismatch++;
+    }
+  }
+  check('every airline\'s SAR volume share matches an independent recomputation', sarMismatch, 0);
+  check('every airline\'s AED volume share matches an independent recomputation', aedMismatch, 0);
+
+  check('SAR volume shares add up to 100',
+    Math.round(an.byAirline.reduce((s, r) => s + r.pctSar, 0) * 100) / 100, 100);
+  check('AED volume shares add up to 100',
+    Math.round(an.byAirline.reduce((s, r) => s + r.pctAed, 0) * 100) / 100, 100);
+
+  // The two bases are genuinely different questions, not the same number
+  // twice — assert they actually disagree somewhere, so a future refactor
+  // that quietly makes pctSar an alias for pct would be caught.
+  const differs = an.byAirline.some(r => Math.abs(r.pctSar - r.pct) > 0.5);
+  check('volume share and ticket-count share are not just the same number', differs, true);
+
   // ── 4b. Cabins ─────────────────────────────────────────────────────────
   console.log('\n4b. Cabin');
   const { rows: sqlCabin } = await c.query(
@@ -201,7 +247,9 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
     code: r.key,
     airline: r.key === 'No code' ? '—' : (airlineName(r.key) || '(name unknown)'),
     tickets: r.tickets,
-    share: `${r.pct.toFixed(2)}%`,
+    'share (tickets)': `${r.pct.toFixed(2)}%`,
+    'share (SAR vol)': r.sarIssued ? `${r.pctSar.toFixed(2)}%` : '—',
+    'share (AED vol)': r.aedIssued ? `${r.pctAed.toFixed(2)}%` : '—',
     'net SAR': r.sar ? money(r.sar) : '—',
     'net AED': r.aed ? money(r.aed) : '—',
   })));

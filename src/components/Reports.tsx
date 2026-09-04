@@ -149,9 +149,26 @@ const ShareTable: React.FC<{
   /** Show the cabin split. Off for the cabin table itself, where it would
    *  simply repeat the row's own name back at it. */
   showCabins?: boolean;
-}> = ({ title, subtitle, keyHeader, rows, fmt, subLabel, colored = 0, showCabins = false }) => {
-  const top = rows[0]?.tickets || 1;
-  const shown = rows.slice(0, 25);
+  /** What "Share" ranks and sorts by. Default is ticket count, which is the
+   *  only honest basis for a ranking that spans routes or cabins with no
+   *  single currency of their own. 'sar' / 'aed' rank by that currency's
+   *  issued volume instead — money, not how many tickets it took to earn it —
+   *  and the table re-sorts itself to match, so row order always agrees with
+   *  the percentage printed beside it. */
+  shareBasis?: 'tickets' | 'sar' | 'aed';
+}> = ({ title, subtitle, keyHeader, rows, fmt, subLabel, colored = 0, showCabins = false, shareBasis = 'tickets' }) => {
+  const basisValue = (r: ShareRow) =>
+    shareBasis === 'sar' ? r.sarIssued : shareBasis === 'aed' ? r.aedIssued : r.tickets;
+  const basisPct = (r: ShareRow) =>
+    shareBasis === 'sar' ? r.pctSar : shareBasis === 'aed' ? r.pctAed : r.pct;
+  // Sorted here rather than trusting the incoming order: rows arrive sorted by
+  // TICKET count from computeAnalytics, and ranking by volume instead without
+  // re-sorting would print row 1 with a smaller % than row 3.
+  const sorted = [...rows].sort((a, b) => basisValue(b) - basisValue(a));
+  // Guarded like the original `rows[0]?.tickets || 1`: an empty ranking must
+  // not crash trying to read a basis value off a row that isn't there.
+  const top = (sorted.length ? basisValue(sorted[0]) : 0) || 1;
+  const shown = sorted.slice(0, 25);
   return (
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
@@ -169,7 +186,11 @@ const ShareTable: React.FC<{
               <th className="px-3 py-2 text-right" title="Refunds, and memos or EMDs — money that moved without a ticket being sold. Their amounts are already in the totals.">
                 Other docs
               </th>
-              <th className="px-3 py-2 text-right">Share</th>
+              <th className="px-3 py-2 text-right"
+                  title={shareBasis === 'tickets' ? 'Share of tickets issued'
+                       : `Share of ${shareBasis.toUpperCase()} volume issued`}>
+                Share {shareBasis !== 'tickets' && `(${shareBasis.toUpperCase()})`}
+              </th>
               {showCabins && (
                 <th className="px-3 py-2 text-right" title="Tickets by cabin. A dash means no cabin was recorded for any of them.">
                   Cabin
@@ -209,11 +230,11 @@ const ShareTable: React.FC<{
                   <div className="flex items-center justify-end gap-2">
                     <div className="w-16 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                       <div className="h-1.5 rounded-full"
-                           style={{ width: `${Math.max(2, (r.tickets / top) * 100)}%`,
+                           style={{ width: `${Math.max(2, (basisValue(r) / top) * 100)}%`,
                                     background: i < colored ? paletteAt(i) : '#94a3b8' }} />
                     </div>
                     <span className="font-mono text-[11px] font-bold text-slate-700 w-11 text-right">
-                      {r.pct.toFixed(1)}%
+                      {basisPct(r).toFixed(1)}%
                     </span>
                   </div>
                 </td>
@@ -392,6 +413,15 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
    * net is not read as money going missing.
    */
   const [cabinFilter, setCabinFilter] = useState<string>('ALL');
+  /**
+   * Which currency's ISSUED VOLUME the "Airline Share" donut and table rank
+   * by. Ticket count and money tell different stories — an airline with a few
+   * long-haul fares can out-earn one with many cheap domestic hops — and
+   * "share of the business" means the money, not how many documents it took.
+   * SAR/AED only, never both: see the note at the top of analytics.ts on why
+   * the two currencies are never added together.
+   */
+  const [airlineShareCurrency, setAirlineShareCurrency] = useState<'SAR' | 'AED'>('SAR');
 
   // Centralized stats — single source of truth, no duplicated calculations
   const { totalIssued, totalRefunds, netTotal, bySource, missingReq, duplicates } = useReports(tickets, vendorBalances, topUps);
@@ -439,6 +469,12 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  /** Total ISSUED volume in whichever currency the Airline Share donut is
+   *  ranked by right now — the figure in the donut's centre, and the
+   *  denominator every pctSar/pctAed on that ranking is measured against. */
+  const airlineVolumeTotal = an.byAirline.reduce(
+    (s, r) => s + (airlineShareCurrency === 'SAR' ? r.sarIssued : r.aedIssued), 0);
 
   const filteredTickets = useMemo(() => {
     return tickets.filter(t => {
@@ -727,15 +763,41 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <ChartCard title="Airline Share"
-                         subtitle="Tickets issued, by carrier — the long tail folded into one slice">
+              <ChartCard
+                title="Airline Share"
+                subtitle={`Share of ${airlineShareCurrency} volume issued — money, not ticket count; the long tail folded into one slice`}
+                right={
+                  <div className="flex gap-1">
+                    {(['SAR', 'AED'] as const).map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setAirlineShareCurrency(c)}
+                        className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+                          airlineShareCurrency === c
+                            ? 'bg-slate-800 text-white border-slate-800'
+                            : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    ))}
+                  </div>
+                }
+              >
+                {/* Ranked by ISSUED VOLUME in the selected currency, not by how
+                    many tickets it took to earn it — an airline with a handful
+                    of long-haul fares can out-earn one with many cheap hops.
+                    Zero-volume airlines in this currency drop out on their own:
+                    the Donut only plots slices with a positive value. */}
                 <Donut
                   slices={an.byAirline.map(r => ({
                     key: r.key,
                     label: airlineName(r.key) ? `${r.key} · ${airlineName(r.key)}` : r.key,
-                    value: r.tickets,
+                    value: airlineShareCurrency === 'SAR' ? r.sarIssued : r.aedIssued,
                   }))}
                   max={DONUT_MAX}
+                  centerLabel={`${airlineShareCurrency} issued`}
+                  centerValue={fmt(airlineVolumeTotal)}
                 />
               </ChartCard>
 
@@ -815,13 +877,14 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             <div className="grid gap-4 lg:grid-cols-2">
               <ShareTable
                 title="By Airline"
-                subtitle="Share of tickets issued, what each airline earned, and in which cabin"
+                subtitle={`Ranked by ${airlineShareCurrency} volume issued — what each airline earned, and in which cabin`}
                 keyHeader="A/L"
                 rows={an.byAirline}
                 fmt={fmt}
                 subLabel={airlineName}
                 colored={DONUT_MAX}
                 showCabins
+                shareBasis={airlineShareCurrency === 'SAR' ? 'sar' : 'aed'}
               />
               <ShareTable
                 title="Most Issued Routes"
