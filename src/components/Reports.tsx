@@ -4,7 +4,7 @@ import { useReports } from '../hooks/useReports';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { Download, FileText, TrendingDown, Wallet, Database, BarChart3, Calendar, X } from 'lucide-react';
 import { airlineName } from '../core/config/airlines';
-import { computeAnalytics, type ShareRow } from '../core/helpers/analytics';
+import { computeAnalytics, SAR_TO_AED_RATE, type ShareRow } from '../core/helpers/analytics';
 import {
   PERIOD_PRESETS, endOfMonth, inPeriod, monthLabel, monthsIn, periodLabel, selectedMonth,
 } from '../core/helpers/period';
@@ -152,15 +152,24 @@ const ShareTable: React.FC<{
   /** What "Share" ranks and sorts by. Default is ticket count, which is the
    *  only honest basis for a ranking that spans routes or cabins with no
    *  single currency of their own. 'sar' / 'aed' rank by that currency's
-   *  issued volume instead — money, not how many tickets it took to earn it —
-   *  and the table re-sorts itself to match, so row order always agrees with
-   *  the percentage printed beside it. */
-  shareBasis?: 'tickets' | 'sar' | 'aed';
+   *  issued volume instead — money, not how many tickets it took to earn it.
+   *  'total' ranks by the combined AED-equivalent (SAR ÷ SAR_TO_AED_RATE +
+   *  AED) — the one place this screen deliberately adds the two currencies
+   *  together; see the note on SAR_TO_AED_RATE in analytics.ts. Whichever is
+   *  picked, the table re-sorts itself to match, so row order always agrees
+   *  with the percentage printed beside it. */
+  shareBasis?: 'tickets' | 'sar' | 'aed' | 'total';
 }> = ({ title, subtitle, keyHeader, rows, fmt, subLabel, colored = 0, showCabins = false, shareBasis = 'tickets' }) => {
   const basisValue = (r: ShareRow) =>
-    shareBasis === 'sar' ? r.sarIssued : shareBasis === 'aed' ? r.aedIssued : r.tickets;
+    shareBasis === 'sar' ? r.sarIssued
+    : shareBasis === 'aed' ? r.aedIssued
+    : shareBasis === 'total' ? r.totalAedEq
+    : r.tickets;
   const basisPct = (r: ShareRow) =>
-    shareBasis === 'sar' ? r.pctSar : shareBasis === 'aed' ? r.pctAed : r.pct;
+    shareBasis === 'sar' ? r.pctSar
+    : shareBasis === 'aed' ? r.pctAed
+    : shareBasis === 'total' ? r.pctTotal
+    : r.pct;
   // Sorted here rather than trusting the incoming order: rows arrive sorted by
   // TICKET count from computeAnalytics, and ranking by volume instead without
   // re-sorting would print row 1 with a smaller % than row 3.
@@ -188,8 +197,9 @@ const ShareTable: React.FC<{
               </th>
               <th className="px-3 py-2 text-right"
                   title={shareBasis === 'tickets' ? 'Share of tickets issued'
+                       : shareBasis === 'total' ? `Share of combined AED-equivalent volume issued (SAR ÷ ${SAR_TO_AED_RATE} + AED)`
                        : `Share of ${shareBasis.toUpperCase()} volume issued`}>
-                Share {shareBasis !== 'tickets' && `(${shareBasis.toUpperCase()})`}
+                Share {shareBasis === 'total' ? '(Total AED)' : shareBasis !== 'tickets' && `(${shareBasis.toUpperCase()})`}
               </th>
               {showCabins && (
                 <th className="px-3 py-2 text-right" title="Tickets by cabin. A dash means no cabin was recorded for any of them.">
@@ -414,14 +424,19 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
    */
   const [cabinFilter, setCabinFilter] = useState<string>('ALL');
   /**
-   * Which currency's ISSUED VOLUME the "Airline Share" donut and table rank
-   * by. Ticket count and money tell different stories — an airline with a few
-   * long-haul fares can out-earn one with many cheap domestic hops — and
-   * "share of the business" means the money, not how many documents it took.
-   * SAR/AED only, never both: see the note at the top of analytics.ts on why
-   * the two currencies are never added together.
+   * What the "Airline Share" donut and table rank by. Ticket count and money
+   * tell different stories — an airline with a few long-haul fares can
+   * out-earn one with many cheap domestic hops — and "share of the business"
+   * means the money, not how many documents it took.
+   *
+   * Defaults to TOTAL: one combined AED-equivalent figure (SAR ÷
+   * SAR_TO_AED_RATE + AED), the owner's own call for this one screen. Every
+   * other figure in the app — the ticket table, vendor balances, exports —
+   * still keeps SAR and AED strictly apart, as it always has; this toggle is
+   * the one deliberate exception, and only here. SAR-only and AED-only stay
+   * available for anyone who wants to drill into one currency specifically.
    */
-  const [airlineShareCurrency, setAirlineShareCurrency] = useState<'SAR' | 'AED'>('SAR');
+  const [airlineShareCurrency, setAirlineShareCurrency] = useState<'TOTAL' | 'SAR' | 'AED'>('TOTAL');
 
   // Centralized stats — single source of truth, no duplicated calculations
   const { totalIssued, totalRefunds, netTotal, bySource, missingReq, duplicates } = useReports(tickets, vendorBalances, topUps);
@@ -470,11 +485,14 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  /** Total ISSUED volume in whichever currency the Airline Share donut is
-   *  ranked by right now — the figure in the donut's centre, and the
-   *  denominator every pctSar/pctAed on that ranking is measured against. */
-  const airlineVolumeTotal = an.byAirline.reduce(
-    (s, r) => s + (airlineShareCurrency === 'SAR' ? r.sarIssued : r.aedIssued), 0);
+  /** Total ISSUED volume in whichever basis the Airline Share donut is ranked
+   *  by right now — the figure in the donut's centre, and the denominator
+   *  every share on that ranking is measured against. */
+  const airlineVolumeTotal = an.byAirline.reduce((s, r) => s + (
+    airlineShareCurrency === 'SAR'   ? r.sarIssued
+    : airlineShareCurrency === 'AED' ? r.aedIssued
+    :                                  r.totalAedEq
+  ), 0);
 
   const filteredTickets = useMemo(() => {
     return tickets.filter(t => {
@@ -765,38 +783,50 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             <div className="grid gap-4 lg:grid-cols-2">
               <ChartCard
                 title="Airline Share"
-                subtitle={`Share of ${airlineShareCurrency} volume issued — money, not ticket count; the long tail folded into one slice`}
+                subtitle={
+                  airlineShareCurrency === 'TOTAL'
+                    ? `Combined AED-equivalent volume issued — SAR ÷ ${SAR_TO_AED_RATE} + AED — money, not ticket count`
+                    : `Share of ${airlineShareCurrency} volume issued — money, not ticket count; the long tail folded into one slice`
+                }
                 right={
                   <div className="flex gap-1">
-                    {(['SAR', 'AED'] as const).map(c => (
+                    {(['TOTAL', 'SAR', 'AED'] as const).map(c => (
                       <button
                         key={c}
                         onClick={() => setAirlineShareCurrency(c)}
+                        title={c === 'TOTAL' ? `SAR ÷ ${SAR_TO_AED_RATE} + AED, combined into one AED figure` : undefined}
                         className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
                           airlineShareCurrency === c
                             ? 'bg-slate-800 text-white border-slate-800'
                             : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                         }`}
                       >
-                        {c}
+                        {c === 'TOTAL' ? 'Total (AED)' : c}
                       </button>
                     ))}
                   </div>
                 }
               >
-                {/* Ranked by ISSUED VOLUME in the selected currency, not by how
-                    many tickets it took to earn it — an airline with a handful
-                    of long-haul fares can out-earn one with many cheap hops.
-                    Zero-volume airlines in this currency drop out on their own:
-                    the Donut only plots slices with a positive value. */}
+                {/* Ranked by ISSUED VOLUME, not by how many tickets it took to
+                    earn it — an airline with a handful of long-haul fares can
+                    out-earn one with many cheap hops. Zero-volume airlines in
+                    the selected basis drop out on their own: the Donut only
+                    plots slices with a positive value.
+
+                    TOTAL is the one place on this screen SAR and AED are
+                    combined — an owner decision for this single figure, not a
+                    reversal of the rule everywhere else. See SAR_TO_AED_RATE
+                    in analytics.ts. */}
                 <Donut
                   slices={an.byAirline.map(r => ({
                     key: r.key,
                     label: airlineName(r.key) ? `${r.key} · ${airlineName(r.key)}` : r.key,
-                    value: airlineShareCurrency === 'SAR' ? r.sarIssued : r.aedIssued,
+                    value: airlineShareCurrency === 'SAR' ? r.sarIssued
+                         : airlineShareCurrency === 'AED' ? r.aedIssued
+                         :                                   r.totalAedEq,
                   }))}
                   max={DONUT_MAX}
-                  centerLabel={`${airlineShareCurrency} issued`}
+                  centerLabel={airlineShareCurrency === 'TOTAL' ? 'AED total' : `${airlineShareCurrency} issued`}
                   centerValue={fmt(airlineVolumeTotal)}
                 />
               </ChartCard>
@@ -877,14 +907,22 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             <div className="grid gap-4 lg:grid-cols-2">
               <ShareTable
                 title="By Airline"
-                subtitle={`Ranked by ${airlineShareCurrency} volume issued — what each airline earned, and in which cabin`}
+                subtitle={
+                  airlineShareCurrency === 'TOTAL'
+                    ? `Ranked by combined AED-equivalent volume (SAR ÷ ${SAR_TO_AED_RATE} + AED) — what each airline earned, and in which cabin`
+                    : `Ranked by ${airlineShareCurrency} volume issued — what each airline earned, and in which cabin`
+                }
                 keyHeader="A/L"
                 rows={an.byAirline}
                 fmt={fmt}
                 subLabel={airlineName}
                 colored={DONUT_MAX}
                 showCabins
-                shareBasis={airlineShareCurrency === 'SAR' ? 'sar' : 'aed'}
+                shareBasis={
+                  airlineShareCurrency === 'SAR' ? 'sar'
+                  : airlineShareCurrency === 'AED' ? 'aed'
+                  : 'total'
+                }
               />
               <ShareTable
                 title="Most Issued Routes"

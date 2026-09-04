@@ -27,7 +27,33 @@ import { CABIN_LABEL, type Cabin } from './cabinClass';
  * (sarIssued/aedIssued) — refunds are excluded from it the same way, so a
  * heavily-refunded airline is not read as having negative or reduced "share of
  * the business" for having taken money back on tickets that were sold.
+ *
+ * The one deliberate exception to "never combine currencies" is totalAedEq /
+ * pctTotal, and it exists only for the Analytics screen's own single-number
+ * view — nowhere else in the app reads it, and no other screen (the ticket
+ * table, vendor balances, exports) ever combines SAR and AED. See
+ * SAR_TO_AED_RATE below for what the number is and where it came from.
  */
+
+/**
+ * The rate Analytics' combined "Total" figure converts SAR into AED at:
+ * every SAR amount divided by 1.02, then added to the AED amount.
+ *
+ * Given by the agency, not derived from anything in this codebase — there is
+ * no live exchange-rate feed here, and this is not one. It exists solely to
+ * answer "how big is this airline, in one number" inside Analytics; it is not
+ * used to convert money anywhere real money is tracked (a vendor balance, an
+ * export, the ticket table), which all keep SAR and AED strictly apart, as
+ * they always have. If the real rate moves enough to matter, this is the one
+ * number to update.
+ */
+export const SAR_TO_AED_RATE = 1.02;
+
+/** SAR converted to its AED-equivalent at SAR_TO_AED_RATE, added to the AED
+ *  already there. Analytics-only — see the module note above. */
+export function toAedEquivalent(sar: number, aed: number): number {
+  return sar / SAR_TO_AED_RATE + aed;
+}
 
 export interface ShareRow {
   key: string;
@@ -46,6 +72,13 @@ export interface ShareRow {
    *  zero. Never combined with the other currency — see the module note. */
   pctSar: number;
   pctAed: number;
+  /** This row's SAR-and-AED issued volume combined into one AED-equivalent
+   *  figure — sarIssued / SAR_TO_AED_RATE + aedIssued — and its share of the
+   *  ranking's combined total. Analytics-only; see the module note on
+   *  SAR_TO_AED_RATE for why this is the one place the two currencies are
+   *  deliberately added together. */
+  totalAedEq: number;
+  pctTotal: number;
   /** Refunds against this airline. Not sales, but money that moved. */
   refunds: number;
   /** Credit and debit memos and EMDs — money owed to or from the airline that
@@ -141,7 +174,8 @@ export function analysable(tickets: Ticket[]): Ticket[] {
 }
 
 const blank = (key: string): ShareRow => ({
-  key, tickets: 0, pct: 0, pctSar: 0, pctAed: 0, refunds: 0, otherDocs: 0,
+  key, tickets: 0, pct: 0, pctSar: 0, pctAed: 0, totalAedEq: 0, pctTotal: 0,
+  refunds: 0, otherDocs: 0,
   cabins: { FIRST: 0, BUSINESS: 0, PREMIUM_ECONOMY: 0, ECONOMY: 0, unknown: 0 },
   sar: 0, aed: 0, other: 0,
   sarIssued: 0, sarRefunded: 0, aedIssued: 0, aedRefunded: 0,
@@ -194,11 +228,18 @@ function tally(rows: Ticket[], keyOf: (t: Ticket) => string): ShareRow[] {
   // (AED) volume, every row's share of it is 0 rather than 0/0.
   const totalSar = out.reduce((s, r) => s + r.sarIssued, 0) || 1;
   const totalAed = out.reduce((s, r) => s + r.aedIssued, 0) || 1;
-  return out.map(r => ({
+  // Computed per row first, then summed, rather than combining the two
+  // already-summed totals — the arithmetic is identical either way, but doing
+  // it per row is what makes totalAedEq available on each row for the table
+  // and the donut, not just the ranking-wide percentage.
+  const withTotal = out.map(r => ({ ...r, totalAedEq: toAedEquivalent(r.sarIssued, r.aedIssued) }));
+  const totalCombined = withTotal.reduce((s, r) => s + r.totalAedEq, 0) || 1;
+  return withTotal.map(r => ({
     ...r,
     pct: (r.tickets / total) * 100,
     pctSar: (r.sarIssued / totalSar) * 100,
     pctAed: (r.aedIssued / totalAed) * 100,
+    pctTotal: (r.totalAedEq / totalCombined) * 100,
   }));
 }
 

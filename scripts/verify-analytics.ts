@@ -10,7 +10,7 @@
  */
 import 'dotenv/config';
 import { Client } from 'pg';
-import { computeAnalytics } from '../src/core/helpers/analytics';
+import { computeAnalytics, SAR_TO_AED_RATE } from '../src/core/helpers/analytics';
 import { airlineName } from '../src/core/config/airlines';
 import { sourceToCurrency } from '../src/core/helpers/sourceCurrency';
 import type { Ticket } from '../src/types';
@@ -199,6 +199,38 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
   const differs = an.byAirline.some(r => Math.abs(r.pctSar - r.pct) > 0.5);
   check('volume share and ticket-count share are not just the same number', differs, true);
 
+  // ── 4a-2. The combined AED-equivalent total — Analytics' one exception ──
+  // to "never add SAR and AED". Recomputed independently again: sarIssued /
+  // SAR_TO_AED_RATE + aedIssued, per airline, straight from the maps already
+  // built above — not by calling toAedEquivalent() from analytics.ts.
+  console.log('\n4a-2. Airline share by combined AED-equivalent volume');
+  let totalMismatch = 0;
+  const combinedTotal = [...new Set([...volSar.keys(), ...volAed.keys()])]
+    .reduce((s, k) => s + (volSar.get(k) ?? 0) / SAR_TO_AED_RATE + (volAed.get(k) ?? 0), 0) || 1;
+  for (const r of an.byAirline) {
+    const wantCombined = (volSar.get(r.key) ?? 0) / SAR_TO_AED_RATE + (volAed.get(r.key) ?? 0);
+    if (Math.abs(r.totalAedEq - wantCombined) > 0.01) {
+      console.log(`  ${r.key}: totalAedEq got ${r.totalAedEq.toFixed(2)}, want ${wantCombined.toFixed(2)}`);
+      totalMismatch++;
+    }
+    const wantPct = (wantCombined / combinedTotal) * 100;
+    if (Math.abs(r.pctTotal - wantPct) > 0.005) {
+      console.log(`  ${r.key}: pctTotal got ${r.pctTotal.toFixed(3)}, want ${wantPct.toFixed(3)}`);
+      totalMismatch++;
+    }
+  }
+  check('every airline\'s combined AED-equivalent volume matches an independent recomputation', totalMismatch, 0);
+  check('combined shares add up to 100',
+    Math.round(an.byAirline.reduce((s, r) => s + r.pctTotal, 0) * 100) / 100, 100);
+  // Sanity on the rate itself: an all-SAR row's AED-equivalent must be its SAR
+  // amount divided by the rate, with nothing left over and nothing invented.
+  const pureSarRow = an.byAirline.find(r => r.sarIssued > 0 && r.aedIssued === 0);
+  if (pureSarRow) {
+    check(`  ${pureSarRow.key} (pure SAR): totalAedEq is exactly sarIssued / ${SAR_TO_AED_RATE}`,
+      Math.round(pureSarRow.totalAedEq * 100) / 100,
+      Math.round((pureSarRow.sarIssued / SAR_TO_AED_RATE) * 100) / 100);
+  }
+
   // ── 4b. Cabins ─────────────────────────────────────────────────────────
   console.log('\n4b. Cabin');
   const { rows: sqlCabin } = await c.query(
@@ -250,6 +282,7 @@ const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 
     'share (tickets)': `${r.pct.toFixed(2)}%`,
     'share (SAR vol)': r.sarIssued ? `${r.pctSar.toFixed(2)}%` : '—',
     'share (AED vol)': r.aedIssued ? `${r.pctAed.toFixed(2)}%` : '—',
+    'share (Total AED)': `${r.pctTotal.toFixed(2)}%`,
     'net SAR': r.sar ? money(r.sar) : '—',
     'net AED': r.aed ? money(r.aed) : '—',
   })));
