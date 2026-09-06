@@ -96,8 +96,17 @@ export function useTickets(userId: string) {
     await svc.bulkUpdateClosed(ids, closed);
   };
 
+  /** Take a close (or reopen) back off the tickets it actually moved.
+   *  Local state is patched under the same guard the server applies, so the
+   *  screen never briefly shows a ticket the undo deliberately left alone. */
+  const revertClosed = async (ids: string[], from: boolean, to: boolean) => {
+    const idSet = new Set(ids);
+    patchLocal(t => (t.closed === from ? { ...t, closed: to } : t), idSet);
+    return svc.revertClosed(ids, from, to);
+  };
+
   const missingReq = tickets.filter(t => !t.reqNum && t.status !== 'FUND');
   const topUps     = tickets.filter(t => t.status === 'FUND');
 
-  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, addManualTicket, applyImport };
+  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, revertClosed, addManualTicket, applyImport };
 }

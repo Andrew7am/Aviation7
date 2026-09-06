@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AuditService, AuditRecord, AppUser } from '../services/AuditService';
-import { Search, Download, ShieldCheck, ShieldOff, Users, Activity } from 'lucide-react';
+import { Search, Download, ShieldCheck, ShieldOff, Users, Activity, Undo2 } from 'lucide-react';
+import { undoableAction, undoneAuditId } from '../core/helpers/undoableAction';
 import * as XLSX from 'xlsx';
 
 const ACTION_COLORS: Record<string, string> = {
@@ -18,7 +19,19 @@ const ACTION_COLORS: Record<string, string> = {
   TOPUP:         'bg-emerald-100 text-emerald-700',
 };
 
-export const ActivityLog: React.FC<{ currentUserId: string }> = ({ currentUserId }) => {
+/** A single entity reads as itself; a list of them reads as a count. */
+function entityLabel(entity: string): string {
+  if (!entity) return '—';
+  const n = entity.split(',').filter(s => s.trim()).length;
+  return n > 1 ? `${n} tickets` : entity;
+}
+
+export const ActivityLog: React.FC<{
+  currentUserId: string;
+  /** Reverses one logged action. Only the close/reopen entries offer it —
+   *  see undoableAction. */
+  onUndo?: (entry: AuditRecord) => Promise<void>;
+}> = ({ currentUserId, onUndo }) => {
   const [rows, setRows]       = useState<AuditRecord[]>([]);
   const [users, setUsers]     = useState<AppUser[]>([]);
   const [search, setSearch]   = useState('');
@@ -26,6 +39,7 @@ export const ActivityLog: React.FC<{ currentUserId: string }> = ({ currentUserId
   const [actionFilter, setActionFilter] = useState('ALL');
   const [tab, setTab]         = useState<'activity' | 'people'>('activity');
   const [loading, setLoading] = useState(true);
+  const [undoing, setUndoing] = useState('');
 
   useEffect(() => {
     const unsub = AuditService.subscribeAudit(r => { setRows(r); setLoading(false); });
@@ -60,6 +74,24 @@ export const ActivityLog: React.FC<{ currentUserId: string }> = ({ currentUserId
     }
     return counts;
   }, [rows, users]);
+
+  /** Actions already taken back. Their own reversal names them, so the button
+   *  can retire itself instead of offering to redo the mistake. */
+  const undone = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of rows) { const id = undoneAuditId(r); if (id) s.add(id); }
+    return s;
+  }, [rows]);
+
+  const runUndo = async (r: AuditRecord) => {
+    const u = undoableAction(r);
+    if (!u || !onUndo) return;
+    if (!confirm(u.question)) return;
+    setUndoing(r.id);
+    try { await onUndo(r); }
+    catch (e) { alert(`Could not undo: ${e instanceof Error ? e.message : String(e)}`); }
+    finally { setUndoing(''); }
+  };
 
   const changeRole = async (u: AppUser) => {
     const next = u.role === 'admin' ? 'member' : 'admin';
@@ -134,8 +166,8 @@ export const ActivityLog: React.FC<{ currentUserId: string }> = ({ currentUserId
             <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-                  {['When', 'Who', 'Action', 'Type', 'Entity', 'What changed'].map(c => (
-                    <th key={c} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">{c}</th>
+                  {['When', 'Who', 'Action', 'Type', 'Entity', 'What changed', ''].map((c, i) => (
+                    <th key={c || `c${i}`} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">{c}</th>
                   ))}
                 </tr>
               </thead>
@@ -150,12 +182,36 @@ export const ActivityLog: React.FC<{ currentUserId: string }> = ({ currentUserId
                       </span>
                     </td>
                     <td className="px-3 py-2 text-slate-400 text-[10px]">{r.entityType || '—'}</td>
-                    <td className="px-3 py-2 font-bold text-slate-700">{r.entity || '—'}</td>
+                    {/* A bulk action lists every id it touched. Printed in
+                        full, sixty of them push the rest of the row off the
+                        screen — including the Undo button. The count is what
+                        is readable; the ids stay one hover away. */}
+                    <td className="px-3 py-2 font-bold text-slate-700 max-w-[220px] truncate"
+                        title={r.entity}>
+                      {entityLabel(r.entity)}
+                    </td>
                     <td className="px-3 py-2 text-slate-600 text-[10px] max-w-[420px]">{r.detail || '—'}</td>
+                    {/* Undo sits on the row that did the thing, so taking it
+                        back is one click from seeing it — not a screen away. */}
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      {undone.has(r.id) ? (
+                        <span className="text-[9px] font-sans font-bold text-slate-400 px-1.5 py-0.5 rounded bg-slate-100"
+                              title="Already taken back — the entry below this one is the reversal.">
+                          UNDONE
+                        </span>
+                      ) : undoableAction(r) && onUndo ? (
+                        <button onClick={() => runUndo(r)} disabled={undoing === r.id}
+                          title="Put these tickets back the way they were"
+                          className="px-2 py-1 rounded text-[9px] font-sans font-bold uppercase border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-40 flex items-center gap-1 ml-auto">
+                          <Undo2 className="w-3 h-3" />
+                          {undoing === r.id ? 'Undoing…' : 'Undo'}
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 ))}
                 {filtered.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
                     {loading ? 'Loading…' : 'No activity recorded yet. Edits and deletions will appear here.'}
                   </td></tr>
                 )}

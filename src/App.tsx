@@ -11,7 +11,8 @@ import { Reports } from './components/Reports';
 import { ImportHistory } from './components/ImportHistory';
 import { ActivityLog } from './components/ActivityLog';
 import { ManualEntry } from './components/ManualEntry';
-import { AuditService } from './services/AuditService';
+import { AuditService, AuditRecord } from './services/AuditService';
+import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
 import { TicketService } from './services/TicketService';
@@ -35,7 +36,7 @@ function MainApp({ user }: { user: User }) {
 
   React.useEffect(() => { AuditService.myRole().then(r => setIsAdmin(r === 'admin')).catch(() => setIsAdmin(false)); }, [user.id]);
 
-  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, addManualTicket, applyImport } = useTickets(user.id);
+  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, revertClosed, addManualTicket, applyImport } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
 
   const ticketSvc = new TicketService(user.id);
@@ -150,6 +151,25 @@ function MainApp({ user }: { user: User }) {
     await bulkUpdateClosed(ids, closed);
     importSvc.audit('BULK_UPDATE_CLOSED', ids.join(','), `${closed ? 'Closed' : 'Not Closed'} (${ids.length} tickets)`);
   };
+  /**
+   * Take back a close or reopen that was logged earlier.
+   *
+   * The reversal is logged as its own entry naming the one it undid, which is
+   * what stops the same mistake being undone twice and what makes the pair
+   * legible in the log later. It records how many tickets actually moved, not
+   * how many the original touched — tickets someone has since changed back by
+   * hand are deliberately left where they are.
+   */
+  const handleUndoAction = async (entry: AuditRecord) => {
+    const u = undoableAction(entry);
+    if (!u) return;
+    const moved = await revertClosed(u.ids, u.from, u.to);
+    await importSvc.audit(
+      u.ids.length > 1 ? 'BULK_UPDATE_CLOSED' : 'UPDATE_CLOSED',
+      u.ids.join(','),
+      `${u.to ? 'Closed' : 'Not Closed'} (${moved} ticket${moved === 1 ? '' : 's'}) ${UNDO_OF}${entry.id}`);
+  };
+
   const dismissAlert       = useCallback((id: string) => setAlerts(prev => prev.map(a => a.id === id ? { ...a, dismissed: true } : a)), []);
 
   const missingReqCount = missingReq.length;
@@ -303,7 +323,7 @@ function MainApp({ user }: { user: User }) {
           )}
           {view === 'reports'   && <Reports tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
           {view === 'activity'  && (isAdmin
-            ? <ActivityLog currentUserId={user.id} />
+            ? <ActivityLog currentUserId={user.id} onUndo={handleUndoAction} />
             : <div className="p-10 text-center text-slate-400 font-sans text-sm">Admin access required.</div>)}
         </main>
       </div>

@@ -330,6 +330,34 @@ export class TicketService {
   }
 
   /**
+   * Put tickets back to `to`, but only the ones still sitting at `from`.
+   *
+   * Undoing a close is not the same as closing in reverse. A ticket someone
+   * has deliberately re-closed since is no longer part of the mistake being
+   * undone, and quietly reopening it would undo that person's work instead.
+   * The `from` guard is what keeps an undo to the rows it actually owns.
+   *
+   * Returns how many rows it moved, which is what the log should record —
+   * "60 tickets" when only 58 moved would be a number nobody could reconcile.
+   */
+  async revertClosed(ticketIds: string[], from: boolean, to: boolean): Promise<number> {
+    const CHUNK = 200;
+    let moved = 0;
+    for (let i = 0; i < ticketIds.length; i += CHUNK) {
+      const chunk = ticketIds.slice(i, i + CHUNK);
+      const { data, error } = await supabase
+        .from('tickets')
+        .update({ closed: to })
+        .in('id', chunk)
+        .eq('closed', from)
+        .select('id');
+      if (error) throw new Error(error.message);
+      moved += (data ?? []).length;
+    }
+    return moved;
+  }
+
+  /**
    * Edit arbitrary fields on an existing ticket (price, name, req num, pnr,
    * route, status, date, ...). Only whitelisted, user-editable columns are
    * accepted — id/user_id/created_at and audit-only fields can't be changed
