@@ -6,6 +6,7 @@ import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency, resolveCurrency } from '../helpers/resolveCurrency';
 import { normalizeStatus, type NormalizedStatus } from '../helpers/normalizeStatus';
 import { readReportPeriod } from '../helpers/reportPeriod';
+import { sourceForOffice } from '../config/bspOffices';
 
 export const IATAParser: VendorParser = {
   id:   'IATA',
@@ -32,6 +33,20 @@ export const IATAParser: VendorParser = {
      */
     const period = readReportPeriod(preamble ?? []);
     let fromPeriod = 0, approximate = 0;
+
+    /**
+     * The same TJQ report is pulled from more than one BSP office, with the
+     * same columns every time, so the office in the header block is the only
+     * thing that says which vendor a file belongs to. Left to the import
+     * screen's dropdown, a Riyadh report filed on a forgetful day lands on
+     * IATA: the wrong wallet, and dirhams for a report printed in riyals.
+     *
+     * Set per row because that is the one source the import screen cannot
+     * override (useImport: `r.source || defaultSource || parserName`) — the
+     * file's own statement of where it came from should win over a choice
+     * made from memory.
+     */
+    const routedSource = sourceForOffice(period.office);
 
     const iTicket = col(headers, 'ticket number', 'DOC NUMBER', 'DOCNUMBER');
     const iTax    = col(headers, 'tax', 'TAX');
@@ -127,6 +142,7 @@ export const IATAParser: VendorParser = {
       const serial = serialRaw ? parseInt(serialRaw, 10) : undefined;
 
       result.push({
+        ...(routedSource ? { source: routedSource } : {}),
         ticketNo:       tkSerial,
         pnr:            cell(row, iPNR).replace(/\s+/g,'').toUpperCase(),
         passengerName:  cleanPax(cell(row, iPax)),
@@ -142,6 +158,13 @@ export const IATAParser: VendorParser = {
         serial,
       });
     });
+
+    if (routedSource && result.length) {
+      warnings.push(
+        `Office ${period.office} — these ${result.length} rows are ${routedSource}'s, ` +
+        `not IATA BSP's, and were filed against ${routedSource}` +
+        `${period.currency ? ` in ${period.currency}` : ''}.`);
+    }
 
     // Said once for the file rather than once per ticket, which would bury
     // every other warning under a hundred identical lines.

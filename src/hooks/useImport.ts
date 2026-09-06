@@ -26,6 +26,12 @@ export interface ImportPreview {
   parserName:  string;
   confidence:  number;
   totalRows:   number;
+  /** The vendor the FILE named, when every row agreed on one. A format shared
+   *  by several vendors says which one it belongs to inside the file (a BSP
+   *  sales report carries the office that ran it), and that beats the format's
+   *  own name as a label. Blank when the rows name no vendor, or disagree —
+   *  a genuinely multi-vendor file, where the format name is the honest one. */
+  routedVendor: string;
   /** Per-row reconciliation verdict, for the preview only. The save path
    *  still goes through fresh/updates/duplicates above, unchanged. */
   classified:  ClassifiedRow[];
@@ -65,7 +71,7 @@ export function useImport(userId: string) {
       setPreview({
         fresh: [], updates: [], duplicates: [], topUps: [], settlements: [], voided: [],
         errors: [{ row: 0, raw: '', error: 'Please enter some data.' }],
-        warnings: [], parserName: '', confidence: 0, totalRows: 0,
+        warnings: [], parserName: '', confidence: 0, totalRows: 0, routedVendor: '',
       });
       return;
     }
@@ -76,6 +82,14 @@ export function useImport(userId: string) {
       const { rows, errors, warnings, parserName, confidence } = runParser(
         allRows, defaultSource, defaultCurrency, reportName, learnedProfiles
       );
+
+      // What the file itself said the vendor was, when it said so at all and
+      // every row agreed. A BSP sales report pulled from the Riyadh office is
+      // NSA's rather than IATA's, and the label an auditor reads months later
+      // should say so — "IATA BSP" on a file of NSA tickets is a lie the
+      // format's name tells by default.
+      const named = new Set(rows.map(r => r.source).filter(Boolean) as string[]);
+      const routedVendor = named.size === 1 ? [...named][0] : '';
 
       const rawTickets: Ticket[] = rows.map(r => ({
         id:              uuidv4(),
@@ -101,7 +115,7 @@ export function useImport(userId: string) {
         channel:         r.channel,
         cabinClass:      r.cabinClass,
         cabinRaw:        r.cabinRaw,
-        reportName:      reportName || defaultSource || parserName,
+        reportName:      reportName || defaultSource || routedVendor || parserName,
         importTime:      new Date().toISOString(),
         isDuplicate:     false,
         userId:          'temp',
@@ -157,7 +171,7 @@ export function useImport(userId: string) {
         fresh, updates, duplicates, topUps, settlements, voided,
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
-        warnings: [...dateWarnings, ...warnings], parserName, confidence,
+        warnings: [...dateWarnings, ...warnings], parserName, confidence, routedVendor,
         totalRows: allRows.length,
       });
     } finally {
@@ -173,7 +187,9 @@ export function useImport(userId: string) {
   /** Build the meta object handleImport needs, once the user confirms */
   const buildMeta = useCallback((defaultSource: string): ImportMeta | null => {
     if (!preview) return null;
-    const vendor = defaultSource === 'Auto-detect' ? preview.parserName : defaultSource;
+    const vendor = defaultSource === 'Auto-detect'
+      ? (preview.routedVendor || preview.parserName)
+      : defaultSource;
     return {
       parserName: preview.parserName,
       confidence: preview.confidence,

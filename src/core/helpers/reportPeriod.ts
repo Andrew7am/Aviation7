@@ -22,6 +22,11 @@ export interface ReportPeriod {
   to: string;
   /** Currency the report is denominated in, when it says. */
   currency?: SupportedCurrency;
+  /** The BSP office that ran the report, e.g. DXBAD32AQ. The agency pulls the
+   *  same report from more than one office and the columns are identical, so
+   *  this is the only thing in the file that says which vendor it belongs to
+   *  (see bspOffices.ts). */
+  office?: string;
   /** True when the report covers exactly one day, so `from` is that day and
    *  not an approximation. */
   exact: boolean;
@@ -63,16 +68,17 @@ export function readReportPeriod(preamble: string[][]): ReportPeriod {
 
   const cur = valueAfter(flat, 'Currency').toUpperCase();
   const currency = (CURRENCIES as string[]).includes(cur) ? cur as SupportedCurrency : undefined;
+  const office = valueAfter(flat, 'Office').toUpperCase();
 
   const parts = raw.split('-').map(s => s.trim()).filter(Boolean);
   if (parts.length === 1) {
     const d = withYear(parts[0], runDate);
-    return { from: d, to: d, currency, exact: !!d };
+    return { from: d, to: d, currency, office, exact: !!d };
   }
   if (parts.length === 2) {
     const from = withYear(parts[0], runDate);
     const to = withYear(parts[1], runDate);
-    return { from, to: to || from, currency, exact: !!from && from === to };
+    return { from, to: to || from, currency, office, exact: !!from && from === to };
   }
-  return { from: '', to: '', currency, exact: false };
+  return { from: '', to: '', currency, office, exact: false };
 }
