@@ -29,6 +29,11 @@ export interface LearnedColumns {
 export interface LearnedRules {
   /** How refunds are represented in this format. */
   refund: 'negative_amount' | 'credit_column' | 'status_column';
+  /** Which way round this format writes a slash date. Only matters when both
+   *  halves are 12 or less, where the reading is genuinely ambiguous and
+   *  guessing wrong silently files a ticket in the wrong month. Absent means
+   *  month-first, which is what the parser has always assumed. */
+  dateOrder?: 'mdy' | 'dmy';
 }
 
 export interface LearnedProfile {

@@ -1,4 +1,12 @@
-export function parseDate(raw: unknown): string {
+/** Which way round a slash date like 06/09/2026 should be read.
+ *
+ *  Only ever matters when both halves are 12 or less — the reading is then
+ *  genuinely ambiguous and no amount of inspection settles it, so the format
+ *  has to say. Left at 'mdy', which is what this function has always assumed
+ *  and what every builtin parser was written against. */
+export type DateOrder = 'mdy' | 'dmy';
+
+export function parseDate(raw: unknown, order: DateOrder = 'mdy'): string {
   // Blank/unparseable input returns '' — NEVER "today". A "today" fallback
   // is non-deterministic: the same source row gets a different date every
   // time it's re-parsed, which silently breaks duplicate detection (dupKey
@@ -53,9 +61,16 @@ export function parseDate(raw: unknown): string {
     }
   }
 
-  // MM/dd/yy or MM/dd/yyyy
+  // MM/dd/yy(yy), or dd/MM when the format has declared itself day-first.
+  //
+  // "06/09/2026" is a real September 6th to half the world and a real June 9th
+  // to the other half; nothing in the string decides it. Reading it the wrong
+  // way round does not fail loudly — it files the ticket in the wrong month
+  // and quietly moves money between two periods' totals. So the caller says,
+  // and the default stays what every builtin parser was written against.
   if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)) {
-    const [m, d, y] = s.split('/');
+    const [a, b, y] = s.split('/');
+    const [m, d] = order === 'dmy' ? [b, a] : [a, b];
     const yr = y.length === 2 ? `20${y}` : y;
     const parsed = new Date(`${yr}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
     if (!isNaN(parsed.getTime())) return parsed.toISOString().split('T')[0];

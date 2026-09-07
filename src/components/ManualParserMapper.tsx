@@ -113,9 +113,15 @@ export const ManualParserMapper: React.FC<Props> = ({ onDone }) => {
       const { rows, errors, warnings } = runParser(
         rawRows, undefined, 'SAR', undefined, [previewProfile]
       );
-      return { rows, errors, warnings };
+      // The parser only accepts a ticket number with six or more digits in it.
+      // A reference like "BK00234" fails that and quietly becomes a generated
+      // placeholder — the rows still import, but they no longer carry the
+      // reference the vendor and the agency actually talk about. Caught here
+      // rather than left to be discovered months later in a dispute.
+      const placeholders = rows.filter(r => /_NOREF_/.test(r.ticketNo)).length;
+      return { rows, errors, warnings, placeholders };
     } catch (e) {
-      return { rows: [], errors: [(e as Error).message], warnings: [] };
+      return { rows: [], errors: [(e as Error).message], warnings: [], placeholders: 0 };
     }
   }, [previewProfile, rawRows, step]);
 
@@ -309,14 +315,28 @@ const MapStep: React.FC<{
       <div>
         <div className="text-[10px] font-bold uppercase text-slate-500">Rules</div>
         <div className="text-[10px] text-slate-400 mb-2">Small choices about how the format expresses things the columns alone do not settle.</div>
-        <div className="flex items-center gap-2 text-[11px]">
-          <label className="text-[10px] font-bold text-slate-600 w-40 shrink-0">How is a refund shown?</label>
-          <select value={rules.refund} onChange={e => setRules({ ...rules, refund: e.target.value as LearnedRules['refund'] })}
-                  className="text-[10px] font-mono border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
-            <option value="negative_amount">Amount goes negative</option>
-            <option value="credit_column">A separate Credit column</option>
-            <option value="status_column">The Status column says REFUND</option>
-          </select>
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-[11px]">
+            <label className="text-[10px] font-bold text-slate-600 w-40 shrink-0">How is a refund shown?</label>
+            <select value={rules.refund} onChange={e => setRules({ ...rules, refund: e.target.value as LearnedRules['refund'] })}
+                    className="text-[10px] font-mono border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+              <option value="negative_amount">Amount goes negative</option>
+              <option value="credit_column">A separate Credit column</option>
+              <option value="status_column">The Status column says REFUND</option>
+            </select>
+          </div>
+          {/* Only ever matters for slash dates where both halves are 12 or
+              less. Guessing wrong there does not fail — it moves a ticket to
+              another month, so it is worth one question. */}
+          <div className="flex items-center gap-2 text-[11px]">
+            <label className="text-[10px] font-bold text-slate-600 w-40 shrink-0">Date order, e.g. 06/09/2026</label>
+            <select value={rules.dateOrder ?? 'mdy'}
+                    onChange={e => setRules({ ...rules, dateOrder: e.target.value as 'mdy' | 'dmy' })}
+                    className="text-[10px] font-mono border border-slate-200 rounded px-1.5 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+              <option value="mdy">Month first — that is 9 June</option>
+              <option value="dmy">Day first — that is 6 September</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -343,7 +363,7 @@ function pickedSample(headers: string[], sampleBody: string[][], header: string)
 
 const PreviewSaveStep: React.FC<{
   profile: LearnedProfile | null;
-  dryRun: { rows: any[]; errors: string[]; warnings: string[] } | null;
+  dryRun: { rows: any[]; errors: string[]; warnings: string[]; placeholders: number } | null;
   saved: boolean; saving: boolean;
   onBack: () => void; onSave: () => void; onDone: () => void;
 }> = ({ profile, dryRun, saved, saving, onBack, onSave, onDone }) => {
@@ -355,6 +375,21 @@ const PreviewSaveStep: React.FC<{
         <Info className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
         <span>Reading the sample file with the mapping you just chose. If the ticket numbers and amounts here look right, the mapping is right.</span>
       </div>
+
+      {dryRun && dryRun.placeholders > 0 && (
+        <div className="rounded px-3 py-2 bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
+          <span className="font-bold">
+            {dryRun.placeholders} of {dryRun.rows.length} rows lost their reference.
+          </span>{' '}
+          The column mapped to <span className="font-mono">Ticket Number</span> isn't being used as the row's id —
+          a ticket number has to contain at least six digits, and this one doesn't. The rows still import, but under a
+          generated id instead of the vendor's own reference.
+          <div className="mt-1">
+            Go back and map that column to <span className="font-mono font-bold">PNR / Booking Ref</span> instead —
+            that slot takes any reference of five characters or more.
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3 text-[10px]">
         <Stat label="Rows read" value={String(dryRun?.rows.length ?? 0)} tone={dryRun && dryRun.rows.length > 0 ? 'good' : 'warn'} />

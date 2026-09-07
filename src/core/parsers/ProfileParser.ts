@@ -71,7 +71,7 @@ export function makeProfileParser(profile: LearnedProfile): VendorParser {
         const status = normSt !== 'UNKNOWN' ? normSt : (isRefund ? 'REFUND' : 'ISSUE');
         if (status === 'FUND') {
           const fundAmt = Math.abs(base);
-          result.push({ ticketNo: `${profile.vendorName.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_FUND_${rowContentId(row)}`, pnr: '', passengerName: 'BALANCE TOP-UP', date: parseDate(iDate >= 0 ? cell(row, iDate) : ''), amount: fundAmt, totalDoc: fundAmt, commission: 0, reqNum: '', status: 'FUND', currency: resolveCurrency(row, headers, defaultCurrency), isTopUp: true });
+          result.push({ ticketNo: `${profile.vendorName.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_FUND_${rowContentId(row)}`, pnr: '', passengerName: 'BALANCE TOP-UP', date: parseDate(iDate >= 0 ? cell(row, iDate) : '', profile.rules.dateOrder), amount: fundAmt, totalDoc: fundAmt, commission: 0, reqNum: '', status: 'FUND', currency: resolveCurrency(row, headers, defaultCurrency), isTopUp: true });
           return;
         }
         const finalAmt = status === 'REFUND' ? -Math.abs(base) : Math.abs(base);
@@ -101,7 +101,7 @@ export function makeProfileParser(profile: LearnedProfile): VendorParser {
           // also holds "PENALTY FEE" and invoice refs. Keep only what is
           // actually an itinerary.
           route:           iRoute >= 0 ? extractRoute(cell(row, iRoute)) : '',
-          date:            parseDate(iDate >= 0 ? cell(row, iDate) : ''),
+          date:            parseDate(iDate >= 0 ? cell(row, iDate) : '', profile.rules.dateOrder),
           amount:          finalAmt,
           totalDoc:        Math.abs(total) || Math.abs(finalAmt),
           commission:      comm,

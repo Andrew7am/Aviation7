@@ -39,6 +39,11 @@ export const ALL_PARSERS: VendorParser[] = [
   TurkishAgencySalesParser, TurkishAirlinesParser,
 ];
 
+/** How far down a file a learned profile's header row is looked for. Generous
+ *  enough for the title/address/period blocks vendors print above their
+ *  tables, small enough that it never reaches the data. */
+const PROFILE_HEADER_SEARCH = 25;
+
 export interface SmartDetectResult {
   parser:     VendorParser | null;
   confidence: number;      // 0–100
@@ -70,15 +75,21 @@ export function smartDetect(
     }
   }
 
-  // 2. Learned AI profile — exact header fingerprint match means this exact
-  //    format was analyzed before; parsing is deterministic from here on.
-  //    Must probe the same candidate header rows the AI analysis flow uses
-  //    (signal-based pick, then density fallback), or a profile learned on a
-  //    file with title rows above the header would never match again.
+  // 2. Learned profile — an exact header fingerprint match means this exact
+  //    format has been mapped before, by the AI or by hand, and parsing is
+  //    deterministic from here on.
+  //
+  //    The two heuristic picks are tried first because they are nearly always
+  //    right and cost nothing. But neither is authoritative: the manual mapper
+  //    lets a person point at ANY row as the header, and a profile taught on a
+  //    row no heuristic would choose has to keep matching anyway — otherwise
+  //    the format is silently forgotten the moment the wizard closes. So the
+  //    remaining rows of the header region are swept as a fallback.
   if (learnedProfiles.length > 0) {
-    const candidates = [headerRowIdx, bestHeaderRowForAI(allRows, headerRowIdx)];
-    for (const idx of [...new Set(candidates)]) {
-      const fp = headerFingerprint(allRows[idx]);
+    const preferred = [headerRowIdx, bestHeaderRowForAI(allRows, headerRowIdx)];
+    const sweep = Array.from({ length: Math.min(allRows.length, PROFILE_HEADER_SEARCH) }, (_, i) => i);
+    for (const idx of [...new Set([...preferred, ...sweep])]) {
+      const fp = headerFingerprint(allRows[idx] ?? []);
       const learned = learnedProfiles.find(p => p.fingerprint === fp);
       if (learned) {
         return { parser: makeProfileParser(learned), confidence: 90, missingCols: [], headerRowIdx: idx };
