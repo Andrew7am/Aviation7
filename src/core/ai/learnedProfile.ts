@@ -39,6 +39,10 @@ export interface LearnedProfile {
   headers:     string[];
   columns:     LearnedColumns;
   rules:       LearnedRules;
+  /** Where the mapping came from. Both are read the same way — origin is
+   *  what tells the Settings screen which came from AI and which a person
+   *  wrote by hand, and warns against overwriting the person's work. */
+  origin?:     'ai' | 'manual';
 }
 
 const norm = (s: string) => (s || '').trim().toLowerCase().replace(/[^a-z0-9.]/g, '');

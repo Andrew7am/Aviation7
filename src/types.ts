@@ -46,7 +46,7 @@ export interface Ticket {
   channel?: string;
 }
 
-export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'notclosed' | 'import' | 'vendors' | 'reports' | 'history' | 'activity';
+export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'notclosed' | 'import' | 'vendors' | 'reports' | 'history' | 'activity' | 'settings';
 
 export interface VendorBalance {
   id: string;

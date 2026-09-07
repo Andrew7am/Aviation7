@@ -10,6 +10,7 @@ type ProfileRow = {
   rules: LearnedRules | null;
   is_lcc: boolean;
   usage_count: number;
+  origin?: 'ai' | 'manual';
 };
 
 const rowToProfile = (r: ProfileRow): LearnedProfile => ({
@@ -19,6 +20,7 @@ const rowToProfile = (r: ProfileRow): LearnedProfile => ({
   headers:     r.headers,
   columns:     r.columns,
   rules:       r.rules ?? { refund: 'negative_amount' },
+  origin:      r.origin ?? 'ai',
 });
 
 /**
@@ -43,8 +45,17 @@ export class AIProfileService {
       columns:     profile.columns,
       rules:       profile.rules,
       is_lcc:      profile.isLCC,
+      origin:      profile.origin ?? 'ai',
       created_by:  auth.user?.id ?? null,
     }, { onConflict: 'fingerprint' });
+    if (error) throw new Error(error.message);
+  }
+
+  /** Remove a profile by fingerprint. Used from the Settings screen so a
+   *  wrong mapping does not have to live forever. */
+  async deleteProfile(fingerprint: string): Promise<void> {
+    const { error } = await supabase.from('ai_vendor_profiles')
+      .delete().eq('fingerprint', fingerprint);
     if (error) throw new Error(error.message);
   }
 
