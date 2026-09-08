@@ -4,6 +4,7 @@ import { readFileAsText } from '../core/ImportEngine';
 import { runParser } from '../core/parsers';
 import { headerFingerprint, LearnedColumns, LearnedProfile, LearnedRules, PROFILE_FIELDS } from '../core/ai/learnedProfile';
 import { AIProfileService } from '../services/AIProfileService';
+import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { FileUp, ChevronRight, ChevronLeft, Save, X, Info, CheckCircle2 } from 'lucide-react';
 
 const svc = new AIProfileService();
@@ -26,6 +27,7 @@ const FIELD_META: Record<keyof LearnedColumns, { label: string; hint: string; ki
   currency:   { label: 'Currency',         hint: 'Currency column, when the report has one per row.',                           kind: 'meta' },
   route:      { label: 'Route',            hint: 'Origin–destination string, e.g. RUH-JED.',                                    kind: 'meta' },
   req:        { label: 'Req Number',       hint: 'Your internal request number, when the vendor prints it back on their report.', kind: 'meta' },
+  cabin:      { label: 'Cabin',            hint: 'Cabin or fare brand, e.g. Business, Economy, fly+. Feeds the cabin breakdown in Reports.', kind: 'meta' },
 };
 
 /** Group the fields for the UI. Row identifier first — the mapping cannot be
@@ -402,7 +404,7 @@ const PreviewSaveStep: React.FC<{
           <table className="w-full text-[10px] font-mono">
             <thead className="bg-slate-50 sticky top-0">
               <tr className="border-b border-slate-200 text-slate-500">
-                {['Ticket', 'Date', 'Amount', 'Currency', 'Status', 'Passenger'].map(h =>
+                {['Ticket', 'Date', 'Amount', 'Currency', 'Status', 'Cabin', 'Passenger'].map(h =>
                   <th key={h} className="px-2 py-1.5 text-left font-bold uppercase text-[9px]">{h}</th>
                 )}
               </tr>
@@ -415,6 +417,16 @@ const PreviewSaveStep: React.FC<{
                   <td className={`px-2 py-1 ${r.amount < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{r.amount?.toFixed?.(2) ?? r.amount}</td>
                   <td className="px-2 py-1 text-slate-500">{r.currency}</td>
                   <td className="px-2 py-1 text-slate-500">{r.status}</td>
+                  {/* The normalised cabin, and behind it what the report
+                      actually said. They differ exactly when a fare brand was
+                      not recognised, which is the case worth seeing here. */}
+                  <td className="px-2 py-1 text-slate-500" title={r.cabinRaw || ''}>
+                    {r.cabinClass
+                      ? CABIN_LABEL[r.cabinClass as Exclude<Cabin, ''>] ?? r.cabinClass
+                      : r.cabinRaw
+                        ? <span className="text-amber-600" title={`"${r.cabinRaw}" names no cabin — kept as written`}>{r.cabinRaw}</span>
+                        : <span className="text-slate-300">—</span>}
+                  </td>
                   <td className="px-2 py-1 text-slate-500 truncate max-w-[220px]">{r.passengerName || '—'}</td>
                 </tr>
               ))}

@@ -24,6 +24,11 @@ export interface LearnedColumns {
   currency?:   string;
   route?:      string;
   req?:        string;
+  /** Cabin as the report writes it. Normalised through toCabin(), which only
+   *  commits to a cabin the words actually name — the original text is kept
+   *  alongside so an unrecognised fare brand can be named later instead of
+   *  being guessed at now. */
+  cabin?:      string;
 }
 
 export interface LearnedRules {
@@ -78,7 +83,7 @@ export function bestHeaderRowForAI(rows: string[][], signalBasedIdx: number, max
 
 export const PROFILE_FIELDS: (keyof LearnedColumns)[] = [
   'ticket', 'pnr', 'passenger', 'date', 'amount', 'debit', 'credit',
-  'total', 'commission', 'status', 'currency', 'route', 'req',
+  'total', 'commission', 'status', 'currency', 'route', 'req', 'cabin',
 ];
 
 /**

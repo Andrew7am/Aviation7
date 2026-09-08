@@ -5,6 +5,7 @@ import { parseDate } from '../helpers/parseDate';
 import { resolveCurrency } from '../helpers/resolveCurrency';
 import { normalizeStatus } from '../helpers/normalizeStatus';
 import { extractRoute } from '../helpers/extractRoute';
+import { toCabin } from '../helpers/cabinClass';
 import { LearnedProfile, headerFingerprint } from '../ai/learnedProfile';
 
 /**
@@ -40,12 +41,15 @@ export function makeProfileParser(profile: LearnedProfile): VendorParser {
       const iComm   = c.commission ? col(headers, c.commission) : -1;
       const iStatus = c.status     ? col(headers, c.status)     : -1;
       const iRoute  = c.route      ? col(headers, c.route)      : -1;
+      const iCabin  = c.cabin      ? col(headers, c.cabin)      : -1;
       // Explicit user-added Req column always wins; then the AI's mapped
       // column; then the broad heuristic.
       const iExplicitReq = findExplicitReqColumn(headers);
       const iReq    = iExplicitReq !== -1 ? iExplicitReq
                      : c.req ? col(headers, c.req)
                      : findReqColumn(headers);
+
+      const cabinText = (row: string[]) => iCabin >= 0 ? cell(row, iCabin).trim() : '';
 
       rows.forEach((row, idx) => {
         if (!row.some(v => v?.trim())) return;
@@ -109,6 +113,13 @@ export function makeProfileParser(profile: LearnedProfile): VendorParser {
           vendorReference: iReq >= 0 ? cell(row, iReq) : '',
           status,
           currency:        resolveCurrency(row, headers, defaultCurrency),
+          // Both are kept, and for different reasons: cabinClass is what the
+          // analytics group by, cabinRaw is what the report actually said. A
+          // fare brand toCabin() does not recognise leaves the first blank
+          // and the second intact, so it shows on screen as itself and can be
+          // named later rather than being filed under a guess.
+          cabinClass:      cabinText(row) ? toCabin(cabinText(row)) || undefined : undefined,
+          cabinRaw:        cabinText(row) || undefined,
         });
       });
 
