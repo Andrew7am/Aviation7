@@ -4,6 +4,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { knownSources } from '../core/config/sources';
 import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
+import { splitTicketNo } from '../core/helpers/ticketIdentity';
+import { airlineName } from '../core/config/airlines';
 import { X, PlusCircle, AlertTriangle } from 'lucide-react';
 
 interface ManualEntryProps {
@@ -44,6 +46,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
   const [pnr, setPnr]         = useState('');
   const [pax, setPax]         = useState('');
   const [route, setRoute]     = useState('');
+  const [airline, setAirline] = useState('');
   const [date, setDate]       = useState(new Date().toISOString().split('T')[0]);
   const [amount, setAmount]   = useState('');
   const [reqNum, setReqNum]   = useState('');
@@ -52,6 +55,23 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
   const [error, setError]     = useState('');
 
   const currency = useMemo(() => sourceToCurrency(vendor), [vendor]);
+
+  /**
+   * Ticket number and airline, split the one way the rest of the app splits
+   * them.
+   *
+   * The old line here took the first three digits of whatever was typed and
+   * called them the airline. On a 13-digit document that is right by accident;
+   * on the bare 10-digit serial people actually copy off a report it stamps
+   * three digits of the serial as an airline code — which is how two entries
+   * made this week ended up filed under a carrier "486" that does not exist.
+   * splitTicketNo only reads a code where the number really carries one, and
+   * the Airline field below is how a person supplies it when it does not.
+   */
+  const identity = useMemo(
+    () => splitTicketNo(ticketNo.trim() || pnr.trim(), airline),
+    [ticketNo, pnr, airline],
+  );
 
   // Wallet holders first — they are what most entries are for — then the
   // formats the app knows and every vendor already in the ledger.
@@ -86,10 +106,10 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
     try {
       const ticket: Ticket = {
         id:              uuidv4(),
-        ticketNo:        (ticketNo.trim() || pnr.trim()).toUpperCase(),
+        ticketNo:        identity.ticketNo || (ticketNo.trim() || pnr.trim()).toUpperCase(),
         pnr:             pnr.trim().toUpperCase(),
         passengerName:   pax.trim().toUpperCase(),
-        airlineCode:     ticketNo.trim().replace(/\D/g, '').slice(0, 3),
+        airlineCode:     identity.airlineCode,
         route:           route.trim().toUpperCase(),
         source:          vendor,
         date,
@@ -247,6 +267,23 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
             <div>
               <label className={label}>Route</label>
               <input type="text" value={route} onChange={e => setRoute(e.target.value)} placeholder="e.g. JED-RUH" className={field} />
+            </div>
+            {/* A bare serial does not name its airline, and the app will not
+                invent one from its leading digits. Stated here or left blank —
+                blank is honest, a wrong carrier is not. */}
+            <div>
+              <label className={label}>Airline code</label>
+              <input type="text" value={airline} onChange={e => setAirline(e.target.value)}
+                     maxLength={3} placeholder="e.g. 065" className={field} />
+              <p className="text-[9px] text-slate-400 mt-1 leading-tight">
+                {identity.airlineCode
+                  ? (airlineName(identity.airlineCode)
+                      ? `${identity.airlineCode} · ${airlineName(identity.airlineCode)}`
+                      : `${identity.airlineCode} — not in the airline list`)
+                  : ticketNo.trim()
+                    ? 'This number does not say which airline — type the code if you know it.'
+                    : 'Optional.'}
+              </p>
             </div>
           </div>
 

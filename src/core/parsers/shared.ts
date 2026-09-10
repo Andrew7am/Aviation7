@@ -31,10 +31,28 @@ export function cell(row: string[], idx: number): string {
   return idx >= 0 && idx < row.length ? (row[idx] ?? '').trim() : '';
 }
 
+/**
+ * A money figure out of a vendor's cell.
+ *
+ * Two ways of writing a negative are older than the minus sign in front of it
+ * and both are still shipped daily: accounting parentheses, "(500.00)", and
+ * the trailing minus that SAP-descended exports emit, "500.00-". Stripping
+ * punctuation and calling parseFloat reads BOTH as +500 — parseFloat simply
+ * stops at a sign it did not expect — so a refund written either way entered
+ * the ledger as a sale. Nothing about that fails loudly: the row imports, the
+ * balance moves the wrong way, and it moves by twice the amount.
+ *
+ * Detected on the raw text, before punctuation is stripped, because that is
+ * the only point where the two forms are still distinguishable.
+ */
 export function num(raw: string): number {
   if (!raw) return 0;
-  const n = parseFloat(raw.replace(/[^0-9.-]/g, '').trim());
-  return isNaN(n) ? 0 : n;
+  const s = raw.trim();
+  // A wrapped figure, "(500.00)" or "SAR (500.00)", and a trailing "500.00-".
+  const negated = /\(\s*[\d.,]+\s*\)/.test(s) || /[\d.,]\s*-\s*$/.test(s);
+  const n = parseFloat(s.replace(/[^0-9.-]/g, '').trim());
+  if (isNaN(n)) return 0;
+  return negated ? -Math.abs(n) : n;
 }
 
 export function numNoText(raw: string): number {

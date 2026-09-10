@@ -3,7 +3,7 @@ import { col, cell, num, cleanPax, airlineCode, cleanTk, rowContentId } from './
 import { resolveReq, findReqColumn, findExplicitReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 import { resolveCurrency } from '../helpers/resolveCurrency';
-import { normalizeStatus } from '../helpers/normalizeStatus';
+import { normalizeStatus, statusToAmount } from '../helpers/normalizeStatus';
 import { extractRoute } from '../helpers/extractRoute';
 import { toCabin } from '../helpers/cabinClass';
 import { LearnedProfile, headerFingerprint } from '../ai/learnedProfile';
@@ -78,7 +78,10 @@ export function makeProfileParser(profile: LearnedProfile): VendorParser {
           result.push({ ticketNo: `${profile.vendorName.toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_FUND_${rowContentId(row)}`, pnr: '', passengerName: 'BALANCE TOP-UP', date: parseDate(iDate >= 0 ? cell(row, iDate) : '', profile.rules.dateOrder), amount: fundAmt, totalDoc: fundAmt, commission: 0, reqNum: '', status: 'FUND', currency: resolveCurrency(row, headers, defaultCurrency), isTopUp: true });
           return;
         }
-        const finalAmt = status === 'REFUND' ? -Math.abs(base) : Math.abs(base);
+        // Through the shared mapping rather than a local ternary, so a VOID
+        // settles at zero here exactly as it does everywhere else. Reading it
+        // as a live sale charged the wallet for a document that was cancelled.
+        const finalAmt = statusToAmount(base, status);
 
         // ── row identifier ──
         const rawTk = iTicket >= 0 ? cell(row, iTicket) : '';
