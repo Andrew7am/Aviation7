@@ -31,7 +31,7 @@ type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr' | 'route' | '
 type SortKey =
   | 'serial' | 'airlineCode' | 'ticketNo' | 'source' | 'status' | 'date'
   | 'route' | 'travel' | 'cabin' | 'totalDoc' | 'commission' | 'amount'
-  | 'currency' | 'pnr' | 'passengerName' | 'reqNum' | 'closed'
+  | 'currency' | 'pnr' | 'passengerName' | 'reqNum' | 'vendorReference' | 'closed'
   | null;
 
 /** Cabins sort by where they sit on the aircraft, not alphabetically — First
@@ -70,6 +70,7 @@ function sortValue(t: Ticket, key: Exclude<SortKey, null>): number | string | nu
     case 'pnr':           return t.pnr || null;
     case 'passengerName': return t.passengerName || null;
     case 'reqNum':        return t.reqNum || null;
+    case 'vendorReference': return t.vendorReference || null;
     // Not Closed first when ascending: the outstanding ones are what anyone
     // sorting this column is looking for.
     case 'closed':        return t.closed ? 1 : 0;
@@ -362,7 +363,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
-        const haystack = `${t.ticketNo} ${t.reqNum} ${t.pnr} ${t.source} ${t.passengerName}`.toLowerCase();
+        const haystack = `${t.ticketNo} ${t.reqNum} ${t.vendorReference ?? ''} ${t.pnr} ${t.source} ${t.passengerName}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
@@ -552,6 +553,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       { key: 'Balance Payable', get: (t: Ticket) => t.amount ?? 0,           w: 13, money: true },
       { key: 'Cur',         get: (t: Ticket) => sourceToCurrency(t.source || ''), w: 6 },
       { key: 'Req Num',     get: (t: Ticket) => t.reqNum || '',          w: 14 },
+      { key: 'Vendor Ref',  get: (t: Ticket) => t.vendorReference || '', w: 18 },
       ...(has.office ? [{ key: 'Office',
         get: (t: Ticket) => OFFICE_LABEL[classifyOffice(t.reqNum) as Exclude<Office, ''>] ?? '',
         w: 10 }] : []),
@@ -836,7 +838,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
             <input
               type="text"
-              placeholder="Search ticket, PNR, req..."
+              placeholder="Search ticket, PNR, req, invoice..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
               className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-48"
@@ -1255,6 +1257,11 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                 ['PNR',        'pnr'],
                 ['Passenger',  'passengerName'],
                 ['Req Num',    'reqNum'],
+                // The vendor's own reference for the document — their invoice
+                // number, where they give one. Req Num is what WE called the
+                // request; this is what THEY call the bill, and a dispute is
+                // argued in their numbering, not ours.
+                ['Vendor Ref', 'vendorReference'],
                 // Recon is derived entirely from Req Num — a row is MATCHED
                 // exactly when it has one — so sorting it would just be the
                 // Req Num sort with less information in it.
@@ -1408,6 +1415,10 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                       </div>
                     )}
                   </td>
+                  <td className="px-3 py-2 font-mono text-[10px] text-slate-600 whitespace-nowrap"
+                      title={ticket.vendorReference || undefined}>
+                    {ticket.vendorReference || <span className="text-slate-300">—</span>}
+                  </td>
                   <td className={`px-3 py-2 font-bold text-[9px] ${!ticket.reqNum ? 'text-red-600' : 'text-emerald-600'}`}>
                     {!ticket.reqNum ? 'NEED REQ' : 'MATCHED'}
                   </td>
@@ -1441,7 +1452,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={onDelete ? 17 : 16} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
+                <td colSpan={onDelete ? 18 : 17} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
                   No tickets found matching your filters.
                 </td>
               </tr>
