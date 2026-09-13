@@ -28,6 +28,36 @@ interface TicketTableProps {
 
 type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr' | 'route' | 'cabinClass';
 
+/**
+ * A document the vendor issued, by its own numbering.
+ *
+ * The five families the vendors actually use — an invoice, a refund document,
+ * a receipt voucher, a debit memo, a note — in both the dashed form NSA writes
+ * (INV-25-12-3761) and the compact one Ibtekar writes (INV261658).
+ *
+ * The trailing digits matter. Several carriers' booking references begin with
+ * these same letters — RBDBU8, RMYM5F — and requiring the rest to be digits is
+ * what keeps a PNR out of a column that claims to hold invoice numbers.
+ */
+const VENDOR_DOC = /^(INV|RFD|RV|DMA|DN)-?\d[\d-]*(_[A-Z])?$/i;
+
+/**
+ * The vendor's reference, when the row carries a real one.
+ *
+ * The stored column has been a dumping ground: importers have written the req
+ * num back into it, the PNR, a BSP billing period, even the words "need req".
+ * Of 5,586 rows only 39 held an actual vendor document number, so printing the
+ * column raw produced a list of request numbers under a heading promising
+ * invoices — the same figure already sitting in the next column along.
+ *
+ * Nothing is deleted; the stored value stays for anyone who needs it. This
+ * decides only what the column claims to be showing.
+ */
+export function vendorRef(t: { vendorReference?: string }): string {
+  const v = (t.vendorReference ?? '').trim();
+  return VENDOR_DOC.test(v) ? v : '';
+}
+
 type SortKey =
   | 'serial' | 'airlineCode' | 'ticketNo' | 'source' | 'status' | 'date'
   | 'route' | 'travel' | 'cabin' | 'totalDoc' | 'commission' | 'amount'
@@ -70,7 +100,7 @@ function sortValue(t: Ticket, key: Exclude<SortKey, null>): number | string | nu
     case 'pnr':           return t.pnr || null;
     case 'passengerName': return t.passengerName || null;
     case 'reqNum':        return t.reqNum || null;
-    case 'vendorReference': return t.vendorReference || null;
+    case 'vendorReference': return vendorRef(t) || null;
     // Not Closed first when ascending: the outstanding ones are what anyone
     // sorting this column is looking for.
     case 'closed':        return t.closed ? 1 : 0;
@@ -363,7 +393,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
-        const haystack = `${t.ticketNo} ${t.reqNum} ${t.vendorReference ?? ''} ${t.pnr} ${t.source} ${t.passengerName}`.toLowerCase();
+        const haystack = `${t.ticketNo} ${t.reqNum} ${vendorRef(t)} ${t.pnr} ${t.source} ${t.passengerName}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
@@ -553,7 +583,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       { key: 'Balance Payable', get: (t: Ticket) => t.amount ?? 0,           w: 13, money: true },
       { key: 'Cur',         get: (t: Ticket) => sourceToCurrency(t.source || ''), w: 6 },
       { key: 'Req Num',     get: (t: Ticket) => t.reqNum || '',          w: 14 },
-      { key: 'Vendor Ref',  get: (t: Ticket) => t.vendorReference || '', w: 18 },
+      { key: 'Vendor Ref',  get: (t: Ticket) => vendorRef(t),            w: 18 },
       ...(has.office ? [{ key: 'Office',
         get: (t: Ticket) => OFFICE_LABEL[classifyOffice(t.reqNum) as Exclude<Office, ''>] ?? '',
         w: 10 }] : []),
@@ -1417,7 +1447,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                   </td>
                   <td className="px-3 py-2 font-mono text-[10px] text-slate-600 whitespace-nowrap"
                       title={ticket.vendorReference || undefined}>
-                    {ticket.vendorReference || <span className="text-slate-300">—</span>}
+                    {vendorRef(ticket) || <span className="text-slate-300">—</span>}
                   </td>
                   <td className={`px-3 py-2 font-bold text-[9px] ${!ticket.reqNum ? 'text-red-600' : 'text-emerald-600'}`}>
                     {!ticket.reqNum ? 'NEED REQ' : 'MATCHED'}
