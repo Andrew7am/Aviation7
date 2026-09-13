@@ -63,6 +63,31 @@ function documentKey(t: Ticket, withAirline: boolean): string {
   return `${al}|${t.ticketNo.trim().toUpperCase()}|${dir}`;
 }
 
+/**
+ * Would settling this invoice line onto the row already held change anything
+ * a person cares about?
+ *
+ * Only the figures a settlement exists to carry are compared — the payable,
+ * the commission, the fare, the issue date and the type. The channel is
+ * deliberately excluded: it records which file a row was settled from, and a
+ * row whose money already matches the invoice has been settled whether or not
+ * that stamp ever landed. Treating a missing stamp as a change made every
+ * re-upload of an old invoice look like a list of discrepancies.
+ *
+ * A blank incoming field is not a change either. The invoice states some
+ * fields and not others, and "" never overwrites a value the ledger holds
+ * further down, so it must not count as a difference here.
+ */
+function settlesNothing(held: Ticket, incoming: Ticket): boolean {
+  const near = (a = 0, b = 0) => Math.abs(a - b) < 0.011;
+  if (!near(held.amount, incoming.amount)) return false;
+  if (!near(held.commission ?? 0, incoming.commission ?? 0)) return false;
+  if (incoming.totalDoc && !near(held.totalDoc ?? 0, incoming.totalDoc)) return false;
+  if (incoming.date && (held.date || '') !== incoming.date) return false;
+  if (incoming.status && (held.status || '') !== incoming.status) return false;
+  return true;
+}
+
 export function detectDuplicatesAgainstExisting(
   newTickets: Ticket[],
   existingTickets: Ticket[]
@@ -148,6 +173,12 @@ export function detectDuplicatesAgainstExisting(
     if (!existing && isSettlementSource(t.source)) {
       const doc = findDocument(t);
       if (doc && !isSettlementSource(doc.source)) {
+        // Already settled once. Re-uploading the same invoice would otherwise
+        // list it again under "settled from invoice" with every figure
+        // identical, which reads as a discrepancy the file does not contain —
+        // and the whole point of opening an invoice twice is to find out
+        // whether anything moved.
+        if (settlesNothing(doc, t)) { duplicates.push({ ...t, isDuplicate: true }); return; }
         settlements.push({
           ...doc,                                   // keep vendor, pax, PNR, route
           amount:     t.amount,                     // net payable — the invoice's figure
@@ -186,6 +217,9 @@ export function detectDuplicatesAgainstExisting(
     // finds the channel already set and falls through to ordinary duplicate
     // detection.
     if (isSettlementSource(t.source) && t.channel && existing && !existing.channel) {
+      // Same reasoning as above: the channel is missing, but if every figure
+      // already agrees there is nothing to settle and saying so is noise.
+      if (settlesNothing(existing, t)) { duplicates.push({ ...t, isDuplicate: true }); return; }
       settlements.push({
         ...existing,
         amount:     t.amount,                       // the invoice's payable
