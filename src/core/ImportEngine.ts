@@ -64,6 +64,35 @@ function documentKey(t: Ticket, withAirline: boolean): string {
 }
 
 /**
+ * A row already held, shown as it actually stands rather than as the incoming
+ * file describes it.
+ *
+ * Duplicates are never saved — they exist to tell the person what the file
+ * would have done — so the useful thing to show is the ticket as the ledger
+ * holds it, not the half of it the file happens to state. A BSP invoice
+ * carries no req number, no PNR and no passenger, so every line of a
+ * re-uploaded invoice was printing "MISSING" in red against tickets whose req
+ * number has been on file for weeks: 96 rows flagged as needing attention, 6
+ * in the whole ledger that genuinely do.
+ *
+ * Only fields the incoming row leaves blank are taken. Nothing here reaches
+ * the database.
+ */
+function asHeld(incoming: Ticket, held?: Ticket): Ticket {
+  if (!held) return { ...incoming, isDuplicate: true };
+  const keep = (a?: string, b?: string) => (a?.trim() ? a : b) ?? '';
+  return {
+    ...incoming,
+    isDuplicate:   true,
+    reqNum:        keep(incoming.reqNum, held.reqNum),
+    pnr:           keep(incoming.pnr, held.pnr),
+    passengerName: keep(incoming.passengerName, held.passengerName),
+    route:         keep(incoming.route, held.route),
+    airlineCode:   keep(incoming.airlineCode, held.airlineCode),
+  };
+}
+
+/**
  * Would settling this invoice line onto the row already held change anything
  * a person cares about?
  *
@@ -178,7 +207,7 @@ export function detectDuplicatesAgainstExisting(
         // identical, which reads as a discrepancy the file does not contain —
         // and the whole point of opening an invoice twice is to find out
         // whether anything moved.
-        if (settlesNothing(doc, t)) { duplicates.push({ ...t, isDuplicate: true }); return; }
+        if (settlesNothing(doc, t)) { duplicates.push(asHeld(t, doc)); return; }
         settlements.push({
           ...doc,                                   // keep vendor, pax, PNR, route
           amount:     t.amount,                     // net payable — the invoice's figure
@@ -219,7 +248,7 @@ export function detectDuplicatesAgainstExisting(
     if (isSettlementSource(t.source) && t.channel && existing && !existing.channel) {
       // Same reasoning as above: the channel is missing, but if every figure
       // already agrees there is nothing to settle and saying so is noise.
-      if (settlesNothing(existing, t)) { duplicates.push({ ...t, isDuplicate: true }); return; }
+      if (settlesNothing(existing, t)) { duplicates.push(asHeld(t, existing)); return; }
       settlements.push({
         ...existing,
         amount:     t.amount,                       // the invoice's payable
@@ -248,7 +277,7 @@ export function detectDuplicatesAgainstExisting(
       const doc = findDocument(t);
       if (doc && isSettlementSource(doc.source)) {
         if (t.reqNum && !doc.reqNum?.trim()) updates.push({ ...t, id: doc.id });
-        else duplicates.push({ ...t, isDuplicate: true });
+        else duplicates.push(asHeld(t, doc));
         return;
       }
     }
@@ -327,7 +356,7 @@ export function detectDuplicatesAgainstExisting(
         && !differs(Math.abs(existing.amount), Math.abs(t.amount));
       if (existingKeys.has(key) || sameCredit) {
         if (existing && enriches) updates.push({ ...t, id: existing.id });
-        else duplicates.push({ ...t, isDuplicate: true });
+        else duplicates.push(asHeld(t, existing));
       } else {
         fresh.push(t);
       }
@@ -338,7 +367,7 @@ export function detectDuplicatesAgainstExisting(
       if (existing && enriches) {
         updates.push({ ...t, id: existing.id });
       } else {
-        duplicates.push({ ...t, isDuplicate: true });
+        duplicates.push(asHeld(t, existing));
       }
     } else if (!existing) {
       fresh.push(t);
@@ -347,7 +376,7 @@ export function detectDuplicatesAgainstExisting(
     } else if (t.reqNum && existing.reqNum && t.reqNum !== existing.reqNum) {
       updates.push({ ...t, id: existing.id });
     } else {
-      duplicates.push({ ...t, isDuplicate: true });
+      duplicates.push(asHeld(t, existing));
     }
   });
 

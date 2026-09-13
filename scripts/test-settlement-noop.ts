@@ -92,5 +92,33 @@ console.log('\n6. A refund is settled on its own terms, not the sale\'s');
         r.settlements.find(s => s.id === 'refund')?.commission, -90.3);
 }
 
+console.log('\n7. A row already held is previewed as the ledger holds it');
+{
+  // A BSP invoice states none of these; the ledger has had them for weeks.
+  const held = [mk({
+    id: 'held', reqNum: 'KSAML2392', pnr: 'YTOEFL',
+    passengerName: 'RANDA ELFADIL', route: 'JED-IST', channel: 'BSP',
+  })];
+  const invoice = [mk({
+    source: 'IATA BSP', reqNum: '', pnr: '', passengerName: '', route: '', channel: 'BSP',
+  })];
+  const r = detectDuplicatesAgainstExisting(invoice, held);
+  check('reported as already held', r.duplicates.length, 1);
+  const d = r.duplicates[0];
+  check('the req number is the one on file, not MISSING', d?.reqNum, 'KSAML2392');
+  check('the PNR shows',                                  d?.pnr, 'YTOEFL');
+  check('the passenger shows',                            d?.passengerName, 'RANDA ELFADIL');
+  check('the route shows',                                d?.route, 'JED-IST');
+}
+
+console.log('\n8. What the file does state still wins');
+{
+  const held = [mk({ id: 'held', reqNum: 'OLD-REQ', channel: 'BSP' })];
+  const invoice = [mk({ source: 'IATA BSP', reqNum: 'FROM-FILE', channel: 'BSP' })];
+  const r = detectDuplicatesAgainstExisting(invoice, held);
+  check('a stated req num is not overwritten by the held one',
+        r.duplicates[0]?.reqNum ?? r.updates[0]?.reqNum, 'FROM-FILE');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
