@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { ViewState, Ticket, VendorBalance, BalanceTopUp, AppAlert } from './types';
+import { ViewState, Ticket, VendorBalance, BalanceTopUp, VendorStatement, AppAlert } from './types';
 import { logout } from './utils/supabase';
 import { AuthGuard } from './components/AuthGuard';
 import { AlertBanner } from './components/AlertBanner';
@@ -7,6 +7,7 @@ import { Dashboard } from './components/Dashboard';
 import { TicketTable } from './components/TicketTable';
 import { ImportData } from './components/ImportData';
 import { VendorBalances } from './components/VendorBalances';
+import { VendorStatements } from './components/VendorStatements';
 import { Reports } from './components/Reports';
 import { ImportHistory } from './components/ImportHistory';
 import { ActivityLog } from './components/ActivityLog';
@@ -14,14 +15,16 @@ import { Settings } from './components/Settings';
 import { ManualEntry } from './components/ManualEntry';
 import { AuditService, AuditRecord } from './services/AuditService';
 import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
+import { summariseVendor } from './core/helpers/statementMath';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
+import { useStatements } from './hooks/useStatements';
 import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   Plane, LayoutDashboard, List, AlertTriangle,
   Upload, LogOut, Wallet, BarChart2, History, ShieldCheck, PlusCircle, Eye, Circle,
-  Settings as SettingsIcon,
+  Settings as SettingsIcon, FileText,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -40,6 +43,7 @@ function MainApp({ user }: { user: User }) {
 
   const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, revertClosed, addManualTicket, applyImport } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
+  const { statements, saveStatement, deleteStatement } = useStatements(user.id);
 
   const ticketSvc = new TicketService(user.id);
   const importSvc = new ImportService(user.id);
@@ -133,6 +137,14 @@ function MainApp({ user }: { user: User }) {
   const handleSaveVendor   = (v: VendorBalance) => { saveVendor(v); importSvc.audit('ADD_VENDOR', v.vendorName, `Initial balance: ${v.initialBalance}`); };
   const handleDeleteVendor = (id: string) => { if (confirm('Delete vendor?')) { deleteVendor(id); importSvc.audit('DELETE_VENDOR', id, 'Vendor deleted'); } };
   const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount}`); };
+  const handleSaveStatement   = (s: VendorStatement) => {
+    saveStatement(s);
+    importSvc.audit('SAVE_STATEMENT', s.vendorName, `${s.periodStart} to ${s.periodEnd}: closing ${s.closingBalance}`);
+  };
+  const handleDeleteStatement = (id: string) => {
+    deleteStatement(id);
+    importSvc.audit('DELETE_STATEMENT', id, 'Statement deleted');
+  };
   const handleAddManual = async (t: Ticket) => {
     await addManualTicket(t);
     importSvc.audit('MANUAL_ENTRY', t.ticketNo, `Manual ${t.transactionType} — ${t.source} ${t.amount} ${t.currency}${t.reqNum ? ` (req ${t.reqNum})` : ''}`);
@@ -179,6 +191,14 @@ function MainApp({ user }: { user: User }) {
   // can be reconciled, so it is not outstanding work.
   const notClosedCount  = tickets.filter(t => !t.closed && t.status !== 'FUND').length;
   const lowVendorCount  = lowVendors.length;
+  // A statement whose period disagrees with our own rows for the same dates,
+  // or whose own figures do not foot. Either way somebody has to look at it,
+  // so it earns a count in the sidebar the way missing req nums do.
+  const statementGapCount = React.useMemo(
+    () => ['Ibtekar', 'NSA']
+      .flatMap(v => summariseVendor(v, statements, tickets).checks)
+      .filter(c => Math.abs(c.billedGap) >= 0.011 || !c.foots).length,
+    [statements, tickets]);
 
   /** Everything that changes data. Passed only to an admin — the database
    *  refuses these writes for anyone else (migration 0019), so offering the
@@ -201,6 +221,7 @@ function MainApp({ user }: { user: User }) {
     ...(isAdmin ? [{ id: 'import' as ViewState, label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
     { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
     { id: 'vendors',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
+    { id: 'statements', label: 'Vendor Statements', icon: <FileText className="w-4 h-4" />, badge: statementGapCount || undefined, badgeColor: 'red' },
     { id: 'reports',   label: 'Reports',         icon: <BarChart2 className="w-4 h-4" /> },
     ...(isAdmin ? [{ id: 'activity' as ViewState, label: 'Activity Log', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
     ...(isAdmin ? [{ id: 'settings' as ViewState, label: 'Settings', icon: <SettingsIcon className="w-4 h-4" /> }] : []),
@@ -323,6 +344,10 @@ function MainApp({ user }: { user: User }) {
                 onSaveVendor={handleSaveVendor} onDeleteVendor={handleDeleteVendor}
                 onTopUp={handleTopUp} />
             </div>
+          )}
+          {view === 'statements' && (
+            <VendorStatements statements={statements} tickets={tickets} canEdit={isAdmin}
+              onSave={handleSaveStatement} onDelete={handleDeleteStatement} />
           )}
           {view === 'reports'   && <Reports tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
           {view === 'activity'  && (isAdmin

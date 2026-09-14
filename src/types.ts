@@ -46,7 +46,41 @@ export interface Ticket {
   channel?: string;
 }
 
-export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'notclosed' | 'import' | 'vendors' | 'reports' | 'history' | 'activity' | 'settings';
+export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'notclosed' | 'import' | 'vendors' | 'statements' | 'reports' | 'history' | 'activity' | 'settings';
+
+/**
+ * A vendor's own account of a period, as their statement prints it.
+ *
+ * Kept for the vendors we issue against rather than buy from — Ibtekar and NSA
+ * — because they adjust the account on their side after the fact and the
+ * wallet, which is computed from our own rows, cannot see those adjustments.
+ *
+ * Signs follow the statement: a positive balance is credit in our favour
+ * (their "Cr"), a negative one is what we owe (their "Dr"). The three
+ * movements are positive magnitudes, and the period foots when
+ * `opening + paid - billed - otherCharges === closing`.
+ */
+export interface VendorStatement {
+  id: string;
+  vendorName: string;
+  /** Inclusive, YYYY-MM-DD. Vendors do not cut on month ends. */
+  periodStart: string;
+  periodEnd: string;
+  currency: string;
+  openingBalance: number;
+  closingBalance: number;
+  /** What the vendor charged for tickets in the period. */
+  billed: number;
+  /** What we paid them in the period — their receipt vouchers. */
+  paid: number;
+  /** What the vendor added on their own side: service fees, penalties,
+   *  corrections. None of it arrives as a ticket, so nothing else records it. */
+  otherCharges: number;
+  sourceFile?: string;
+  note?: string;
+  userId?: string;
+  createdAt?: string;
+}
 
 export interface VendorBalance {
   id: string;

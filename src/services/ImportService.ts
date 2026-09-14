@@ -25,7 +25,8 @@ export interface AuditEntry {
     | 'UPDATE_REQ' | 'BULK_UPDATE_REQ'
     | 'UPDATE_CLOSED' | 'BULK_UPDATE_CLOSED'
     | 'EDIT_TICKET' | 'DELETE'
-    | 'TOPUP' | 'ADD_VENDOR' | 'EDIT_VENDOR' | 'DELETE_VENDOR';
+    | 'TOPUP' | 'ADD_VENDOR' | 'EDIT_VENDOR' | 'DELETE_VENDOR'
+    | 'SAVE_STATEMENT' | 'DELETE_STATEMENT';
   entity:     string;   // ticketNo / vendorName / etc
   detail:     string;
   performedAt: string;
