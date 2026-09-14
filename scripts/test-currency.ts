@@ -6,6 +6,7 @@
  * fare's, so amounts read from an AED total were filed as USD.
  */
 import { resolveCurrency } from '../src/core/helpers/resolveCurrency';
+import { classifyAgainstExisting, detectDuplicatesAgainstExisting } from '../src/core/ImportEngine';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -61,6 +62,30 @@ console.log('\n5. Other shapes the vendors ship');
         resolveCurrency(['1', '100', 'AED'], ['Ticket', 'Amount', 'Booking Currency'], 'SAR'), 'AED');
   check('"Curr" abbreviated',
         resolveCurrency(['1', '100', 'AED'], ['Ticket', 'Amount', 'Curr'], 'SAR'), 'AED');
+}
+
+console.log('\n6. A currency difference is reported, not swallowed');
+{
+  const mk = (o: any): any => ({
+    id: o.id ?? Math.random().toString(36).slice(2),
+    ticketNo: '5513436946', pnr: 'XOC5RH', passengerName: 'ALANAZI', airlineCode: '006',
+    route: '', source: 'RTS', date: '2026-09-10', amount: 8440, totalDoc: 8440,
+    commission: 0, reqNum: 'UAEVP711', status: 'ISSUE', currency: 'AED',
+    isDuplicate: false, userId: 'u', ...o,
+  });
+
+  const [c] = classifyAgainstExisting([mk({ currency: 'AED' })], [mk({ id: 'held', currency: 'EUR' })]);
+  check('the same figure in another currency is flagged', c.cls, 'CURRENCY_DIFF');
+
+  const [same] = classifyAgainstExisting([mk({})], [mk({ id: 'h' })]);
+  check('an identical row is still a match', same.cls, 'EXACT_MATCH');
+
+  // A settlement whose only change is the currency has something to do.
+  const r = detectDuplicatesAgainstExisting(
+    [mk({ source: 'IATA BSP', currency: 'AED', channel: 'BSP' })],
+    [mk({ id: 'held', source: 'IATA BSP', currency: 'EUR' })]);
+  check('a currency-only settlement is not called a duplicate', r.duplicates.length, 0);
+  check('it settles instead', r.settlements.length, 1);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

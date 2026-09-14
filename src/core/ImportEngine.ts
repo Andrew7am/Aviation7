@@ -114,6 +114,9 @@ function settlesNothing(held: Ticket, incoming: Ticket): boolean {
   if (incoming.totalDoc && !near(held.totalDoc ?? 0, incoming.totalDoc)) return false;
   if (incoming.date && (held.date || '') !== incoming.date) return false;
   if (incoming.status && (held.status || '') !== incoming.status) return false;
+  // Same number, different bucket. Left out, a vendor correcting the currency
+  // of a figure was reported as a row with nothing to do.
+  if (incoming.currency && (held.currency || '') !== incoming.currency) return false;
   return true;
 }
 
@@ -454,6 +457,7 @@ export type ReconClass =
   | 'COMMISSION_DIFF'     // both have commission, amounts differ
   | 'FARE_DIFF'           // the gross fare itself disagrees
   | 'PAYABLE_DIFF'        // payable differs for some other reason
+  | 'CURRENCY_DIFF'       // the same figure, counted in another currency
   | 'DATE_DIFF'           // same money, different transaction date
   | 'CHANNEL_DIFF'        // same document settled under another channel
   | 'DUPLICATE';          // already present, identical
@@ -518,6 +522,11 @@ export function classifyAgainstExisting(
     else if (differs(t.commission, match.commission))    cls = 'COMMISSION_DIFF';
     else if (differs(t.totalDoc, match.totalDoc))        cls = 'FARE_DIFF';
     else if (differs(t.amount, match.amount))            cls = 'PAYABLE_DIFF';
+    // Ranked above channel and date because it is the quietest of the lot:
+    // every figure on the row reads correctly and only the bucket they are
+    // counted in is wrong, so nothing looks amiss until a balance is totalled.
+    else if (t.currency && match.currency && t.currency !== match.currency)
+                                                         cls = 'CURRENCY_DIFF';
     else if ((t.source || '') !== (match.source || ''))  cls = 'CHANNEL_DIFF';
     else if (t.date && match.date && t.date !== match.date) cls = 'DATE_DIFF';
     else if (t.isDuplicate)                              cls = 'DUPLICATE';
@@ -534,6 +543,7 @@ export const RECON_LABEL: Record<ReconClass, string> = {
   COMMISSION_DIFF:    'Commission Differs',
   FARE_DIFF:          'Fare Differs',
   PAYABLE_DIFF:       'Payable Differs',
+  CURRENCY_DIFF:      'Currency Differs',
   DATE_DIFF:          'Date Differs',
   CHANNEL_DIFF:       'Channel Differs',
   DUPLICATE:          'Duplicate',

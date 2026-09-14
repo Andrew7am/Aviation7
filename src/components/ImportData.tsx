@@ -35,6 +35,7 @@ const RECON_COLORS: Record<ReconClass, string> = {
   COMMISSION_DIFF:    'bg-amber-100 text-amber-700',
   FARE_DIFF:          'bg-amber-100 text-amber-700',
   PAYABLE_DIFF:       'bg-amber-100 text-amber-700',
+  CURRENCY_DIFF:      'bg-red-100 text-red-700',
   DATE_DIFF:          'bg-blue-100 text-blue-700',
   CHANNEL_DIFF:       'bg-violet-100 text-violet-700',
   DUPLICATE:          'bg-slate-200 text-slate-600',
