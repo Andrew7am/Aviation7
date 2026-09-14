@@ -42,6 +42,14 @@ type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr' | 'route' | '
 const VENDOR_DOC = /^(INV|RFD|RV|DMA|DN)-?\d[\d-]*(_[A-Z])?$/i;
 
 /**
+ * Ibtekar's ZATCA e-invoices carry no prefix at all: the document's own number
+ * field reads "Invoice NO 1559", and its footer "InvoNO: 1559". Four bare
+ * digits, which is narrow enough not to catch a PNR — those are five or six
+ * characters and carry letters — or a ticket serial, which is ten.
+ */
+const ZATCA_DOC = /^\d{4}$/;
+
+/**
  * The vendor's reference, when the row carries a real one.
  *
  * The stored column has been a dumping ground: importers have written the req
@@ -55,7 +63,7 @@ const VENDOR_DOC = /^(INV|RFD|RV|DMA|DN)-?\d[\d-]*(_[A-Z])?$/i;
  */
 export function vendorRef(t: { vendorReference?: string }): string {
   const v = (t.vendorReference ?? '').trim();
-  return VENDOR_DOC.test(v) ? v : '';
+  return VENDOR_DOC.test(v) || ZATCA_DOC.test(v) ? v : '';
 }
 
 type SortKey =
