@@ -8,6 +8,15 @@ export function normalizeStatus(raw: unknown): NormalizedStatus {
     TKTT: 'ISSUE', ISSU: 'ISSUE', ISSUE: 'ISSUE', TICKETED: 'ISSUE',
     CONFIRMED: 'ISSUE', CLOSED: 'ISSUE', EMDA: 'ISSUE', EMDS: 'ISSUE',
     SALE: 'ISSUE', INVOICE: 'ISSUE', INV: 'ISSUE', DEBIT: 'ISSUE',
+    // An exchange settles like a sale: a document is issued and the agency
+    // collects the difference, which is nothing at all when the new fare
+    // matches the old. Every other part of the app already knew this — the
+    // Turkish parsers read it, manual entry offers it — but this shared map
+    // did not, so a reissue arrived UNKNOWN. On an RTS sheet that then met a
+    // rule reading a zero total as a cancellation, and five real exchanges
+    // were dropped as voids and never reached the ledger.
+    REISSUE: 'ISSUE', EXCHANGE: 'ISSUE', EXCH: 'ISSUE',
+    REVALIDATION: 'ISSUE', REVALIDATE: 'ISSUE', REVAL: 'ISSUE',
     // REFUND — real money movement back to us
     RFND: 'REFUND', RFND_: 'REFUND', REF: 'REFUND', REFUND: 'REFUND',
     CRN: 'REFUND', CREDIT: 'REFUND', RV: 'REFUND',
