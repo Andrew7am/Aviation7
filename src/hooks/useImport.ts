@@ -6,6 +6,7 @@ import { detectDuplicates, detectDuplicatesAgainstExisting, classifyAgainstExist
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
 import { isVoidRow } from '../core/helpers/normalizeStatus';
 import { LearnedProfile } from '../core/ai/learnedProfile';
+import { parseGrid, gridProblem } from '../core/helpers/parseGrid';
 import { v4 as uuidv4 } from 'uuid';
 import { TicketService } from '../services/TicketService';
 
@@ -78,7 +79,23 @@ export function useImport(userId: string) {
     setLoading(true);
 
     try {
-      const allRows = Papa.parse(text.trim(), { skipEmptyLines: true }).data as string[][];
+      // Columns first. A paste whose columns cannot be told apart is refused
+      // here rather than handed on: the parsers would find none of their
+      // columns, build a row out of the whole line, and present it as an
+      // ordinary ticket ready to import.
+      const grid = parseGrid(text);
+      const problem = gridProblem(grid);
+      if (problem) {
+        setPreview({
+          fresh: [], updates: [], duplicates: [], topUps: [], settlements: [], voided: [],
+          errors: [{ row: 0, raw: text.split('\n')[0]?.slice(0, 120) ?? '', error: problem }],
+          warnings: [], parserName: '', confidence: 0, totalRows: 0, routedVendor: '',
+          classified: [],
+        });
+        setLoading(false);
+        return;
+      }
+      const allRows = grid.rows;
       const { rows, errors, warnings, parserName, confidence } = runParser(
         allRows, defaultSource, defaultCurrency, reportName, learnedProfiles
       );

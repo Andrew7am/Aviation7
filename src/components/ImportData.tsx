@@ -9,6 +9,7 @@ import { findHeaderRow } from '../core/helpers/columnResolver';
 import { LearnedProfile, bestHeaderRowForAI } from '../core/ai/learnedProfile';
 import { Upload, AlertTriangle, CheckCircle2, Info, Gauge, Sparkles } from 'lucide-react';
 import { AIProfileService } from '../services/AIProfileService';
+import { parseGrid } from '../core/helpers/parseGrid';
 
 const aiProfileSvc = new AIProfileService();
 
@@ -87,7 +88,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
     setAiAnalyzing(true);
     setAiMessage('');
     try {
-      const allRows = Papa.parse(inputText.trim(), { skipEmptyLines: true }).data as string[][];
+      const allRows = parseGrid(inputText).rows;
       if (allRows.length < 2) throw new Error('Not enough rows to analyze.');
       const headerRowIdx = bestHeaderRowForAI(allRows, findHeaderRow(allRows));
       const headers = allRows[headerRowIdx];
