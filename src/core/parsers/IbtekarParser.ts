@@ -26,10 +26,17 @@ export const IbtekarParser: VendorParser = {
     const iClosed = col(headers,'Status');
     rows.forEach((row,idx) => {
       const rawTk = cell(row,iTicket); const fileNo = cell(row,iFileNo);
+      // Ibtekar writes dd/mm/yyyy, throughout — their statement dates the 19th
+      // of May "19/05/2026". The ticket rows were being split by hand in that
+      // order while the receipt rows went through parseDate on its mm/dd
+      // default, so the tickets landed on the right day and the payments did
+      // not: five receipts moved month, and 11/06 became the 6th of November,
+      // a date in the future that fell out of every period drawn for a balance.
+      // Both go through parseDate now, and both say which way round to read.
       const isTopUp = /^(topup|fund|top.?up)$/i.test(fileNo)||/^RV\d+$/i.test(rawTk);
       if (isTopUp) {
         const credit = num(cell(row,iDebit+1))||num(cell(row,iDebit));
-        if (credit>0) result.push({ticketNo:`IBTEKAR_FUND_${rowContentId(row)}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,0)),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
+        if (credit>0) result.push({ticketNo:`IBTEKAR_FUND_${rowContentId(row)}`,pnr:'',passengerName:'BALANCE TOP-UP',date:parseDate(cell(row,0),'dmy'),amount:credit,totalDoc:credit,commission:0,reqNum:'',status:'FUND',currency:defaultCurrency,isTopUp:true});
         return;
       }
       // Same "3-digit airline code + dash + ticket digits" shape cleanTk()/airlineCode()
@@ -48,8 +55,7 @@ export const IbtekarParser: VendorParser = {
       const amt = isVoid ? 0 : (isRef ? -Math.abs(credit || debit) : debit);
       const req = resolveReq(iExplicitReq !== -1 ? cell(row, iExplicitReq) : fileNo);
       if (!req && !isVoid) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
-      const dp = (cell(row,iDate)||'').split('/');
-      const date = dp.length===3 ? `${dp[2]}-${dp[1]}-${dp[0]}` : parseDate(cell(row,iDate));
+      const date = parseDate(cell(row,iDate),'dmy');
       const closed = /^closed$/i.test(cell(row,iClosed).trim());
       result.push({ticketNo:tkClean,pnr:cell(row,iPNR).replace(/\s+/g,'').toUpperCase(),passengerName:cleanPax(cell(row,iPax)),airlineCode:ac,route:cell(row,iRoute),date,amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:fileNo,status,currency:defaultCurrency,closed});
     });
