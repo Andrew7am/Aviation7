@@ -8,8 +8,10 @@
  * billed, and every piastre of that was a defect in our own rows - a ticket
  * dated 1970, a ticket 200.00 under, a ticket 0.20 over.
  */
-import { checkStatement, summariseVendor, ticketsInPeriod, unmatchedInPeriod }
-  from '../src/core/helpers/statementMath';
+import {
+  checkStatement, summariseVendor, ticketsInPeriod, unmatchedInPeriod,
+  balanceOverRange, dayBefore, dayAfter,
+} from '../src/core/helpers/statementMath';
 import type { Ticket, VendorStatement } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -145,6 +147,114 @@ console.log('\n9. What the vendor added on their own side is charged, not ignore
 
   const without = checkStatement(stm({ otherCharges: 0, closingBalance: 7766.37 }), []);
   check('leaving it out breaks the footing by its size', without.footingGap, 500);
+}
+
+console.log('\n10. The account between any two dates');
+{
+  const pay = (o: any) => ({ id: 'p', vendorName: 'Ibtekar', amount: 0, date: '', ...o });
+
+  check('the day before',   dayBefore('2026-09-01'), '2026-08-31');
+  check('the day after',    dayAfter('2026-08-31'), '2026-09-01');
+  check('over a month end', dayBefore('2026-03-01'), '2026-02-28');
+
+  const statement = stm({ periodStart: '2026-08-01', periodEnd: '2026-08-31',
+                          openingBalance: 13235.37, billed: 5000, paid: 0,
+                          closingBalance: 8235.37 });
+  const led = [
+    tkt({ date: '2026-08-20', amount: 5000 }),            // inside the statement
+    tkt({ date: '2026-09-03', amount: 1200 }),            // between it and the range
+    tkt({ date: '2026-09-10', amount: 800 }),             // in the range
+    tkt({ date: '2026-09-12', amount: -300, status: 'REFUND' }),
+    tkt({ date: '2026-09-20', amount: 999 }),             // after the range
+    tkt({ date: '', amount: 111 }),                       // undated
+  ];
+  const pays = [pay({ id: 'a', amount: 2000, date: '2026-09-05' }),
+                pay({ id: 'b', amount: 500,  date: '2026-09-11' }),
+                pay({ id: 'c', amount: 700,  date: '2026-09-25' })];
+
+  const r = balanceOverRange('Ibtekar', '2026-09-08', '2026-09-15', [statement], led, pays);
+  check('anchored on the statement',   r.anchor, 'statement');
+  // 8,235.37 closing, then 03/09 -1,200 and 05/09 +2,000 before the range opens.
+  check('carried to the day it opens', r.openingBalance, 9035.37);
+  check('issued in the range',         r.issued, 800);
+  check('refunded in the range',       r.refunded, 300);
+  check('paid in the range',           r.paid, 500);
+  check('closing',                     r.closingBalance, 9035.37 + 500 - 800 + 300);
+  check('the tickets issued',   r.issues.map(t => t.date), ['2026-09-10']);
+  check('the tickets refunded', r.refunds.map(t => t.date), ['2026-09-12']);
+  check('the payments',         r.payments.map(p => p.id), ['b']);
+  check('undated rows are reported, not counted', r.undated, 1);
+
+  // A range that opens the day after a statement closes takes its figure whole.
+  const flush = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-15', [statement], led, pays);
+  check('no carry needed', flush.openingBalance, 8235.37);
+  check('and it says so',  flush.anchorLabel.includes('stated this balance'), true);
+
+  // The statement's own last day is inside its closing balance already.
+  check('the statement period itself is not re-counted',
+        balanceOverRange('Ibtekar', '2026-09-01', '2026-09-01', [statement], led, pays).openingBalance,
+        8235.37);
+}
+
+console.log('\n10b. A statement that is still open on the day the range starts');
+{
+  // Ibtekar's real shape: one statement running 01/08 to 14/09, and someone
+  // asking what happened in September. Its closing balance is no use - it is
+  // dated after the range opens - but its OPENING balance is true on 01/08.
+  const s = stm({ periodStart: '2026-08-01', periodEnd: '2026-09-14',
+                  openingBalance: 13235.37, closingBalance: 8266.37,
+                  billed: 24969, paid: 20000 });
+  const led = [
+    tkt({ date: '2026-08-10', amount: 4000 }),
+    tkt({ date: '2026-09-05', amount: 1000 }),
+  ];
+  const pays = [{ id: 'a', vendorName: 'Ibtekar', amount: 2000, date: '2026-08-20' }];
+
+  const r = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-30', [s], led, pays);
+  check('it anchors on the statement, not the wallet', r.anchor, 'statement');
+  check('carried from its opening balance over August', r.openingBalance, 13235.37 - 4000 + 2000);
+  check('and it says which statement',
+        r.anchorLabel.includes('2026-08-01 to 2026-09-14 statement'), true);
+  check('September alone is the movement', r.issued, 1000);
+
+  // A range starting on the statement's own first day takes its figure whole.
+  const flush = balanceOverRange('Ibtekar', '2026-08-01', '2026-08-31', [s], led, pays);
+  check('no carry on the first day', flush.openingBalance, 13235.37);
+
+  // A statement that closed earlier still wins over one merely covering.
+  const earlier = stm({ periodStart: '2026-07-01', periodEnd: '2026-08-31',
+                        closingBalance: 999, openingBalance: 0, billed: 0, paid: 0 });
+  const both = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-30', [s, earlier], led, pays);
+  check('the one that closed the day before is preferred', both.openingBalance, 999);
+}
+
+console.log('\n11. When no statement reaches back that far');
+{
+  const led = [tkt({ date: '2026-09-10', amount: 800 })];
+  const bare = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-15', [], led, []);
+  check('nothing anchors it',        bare.anchor, 'none');
+  check('so no balance is invented', bare.openingBalance, null);
+  check('nor a closing one',         bare.closingBalance, null);
+  check('but the movement is real',  bare.issued, 800);
+
+  const walleted = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-15', [], led, [],
+                                    { initialBalance: 50000, openingDate: '2026-01-01' });
+  check('the wallet can stand in', walleted.anchor, 'wallet');
+  check('at its own figure',       walleted.openingBalance, 50000);
+  check('and it admits whose arithmetic it is',
+        walleted.anchorLabel.includes('our arithmetic, not theirs'), true);
+}
+
+console.log('\n12. Only this vendor is counted');
+{
+  const led = [
+    tkt({ date: '2026-09-10', amount: 800, source: 'Ibtekar' }),
+    tkt({ date: '2026-09-10', amount: 9999, source: 'NSA' }),
+  ];
+  const pays = [{ id: 'x', vendorName: 'NSA', amount: 5000, date: '2026-09-11' }];
+  const r = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-15', [], led, pays);
+  check("another vendor's ticket is out", r.issued, 800);
+  check('and their payment too',          r.paid, 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

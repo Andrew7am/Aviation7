@@ -141,3 +141,189 @@ export function summariseVendor(
 export function unmatchedInPeriod(check: StatementCheck): Ticket[] {
   return check.tickets.filter(t => !/^(INV|RFD|RV|DMA|DN)[-\d]|^\d{4}$/i.test((t.vendorReference || '').trim()));
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The account between any two dates.
+ *
+ * A statement covers the period the vendor chose to cut. The question people
+ * actually ask is a different one — "what was the balance on the 1st, what is
+ * it on the 15th, and what happened in between" — and no statement answers it
+ * unless the vendor happened to cut on those days.
+ *
+ * So the balance is carried: take the last figure the vendor stated, and walk
+ * our own rows forward from it. The walk is only as good as the rows, which is
+ * why where the opening figure came from is part of the answer rather than a
+ * footnote. A balance anchored on a statement the vendor signed is evidence; a
+ * balance anchored on the wallet is our own arithmetic, and says so.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export interface Payment {
+  id: string;
+  vendorName: string;
+  amount: number;
+  date: string;
+  note?: string;
+}
+
+export type BalanceAnchor = 'statement' | 'wallet' | 'none';
+
+export interface RangeMovement {
+  vendorName: string;
+  from: string;
+  to: string;
+  currency: string;
+  /** What the opening balance is founded on. */
+  anchor: BalanceAnchor;
+  /** Said in full, because the difference matters: a stated balance is the
+   *  vendor's word, a carried one is ours. */
+  anchorLabel: string;
+  /** Null when nothing anchors it — the movement is still real, the balance
+   *  would be invented. */
+  openingBalance: number | null;
+  closingBalance: number | null;
+  /** Positive magnitudes, over the range. */
+  issued: number;
+  refunded: number;
+  paid: number;
+  issues: Ticket[];
+  refunds: Ticket[];
+  payments: Payment[];
+  /** Rows this vendor has in the range that carry no date, so they could not
+   *  be placed inside it or outside it. Counted nowhere; reported. */
+  undated: number;
+}
+
+const mine = (vendorName: string, tickets: Ticket[]) =>
+  tickets.filter(t => vendorMatchesSource(vendorName, t.source || ''));
+
+/** Sum of our rows for a vendor over a window, both ends inclusive. */
+function billedBetween(vendorName: string, tickets: Ticket[], from: string, to: string): number {
+  return round2(mine(vendorName, tickets)
+    .filter(t => { const d = (t.date || '').slice(0, 10); return d && d >= from && d <= to; })
+    .reduce((n, t) => n + (t.amount || 0), 0));
+}
+
+function paidBetween(vendorName: string, payments: Payment[], from: string, to: string): number {
+  return round2(payments
+    .filter(p => p.vendorName === vendorName)
+    .filter(p => { const d = (p.date || '').slice(0, 10); return d && d >= from && d <= to; })
+    .reduce((n, p) => n + (p.amount || 0), 0));
+}
+
+/** The day before an ISO date, so a window can end where the next one starts. */
+export function dayBefore(iso: string): string { return shiftDay(iso, -1); }
+/** The day after, so a carry starts where the statement stopped. */
+export function dayAfter(iso: string): string { return shiftDay(iso, 1); }
+
+function shiftDay(iso: string, by: number): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + by);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * What the account looked like between two dates.
+ *
+ * `wallet` is the opening balance the agency set for the vendor, used only
+ * when no statement reaches back far enough.
+ */
+export function balanceOverRange(
+  vendorName: string,
+  from: string,
+  to: string,
+  statements: VendorStatement[],
+  tickets: Ticket[],
+  payments: Payment[],
+  wallet?: { initialBalance: number; openingDate?: string },
+): RangeMovement {
+  const ours = mine(vendorName, tickets);
+  const inRange = ours.filter(t => {
+    const d = (t.date || '').slice(0, 10);
+    return d && d >= from && d <= to;
+  });
+  const issues = inRange.filter(t => (t.amount || 0) >= 0);
+  const refunds = inRange.filter(t => (t.amount || 0) < 0);
+  const pays = payments
+    .filter(p => p.vendorName === vendorName)
+    .filter(p => { const d = (p.date || '').slice(0, 10); return d && d >= from && d <= to; })
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const mineStatements = statements
+    .filter(s => s.vendorName === vendorName)
+    .sort((a, b) => a.periodEnd.localeCompare(b.periodEnd));
+
+  const before = dayBefore(from);
+
+  // Three ways a statement can reach the day this range opens, in order of how
+  // little of our own arithmetic each needs.
+  //
+  //   closed the day before   its closing balance IS the opening figure.
+  //   closed earlier          carry its closing forward over our rows.
+  //   still open on that day  its opening balance is true at its period start,
+  //                           so carry THAT forward. Without this, the very
+  //                           statement that covers the range fails to anchor
+  //                           it - a range of 01/09 to 14/09 fell through to
+  //                           the wallet while a statement running 01/08 to
+  //                           14/09 sat right there stating the balance.
+  const closedBefore = [...mineStatements].reverse().find(s => s.periodEnd <= before);
+  const covering = mineStatements.find(s => s.periodStart <= from && s.periodEnd >= from);
+
+  let anchor: BalanceAnchor = 'none';
+  let anchorLabel = 'Nothing states a balance before these dates, so only the movement is shown.';
+  let opening: number | null = null;
+
+  /** Walk a stated balance forward from the day it was true to `before`. */
+  const carry = (base: number, trueOn: string) => {
+    const start = dayAfter(trueOn);
+    if (start > before) return base;
+    return round2(base
+      + paidBetween(vendorName, payments, start, before)
+      - billedBetween(vendorName, tickets, start, before));
+  };
+
+  if (closedBefore) {
+    anchor = 'statement';
+    opening = carry(closedBefore.closingBalance, closedBefore.periodEnd);
+    anchorLabel = closedBefore.periodEnd === before
+      ? `${vendorName} stated this balance as at ${closedBefore.periodEnd}.`
+      : `Carried from ${vendorName}'s statement to ${closedBefore.periodEnd}, using our own rows since.`;
+  } else if (covering) {
+    anchor = 'statement';
+    // The opening balance is true at the start of its first day, so the carry
+    // begins on that day itself rather than the day after.
+    opening = covering.periodStart === from
+      ? covering.openingBalance
+      : round2(covering.openingBalance
+             + paidBetween(vendorName, payments, covering.periodStart, before)
+             - billedBetween(vendorName, tickets, covering.periodStart, before));
+    anchorLabel = covering.periodStart === from
+      ? `${vendorName} stated this balance as at ${covering.periodStart}.`
+      : `Carried from the ${covering.periodStart} opening balance on ${vendorName}'s `
+      + `${covering.periodStart} to ${covering.periodEnd} statement, using our own rows since.`;
+  } else if (wallet) {
+    anchor = 'wallet';
+    const start = (wallet.openingDate || '').slice(0, 10);
+    opening = round2(wallet.initialBalance
+      + paidBetween(vendorName, payments, start || '0000-01-01', before)
+      - billedBetween(vendorName, tickets, start || '0000-01-01', before));
+    anchorLabel = `No statement reaches back this far. Carried from the opening balance`
+      + `${start ? ` of ${start}` : ''}, using our own rows — our arithmetic, not theirs.`;
+  }
+
+  const issued = round2(issues.reduce((n, t) => n + (t.amount || 0), 0));
+  const refunded = round2(Math.abs(refunds.reduce((n, t) => n + (t.amount || 0), 0)));
+  const paid = round2(pays.reduce((n, p) => n + (p.amount || 0), 0));
+
+  return {
+    vendorName, from, to,
+    currency: mineStatements[0]?.currency || inRange[0]?.currency || 'SAR',
+    anchor, anchorLabel,
+    openingBalance: opening,
+    closingBalance: opening === null ? null : round2(opening + paid - issued + refunded),
+    issued, refunded, paid,
+    issues: issues.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')),
+    refunds: refunds.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')),
+    payments: pays,
+    undated: ours.filter(t => !(t.date || '').slice(0, 10)).length,
+  };
+}

@@ -347,6 +347,7 @@ function MainApp({ user }: { user: User }) {
           )}
           {view === 'statements' && (
             <VendorStatements statements={statements} tickets={tickets} canEdit={isAdmin}
+              topUps={topUps} wallets={vendorBalancesLive}
               onSave={handleSaveStatement} onDelete={handleDeleteStatement} />
           )}
           {view === 'reports'   && <Reports tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Ticket, VendorStatement } from '../types';
+import { Ticket, VendorStatement, VendorBalance, BalanceTopUp } from '../types';
 import {
   FileText, Plus, Trash2, X, ChevronDown, ChevronRight,
   AlertTriangle, CheckCircle2, Edit3, Link2Off,
@@ -8,6 +8,7 @@ import {
   summariseVendor, unmatchedInPeriod, StatementCheck,
 } from '../core/helpers/statementMath';
 import { DocumentCheck } from './DocumentCheck';
+import { BalanceRange } from './BalanceRange';
 
 /**
  * The vendors whose account is settled on their figures rather than ours.
@@ -35,6 +36,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 interface Props {
   statements: VendorStatement[];
   tickets: Ticket[];
+  topUps: BalanceTopUp[];
+  wallets: VendorBalance[];
   onSave: (s: VendorStatement) => void;
   onDelete: (id: string) => void;
   canEdit?: boolean;
@@ -324,7 +327,7 @@ const PeriodRow: React.FC<{
 };
 
 export const VendorStatements: React.FC<Props> = ({
-  statements, tickets, onSave, onDelete, canEdit = false,
+  statements, tickets, topUps, wallets, onSave, onDelete, canEdit = false,
 }) => {
   const [editing, setEditing] = useState<VendorStatement | null>(null);
 
@@ -357,6 +360,9 @@ export const VendorStatements: React.FC<Props> = ({
           </button>
         )}
       </div>
+
+      <BalanceRange vendors={STATEMENT_VENDORS} statements={statements} tickets={tickets}
+        topUps={topUps} wallets={wallets} />
 
       <DocumentCheck tickets={tickets} onSaveStatement={canEdit ? onSave : undefined} />
 
