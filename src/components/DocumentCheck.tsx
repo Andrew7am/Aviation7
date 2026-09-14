@@ -1,19 +1,31 @@
 import React, { useState, useRef } from 'react';
-import { Ticket } from '../types';
+import { Ticket, VendorStatement } from '../types';
 import {
   Upload, FileCheck2, AlertTriangle, CheckCircle2, X, Loader2, ChevronDown, ChevronRight,
+  Save, Receipt,
 } from 'lucide-react';
 import { parseIbtekarInvoicePdf } from '../core/parsers/ibtekarInvoicePdf';
+import {
+  parseIbtekarStatementPdf, documentKind, ParsedStatement,
+} from '../core/parsers/ibtekarStatementPdf';
 import { reconcileAll, InvoiceResult, LineVerdict } from '../core/helpers/invoiceReconcile';
+import { checkStatement } from '../core/helpers/statementMath';
 import { pdfToWords } from '../core/helpers/pdfWords';
 
 /**
- * Check an invoice the vendor sent against the ledger, without importing it.
+ * Check a document the vendor sent against the ledger, without importing it.
  *
- * Nothing here writes. An invoice is a claim, and the useful question about a
- * claim is where it and the ledger disagree — which ticket it bills that we
- * have never recorded, which row we hold against it that it does not list, and
- * what the two totals come to. Acting on the answer stays a separate decision.
+ * Ibtekar sends two kinds and they have to be told apart before either is
+ * read. An invoice bills a list of tickets; a statement of account summarises
+ * a period and carries the invoice NUMBERS in its Document column. Run a
+ * statement through the invoice reader and it finds eleven invoice numbers,
+ * no ticket blocks beneath any of them, and reports eleven empty invoices —
+ * which is exactly what it did the first time one was dropped on it.
+ *
+ * Nothing here writes on its own. A document is a claim, and the useful
+ * question about a claim is where it and the ledger disagree. A statement can
+ * be saved to the period list from here, because that is transcription rather
+ * than judgement and doing it by hand off a PDF is how digits get transposed.
  */
 const fmt = (n: number) =>
   Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -59,11 +71,14 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
           </span>
           <span className="text-right w-28">
             <span className="block text-[9px] uppercase text-slate-400 font-bold">Difference</span>
-            <span className={`font-mono text-xs font-bold ${r.agrees ? 'text-emerald-600' : 'text-red-600'}`}>
-              {r.agrees ? 'none' : `${r.difference > 0 ? '+' : '−'}${fmt(r.difference)}`}
+            <span className={`font-mono text-xs font-bold ${
+              inv.total === null ? 'text-slate-400' : r.agrees ? 'text-emerald-600' : 'text-red-600'}`}>
+              {inv.total === null ? 'unread'
+                : r.agrees ? 'none'
+                : `${r.difference > 0 ? '+' : '−'}${fmt(r.difference)}`}
             </span>
           </span>
-          {r.agrees
+          {inv.total !== null && r.agrees
             ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
             : <AlertTriangle className="w-4 h-4 text-red-500" />}
         </span>
@@ -73,9 +88,15 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
         <div className="border-t border-slate-100 px-4 py-3 space-y-3 bg-slate-50">
           {!r.foots.lines && (
             <div className="bg-amber-50 border border-amber-200 rounded px-3 py-2 text-xs text-amber-800">
-              The lines read off this invoice come to {fmt(r.foots.lineSum)}, and it prints a net of{' '}
-              {inv.subTotal === null ? 'nothing' : fmt(inv.subTotal)}. Part of it has not been read
-              correctly, so treat what follows with care.
+              {inv.lines.length === 0 && inv.subTotal === null ? (
+                <>Nothing was read under this number — no ticket lines and no totals. It is a
+                  document number mentioned on the page rather than an invoice printed on it, so
+                  there is nothing here to compare.</>
+              ) : (
+                <>The lines read off this invoice come to {fmt(r.foots.lineSum)}, and it prints a net
+                  of {inv.subTotal === null ? 'nothing' : fmt(inv.subTotal)}. Part of it has not been
+                  read correctly, so treat what follows with care.</>
+              )}
             </div>
           )}
 
@@ -170,22 +191,185 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
   );
 };
 
-export const InvoiceCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
+/** A balance the way the vendor prints it: Cr in our favour, Dr against. */
+const drCr = (n: number) => `${fmt(n)} ${n < 0 ? 'Dr' : 'Cr'}`;
+
+const StatementPanel: React.FC<{
+  st: ParsedStatement;
+  fileName: string;
+  tickets: Ticket[];
+  vendorName: string;
+  saved: boolean;
+  onSave?: () => void;
+}> = ({ st, fileName, tickets, vendorName, saved, onSave }) => {
+  const [open, setOpen] = useState(false);
+
+  // The same comparison the period list makes, so the figure shown here and
+  // the figure shown after saving are one calculation, not two.
+  const check = checkStatement({
+    id: 'preview', vendorName, periodStart: st.periodStart, periodEnd: st.periodEnd,
+    currency: st.currency, openingBalance: st.openingBalance, closingBalance: st.closingBalance,
+    billed: st.billed, paid: st.paid, otherCharges: 0,
+  }, tickets);
+
+  const agrees = Math.abs(check.billedGap) < 0.011;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-xs">
+        <Receipt className="w-3.5 h-3.5 text-purple-600" />
+        <b className="text-slate-700">{fileName}</b>
+        <span className="bg-purple-50 text-purple-700 text-[9px] font-bold px-2 py-0.5 rounded-full">
+          STATEMENT OF ACCOUNT
+        </span>
+        <span className="font-mono text-[11px] text-slate-500">
+          {st.periodStart} → {st.periodEnd}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-5 gap-2 text-center">
+        {([
+          ['Opening', drCr(st.openingBalance), 'text-slate-600'],
+          ['Billed', fmt(st.billed), 'text-slate-700'],
+          ['Paid', st.paid ? `+${fmt(st.paid)}` : '—', 'text-emerald-600'],
+          ['Closing', drCr(st.closingBalance), st.closingBalance < 0 ? 'text-red-600' : 'text-emerald-700'],
+          ['Our ledger', `${fmt(check.ledgerBilled)} (${check.ledgerRows})`, 'text-slate-700'],
+        ] as const).map(([label, value, cls]) => (
+          <div key={label} className="bg-white border border-slate-200 rounded px-2 py-2">
+            <div className={`font-mono font-bold text-xs ${cls}`}>{value}</div>
+            <div className="text-[9px] uppercase text-slate-400 font-bold">{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className={`rounded-lg border px-4 py-3 text-xs flex items-center justify-between
+        ${st.foots ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                   : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+        <span className="font-mono">
+          {fmt(st.openingBalance)} + {fmt(st.paid)} − {fmt(st.billed)} = {drCr(st.impliedClosing)}
+        </span>
+        <span className="font-bold flex items-center gap-1.5">
+          {st.foots
+            ? <><CheckCircle2 className="w-3.5 h-3.5" /> the statement foots</>
+            : <><AlertTriangle className="w-3.5 h-3.5" /> off by {fmt(st.impliedClosing - st.closingBalance)}</>}
+        </span>
+      </div>
+
+      <div className={`rounded-lg border px-4 py-3 text-xs flex items-center justify-between
+        ${agrees ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                 : 'bg-red-50 border-red-200 text-red-800'}`}>
+        <span>
+          {vendorName} billed <b className="font-mono">{fmt(st.billed)}</b> over these dates; the
+          ledger holds <b className="font-mono">{fmt(check.ledgerBilled)}</b> across {check.ledgerRows} row(s).
+        </span>
+        <span className="font-bold font-mono">
+          {agrees ? 'no difference' : `${check.billedGap > 0 ? '+' : '−'}${fmt(check.billedGap)} ${st.currency}`}
+        </span>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <button onClick={() => setOpen(o => !o)}
+          className="text-[11px] text-slate-500 hover:text-slate-700 flex items-center gap-1">
+          {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          {st.lines.length} movement(s) on the statement
+        </button>
+        {onSave && (
+          <button onClick={onSave} disabled={saved}
+            className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded
+              ${saved ? 'bg-emerald-50 text-emerald-700 cursor-default'
+                      : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
+            {saved
+              ? <><CheckCircle2 className="w-3.5 h-3.5" /> Saved to {vendorName}</>
+              : <><Save className="w-3.5 h-3.5" /> Save to {vendorName}</>}
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="bg-white border border-slate-200 rounded overflow-hidden max-h-96 overflow-y-auto">
+          <table className="w-full text-left">
+            <thead className="sticky top-0 bg-slate-50">
+              <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+                <th className="px-3 py-2">Date</th>
+                <th className="px-3 py-2">Document</th>
+                <th className="px-3 py-2">Ticket</th>
+                <th className="px-3 py-2 text-right">Debit</th>
+                <th className="px-3 py-2 text-right">Credit</th>
+                <th className="px-3 py-2 text-right">Balance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {st.lines.map((l, i) => (
+                <tr key={i} className="border-b border-slate-50 text-xs">
+                  <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{l.date}</td>
+                  <td className="px-3 py-1.5 font-mono text-[10px] text-slate-700">{l.document}</td>
+                  <td className="px-3 py-1.5 font-mono text-[10px] text-slate-600">
+                    {l.airline ? `${l.airline}-${l.ticketNo}` : l.ticketNo}
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-mono text-slate-700">
+                    {l.debit ? fmt(l.debit) : '—'}
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-mono text-emerald-600">
+                    {l.credit ? `+${fmt(l.credit)}` : '—'}
+                  </td>
+                  <td className="px-3 py-1.5 text-right font-mono text-slate-500">
+                    {l.balance === null ? '—' : fmt(l.balance)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const DocumentCheck: React.FC<{
+  tickets: Ticket[];
+  vendorName?: string;
+  onSaveStatement?: (s: VendorStatement) => void;
+}> = ({ tickets, vendorName = 'Ibtekar', onSaveStatement }) => {
   const [results, setResults] = useState<InvoiceResult[] | null>(null);
+  const [statement, setStatement] = useState<ParsedStatement | null>(null);
+  const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
+  const clear = () => {
+    setResults(null); setStatement(null); setFileName(''); setError(''); setSaved(false);
+  };
+
   const read = async (file: File) => {
-    setBusy(true); setError(''); setResults(null); setFileName(file.name);
+    setBusy(true); setError(''); setResults(null); setStatement(null);
+    setSaved(false); setFileName(file.name);
     try {
       const words = await pdfToWords(await file.arrayBuffer());
+      if (!words.length) {
+        setError('There is no text in this PDF to read. A scanned or photographed document is '
+               + 'a picture of a page, not a page — ask Ibtekar for the file their system produced.');
+        return;
+      }
+
+      // Which document this is decides which reader runs. Guessing from what
+      // happens to parse is what reported a statement as eleven empty invoices.
+      const kind = documentKind(words);
+
+      if (kind === 'statement') {
+        const st = parseIbtekarStatementPdf(words);
+        if (!st) { setError('This looks like a statement of account, but none of its figures could be read.'); return; }
+        setStatement(st);
+        return;
+      }
+
       const invoices = parseIbtekarInvoicePdf(words);
       if (!invoices.length) {
-        setError('No Ibtekar invoice number was found in this PDF. Their invoices carry one as '
-               + '"Inv. No: INV261733"; a scanned image has no text to read at all.');
+        setError('This is neither an Ibtekar invoice nor a statement of account. Their invoices '
+               + 'carry a number written "Inv. No: INV261733", and their statements are titled '
+               + '"STATEMENT OF ACCOUNTS".');
         return;
       }
       setResults(reconcileAll(invoices, tickets));
@@ -200,21 +384,37 @@ export const InvoiceCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
     ? Math.round(results.reduce((n, r) => n + r.difference, 0) * 100) / 100
     : 0;
 
+  /** The statement as the period list stores it, ready to save. */
+  const asStatement = (st: ParsedStatement): VendorStatement => ({
+    id: `stm_${vendorName.toLowerCase()}_${st.periodStart.replace(/-/g, '')}_${st.periodEnd.replace(/-/g, '')}`,
+    vendorName,
+    periodStart: st.periodStart,
+    periodEnd: st.periodEnd,
+    currency: st.currency,
+    openingBalance: st.openingBalance,
+    closingBalance: st.closingBalance,
+    billed: st.billed,
+    paid: st.paid,
+    otherCharges: 0,
+    sourceFile: fileName,
+    note: `${st.lines.length} line(s) read from the statement.`,
+  });
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
         <div>
           <h3 className="font-bold text-slate-700 uppercase text-[11px] tracking-wide flex items-center gap-2">
             <FileCheck2 className="w-3.5 h-3.5 text-purple-600" />
-            Check an invoice
+            Read a document
           </h3>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            Drop an Ibtekar tax invoice in and it will say where it and the ledger disagree.
-            Nothing is imported or changed.
+            Drop in a tax invoice and it says where it and the ledger disagree. Drop in a
+            statement of account and it reads the period and the balances, ready to save.
           </p>
         </div>
-        {results && (
-          <button onClick={() => { setResults(null); setFileName(''); setError(''); }}
+        {(results || statement) && (
+          <button onClick={clear}
             className="text-slate-400 hover:text-slate-600" title="Clear">
             <X className="w-4 h-4" />
           </button>
@@ -222,7 +422,7 @@ export const InvoiceCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
       </div>
 
       <div className="p-5 space-y-4">
-        {!results && (
+        {!results && !statement && (
           <div
             onDragOver={e => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
@@ -247,7 +447,7 @@ export const InvoiceCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
                 <Upload className="w-5 h-5" />
                 <span className="text-xs font-bold text-slate-600">Drop a PDF here, or click to choose</span>
                 <span className="text-[10px]">
-                  One invoice or a whole bundle — every invoice in the file is checked separately.
+                  A tax invoice, a bundle of them, or a statement of account.
                 </span>
               </div>
             )}
@@ -278,9 +478,17 @@ export const InvoiceCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
             </div>
           </>
         )}
+
+        {statement && (
+          <StatementPanel
+            st={statement} fileName={fileName} tickets={tickets} vendorName={vendorName}
+            saved={saved}
+            onSave={onSaveStatement && (() => { onSaveStatement(asStatement(statement)); setSaved(true); })}
+          />
+        )}
       </div>
     </div>
   );
 };
 
-export default InvoiceCheck;
+export default DocumentCheck;

@@ -7,7 +7,7 @@ import {
 import {
   summariseVendor, unmatchedInPeriod, StatementCheck,
 } from '../core/helpers/statementMath';
-import { InvoiceCheck } from './InvoiceCheck';
+import { DocumentCheck } from './DocumentCheck';
 
 /**
  * The vendors whose account is settled on their figures rather than ours.
@@ -358,7 +358,7 @@ export const VendorStatements: React.FC<Props> = ({
         )}
       </div>
 
-      <InvoiceCheck tickets={tickets} />
+      <DocumentCheck tickets={tickets} onSaveStatement={canEdit ? onSave : undefined} />
 
       {summaries.map(sum => (
         <div key={sum.vendorName} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
