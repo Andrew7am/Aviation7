@@ -138,7 +138,7 @@ export function summariseVendor(
  * reference that is not a document number — a request number, a PNR, a blank —
  * means nothing on their side has ever been matched to that row.
  */
-export function unmatchedInPeriod(check: StatementCheck): Ticket[] {
+export function unmatchedInPeriod(check: { tickets: Ticket[] }): Ticket[] {
   return check.tickets.filter(t => !/^(INV|RFD|RV|DMA|DN)[-\d]|^\d{4}$/i.test((t.vendorReference || '').trim()));
 }
 
@@ -377,5 +377,212 @@ export function balanceOverRange(
     balanceGap: ledgerClosing === null || statedClosing === null
       ? null
       : round2(ledgerClosing - statedClosing),
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The account as OUR ledger has it, period by period.
+ *
+ * Everything above starts from the vendor's statement and asks whether our
+ * rows agree with it. This asks the opposite question, which is the one the
+ * agency actually runs on: what does our own ledger make the account, and does
+ * it reach the figure Vendor Credit shows.
+ *
+ * The periods are the vendor's own cut-off dates wherever they have issued a
+ * statement, because a comparison is only worth drawing between the same
+ * dates. Past their last statement the account keeps moving and nobody has
+ * stated anything about it, so it runs on in calendar months — which is where
+ * the balance the agency is working from today actually lives.
+ *
+ * The arithmetic is the wallet's rather than a second version of it: opening
+ * balance, plus every payment, less every ticket, with the same FUND and
+ * opening-date rules calcVendorBalance applies. So the last period's closing
+ * figure IS the Vendor Credit balance, to the piastre, and if the two ever
+ * part company one of them has a bug rather than a point of view.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export interface LedgerPeriod {
+  from: string;
+  to: string;
+  /** Our balance the day this period opens, and the day it closes. */
+  opening: number;
+  closing: number;
+  /** Positive magnitudes inside the period. */
+  issued: number;
+  refunded: number;
+  paid: number;
+  tickets: Ticket[];
+  payments: Payment[];
+  /** The vendor's statement for these dates, when they cut one. */
+  statement: VendorStatement | null;
+  /** Their billed figure less ours, and their closing less ours. Null where
+   *  they have stated nothing to compare against. */
+  billedGap: number | null;
+  balanceGap: number | null;
+}
+
+export interface LedgerAccount {
+  vendorName: string;
+  currency: string;
+  periods: LedgerPeriod[];
+  /** The last period's closing — the balance the agency is actually on. */
+  balance: number | null;
+  balanceAsOf: string;
+  /** The last balance the vendor themselves stated, and when. */
+  statedBalance: number | null;
+  statedAsOf: string;
+  /** Ours less theirs, on the day they last stated one. */
+  balanceGap: number | null;
+  /** Rows carrying no date: they cannot be put in a period, so they sit in
+   *  every opening and closing figure alike and cancel out of the movement. */
+  undated: number;
+  undatedAmount: number;
+}
+
+const endOfMonth = (iso: string): string => {
+  const d = new Date(`${iso.slice(0, 8)}01T00:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  d.setUTCDate(0);
+  return d.toISOString().slice(0, 10);
+};
+
+/**
+ * Our books for a vendor, cut on their statement dates and then on months.
+ *
+ * `wallet` carries the same two fields calcVendorBalance reads, and is what
+ * makes the closing figure agree with Vendor Credit. Without one there is no
+ * balance to state — only movement — and every balance comes back null.
+ */
+export function ledgerAccount(
+  vendorName: string,
+  statements: VendorStatement[],
+  tickets: Ticket[],
+  payments: Payment[],
+  wallet?: { initialBalance: number; openingDate?: string },
+  through?: string,
+): LedgerAccount {
+  const ours = mine(vendorName, tickets)
+    .filter(t => (t.status || '').toUpperCase() !== 'FUND');
+  const pays = payments.filter(p => p.vendorName === vendorName);
+  const undatedRows = ours.filter(t => !(t.date || '').slice(0, 10));
+
+  const stmts = statements
+    .filter(s => s.vendorName === vendorName)
+    .slice()
+    .sort((a, b) => a.periodStart.localeCompare(b.periodStart));
+
+  // A ticket dated before the wallet opened was settled out of whatever came
+  // before it, so the wallet does not charge it — and neither does this.
+  const openedOn = (wallet?.openingDate || '').slice(0, 10);
+  const draws = (d?: string) => {
+    if (!openedOn) return true;
+    const x = (d || '').slice(0, 10);
+    return x ? x >= openedOn : false;
+  };
+  const charged = ours.filter(t => draws(t.date));
+
+  /** Our balance at the close of `day`, exactly as calcVendorBalance has it. */
+  const at = (day: string): number | null => {
+    if (!wallet) return null;
+    const upTo = (d?: string) => { const x = (d || '').slice(0, 10); return !x || x <= day; };
+    const t = charged.filter(x => upTo(x.date)).reduce((n, x) => n + (x.amount || 0), 0);
+    const p = pays.filter(x => upTo(x.date)).reduce((n, x) => n + (x.amount || 0), 0);
+    return round2(wallet.initialBalance + p - t);
+  };
+
+  const days = [
+    ...ours.map(t => (t.date || '').slice(0, 10)),
+    ...pays.map(p => (p.date || '').slice(0, 10)),
+  ].filter(Boolean).sort();
+
+  const starts = [days[0], stmts[0]?.periodStart].filter(Boolean).sort() as string[];
+  const ends = [days[days.length - 1], stmts[stmts.length - 1]?.periodEnd, through]
+    .filter(Boolean).sort() as string[];
+  const first = starts[0];
+  const last = ends[ends.length - 1];
+
+  const spans: { from: string; to: string; statement: VendorStatement | null }[] = [];
+  if (first && last) {
+    let cursor = first;
+    const months = (upTo: string) => {
+      while (cursor <= upTo) {
+        const eom = endOfMonth(cursor);
+        const stop = eom < upTo ? eom : upTo;
+        spans.push({ from: cursor, to: stop, statement: null });
+        cursor = dayAfter(stop);
+      }
+    };
+    for (const s of stmts) {
+      if (s.periodEnd < cursor) continue;            // already inside a span
+      if (s.periodStart > cursor) months(dayBefore(s.periodStart));
+      spans.push({
+        from: s.periodStart > cursor ? s.periodStart : cursor,
+        to: s.periodEnd,
+        statement: s,
+      });
+      cursor = dayAfter(s.periodEnd);
+    }
+    months(last);
+  }
+
+  const periods: LedgerPeriod[] = spans.map(({ from, to, statement }) => {
+    const inRange = ours.filter(t => {
+      const d = (t.date || '').slice(0, 10);
+      return d && d >= from && d <= to;
+    });
+    const issues = inRange.filter(t => (t.amount || 0) >= 0);
+    const refunds = inRange.filter(t => (t.amount || 0) < 0);
+    const inPay = pays
+      .filter(p => { const d = (p.date || '').slice(0, 10); return d && d >= from && d <= to; })
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const issued = round2(issues.reduce((n, t) => n + (t.amount || 0), 0));
+    const refunded = round2(Math.abs(refunds.reduce((n, t) => n + (t.amount || 0), 0)));
+    const paid = round2(inPay.reduce((n, p) => n + (p.amount || 0), 0));
+    const opening = at(dayBefore(from));
+    const closing = at(to);
+
+    return {
+      from, to,
+      opening: opening ?? 0,
+      closing: closing ?? 0,
+      issued, refunded, paid,
+      tickets: inRange.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')),
+      payments: inPay,
+      statement,
+      // Our figure for the comparison is the net the vendor bills on: issues
+      // less refunds, the same thing their own billed column totals.
+      billedGap: statement ? round2(statement.billed - round2(issued - refunded)) : null,
+      balanceGap: statement && closing !== null ? round2(closing - statement.closingBalance) : null,
+    };
+  });
+
+  // A trailing span with nothing in it is an artefact of running the account
+  // up to today rather than up to the last thing that happened in it. It says
+  // only that the vendor has been quiet, which the date on the balance above
+  // already says, so it is dropped rather than printed as an empty row.
+  while (periods.length > 1) {
+    const end = periods[periods.length - 1];
+    if (end.statement || end.tickets.length || end.payments.length) break;
+    periods.pop();
+  }
+
+  const lastStated = stmts[stmts.length - 1] ?? null;
+  const ourAtStated = lastStated ? at(lastStated.periodEnd) : null;
+
+  return {
+    vendorName,
+    currency: stmts[0]?.currency || ours[0]?.currency || 'SAR',
+    periods,
+    balance: periods.length
+      ? periods[periods.length - 1].closing
+      : (wallet && last ? at(last) : null),
+    balanceAsOf: periods.length ? periods[periods.length - 1].to : '',
+    statedBalance: lastStated ? lastStated.closingBalance : null,
+    statedAsOf: lastStated ? lastStated.periodEnd : '',
+    balanceGap: lastStated && ourAtStated !== null
+      ? round2(ourAtStated - lastStated.closingBalance) : null,
+    undated: undatedRows.length,
+    undatedAmount: round2(undatedRows.reduce((n, t) => n + (t.amount || 0), 0)),
   };
 }

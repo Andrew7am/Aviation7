@@ -10,8 +10,9 @@
  */
 import {
   checkStatement, summariseVendor, ticketsInPeriod, unmatchedInPeriod,
-  balanceOverRange, dayBefore, dayAfter,
+  balanceOverRange, dayBefore, dayAfter, ledgerAccount,
 } from '../src/core/helpers/statementMath';
+import { calcVendorBalance } from '../src/core/helpers/walletMath';
 import type { Ticket, VendorStatement } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -294,6 +295,136 @@ console.log('\n12. Only this vendor is counted');
   const r = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-15', [], led, pays);
   check("another vendor's ticket is out", r.issued, 800);
   check('and their payment too',          r.paid, 0);
+}
+
+console.log('\n13. Our own books, period by period');
+{
+  // Two months of trading against a wallet that opened at zero.
+  const led = [
+    tkt({ date: '2026-08-05', amount: 1000 }),
+    tkt({ date: '2026-08-20', amount: 500 }),
+    tkt({ date: '2026-09-03', amount: 300 }),
+    tkt({ date: '2026-09-04', amount: -200 }),      // a refund
+  ];
+  const pays = [{ id: 'p1', vendorName: 'Ibtekar', amount: 2000, date: '2026-08-10' }];
+  const a = ledgerAccount('Ibtekar', [], led, pays, { initialBalance: 0 }, '2026-09-30');
+
+  check('a period per month',            a.periods.length, 2);
+  check('the first opens where the wallet did', a.periods[0].opening, 0);
+  check('and closes on our own rows',    a.periods[0].closing, 500);
+  check('the second opens where the first closed',
+        a.periods[1].opening, a.periods[0].closing);
+  check('refunds come back to us',       a.periods[1].refunded, 200);
+  check('the closing balance is the last one', a.balance, 400);
+  check('and it is dated',               a.balanceAsOf, '2026-09-30');
+  check('with nothing stated against it', a.statedBalance, null);
+  check('so no difference is claimed',   a.balanceGap, null);
+}
+
+console.log('\n14. Every period foots, by construction');
+{
+  const led = [
+    tkt({ date: '2026-08-05', amount: 1000 }),
+    tkt({ date: '2026-08-20', amount: -400 }),
+    tkt({ date: '2026-09-03', amount: 300 }),
+  ];
+  const pays = [
+    { id: 'p1', vendorName: 'Ibtekar', amount: 2000, date: '2026-08-10' },
+    { id: 'p2', vendorName: 'Ibtekar', amount: 50, date: '2026-09-09' },
+  ];
+  const a = ledgerAccount('Ibtekar', [], led, pays, { initialBalance: 100 }, '2026-09-30');
+  for (const p of a.periods)
+    check(`${p.from} foots`,
+          Math.round((p.opening + p.paid - p.issued + p.refunded) * 100) / 100, p.closing);
+}
+
+console.log('\n15. The closing figure IS the Vendor Credit balance');
+{
+  // The invariant the whole screen rests on: two different code paths, the
+  // same number. If these ever part company one of them has a bug, and the
+  // one people will believe is whichever screen they happened to open.
+  const wallet = {
+    id: 'w', vendorName: 'Ibtekar', initialBalance: 1234.56,
+    currentBalance: 0, userId: 'u',
+  } as any;
+  const led = [
+    tkt({ date: '2026-08-05', amount: 1000 }),
+    tkt({ date: '2026-08-20', amount: -400 }),
+    tkt({ date: '2026-09-03', amount: 300 }),
+    tkt({ date: '', amount: 77 }),                  // undated, and still charged
+    tkt({ date: '2026-09-04', amount: 900, status: 'FUND' }),  // never a charge
+  ];
+  const tops = [
+    { id: 'p1', vendorId: 'w', vendorName: 'Ibtekar', amount: 2000, date: '2026-08-10' },
+    { id: 'p2', vendorId: 'w', vendorName: 'Ibtekar', amount: 50, date: '2026-09-09' },
+  ] as any[];
+  const a = ledgerAccount('Ibtekar', [], led, tops, { initialBalance: 1234.56 }, '2026-09-30');
+  const vc = Math.round(calcVendorBalance(wallet, led as any, tops) * 100) / 100;
+
+  check('the two agree to the piastre', a.balance, vc);
+  check('a FUND row is a charge on neither', vc, 2307.56);
+  check('the undated row is counted, and said so', a.undated, 1);
+  check('with its amount',                   a.undatedAmount, 77);
+}
+
+console.log('\n16. A wallet with an opening date does not reach behind it');
+{
+  const wallet = {
+    id: 'w', vendorName: 'Ibtekar', initialBalance: 5000,
+    openingDate: '2026-08-01', currentBalance: 0, userId: 'u',
+  } as any;
+  const led = [
+    tkt({ date: '2026-07-20', amount: 9999 }),      // settled before the wallet opened
+    tkt({ date: '2026-08-05', amount: 1000 }),
+    tkt({ date: '', amount: 77 }),                  // undatable, so not charged either
+  ];
+  const a = ledgerAccount('Ibtekar', [], led, [],
+    { initialBalance: 5000, openingDate: '2026-08-01' }, '2026-08-31');
+  const vc = Math.round(calcVendorBalance(wallet, led as any, []) * 100) / 100;
+
+  check('the old ticket is not charged twice', a.balance, 4000);
+  check('and Vendor Credit says the same',     a.balance, vc);
+}
+
+console.log('\n17. Their statement is set against ours on the same dates');
+{
+  const s = stm({ periodStart: '2026-08-01', periodEnd: '2026-09-14',
+                  openingBalance: 13235.37, closingBalance: 8266.37,
+                  billed: 24969, paid: 20000 });
+  const led = [tkt({ date: '2026-08-08', amount: 24359.19 })];
+  const pays = [{ id: 'p', vendorName: 'Ibtekar', amount: 20000, date: '2026-08-20' }];
+  const a = ledgerAccount('Ibtekar', [s], led, pays,
+    { initialBalance: 13235.37 }, '2026-09-14');
+
+  const cut = a.periods.find(p => p.statement)!;
+  check('their dates are used as the cut',   [cut.from, cut.to], ['2026-08-01', '2026-09-14']);
+  check('their statement is carried on it',  cut.statement!.id, s.id);
+  check('they billed more than we recorded', cut.billedGap, 609.81);
+  check('our closing is ours',               cut.closing, 8876.18);
+  check('and the difference is stated',      cut.balanceGap, 609.81);
+  check('the headline is theirs, dated',     [a.statedBalance, a.statedAsOf],
+        [8266.37, '2026-09-14']);
+}
+
+console.log('\n18. Past their last statement, the account is ours alone');
+{
+  const s = stm({ periodStart: '2026-08-01', periodEnd: '2026-08-31',
+                  openingBalance: 0, closingBalance: 500, billed: 1000, paid: 1500 });
+  const led = [
+    tkt({ date: '2026-08-10', amount: 1000 }),
+    tkt({ date: '2026-09-10', amount: 250 }),       // after they stopped stating
+  ];
+  const pays = [{ id: 'p', vendorName: 'Ibtekar', amount: 1500, date: '2026-08-11' }];
+  const a = ledgerAccount('Ibtekar', [s], led, pays, { initialBalance: 0 }, '2026-09-30');
+
+  check('two periods: theirs, then ours',  a.periods.length, 2);
+  check('the first is cut on their dates', a.periods[0].to, '2026-08-31');
+  check('the second is a month of ours',   [a.periods[1].from, a.periods[1].to],
+        ['2026-09-01', '2026-09-30']);
+  check('with nothing of theirs on it',    a.periods[1].statement, null);
+  check('and no difference claimed',       a.periods[1].balanceGap, null);
+  check('todays balance is on that row',   a.balance, 250);
+  check('while theirs stopped in August',  a.statedAsOf, '2026-08-31');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
