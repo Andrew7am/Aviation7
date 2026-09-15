@@ -31,9 +31,10 @@ const f = (n: number) => n.toLocaleString('en-US',{minimumFractionDigits:2,maxim
     const r = balanceOverRange(v, from, to, st as VendorStatement[], tk as Ticket[], tu as any,
       w ? { initialBalance: w.initialBalance, openingDate: w.openingDate } : undefined);
     console.log(`\n${v}  ${from} → ${to}   [${r.anchor}]`);
-    console.log(`   opening ${m(r.openingBalance)}   issued -${f(r.issued)}   refunded +${f(r.refunded)}   paid +${f(r.paid)}`);
-    console.log(`   closing ${m(r.closingBalance)}`);
+    console.log(`   OUR balance  ${m(r.openingBalance)}  ->  ${m(r.closingBalance)}`);
+    console.log(`   movement     issued -${f(r.issued)}   refunded +${f(r.refunded)}   paid +${f(r.paid)}`);
+    console.log(`   THEIR figure ${m(r.statedOpening)}  ->  ${m(r.statedClosing)}`);
     console.log(`   ${r.anchorLabel}`);
-    console.log(`   our own books:  ${m(r.ledgerBalance)}   difference ${r.balanceGap === null ? '—' : f(r.balanceGap)}`);
+    console.log(`   difference   ${r.balanceGap === null ? '—' : f(r.balanceGap)}`);
   }
 })().catch(e => { console.error(e); process.exit(1); });

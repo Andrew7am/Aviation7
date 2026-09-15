@@ -146,17 +146,24 @@ export const BalanceRange: React.FC<Props> = ({
           </div>
         ) : (
           <>
-            {/* The five figures, in the order the arithmetic runs. */}
+            {/* The five figures, in the order the arithmetic runs.
+                
+                The two balances are OURS — the ledger the agency runs on, and
+                the same arithmetic Vendor Credit does, so the closing figure
+                is the number that screen shows. The vendor's own figure is
+                underneath, with what the two disagree by: it is what we settle
+                against, but it stops where their last statement stopped, and
+                it is not the balance anybody is working from. */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-center">
               {([
-                ['Balance on ' + from,
+                ['Our balance on ' + from,
                  r.openingBalance === null ? '—' : drCr(r.openingBalance),
                  r.openingBalance === null ? 'text-slate-300'
                    : r.openingBalance < 0 ? 'text-red-600' : 'text-emerald-700'],
                 ['Issued', `−${fmt(r.issued)}`, 'text-slate-700'],
                 ['Refunded', r.refunded ? `+${fmt(r.refunded)}` : '—', 'text-emerald-600'],
                 ['Paid to them', r.paid ? `+${fmt(r.paid)}` : '—', 'text-emerald-600'],
-                ['Balance on ' + to,
+                ['Our balance on ' + to,
                  r.closingBalance === null ? '—' : drCr(r.closingBalance),
                  r.closingBalance === null ? 'text-slate-300'
                    : r.closingBalance < 0 ? 'text-red-600' : 'text-emerald-700'],
@@ -168,32 +175,17 @@ export const BalanceRange: React.FC<Props> = ({
               ))}
             </div>
 
-            <div className={`rounded-lg border px-4 py-2.5 text-[11px] flex items-start gap-2
-              ${ANCHOR_STYLE[r.anchor]}`}>
-              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              <span>{r.anchorLabel}</span>
-            </div>
-
-            {/* The other balance, and what the two disagree by.
-                
-                The figure above is the vendor's, carried forward. The one here
-                is ours from the beginning — the same arithmetic Vendor Credit
-                does, so on today's date it is the number that screen shows, to
-                the piastre. They answer different questions and for NSA they
-                differ by 32,940.30, all of it reconciliation difference. Two
-                screens printing different balances with nothing between them
-                invites the reader to decide one is broken. */}
-            {r.ledgerBalance !== null && (
+            {r.statedClosing !== null && (
               <div className={`rounded-lg border px-4 py-3 text-xs
                 ${r.balanceGap !== null && Math.abs(r.balanceGap) < 0.011
                   ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
                 <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
                   <span className="text-slate-600">
-                    Our own books on {to} — opening balance, every payment, every ticket:
+                    What {vendor}'s own statement makes it on {to}:
                   </span>
                   <span className={`font-mono font-bold text-sm
-                    ${r.ledgerBalance < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                    {drCr(r.ledgerBalance)}
+                    ${r.statedClosing < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                    {drCr(r.statedClosing)}
                   </span>
                 </div>
                 {r.balanceGap !== null && (
@@ -201,9 +193,9 @@ export const BalanceRange: React.FC<Props> = ({
                                   border-t border-slate-100">
                     <span className="text-slate-500 text-[11px]">
                       {Math.abs(r.balanceGap) < 0.011
-                        ? `This agrees with ${vendor}'s own figure.`
-                        : `Our books and ${vendor}'s figure disagree. Every period's difference is `
-                          + `listed below; this is all of them added up.`}
+                        ? `Our books and theirs agree.`
+                        : `Our books and theirs disagree. Every period's difference is listed below; `
+                          + `this is all of them added up.`}
                     </span>
                     <span className={`font-mono font-bold text-xs
                       ${Math.abs(r.balanceGap) < 0.011 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -214,6 +206,12 @@ export const BalanceRange: React.FC<Props> = ({
                 )}
               </div>
             )}
+
+            <div className={`rounded-lg border px-4 py-2.5 text-[11px] flex items-start gap-2
+              ${ANCHOR_STYLE[r.anchor]}`}>
+              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>{r.anchorLabel}</span>
+            </div>
 
             {r.undated > 0 && (
               <div className="bg-slate-50 border border-slate-200 rounded px-4 py-2 text-[11px] text-slate-500">

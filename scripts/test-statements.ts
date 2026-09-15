@@ -175,11 +175,11 @@ console.log('\n10. The account between any two dates');
   const r = balanceOverRange('Ibtekar', '2026-09-08', '2026-09-15', [statement], led, pays);
   check('anchored on the statement',   r.anchor, 'statement');
   // 8,235.37 closing, then 03/09 -1,200 and 05/09 +2,000 before the range opens.
-  check('carried to the day it opens', r.openingBalance, 9035.37);
+  check('carried to the day it opens', r.statedOpening, 9035.37);
   check('issued in the range',         r.issued, 800);
   check('refunded in the range',       r.refunded, 300);
   check('paid in the range',           r.paid, 500);
-  check('closing',                     r.closingBalance, 9035.37 + 500 - 800 + 300);
+  check('closing',                     r.statedClosing, 9035.37 + 500 - 800 + 300);
   check('the tickets issued',   r.issues.map(t => t.date), ['2026-09-10']);
   check('the tickets refunded', r.refunds.map(t => t.date), ['2026-09-12']);
   check('the payments',         r.payments.map(p => p.id), ['b']);
@@ -187,12 +187,12 @@ console.log('\n10. The account between any two dates');
 
   // A range that opens the day after a statement closes takes its figure whole.
   const flush = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-15', [statement], led, pays);
-  check('no carry needed', flush.openingBalance, 8235.37);
+  check('no carry needed', flush.statedOpening, 8235.37);
   check('and it says so',  flush.anchorLabel.includes('stated this balance'), true);
 
   // The statement's own last day is inside its closing balance already.
   check('the statement period itself is not re-counted',
-        balanceOverRange('Ibtekar', '2026-09-01', '2026-09-01', [statement], led, pays).openingBalance,
+        balanceOverRange('Ibtekar', '2026-09-01', '2026-09-01', [statement], led, pays).statedOpening,
         8235.37);
 }
 
@@ -212,20 +212,20 @@ console.log('\n10b. A statement that is still open on the day the range starts')
 
   const r = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-30', [s], led, pays);
   check('it anchors on the statement, not the wallet', r.anchor, 'statement');
-  check('carried from its opening balance over August', r.openingBalance, 13235.37 - 4000 + 2000);
+  check('carried from its opening balance over August', r.statedOpening, 13235.37 - 4000 + 2000);
   check('and it says which statement',
         r.anchorLabel.includes('2026-08-01 to 2026-09-14 statement'), true);
   check('September alone is the movement', r.issued, 1000);
 
   // A range starting on the statement's own first day takes its figure whole.
   const flush = balanceOverRange('Ibtekar', '2026-08-01', '2026-08-31', [s], led, pays);
-  check('no carry on the first day', flush.openingBalance, 13235.37);
+  check('no carry on the first day', flush.statedOpening, 13235.37);
 
   // A statement that closed earlier still wins over one merely covering.
   const earlier = stm({ periodStart: '2026-07-01', periodEnd: '2026-08-31',
                         closingBalance: 999, openingBalance: 0, billed: 0, paid: 0 });
   const both = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-30', [s, earlier], led, pays);
-  check('the one that closed the day before is preferred', both.openingBalance, 999);
+  check('the one that closed the day before is preferred', both.statedOpening, 999);
 }
 
 console.log('\n10c. Our own books, beside theirs');
@@ -242,8 +242,8 @@ console.log('\n10c. Our own books, beside theirs');
 
   const r = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-30', [st], led, pays, wallet);
   // 100 + 6,000 - (4,000 + 500 + 250): the same arithmetic Vendor Credit does.
-  check('our books count every row, dated or not', r.ledgerBalance, 1350);
-  check('and the vendor figure is carried separately', r.closingBalance, 1000 + 6000 - 500);
+  check('our books count every row, dated or not', r.closingBalance, 1350);
+  check('and the vendor figure is carried separately', r.statedClosing, 1000 + 6000 - 500);
   check('the gap is the two set side by side', r.balanceGap, 1350 - 6500);
 
   // An undated row is in the wallet figure and in no period's movement.
@@ -251,11 +251,20 @@ console.log('\n10c. Our own books, beside theirs');
   check('but it is reported',         r.undated, 1);
 
   const early = balanceOverRange('Ibtekar', '2026-08-01', '2026-08-31', [st], led, pays, wallet);
-  check('a later ticket is not counted early', early.ledgerBalance, 100 - 4000 - 250);
+  check('a later ticket is not counted early', early.closingBalance, 100 - 4000 - 250);
 
   const noWallet = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-30', [st], led, pays);
-  check('with no wallet there is no such figure', noWallet.ledgerBalance, null);
+  check('with no wallet there is no such figure', noWallet.closingBalance, null);
   check('and no gap to report',                   noWallet.balanceGap, null);
+
+  // The row of figures on screen has to add up, or it is five numbers rather
+  // than an account. An undated row sits in both ends and cancels, which is
+  // the only reason it can be counted in a dated balance at all.
+  check('opening + paid - issued + refunded is the closing figure',
+        Math.round((r.openingBalance! + r.paid - r.issued + r.refunded) * 100) / 100,
+        r.closingBalance);
+  check('and it still foots with an undated row in the ledger',
+        led.some(t => !t.date), true);
 }
 
 console.log('\n11. When no statement reaches back that far');
@@ -263,14 +272,14 @@ console.log('\n11. When no statement reaches back that far');
   const led = [tkt({ date: '2026-09-10', amount: 800 })];
   const bare = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-15', [], led, []);
   check('nothing anchors it',        bare.anchor, 'none');
-  check('so no balance is invented', bare.openingBalance, null);
-  check('nor a closing one',         bare.closingBalance, null);
+  check('so no balance is invented', bare.statedOpening, null);
+  check('nor a closing one',         bare.statedClosing, null);
   check('but the movement is real',  bare.issued, 800);
 
   const walleted = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-15', [], led, [],
                                     { initialBalance: 50000, openingDate: '2026-01-01' });
   check('the wallet can stand in', walleted.anchor, 'wallet');
-  check('at its own figure',       walleted.openingBalance, 50000);
+  check('at its own figure',       walleted.statedOpening, 50000);
   check('and it admits whose arithmetic it is',
         walleted.anchorLabel.includes('our arithmetic, not theirs'), true);
 }

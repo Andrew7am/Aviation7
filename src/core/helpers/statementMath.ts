@@ -177,8 +177,29 @@ export interface RangeMovement {
   /** Said in full, because the difference matters: a stated balance is the
    *  vendor's word, a carried one is ours. */
   anchorLabel: string;
-  /** Null when nothing anchors it — the movement is still real, the balance
-   *  would be invented. */
+  /**
+   * What the VENDOR's own figures make the balance, carried forward from the
+   * last period they issued. Evidence, and the thing to settle against — but
+   * not the number the agency runs on, because it stops where their last
+   * statement stopped.
+   *
+   * Null when nothing anchors it: the movement is still real, the balance
+   * would be invented.
+   */
+  statedOpening: number | null;
+  statedClosing: number | null;
+  /**
+   * What OUR books make it, at each end of the range. The same arithmetic the
+   * Vendor Credit screen does — opening balance, plus every payment, less
+   * every ticket — so on today's date the closing figure IS what that screen
+   * shows, to the piastre.
+   *
+   * These are the headline figures. The agency reconciles against the vendor's
+   * statement but it runs on its own ledger, and a balance that stops at the
+   * vendor's last cut-off is not the balance anybody is working from.
+   *
+   * Null when the vendor has no wallet to compute them from.
+   */
   openingBalance: number | null;
   closingBalance: number | null;
   /** Positive magnitudes, over the range. */
@@ -190,24 +211,10 @@ export interface RangeMovement {
   payments: Payment[];
   /** Rows this vendor has in the range that carry no date, so they could not
    *  be placed inside it or outside it. Counted nowhere in the movement above;
-   *  they ARE in ledgerBalance, because the wallet counts them. */
+   *  they ARE in openingBalance and closingBalance, because the wallet counts
+   *  them — and being in both ends, they cancel. */
   undated: number;
-  /**
-   * What our own books make the balance at `to`, computed the way the Vendor
-   * Credit screen computes it: the wallet's opening figure, plus every payment,
-   * less every ticket.
-   *
-   * The two figures answer different questions and used to be shown on
-   * different screens without either saying so. The vendor's balance is theirs
-   * carried forward; this one is ours from the beginning. For NSA they differ
-   * by 32,940.30 — every piastre of it a reconciliation difference — and a
-   * screen that prints one while another screen prints the other, with nothing
-   * between them, invites the reader to assume one of them is broken.
-   *
-   * Null when there is no wallet to compute it from.
-   */
-  ledgerBalance: number | null;
-  /** ledgerBalance - closingBalance: what the two disagree by. */
+  /** ours - theirs, at the end of the range: what the two disagree by. */
   balanceGap: number | null;
 }
 
@@ -332,38 +339,43 @@ export function balanceOverRange(
   const refunded = round2(Math.abs(refunds.reduce((n, t) => n + (t.amount || 0), 0)));
   const paid = round2(pays.reduce((n, p) => n + (p.amount || 0), 0));
 
-  // Our own books at `to`, computed the way the Vendor Credit screen computes
-  // its balance: the wallet's opening figure, plus every payment, less every
-  // ticket. Undated rows are counted in — the wallet counts them, and this
-  // figure exists to agree with the wallet — so when `to` falls on or after
-  // the last row it is the number Vendor Credit shows, to the piastre.
-  let ledgerBalance: number | null = null;
-  if (wallet) {
-    const upTo = (d?: string) => { const x = (d || '').slice(0, 10); return !x || x <= to; };
+  // Our own books, at each end of the range, computed the way the Vendor
+  // Credit screen computes its balance: the wallet's opening figure, plus
+  // every payment, less every ticket. Undated rows are counted in — the wallet
+  // counts them, and these figures exist to agree with the wallet — so when
+  // `to` falls on or after the last row the closing figure is the number
+  // Vendor Credit shows, to the piastre. An undated row lands in both ends and
+  // cancels, so the row of figures still foots.
+  const ledgerAt = (day: string): number | null => {
+    if (!wallet) return null;
+    const upTo = (d?: string) => { const x = (d || '').slice(0, 10); return !x || x <= day; };
     const tk = ours
       .filter(t => upTo(t.date) && (t.status || '').toUpperCase() !== 'FUND')
       .reduce((n, t) => n + (t.amount || 0), 0);
     const pd = payments
       .filter(p => p.vendorName === vendorName && upTo(p.date))
       .reduce((n, p) => n + (p.amount || 0), 0);
-    ledgerBalance = round2(wallet.initialBalance + pd - tk);
-  }
-  const closing = opening === null ? null : round2(opening + paid - issued + refunded);
+    return round2(wallet.initialBalance + pd - tk);
+  };
+  const ledgerOpening = ledgerAt(before);
+  const ledgerClosing = ledgerAt(to);
+  const statedClosing = opening === null ? null : round2(opening + paid - issued + refunded);
 
   return {
     vendorName, from, to,
     currency: mineStatements[0]?.currency || inRange[0]?.currency || 'SAR',
     anchor, anchorLabel,
-    openingBalance: opening,
-    closingBalance: closing,
+    statedOpening: opening,
+    statedClosing,
+    openingBalance: ledgerOpening,
+    closingBalance: ledgerClosing,
     issued, refunded, paid,
     issues: issues.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')),
     refunds: refunds.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')),
     payments: pays,
     undated: ours.filter(t => !(t.date || '').slice(0, 10)).length,
-    ledgerBalance,
-    balanceGap: ledgerBalance === null || closing === null
+    balanceGap: ledgerClosing === null || statedClosing === null
       ? null
-      : round2(ledgerBalance - closing),
+      : round2(ledgerClosing - statedClosing),
   };
 }
