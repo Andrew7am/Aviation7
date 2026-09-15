@@ -74,12 +74,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
           Breakdown showed two vendors of twelve and cut the second in half. */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-4 pb-4
                       lg:flex-1 lg:min-h-0 lg:overflow-auto">
-        {/* Source breakdown */}
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+        {/* Source breakdown.
+        
+            A flex column with the heading pinned and the table scrolling
+            inside it. At lg the grid still stretches the card to fill the
+            viewport, and a card that clips is fine as long as its contents can
+            be reached — before this they could not: twelve vendors in a card
+            sized for eight, with the last two cut in half and no way to scroll
+            to them, because the card clipped and the grid had nothing to
+            scroll. */}
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
             <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Source Breakdown</h3>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-auto flex-1 min-h-0">
           <table className="w-full text-left min-w-[440px]">
             <thead>
               <tr className="border-b border-slate-100 text-[9px] uppercase text-slate-400 tracking-wider">
@@ -114,8 +122,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
         </div>
 
         {/* Vendor balances summary */}
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
             <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Vendor Credit Status</h3>
             {lowBalanceVendors.length > 0 && (
               <span className="bg-red-100 text-red-700 text-[9px] font-bold px-2 py-0.5 rounded-full">
@@ -123,7 +131,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
               </span>
             )}
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-auto flex-1 min-h-0">
           <table className="w-full text-left min-w-[440px]">
             <thead>
               <tr className="border-b border-slate-100 text-[9px] uppercase text-slate-400 tracking-wider">
