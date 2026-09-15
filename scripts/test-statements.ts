@@ -228,6 +228,36 @@ console.log('\n10b. A statement that is still open on the day the range starts')
   check('the one that closed the day before is preferred', both.openingBalance, 999);
 }
 
+console.log('\n10c. Our own books, beside theirs');
+{
+  const st = stm({ periodStart: '2026-08-01', periodEnd: '2026-08-31',
+                   openingBalance: 1000, closingBalance: 1000, billed: 0, paid: 0 });
+  const led = [
+    tkt({ date: '2026-08-10', amount: 4000 }),
+    tkt({ date: '2026-09-10', amount: 500 }),
+    tkt({ date: '', amount: 250 }),          // undated: in the wallet, in no period
+  ];
+  const pays = [{ id: 'a', vendorName: 'Ibtekar', amount: 6000, date: '2026-09-05' }];
+  const wallet = { initialBalance: 100 };
+
+  const r = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-30', [st], led, pays, wallet);
+  // 100 + 6,000 - (4,000 + 500 + 250): the same arithmetic Vendor Credit does.
+  check('our books count every row, dated or not', r.ledgerBalance, 1350);
+  check('and the vendor figure is carried separately', r.closingBalance, 1000 + 6000 - 500);
+  check('the gap is the two set side by side', r.balanceGap, 1350 - 6500);
+
+  // An undated row is in the wallet figure and in no period's movement.
+  check('the movement leaves it out', r.issued, 500);
+  check('but it is reported',         r.undated, 1);
+
+  const early = balanceOverRange('Ibtekar', '2026-08-01', '2026-08-31', [st], led, pays, wallet);
+  check('a later ticket is not counted early', early.ledgerBalance, 100 - 4000 - 250);
+
+  const noWallet = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-30', [st], led, pays);
+  check('with no wallet there is no such figure', noWallet.ledgerBalance, null);
+  check('and no gap to report',                   noWallet.balanceGap, null);
+}
+
 console.log('\n11. When no statement reaches back that far');
 {
   const led = [tkt({ date: '2026-09-10', amount: 800 })];

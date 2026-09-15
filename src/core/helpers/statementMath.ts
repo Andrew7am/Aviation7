@@ -189,8 +189,26 @@ export interface RangeMovement {
   refunds: Ticket[];
   payments: Payment[];
   /** Rows this vendor has in the range that carry no date, so they could not
-   *  be placed inside it or outside it. Counted nowhere; reported. */
+   *  be placed inside it or outside it. Counted nowhere in the movement above;
+   *  they ARE in ledgerBalance, because the wallet counts them. */
   undated: number;
+  /**
+   * What our own books make the balance at `to`, computed the way the Vendor
+   * Credit screen computes it: the wallet's opening figure, plus every payment,
+   * less every ticket.
+   *
+   * The two figures answer different questions and used to be shown on
+   * different screens without either saying so. The vendor's balance is theirs
+   * carried forward; this one is ours from the beginning. For NSA they differ
+   * by 32,940.30 — every piastre of it a reconciliation difference — and a
+   * screen that prints one while another screen prints the other, with nothing
+   * between them, invites the reader to assume one of them is broken.
+   *
+   * Null when there is no wallet to compute it from.
+   */
+  ledgerBalance: number | null;
+  /** ledgerBalance - closingBalance: what the two disagree by. */
+  balanceGap: number | null;
 }
 
 const mine = (vendorName: string, tickets: Ticket[]) =>
@@ -314,16 +332,38 @@ export function balanceOverRange(
   const refunded = round2(Math.abs(refunds.reduce((n, t) => n + (t.amount || 0), 0)));
   const paid = round2(pays.reduce((n, p) => n + (p.amount || 0), 0));
 
+  // Our own books at `to`, computed the way the Vendor Credit screen computes
+  // its balance: the wallet's opening figure, plus every payment, less every
+  // ticket. Undated rows are counted in — the wallet counts them, and this
+  // figure exists to agree with the wallet — so when `to` falls on or after
+  // the last row it is the number Vendor Credit shows, to the piastre.
+  let ledgerBalance: number | null = null;
+  if (wallet) {
+    const upTo = (d?: string) => { const x = (d || '').slice(0, 10); return !x || x <= to; };
+    const tk = ours
+      .filter(t => upTo(t.date) && (t.status || '').toUpperCase() !== 'FUND')
+      .reduce((n, t) => n + (t.amount || 0), 0);
+    const pd = payments
+      .filter(p => p.vendorName === vendorName && upTo(p.date))
+      .reduce((n, p) => n + (p.amount || 0), 0);
+    ledgerBalance = round2(wallet.initialBalance + pd - tk);
+  }
+  const closing = opening === null ? null : round2(opening + paid - issued + refunded);
+
   return {
     vendorName, from, to,
     currency: mineStatements[0]?.currency || inRange[0]?.currency || 'SAR',
     anchor, anchorLabel,
     openingBalance: opening,
-    closingBalance: opening === null ? null : round2(opening + paid - issued + refunded),
+    closingBalance: closing,
     issued, refunded, paid,
     issues: issues.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')),
     refunds: refunds.slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')),
     payments: pays,
     undated: ours.filter(t => !(t.date || '').slice(0, 10)).length,
+    ledgerBalance,
+    balanceGap: ledgerBalance === null || closing === null
+      ? null
+      : round2(ledgerBalance - closing),
   };
 }

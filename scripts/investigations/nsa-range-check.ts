@@ -19,15 +19,21 @@ const f = (n: number) => n.toLocaleString('en-US',{minimumFractionDigits:2,maxim
   const { rows: tu } = await c.query(
     `select id, vendor_name "vendorName", amount::float8 amount, coalesce(date,'') date, coalesce(note,'') note
        from balance_topups`);
+  const { rows: wal } = await c.query(
+    `select vendor_name "vendorName", initial_balance::float8 "initialBalance",
+            opening_date::text "openingDate" from vendor_balances`);
   await c.end();
   for (const [v, from, to] of [
     ['NSA','2026-04-01','2026-04-30'], ['NSA','2026-06-01','2026-06-30'],
     ['NSA','2026-07-01','2026-09-15'], ['Ibtekar','2026-09-01','2026-09-15'],
   ] as [string,string,string][]) {
-    const r = balanceOverRange(v, from, to, st as VendorStatement[], tk as Ticket[], tu as any);
+    const w = (wal as any[]).find(x => x.vendorName === v);
+    const r = balanceOverRange(v, from, to, st as VendorStatement[], tk as Ticket[], tu as any,
+      w ? { initialBalance: w.initialBalance, openingDate: w.openingDate } : undefined);
     console.log(`\n${v}  ${from} → ${to}   [${r.anchor}]`);
     console.log(`   opening ${m(r.openingBalance)}   issued -${f(r.issued)}   refunded +${f(r.refunded)}   paid +${f(r.paid)}`);
     console.log(`   closing ${m(r.closingBalance)}`);
     console.log(`   ${r.anchorLabel}`);
+    console.log(`   our own books:  ${m(r.ledgerBalance)}   difference ${r.balanceGap === null ? '—' : f(r.balanceGap)}`);
   }
 })().catch(e => { console.error(e); process.exit(1); });

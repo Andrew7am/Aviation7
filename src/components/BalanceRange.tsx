@@ -174,6 +174,47 @@ export const BalanceRange: React.FC<Props> = ({
               <span>{r.anchorLabel}</span>
             </div>
 
+            {/* The other balance, and what the two disagree by.
+                
+                The figure above is the vendor's, carried forward. The one here
+                is ours from the beginning — the same arithmetic Vendor Credit
+                does, so on today's date it is the number that screen shows, to
+                the piastre. They answer different questions and for NSA they
+                differ by 32,940.30, all of it reconciliation difference. Two
+                screens printing different balances with nothing between them
+                invites the reader to decide one is broken. */}
+            {r.ledgerBalance !== null && (
+              <div className={`rounded-lg border px-4 py-3 text-xs
+                ${r.balanceGap !== null && Math.abs(r.balanceGap) < 0.011
+                  ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+                  <span className="text-slate-600">
+                    Our own books on {to} — opening balance, every payment, every ticket:
+                  </span>
+                  <span className={`font-mono font-bold text-sm
+                    ${r.ledgerBalance < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                    {drCr(r.ledgerBalance)}
+                  </span>
+                </div>
+                {r.balanceGap !== null && (
+                  <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 mt-2 pt-2
+                                  border-t border-slate-100">
+                    <span className="text-slate-500 text-[11px]">
+                      {Math.abs(r.balanceGap) < 0.011
+                        ? `This agrees with ${vendor}'s own figure.`
+                        : `Our books and ${vendor}'s figure disagree. Every period's difference is `
+                          + `listed below; this is all of them added up.`}
+                    </span>
+                    <span className={`font-mono font-bold text-xs
+                      ${Math.abs(r.balanceGap) < 0.011 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {Math.abs(r.balanceGap) < 0.011 ? 'no difference'
+                        : `${r.balanceGap > 0 ? '+' : '−'}${fmt(r.balanceGap)} ${r.currency}`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {r.undated > 0 && (
               <div className="bg-slate-50 border border-slate-200 rounded px-4 py-2 text-[11px] text-slate-500">
                 {r.undated} {vendor} row(s) carry no date at all, so they cannot be placed in these
