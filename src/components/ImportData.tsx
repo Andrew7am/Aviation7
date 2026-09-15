@@ -145,7 +145,11 @@ export const ImportData: React.FC<ImportDataProps> = ({
     .reduce((s, t) => s + t.amount, 0);
 
   return (
-    <div className="flex flex-col h-full bg-slate-100 p-4 space-y-4">
+    // min-h-full below lg rather than h-full: the source picker, the paste
+    // box, the buttons and a 280px preview together are taller than a phone,
+    // and a column pinned to exactly the viewport's height has nowhere to put
+    // the overflow but off the bottom. Growing past it lets main scroll.
+    <div className="flex flex-col min-h-full lg:h-full bg-slate-100 p-4 space-y-4">
       <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest shrink-0">Bulk Ticket Import</h2>
 
       <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm shrink-0 flex flex-wrap items-end gap-4">

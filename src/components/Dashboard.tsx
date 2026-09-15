@@ -33,7 +33,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div className="flex flex-col h-full bg-slate-100">
+    <div className="flex flex-col min-h-full lg:h-full bg-slate-100">
       <div className="px-6 py-4 border-b border-slate-200 bg-white shrink-0">
         <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Dashboard Overview</h2>
       </div>
@@ -62,7 +62,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-4 pb-4 flex-1 min-h-0 overflow-auto">
+      {/* Below lg this is an ordinary stack that grows with its content and
+          lets the page scroll; only at lg does it become a pane that fills the
+          viewport and scrolls inside itself.
+          
+          It had to stop being height-constrained rather than merely be told to
+          pack its rows to the top. Each card holds a table in a sideways
+          scroller, and a scroll container's automatic minimum size is zero —
+          so the cards could be squeezed to nothing, the grid split the height
+          three equal ways, and each card clipped its own table. Source
+          Breakdown showed two vendors of twelve and cut the second in half. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 px-4 pb-4
+                      lg:flex-1 lg:min-h-0 lg:overflow-auto">
         {/* Source breakdown */}
         <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
@@ -168,7 +179,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
           <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
             <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Financial Summary</h3>
           </div>
-          <div className="grid grid-cols-3 divide-x divide-slate-100 text-center">
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
             <div className="p-4">
               <div className="flex items-center space-x-2 mb-1">
                 <TrendingUp className="w-4 h-4 text-emerald-500" />
