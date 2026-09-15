@@ -57,7 +57,7 @@ const TicketList: React.FC<{
     {rows.length === 0 ? (
       <p className="px-4 py-3 text-xs text-slate-400 italic">Nothing in these dates.</p>
     ) : (
-      <div className="max-h-72 overflow-y-auto">
+      <div className="max-h-72 overflow-auto">
         <table className="w-full text-left">
           <thead className="sticky top-0 bg-white">
             <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
@@ -147,7 +147,7 @@ export const BalanceRange: React.FC<Props> = ({
         ) : (
           <>
             {/* The five figures, in the order the arithmetic runs. */}
-            <div className="grid grid-cols-5 gap-2 text-center">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-center">
               {([
                 ['Balance on ' + from,
                  r.openingBalance === null ? '—' : drCr(r.openingBalance),
@@ -181,7 +181,7 @@ export const BalanceRange: React.FC<Props> = ({
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <TicketList title="Issued" rows={r.issues} total={r.issued} currency={r.currency}
                 tone="out" icon={<TrendingDown className="w-3 h-3" />} />
               <TicketList title="Refunded" rows={r.refunds} total={r.refunded} currency={r.currency}

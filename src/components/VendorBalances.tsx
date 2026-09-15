@@ -201,8 +201,14 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
         </button>}
       </div>
 
-      {/* Table */}
-      <table className="w-full text-left border-collapse">
+      {/* Table.
+          The wallet table is eight columns wide and cannot usefully be
+          narrower - every one of them is a figure somebody reconciles against.
+          On a phone it was simply cut off at the edge of the card, so the
+          balance itself, the rightmost column, could not be seen at all. It
+          scrolls sideways instead. */}
+      <div className="overflow-x-auto">
+      <table className="w-full text-left border-collapse min-w-[760px]">
         <thead>
           <tr className="border-b border-slate-200 text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
             <th className="py-3 px-4 w-8"></th>
@@ -397,6 +403,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
           })}
         </tbody>
       </table>
+      </div>
 
       {/* ════════════════════════════════════════
           MODAL OVERLAY

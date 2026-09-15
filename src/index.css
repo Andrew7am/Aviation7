@@ -1,1 +1,60 @@
 @import "tailwindcss";
+
+/**
+ * What a touch screen needs that a mouse does not.
+ *
+ * Scoped to `pointer: coarse` so the desktop layout is untouched — this is an
+ * accounting screen people read at a desk all day, and inflating its controls
+ * for a finger nobody is using would cost rows of ledger for nothing.
+ */
+@media (pointer: coarse) {
+  /*
+   * iOS Safari zooms the whole page when you focus an input whose text is
+   * under 16px, and it does not zoom back out. Every filter and every form
+   * field here is 10px or 11px by design, so tapping any of them threw the
+   * page into a zoom the user then had to pinch their way out of. Sixteen
+   * pixels is the threshold, not a preference.
+   */
+  input, select, textarea {
+    font-size: 16px;
+  }
+
+  /*
+   * A fingertip covers about 9mm. The icon-only controls — the pencil, the
+   * bin, the top-up plus — are drawn at 14px to 16px tall, which is a target
+   * only a mouse can hit. The button keeps its own look; it just stops being
+   * smaller than the finger aiming at it.
+   */
+  button, [role="button"], select, input[type="checkbox"], input[type="radio"] {
+    min-height: 36px;
+  }
+
+  /* Inside a table a 36px row would push a ledger off the screen a screenful
+     at a time, so those get the smaller of the two. */
+  table button, table [role="button"] {
+    min-height: 30px;
+  }
+
+  /* No 300ms wait for a double-tap that this app never listens for. */
+  button, a, [role="button"] {
+    touch-action: manipulation;
+  }
+}
+
+/* A rotated phone must not resize the text out from under the reader. */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+/*
+ * Momentum on the sideways scrollers.
+ *
+ * The wide tables — the ledger, the wallets, the statement periods — scroll
+ * horizontally on anything narrow. Without this they scroll, but they stop
+ * dead when the finger lifts, which reads as broken rather than as a table.
+ */
+@media (pointer: coarse) {
+  .overflow-x-auto, .overflow-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+}

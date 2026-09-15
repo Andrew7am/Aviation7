@@ -159,7 +159,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
           {/* Type */}
           <div>
             <label className={label}>Transaction Type</label>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {TYPES.map(t => (
                 <button key={t.key} onClick={() => setType(t.key)} title={t.hint}
                   className={`px-2 py-2 rounded text-[10px] font-bold uppercase border transition-colors ${
@@ -177,7 +177,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
           </div>
 
           {/* Vendor + date */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={label}>Vendor</label>
               {/* A real dropdown, listing every vendor, plus one entry that
@@ -247,7 +247,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
           </div>
 
           {/* Identity */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={label}>Ticket Number</label>
               <input type="text" value={ticketNo} onChange={e => setTicketNo(e.target.value)} placeholder="e.g. 0654860811922" className={field} />
@@ -259,7 +259,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
           </div>
           <p className="text-[10px] text-slate-400 -mt-2 font-mono">Enter a ticket number or a PNR — at least one is needed to identify the row.</p>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={label}>Passenger</label>
               <input type="text" value={pax} onChange={e => setPax(e.target.value)} placeholder="Full name" className={field} />
@@ -288,7 +288,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
           </div>
 
           {/* Money */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={label}>Amount ({currency}){type === 'VOID' && ' — not applied'}</label>
               <input type="text" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)}

@@ -94,7 +94,7 @@ const StatementForm: React.FC<{
         </div>
 
         <div className="p-5 space-y-4">
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Vendor</label>
               <select value={s.vendorName} onChange={e => set({ vendorName: e.target.value })}
@@ -114,7 +114,7 @@ const StatementForm: React.FC<{
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Num label="Opening balance" value={s.openingBalance}
                  hint="As the statement prints it. Positive for their Cr — credit in our favour. Negative for Dr."
                  onChange={n => set({ openingBalance: n })} />
@@ -123,7 +123,7 @@ const StatementForm: React.FC<{
                  onChange={n => set({ closingBalance: n })} />
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Num label="Billed" value={s.billed}
                  hint="Their ticket total for the period."
                  onChange={n => set({ billed: n })} />
@@ -150,7 +150,7 @@ const StatementForm: React.FC<{
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Source file</label>
               <input value={s.sourceFile ?? ''} onChange={e => set({ sourceFile: e.target.value })}
@@ -274,8 +274,8 @@ const PeriodRow: React.FC<{
                     Nothing in the ledger falls inside these dates.
                   </p>
                 ) : (
-                  <div className="max-h-80 overflow-y-auto">
-                    <table className="w-full text-left">
+                  <div className="max-h-80 overflow-auto">
+                    <table className="w-full text-left min-w-[560px]">
                       <thead>
                         <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
                           <th className="px-3 py-2">Date</th>
@@ -402,7 +402,11 @@ export const VendorStatements: React.FC<Props> = ({
               {canEdit && ' Use “Add statement” and copy the figures off their statement of account.'}
             </p>
           ) : (
-            <table className="w-full text-left">
+            /* Eleven columns, every one of them a figure. Narrower is not an
+               option, so it scrolls sideways rather than losing the right-hand
+               end of the row - which is where the difference lives. */
+            <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[880px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[9px] uppercase
                                tracking-wider text-slate-400">
@@ -427,6 +431,7 @@ export const VendorStatements: React.FC<Props> = ({
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       ))}

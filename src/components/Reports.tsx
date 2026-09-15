@@ -701,13 +701,16 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
       </div>
 
       {/* Tab bar */}
-      <div className="bg-white border-b border-slate-200 px-4 shrink-0">
-        <div className="flex space-x-1">
+      {/* The tab bar scrolls rather than wraps. Wrapping would push the
+          report itself down a line or two on a phone for no gain; a row of
+          tabs is something people already expect to swipe. */}
+      <div className="bg-white border-b border-slate-200 px-4 shrink-0 overflow-x-auto">
+        <div className="flex space-x-1 min-w-max">
           {TABS.map(t => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex items-center space-x-1.5 px-4 py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-colors ${
+              className={`flex items-center space-x-1.5 px-3 sm:px-4 py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                 tab === t.key
                   ? 'border-blue-600 text-blue-700'
                   : 'border-transparent text-slate-400 hover:text-slate-700'

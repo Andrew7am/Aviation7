@@ -40,7 +40,7 @@ export const ImportHistory: React.FC<ImportHistoryProps> = ({ records, getErrors
                 onClick={() => toggleExpand(r.id)}
                 className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors"
               >
-                <div className="flex items-center space-x-3">
+                <div className="flex flex-wrap items-center gap-3">
                   {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
                   <div className="flex items-center space-x-2">
                     {hasErrors
@@ -54,7 +54,7 @@ export const ImportHistory: React.FC<ImportHistoryProps> = ({ records, getErrors
                     {r.confidence}% confidence
                   </span>
                 </div>
-                <div className="flex items-center space-x-4 text-[10px] font-mono text-slate-500">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-mono text-slate-500">
                   <span className="flex items-center space-x-1"><Clock className="w-3 h-3" /><span>{(r.duration/1000).toFixed(1)}s</span></span>
                   <span className="text-emerald-600 font-bold">{r.imported} imported</span>
                   {r.updated > 0 && <span className="text-blue-600">{r.updated} updated</span>}
@@ -71,7 +71,8 @@ export const ImportHistory: React.FC<ImportHistoryProps> = ({ records, getErrors
                     Report: {r.reportName} · {r.totalRows} total rows
                   </div>
                   {errors.length > 0 ? (
-                    <table className="w-full text-left text-xs font-mono">
+                    <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono min-w-[520px]">
                       <thead>
                         <tr className="text-[9px] uppercase text-slate-400 border-b border-slate-200">
                           <th className="py-1.5">Row</th><th className="py-1.5">Error</th><th className="py-1.5">Raw Data</th>
@@ -87,6 +88,7 @@ export const ImportHistory: React.FC<ImportHistoryProps> = ({ records, getErrors
                         ))}
                       </tbody>
                     </table>
+                    </div>
                   ) : (
                     <p className="text-xs text-slate-400 italic">No errors logged for this import.</p>
                   )}

@@ -47,11 +47,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
           { label: 'Duplicates', value: duplicateCount, color: 'amber', icon: <AlertCircle className="w-4 h-4" />, sub: 'in current dataset' },
         ].map(card => (
           <div key={card.label} className={`bg-white border border-${card.color}-100 rounded-lg p-4 shadow-sm`}>
-            <div className={`flex items-center justify-between mb-2 text-${card.color}-500`}>
-              <span className={`text-[10px] font-bold uppercase tracking-wider text-${card.color}-600`}>{card.label}</span>
-              {card.icon}
+            {/* shrink-0 on the icon and min-w-0 on the label: two cards
+                across a phone leaves the label wider than the card, and flex
+                answers that by squeezing the icon to nothing rather than
+                letting the label wrap. The icon vanished; the label still
+                overflowed. */}
+            <div className={`flex items-center justify-between gap-1 mb-2 text-${card.color}-500`}>
+              <span className={`text-[10px] font-bold uppercase tracking-wider min-w-0 text-${card.color}-600`}>{card.label}</span>
+              <span className="shrink-0">{card.icon}</span>
             </div>
-            <div className={`text-3xl font-mono font-black text-${card.color}-700`}>{card.value}</div>
+            <div className={`text-2xl sm:text-3xl font-mono font-black text-${card.color}-700`}>{card.value}</div>
             <div className={`text-[10px] text-${card.color}-400 mt-1 font-mono`}>{card.sub}</div>
           </div>
         ))}
@@ -63,7 +68,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
           <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
             <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Source Breakdown</h3>
           </div>
-          <table className="w-full text-left">
+          <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[440px]">
             <thead>
               <tr className="border-b border-slate-100 text-[9px] uppercase text-slate-400 tracking-wider">
                 <th className="px-4 py-2">Source</th>
@@ -93,6 +99,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
               )}
             </tbody>
           </table>
+          </div>
         </div>
 
         {/* Vendor balances summary */}
@@ -105,7 +112,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
               </span>
             )}
           </div>
-          <table className="w-full text-left">
+          <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[440px]">
             <thead>
               <tr className="border-b border-slate-100 text-[9px] uppercase text-slate-400 tracking-wider">
                 <th className="px-4 py-2">Vendor</th>
@@ -152,6 +160,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
               )}
             </tbody>
           </table>
+          </div>
         </div>
 
         {/* Financial summary */}
@@ -159,7 +168,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
           <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
             <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Financial Summary</h3>
           </div>
-          <div className="grid grid-cols-3 divide-x divide-slate-100">
+          <div className="grid grid-cols-3 divide-x divide-slate-100 text-center">
             <div className="p-4">
               <div className="flex items-center space-x-2 mb-1">
                 <TrendingUp className="w-4 h-4 text-emerald-500" />

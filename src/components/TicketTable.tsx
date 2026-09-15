@@ -1250,15 +1250,19 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       )}
 
       {/* Summary row */}
-      <div className="flex items-center space-x-4 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-[10px] font-mono text-slate-500">
+      {/* Wraps rather than runs off. On a phone this strip was 123px wider
+          than the screen, which took the "not closed" count and the hint about
+          clicking a cell off the edge entirely. The dividers go with it: a
+          pipe at the start of a wrapped line reads as a typo. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-[10px] font-mono text-slate-500">
         <span>{filtered.length} tickets</span>
-        <span className="text-slate-300">|</span>
+        <span className="text-slate-300 hidden sm:inline">|</span>
         {hasSAR && <CopyableAmount label="Net SAR" value={sarTotal} fmt={fmt} />}
         {hasSAR && hasAED && <span className="text-slate-300">·</span>}
         {hasAED && <CopyableAmount label="Net AED" value={aedTotal} fmt={fmt} />}
-        <span className="text-slate-300">|</span>
+        <span className="text-slate-300 hidden sm:inline">|</span>
         <span className="text-red-500">{filtered.filter(t => !t.reqNum).length} missing req</span>
-        <span className="text-slate-300">|</span>
+        <span className="text-slate-300 hidden sm:inline">|</span>
         {/* Top-ups are excluded from both: a balance payment is not a ticket
             that can be reconciled and closed, and counting it as outstanding
             overstated the work left. This is the same rule the Not Closed
@@ -1266,8 +1270,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <span className="text-emerald-600">{filtered.filter(t => t.closed && t.status !== 'FUND').length} closed</span>
         <span className="text-orange-600">· {filtered.filter(t => !t.closed && t.status !== 'FUND').length} not closed</span>
         {/* Nothing on screen would otherwise suggest a cell is clickable. */}
-        <span className="text-slate-300">|</span>
-        <span className="text-slate-400">
+        <span className="text-slate-300 hidden sm:inline">|</span>
+        <span className="text-slate-400 hidden sm:inline">
           click a cell to copy it{canEdit && ' · the editable ones open for editing'}
         </span>
       </div>
@@ -1501,7 +1505,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="shrink-0 flex items-center justify-between px-4 py-2 bg-white border-t border-slate-200 text-[10px] font-mono text-slate-500">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-white border-t border-slate-200 text-[10px] font-mono text-slate-500">
           <span>Page {page + 1} of {totalPages} · showing {paged.length} of {filtered.length}</span>
           <div className="flex items-center gap-1">
             <button onClick={() => setPage(0)} disabled={page === 0} className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-30">«</button>

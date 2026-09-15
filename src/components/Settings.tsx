@@ -110,7 +110,8 @@ const ProfileGroup: React.FC<{
     }`}>
       {icon} {title} <span className="text-slate-400 font-mono">· {profiles.length}</span>
     </div>
-    <table className="w-full text-[11px]">
+    <div className="overflow-x-auto">
+    <table className="w-full text-[11px] min-w-[620px]">
       <thead>
         <tr className="text-left text-[9px] font-bold uppercase text-slate-400 border-b border-slate-100">
           <th className="px-4 py-2">Vendor</th>
@@ -142,5 +143,6 @@ const ProfileGroup: React.FC<{
         ))}
       </tbody>
     </table>
+    </div>
   </div>
 );
