@@ -161,6 +161,43 @@ function getSourceColor(source: string) {
 }
 
 /**
+ * A whole ticket on one line, for the clipboard.
+ *
+ * Copying a single cell answers "what is this PNR"; the question asked far
+ * more often is "send me that ticket", and the answer to that is eleven cells
+ * which nobody can drag a selection across in a monospace table — the
+ * passenger column is truncated on screen, so the name cannot be selected at
+ * all.
+ *
+ * Tab-separated rather than prose: pasted into Excel it lands as eleven
+ * columns, and pasted into a chat it reads as a spaced line. One format serves
+ * both, and neither needs the reader to unpick a sentence.
+ *
+ * The amount is the plain number for the same reason the totals are — a
+ * spreadsheet should receive it as a value, not as text a locale re-reads.
+ */
+export function ticketLine(t: Ticket): string {
+  const cells = [
+    t.airlineCode || '',
+    t.ticketNo || '',
+    t.source || '',
+    t.status || '',
+    t.date || '',
+    t.passengerName || '',
+    t.pnr || '',
+    t.reqNum || '',
+    t.vendorReference || '',
+    t.amount == null ? '' : Number(t.amount).toFixed(2),
+    t.currency || '',
+  ];
+  // A trailing run of empty cells is noise on a chat line and an empty column
+  // in a spreadsheet either way, so it is trimmed; gaps in the middle are kept
+  // because dropping them would shift every column after them.
+  while (cells.length && !cells[cells.length - 1]) cells.pop();
+  return cells.join('\t');
+}
+
+/**
  * A total that can be clicked to copy.
  *
  * The number copied is the PLAIN one — "5295441.46", not "5,295,441.46" — so
@@ -730,27 +767,14 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     return () => clearTimeout(t);
   }, [copied]);
 
-  const handleCellClick = async (e: React.MouseEvent<HTMLTableSectionElement>) => {
-    const el = e.target as HTMLElement;
-    // An editor's own controls, the delete button, the closed toggle: those
-    // clicks mean something already.
-    if (el.closest('button, input, select, textarea, a')) return;
-    // On an editable cell the admin's click opens the editor instead.
-    if (canEdit && el.closest('[data-editable]')) return;
+  /** The rows on screen, by id, so a cell can reach its own ticket. */
+  const byId = useMemo(() => new Map(paged.map(t => [t.id, t])), [paged]);
 
-    const cell = el.closest('td');
-    if (!cell) return;
-    // What the eye sees, minus the decorations a badge stacks underneath it.
-    let text = (cell.innerText || '').trim().split('\n')[0].trim();
-    if (!text || text === '—' || text === '[+ ADD]') return;
-    // A money cell copies the plain number — "2810.00", not "2,810.00" — so it
-    // pastes into a spreadsheet as a value rather than as text a locale has to
-    // re-interpret. The separators are only there to be read.
-    if (/^-?[\d,]+\.\d{2}$/.test(text)) text = text.replace(/,/g, '');
-
+  /** Put `text` on the clipboard, and report it as `label`. */
+  const copyText = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setCopied(text);
+      setCopied(label);
     } catch {
       // navigator.clipboard needs a secure context, which a plain http origin
       // is not. The old textarea trick still works there.
@@ -763,9 +787,42 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         ta.select();
         const ok = document.execCommand('copy');
         document.body.removeChild(ta);
-        setCopied(ok ? text : '');
+        setCopied(ok ? label : '');
       } catch { /* nothing more to try; stay silent rather than alarm */ }
     }
+  };
+
+  const handleCellClick = async (e: React.MouseEvent<HTMLTableSectionElement>) => {
+    const el = e.target as HTMLElement;
+    // An editor's own controls, the delete button, the closed toggle: those
+    // clicks mean something already.
+    if (el.closest('button, input, select, textarea, a')) return;
+    // On an editable cell the admin's click opens the editor instead.
+    if (canEdit && el.closest('[data-editable]')) return;
+
+    const cell = el.closest('td');
+    if (!cell) return;
+
+    // Source is the cell that copies the whole row rather than itself, and it
+    // earns that by having the least worth copying on its own: the vendor name
+    // is usually the thing you filtered by to arrive here.
+    const rowId = (cell.closest('[data-copy-row]') as HTMLElement | null)?.dataset.copyRow;
+    if (rowId) {
+      const t = byId.get(rowId);
+      if (!t) return;
+      await copyText(ticketLine(t), `the whole ticket ${t.ticketNo}`);
+      return;
+    }
+
+    // What the eye sees, minus the decorations a badge stacks underneath it.
+    let text = (cell.innerText || '').trim().split('\n')[0].trim();
+    if (!text || text === '—' || text === '[+ ADD]') return;
+    // A money cell copies the plain number — "2810.00", not "2,810.00" — so it
+    // pastes into a spreadsheet as a value rather than as text a locale has to
+    // re-interpret. The separators are only there to be read.
+    if (/^-?[\d,]+\.\d{2}$/.test(text)) text = text.replace(/,/g, '');
+
+    await copyText(text, text);
   };
 
   const startEdit = (ticket: Ticket, field: EditableField) => {
@@ -1272,7 +1329,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         {/* Nothing on screen would otherwise suggest a cell is clickable. */}
         <span className="text-slate-300 hidden sm:inline">|</span>
         <span className="text-slate-400 hidden sm:inline">
-          click a cell to copy it{canEdit && ' · the editable ones open for editing'}
+          click a cell to copy it · click the source to copy the whole ticket{canEdit && ' · the editable ones open for editing'}
         </span>
       </div>
 
@@ -1360,7 +1417,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                       <span className="ml-1.5 bg-amber-400 text-black px-1 py-0.5 rounded text-[8px] font-bold">DUP</span>
                     )}
                   </td>
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2 cursor-copy" data-copy-row={ticket.id}
+                      title="Copy the whole ticket — airline, number, source, status, date, passenger, PNR, req number, invoice, amount">
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold uppercase ${getSourceColor(ticket.source || '')}`}>
                       {ticket.source || 'UNKNOWN'}
                     </span>
