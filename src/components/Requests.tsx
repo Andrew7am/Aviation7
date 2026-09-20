@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Ticket } from '../types';
 import {
-  Search, FolderOpen, AlertTriangle, CheckCircle2, Circle, Download, Building2,
+  Search, FolderOpen, AlertTriangle, CheckCircle2, Circle, Download, Building2, Copy,
 } from 'lucide-react';
+import { writeClipboard } from '../utils/clipboard';
 import { classifyOffice, OFFICE_LABEL, Office } from '../core/helpers/reqOffice';
 import { RequestProfile } from './RequestProfile';
 
@@ -157,6 +158,33 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
   const [office, setOffice] = useState<OfficeSel>('ALL');
   const [openReq, setOpenReq] = useState<string | null>(null);
 
+  /**
+   * The request number itself copies; the rest of the row opens the folder.
+   *
+   * The number is the thing that travels. It goes into a message to the
+   * office, into a subject line, into the search box of whatever system the
+   * other side uses - and typing KSAML2218 by hand off a screen is how a
+   * digit gets dropped and a question comes back about a request nobody can
+   * find.
+   *
+   * Which cell does what has to be learnable in one go, so it follows the
+   * ledger's rule: a cell copies what it shows. Opening stays on the row,
+   * where it already was, and the footer says both.
+   */
+  const [copied, setCopied] = useState('');
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(''), 1400);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  const copyReq = async (e: React.MouseEvent, reqNum: string) => {
+    // Without this the row underneath opens the folder as well, and the
+    // copy is hidden behind a modal nobody asked for.
+    e.stopPropagation();
+    if (await writeClipboard(reqNum)) setCopied(reqNum);
+  };
+
   const all = useMemo<Summary[]>(() => {
     const by = new Map<string, Ticket[]>();
     for (const t of tickets) {
@@ -241,6 +269,17 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
       {openReq && (
         <RequestProfile reqNum={openReq} tickets={tickets} onUpdateClosed={onUpdateClosed}
           onClose={() => setOpenReq(null)} />
+      )}
+
+      {/* Names what landed on the clipboard rather than only saying something
+          did: two requests a row apart differ by one digit. */}
+      {copied && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
+                        bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg
+                        text-[11px] font-mono max-w-md">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span className="truncate">Copied <span className="font-bold">{copied}</span></span>
+        </div>
       )}
 
       <div className="p-4 space-y-3 shrink-0 bg-white border-b border-slate-200">
@@ -339,10 +378,17 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
                         className={`border-b border-slate-100 cursor-pointer hover:bg-purple-50
                                     ${STATE_STYLE[r.state].row}`}>
                       <td className="px-3 py-2 font-bold text-purple-700 whitespace-nowrap">
-                        <span className="flex items-center gap-1.5">
-                          <FolderOpen className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                        <button type="button"
+                          onClick={e => copyReq(e, r.reqNum)}
+                          title={`Copy ${r.reqNum} — click anywhere else on the row to open it`}
+                          className="group flex items-center gap-1.5 font-bold text-purple-700
+                                     rounded px-1 -mx-1 hover:bg-purple-100 transition-colors">
+                          <FolderOpen className="w-3.5 h-3.5 text-purple-400 shrink-0
+                                                 group-hover:hidden" />
+                          <Copy className="w-3.5 h-3.5 text-purple-500 shrink-0 hidden
+                                           group-hover:block" />
                           {r.reqNum}
-                        </span>
+                        </button>
                       </td>
                       <td className="px-3 py-2">
                         <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold
@@ -399,7 +445,9 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
         <span className="text-orange-600">· {counts.OPEN} not closed</span>
         <span className="text-emerald-600">· {counts.DONE} closed</span>
         <span className="text-slate-300 hidden sm:inline">|</span>
-        <span className="text-slate-400 hidden sm:inline">click a row to open it</span>
+        <span className="text-slate-400 hidden sm:inline">
+          click a row to open it · click the request number to copy it
+        </span>
       </div>
     </div>
   );
