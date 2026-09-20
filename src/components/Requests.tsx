@@ -74,9 +74,87 @@ interface Props {
   onUpdateClosed?: (id: string, closed: boolean) => void;
 }
 
+/**
+ * The office filter's choices.
+ *
+ * 'NONE' is not a tidy-up. Seventy-odd req numbers in this ledger are not
+ * office codes at all - ADM, ACM, VOID, CANXX, CREDIT MEMO, a few people's
+ * names - and they carry real money. Without a bucket of their own they
+ * would be reachable from All and from nowhere else, which is how a row
+ * stops being looked at.
+ */
+type OfficeSel = 'ALL' | Exclude<Office, ''> | 'NONE';
+
+const OFFICE_TABS: [OfficeSel, string][] = [
+  ['ALL', 'All offices'], ['DUBAI', 'Dubai'], ['SAUDI', 'Saudi'],
+  ['EGYPT', 'Egypt'], ['NONE', 'No office'],
+];
+
+/**
+ * The three filters, each answering its own question.
+ *
+ * The office comes off the req number's prefix, so it is already known for
+ * every request and costs nothing to filter on - KSAML is Saudi, UAEVP is
+ * Dubai, EGPML is Egypt. What it buys is the question the offices actually
+ * ask: not "what is outstanding" but "what is outstanding on OUR files".
+ *
+ * Out here rather than inside the component because the counting rule below
+ * is the part that can quietly go wrong, and a rule nobody can test is a
+ * rule that only gets checked when somebody notices the number is odd.
+ */
+export type Facet = Pick<Summary, 'state' | 'office' | 'reqNum' | 'sources'>;
+
+export const matchOffice = (r: Facet, sel: OfficeSel) =>
+  sel === 'ALL' || (sel === 'NONE' ? !r.office : r.office === sel);
+
+export const matchState = (r: Facet, sel: 'ALL' | State) => sel === 'ALL' || r.state === sel;
+
+export const matchSearch = (r: Facet, q: string) => {
+  const s = q.trim().toUpperCase();
+  return !s || r.reqNum.toUpperCase().includes(s)
+    || r.sources.some(x => (x || '').toUpperCase().includes(s));
+};
+
+export function selectRequests<T extends Facet>(
+  list: T[], only: 'ALL' | State, office: OfficeSel, search: string,
+): T[] {
+  return list.filter(r => matchState(r, only) && matchOffice(r, office) && matchSearch(r, search));
+}
+
+/**
+ * Each row of tabs counts what the OTHER filters have already left.
+ *
+ * A tab reading "Part closed 8" while the list below it shows two is worse
+ * than no number at all: the eight is true of the whole ledger and false of
+ * what is on screen, and the only way to tell which was meant is to click it
+ * and look. So the state tabs count within the chosen office, and the office
+ * tabs count within the chosen state.
+ */
+export function stateCounts(list: Facet[], office: OfficeSel, search: string) {
+  const base = list.filter(r => matchOffice(r, office) && matchSearch(r, search));
+  return {
+    ALL: base.length,
+    PART: base.filter(r => r.state === 'PART').length,
+    OPEN: base.filter(r => r.state === 'OPEN').length,
+    DONE: base.filter(r => r.state === 'DONE').length,
+  } as Record<'ALL' | State, number>;
+}
+
+export function officeTabCounts(list: Facet[], only: 'ALL' | State, search: string) {
+  const base = list.filter(r => matchState(r, only) && matchSearch(r, search));
+  return {
+    ALL: base.length,
+    DUBAI: base.filter(r => r.office === 'DUBAI').length,
+    SAUDI: base.filter(r => r.office === 'SAUDI').length,
+    EGYPT: base.filter(r => r.office === 'EGYPT').length,
+    NONE: base.filter(r => !r.office).length,
+  } as Record<OfficeSel, number>;
+}
+
 export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
   const [search, setSearch] = useState('');
   const [only, setOnly] = useState<'ALL' | State>('ALL');
+  const [office, setOffice] = useState<OfficeSel>('ALL');
   const [openReq, setOpenReq] = useState<string | null>(null);
 
   const all = useMemo<Summary[]>(() => {
@@ -121,20 +199,16 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
       || a.reqNum.localeCompare(b.reqNum));
   }, [tickets]);
 
-  const shown = useMemo(() => {
-    const q = search.trim().toUpperCase();
-    return all
-      .filter(r => only === 'ALL' || r.state === only)
-      .filter(r => !q || r.reqNum.toUpperCase().includes(q)
-        || r.sources.some(s => s.toUpperCase().includes(q)));
-  }, [all, search, only]);
+  const shown = useMemo(
+    () => selectRequests(all, only, office, search),
+    [all, search, only, office]);
 
-  const counts = useMemo(() => ({
-    ALL: all.length,
-    PART: all.filter(r => r.state === 'PART').length,
-    OPEN: all.filter(r => r.state === 'OPEN').length,
-    DONE: all.filter(r => r.state === 'DONE').length,
-  }), [all]);
+  const counts = useMemo(() => stateCounts(all, office, search), [all, office, search]);
+  const officeCounts = useMemo(() => officeTabCounts(all, only, search), [all, only, search]);
+
+  /** Whether the ledger has unfiled requests at all, so the tab does not
+   *  appear and vanish as the other filters move. */
+  const hasUnfiled = useMemo(() => all.some(r => !r.office), [all]);
 
   /** The list as it stands, filter and order included — what is on screen is
    *  what lands in the file. */
@@ -200,6 +274,25 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
           ))}
         </div>
 
+        {/* The office, on its own line rather than in among the states: they
+            are two different questions and reading them as one row invites
+            clicking one thinking it does the other. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Building2 className="w-3.5 h-3.5 text-slate-300" />
+          {OFFICE_TABS.filter(([k]) => k !== 'NONE' || hasUnfiled).map(([k, label]) => (
+            <button key={k} onClick={() => setOffice(k)}
+              title={k === 'NONE'
+                ? 'Req numbers that are not an office code — ADM, VOID, credit memos, names'
+                : undefined}
+              className={`text-[10px] font-bold uppercase px-2.5 py-1.5 rounded border transition
+                ${office === k
+                  ? 'bg-violet-600 text-white border-violet-600'
+                  : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+              {label} <span className="opacity-60">{officeCounts[k]}</span>
+            </button>
+          ))}
+        </div>
+
         {counts.PART > 0 && only !== 'PART' && (
           <button onClick={() => setOnly('PART')}
             className="w-full text-left bg-amber-50 border border-amber-300 rounded-lg px-4 py-2.5
@@ -217,7 +310,9 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
       <div className="flex-1 min-h-0 overflow-auto p-4">
         {shown.length === 0 ? (
           <p className="text-xs text-slate-400 italic text-center py-10">
-            No request matches.
+            No request matches
+            {office !== 'ALL' && <> in {office === 'NONE' ? 'the unfiled group'
+              : OFFICE_LABEL[office as Exclude<Office, ''>]}</>}.
           </p>
         ) : (
           <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
@@ -294,7 +389,11 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
 
       <div className="px-4 py-2 bg-white border-t border-slate-200 shrink-0 text-[10px]
                       font-mono text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
-        <span>{shown.length} of {all.length} requests</span>
+        <span>
+          {shown.length} of {all.length} requests
+          {office !== 'ALL' && ` · ${office === 'NONE' ? 'no office'
+            : OFFICE_LABEL[office as Exclude<Office, ''>]}`}
+        </span>
         <span className="text-slate-300">|</span>
         <span className="text-amber-700">{counts.PART} part closed</span>
         <span className="text-orange-600">· {counts.OPEN} not closed</span>
