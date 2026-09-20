@@ -10,7 +10,7 @@
  */
 import * as XLSX from 'xlsx';
 import { extractPdfRows, pdfRowsToCsv } from './helpers/pdfText';
-import { Ticket } from '../types';
+import { Ticket, FieldChange } from '../types';
 
 /* ─────────────────────────────────────────────
    DUPLICATE DETECTION
@@ -78,6 +78,42 @@ function documentKey(t: Ticket, withAirline: boolean): string {
  * Only fields the incoming row leaves blank are taken. Nothing here reaches
  * the database.
  */
+/** The fields an import is allowed to fill in, and what to call them. */
+const TRACKED: [keyof Ticket, string][] = [
+  ['reqNum', 'Req num'],
+  ['pnr', 'PNR'],
+  ['passengerName', 'Passenger'],
+  ['route', 'Route'],
+  ['cabinRaw', 'Cabin'],
+];
+
+/**
+ * An update, carrying what it is about to change.
+ *
+ * "1 req update" tells you a record is about to be overwritten and nothing
+ * else — not which record, not which field, and not what it holds today. On a
+ * twenty-five row preview that is a number you either trust blindly or go
+ * hunting for, and the whole point of a preview is that you should have to do
+ * neither.
+ *
+ * Only fields the save path will actually write are listed, and only when the
+ * incoming value differs from what is held: an import fills gaps, so a blank
+ * incoming field changes nothing and does not belong in a list of changes.
+ */
+function asUpdate(incoming: Ticket, existing: Ticket): Ticket {
+  const changes: FieldChange[] = [];
+  for (const [field, label] of TRACKED) {
+    const to = String(incoming[field] ?? '').trim();
+    const from = String(existing[field] ?? '').trim();
+    if (to && to !== from) changes.push({ field: label, from, to });
+  }
+  // Serial is the one field an import backfills without ever replacing, so it
+  // only counts as a change when the record has none.
+  if (incoming.serial != null && existing.serial == null)
+    changes.push({ field: 'Serial', from: '', to: String(incoming.serial) });
+  return { ...incoming, id: existing.id, changes };
+}
+
 function asHeld(incoming: Ticket, held?: Ticket): Ticket {
   if (!held) return { ...incoming, isDuplicate: true };
   const keep = (a?: string, b?: string) => (a?.trim() ? a : b) ?? '';
@@ -279,7 +315,7 @@ export function detectDuplicatesAgainstExisting(
     if (!existing && !isSettlementSource(t.source)) {
       const doc = findDocument(t);
       if (doc && isSettlementSource(doc.source)) {
-        if (t.reqNum && !doc.reqNum?.trim()) updates.push({ ...t, id: doc.id });
+        if (t.reqNum && !doc.reqNum?.trim()) updates.push(asUpdate(t, doc));
         else duplicates.push(asHeld(t, doc));
         return;
       }
@@ -358,7 +394,7 @@ export function detectDuplicatesAgainstExisting(
         && (existing.status || '').toUpperCase() === status
         && !differs(Math.abs(existing.amount), Math.abs(t.amount));
       if (existingKeys.has(key) || sameCredit) {
-        if (existing && enriches) updates.push({ ...t, id: existing.id });
+        if (existing && enriches) updates.push(asUpdate(t, existing));
         else duplicates.push(asHeld(t, existing));
       } else {
         fresh.push(t);
@@ -368,16 +404,16 @@ export function detectDuplicatesAgainstExisting(
 
     if (existingKeys.has(key)) {
       if (existing && enriches) {
-        updates.push({ ...t, id: existing.id });
+        updates.push(asUpdate(t, existing));
       } else {
         duplicates.push(asHeld(t, existing));
       }
     } else if (!existing) {
       fresh.push(t);
     } else if (enriches) {
-      updates.push({ ...t, id: existing.id });
+      updates.push(asUpdate(t, existing));
     } else if (t.reqNum && existing.reqNum && t.reqNum !== existing.reqNum) {
-      updates.push({ ...t, id: existing.id });
+      updates.push(asUpdate(t, existing));
     } else {
       duplicates.push(asHeld(t, existing));
     }

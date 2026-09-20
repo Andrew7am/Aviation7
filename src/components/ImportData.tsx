@@ -1,6 +1,6 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import Papa from 'papaparse';
-import { Ticket } from '../types';
+import { Ticket, FieldChange } from '../types';
 import { useImport, ImportMeta } from '../hooks/useImport';
 import { ClassifiedRow, ReconClass, RECON_LABEL } from '../core/ImportEngine';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
@@ -129,14 +129,30 @@ export const ImportData: React.FC<ImportDataProps> = ({
   }, [preview]);
   const verdictFor = (ticketNo: string, amount: number) => verdicts.get(verdictKey(ticketNo, amount));
 
+  /**
+   * Which slice of the preview the table is showing.
+   *
+   * The counts along the top say how many rows are about to be created,
+   * overwritten or skipped, and until now that was all they said: finding the
+   * one row behind "1 REQ UPDATES" meant scrolling twenty-five rows looking
+   * for a blue stripe. A count you cannot open is a count you either trust or
+   * verify by hand, and a preview exists so you have to do neither.
+   */
+  type Slice = 'all' | 'new' | 'updates' | 'duplicates' | 'settlements' | 'topups';
+  const [slice, setSlice] = useState<Slice>('all');
+  // A slice that no longer exists would show an empty table with no way back.
+  useEffect(() => setSlice('all'), [preview]);
+
   // Flatten preview into one renderable list, tagging dup/update for styling
   const rows = preview
     ? [
-        ...preview.topUps,
-        ...preview.fresh,
-        ...preview.updates.map(t => ({ ...t, _isUpdate: true } as any)),
-        ...preview.settlements.map(t => ({ ...t, _isSettlement: true } as any)),
-        ...preview.duplicates,
+        ...(slice === 'all' || slice === 'topups' ? preview.topUps : []),
+        ...(slice === 'all' || slice === 'new' ? preview.fresh : []),
+        ...(slice === 'all' || slice === 'updates'
+          ? preview.updates.map(t => ({ ...t, _isUpdate: true } as any)) : []),
+        ...(slice === 'all' || slice === 'settlements'
+          ? preview.settlements.map(t => ({ ...t, _isSettlement: true } as any)) : []),
+        ...(slice === 'all' || slice === 'duplicates' ? preview.duplicates : []),
       ]
     : [];
 
@@ -240,7 +256,17 @@ export const ImportData: React.FC<ImportDataProps> = ({
                 {rows.filter((t: any) => !t.isDuplicate && t.status !== 'FUND').length} tickets
               </span>
               {preview!.topUps.length > 0 && <span className="bg-emerald-100 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.topUps.length} TOP-UPS</span>}
-              {preview!.updates.length > 0 && <span className="bg-blue-100 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.updates.length} REQ UPDATES</span>}
+              {preview!.updates.length > 0 && (
+                <button
+                  onClick={() => setSlice(slice === 'updates' ? 'all' : 'updates')}
+                  title="Show only the rows this import will overwrite"
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition
+                    ${slice === 'updates'
+                      ? 'bg-blue-600 text-white ring-2 ring-blue-300'
+                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>
+                  {preview!.updates.length} REQ UPDATES
+                </button>
+              )}
               {preview!.voided.length > 0 && <span title="Voided / cancelled documents (VOID, CANN, CANX, RFNX) — they settle at zero and are discarded, not saved" className="bg-slate-200 text-slate-600 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.voided.length} VOID DROPPED</span>}
               {preview!.settlements.length > 0 && <span title="Invoice lines for tickets already uploaded from the portal — these update that ticket instead of adding a second row" className="bg-violet-100 text-violet-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.settlements.length} SETTLED FROM INVOICE</span>}
               {preview!.duplicates.length > 0 && <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.duplicates.length} DUPS SKIPPED</span>}
@@ -270,7 +296,18 @@ export const ImportData: React.FC<ImportDataProps> = ({
                       <td className="px-3 py-2 font-bold select-all whitespace-nowrap">
                         {t.ticketNo}
                         {isDup && <span className="ml-1 bg-amber-400 text-black px-1 rounded text-[8px] font-bold">DUP</span>}
-                        {isUpd && <span className="ml-1 bg-blue-500 text-white px-1 rounded text-[8px] font-bold">UPD</span>}
+                        {isUpd && (
+                          <span
+                            title={(t.changes ?? []).length
+                              ? 'This import will change:\n'
+                                + (t.changes as FieldChange[])
+                                    .map(ch => `  ${ch.field}: ${ch.from || '(empty)'} -> ${ch.to}`)
+                                    .join('\n')
+                              : 'This row matched an existing record and will update it.'}
+                            className="ml-1 bg-blue-500 text-white px-1 rounded text-[8px] font-bold cursor-help">
+                            UPD{(t.changes ?? []).length > 1 ? ` ${(t.changes as FieldChange[]).length}` : ''}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2"><span className="px-1.5 py-0.5 rounded text-[9px] font-sans font-bold uppercase bg-slate-100 text-slate-700">{t.source || '—'}</span></td>
                       <td className="px-3 py-2">{t.status ? <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${STATUS_COLORS[t.status] ?? 'bg-slate-100 text-slate-500'}`}>{t.status}</span> : <span className="text-slate-300">—</span>}</td>
@@ -285,7 +322,26 @@ export const ImportData: React.FC<ImportDataProps> = ({
                       <td className="px-3 py-2 text-slate-400 text-[9px]">{t.currency || sourceToCurrency(t.source || '')}</td>
                       <td className="px-3 py-2 text-slate-600">{t.pnr || '—'}</td>
                       <td className="px-3 py-2 text-slate-500 max-w-[120px] truncate">{t.passengerName || '—'}</td>
-                      <td className={`px-3 py-2 font-bold ${t.reqNum ? 'text-blue-600' : 'text-red-400 italic'}`}>{t.reqNum || 'MISSING'}</td>
+                      {/* On an update row the new value alone is the least
+                          useful thing to print: what matters is what it
+                          replaces. A gap being filled and a value being
+                          overwritten look identical otherwise, and only one
+                          of them is worth stopping for. */}
+                      <td className={`px-3 py-2 font-bold ${t.reqNum ? 'text-blue-600' : 'text-red-400 italic'}`}>
+                        {(() => {
+                          const was = (t.changes ?? []).find((ch: FieldChange) => ch.field === 'Req num');
+                          if (!was) return t.reqNum || 'MISSING';
+                          return (
+                            <span className="whitespace-nowrap">
+                              {was.from
+                                ? <span className="text-slate-400 line-through font-normal">{was.from}</span>
+                                : <span className="text-slate-300 font-normal italic">none</span>}
+                              <span className="text-slate-400 mx-1">→</span>
+                              <span className="text-blue-600">{was.to}</span>
+                            </span>
+                          );
+                        })()}
+                      </td>
                       <td className="px-3 py-2">
                         {(() => {
                           const v = verdictFor(t.ticketNo, t.amount);

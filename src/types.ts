@@ -1,6 +1,26 @@
 import { SupportedCurrency } from './core/helpers/resolveCurrency';
 import { NormalizedStatus } from './core/helpers/normalizeStatus';
 
+/** One field an import is about to overwrite, and what it holds today. */
+export interface FieldChange {
+  /** The name as a person reads it on screen, not the property name. */
+  field: string;
+  /** Empty when the record simply had nothing there — a gap being filled
+   *  rather than a value being replaced, which is a different thing to see. */
+  from: string;
+  to: string;
+}
+
+/** One field an import is about to overwrite, and what it holds today. */
+export interface FieldChange {
+  /** The name as a person reads it on screen, not the property name. */
+  field: string;
+  /** Empty when the record simply had nothing there — a gap being filled
+   *  rather than a value being replaced, which is a different thing to see. */
+  from: string;
+  to: string;
+}
+
 export interface Ticket {
   id: string;
   ticketNo: string;
@@ -25,6 +45,12 @@ export interface Ticket {
   balanceAfter?: number;
   importTime?: string;
   createdAt?: string;
+  /** What an incoming row will change on the record it matched, captured
+   *  before the change is applied. Display only, and only ever set on an
+   *  import preview's update rows: the count of updates tells you something
+   *  is about to be overwritten, and this is what says what. Never persisted
+   *  — the save path builds its patch field by field. */
+  changes?: FieldChange[];
   /** IATA BSP "Serial" column — a running sequence number in the vendor's own
    *  report. Lets the user spot gaps (missing tickets) by checking for skips
    *  in the sequence. Only populated for vendors whose report has one. */
