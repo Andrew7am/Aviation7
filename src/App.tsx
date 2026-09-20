@@ -6,6 +6,7 @@ import { AlertBanner } from './components/AlertBanner';
 import { Shell } from './components/Shell';
 import { Dashboard } from './components/Dashboard';
 import { TicketTable } from './components/TicketTable';
+import { Requests } from './components/Requests';
 import { ImportData } from './components/ImportData';
 import { VendorBalances } from './components/VendorBalances';
 import { VendorStatements } from './components/VendorStatements';
@@ -24,7 +25,7 @@ import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
-  ShieldCheck, Circle, Settings as SettingsIcon, FileText,
+  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen,
 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
@@ -212,10 +213,31 @@ function MainApp({ user }: { user: User }) {
     onBulkUpdateClosed:  handleBulkUpdateClosed,
   };
 
+  /**
+   * Requests whose rows are partly closed and partly not.
+   *
+   * The badge carries this rather than the number of requests, because the
+   * total is a fact about how much work exists and this is a fact about work
+   * that is being missed: a request with seventy-two closed rows and two open
+   * ones reads as finished on every other screen.
+   */
+  const partClosedCount = React.useMemo(() => {
+    const by = new Map<string, { closed: number; open: number }>();
+    for (const t of tickets) {
+      const k = (t.reqNum || '').trim().toUpperCase();
+      if (!k || (t.status || '').toUpperCase() === 'FUND') continue;
+      const g = by.get(k) ?? { closed: 0, open: 0 };
+      t.closed ? g.closed++ : g.open++;
+      by.set(k, g);
+    }
+    return [...by.values()].filter(g => g.closed > 0 && g.open > 0).length;
+  }, [tickets]);
+
   type NavItem = { id: ViewState; label: string; icon: React.ReactNode; badge?: number; badgeColor?: 'red' | 'amber' | 'slate' };
   const NAV: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard',       icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'tickets',   label: 'All Tickets',     icon: <List className="w-4 h-4" />, badge: tickets.length },
+    { id: 'requests',  label: 'Requests',        icon: <FolderOpen className="w-4 h-4" />, badge: partClosedCount || undefined, badgeColor: 'amber' },
     { id: 'missing',   label: 'Action Required', icon: <AlertTriangle className="w-4 h-4" />, badge: missingReqCount, badgeColor: 'red' },
     { id: 'notclosed', label: 'Not Closed',      icon: <Circle className="w-4 h-4" />, badge: notClosedCount || undefined, badgeColor: 'amber' },
     ...(isAdmin ? [{ id: 'import' as ViewState, label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
@@ -255,6 +277,7 @@ function MainApp({ user }: { user: User }) {
 
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
       {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} {...(isAdmin ? writeHandlers : {})} />}
+      {view === 'requests'  && <Requests tickets={tickets} />}
       {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}
       {view === 'notclosed' && <TicketTable title="Not Closed — Still To Reconcile" tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : {})} />}
       {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}

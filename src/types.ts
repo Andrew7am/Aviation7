@@ -11,16 +11,6 @@ export interface FieldChange {
   to: string;
 }
 
-/** One field an import is about to overwrite, and what it holds today. */
-export interface FieldChange {
-  /** The name as a person reads it on screen, not the property name. */
-  field: string;
-  /** Empty when the record simply had nothing there — a gap being filled
-   *  rather than a value being replaced, which is a different thing to see. */
-  from: string;
-  to: string;
-}
-
 export interface Ticket {
   id: string;
   ticketNo: string;
@@ -72,7 +62,7 @@ export interface Ticket {
   channel?: string;
 }
 
-export type ViewState = 'dashboard' | 'tickets' | 'missing' | 'notclosed' | 'import' | 'vendors' | 'statements' | 'reports' | 'history' | 'activity' | 'settings';
+export type ViewState = 'dashboard' | 'tickets' | 'requests' | 'missing' | 'notclosed' | 'import' | 'vendors' | 'statements' | 'reports' | 'history' | 'activity' | 'settings';
 
 /**
  * A vendor's own account of a period, as their statement prints it.
