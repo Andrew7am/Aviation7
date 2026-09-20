@@ -508,5 +508,109 @@ console.log('\n22. A combined request counts under both its halves');
   check('nothing to settle', r.clean, true);
 }
 
+/* ────────────────────────────────────────────────────────────────────────── */
+console.log('\n23. Typing the request their sheet does not carry');
+{
+  // Their real export has no request column. One typed request is a claim
+  // about the whole sheet, and every check should then run exactly as it
+  // would on an export that said it.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status',
+    '065-5513059078,YSLM73,Issued',
+    '065-5513059077,YQX75R,Issued',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', reqNum: 'KSAML2064' }),
+  ];
+
+  const without = compareTeamSheet(sheet, ledger);
+  check('without it the filing check cannot run', without.reqSource, 'none');
+  check('and nothing is claimed about filing', without.counts.REQ_DIFFERS, 0);
+
+  const withIt = compareTeamSheet(sheet, ledger, ['KSAML2053']);
+  check('typed is recorded as typed',  withIt.reqSource, 'typed');
+  check('and never as their file',     withIt.sheetHasReq, false);
+  check('what was typed is carried',   withIt.declared, ['KSAML2053']);
+  // The one filed elsewhere is now findable, which is the whole point.
+  check('the misfiling surfaces',      withIt.counts.REQ_DIFFERS, 1);
+  check('on the right ticket',
+    withIt.findings.find(f => f.verdict === 'REQ_DIFFERS')?.serial, '5513059077');
+  check('the other agrees',            withIt.counts.OK, 1);
+  check('and it shows as their request',
+    withIt.findings.find(f => f.verdict === 'REQ_DIFFERS')?.theirReq, 'KSAML2053');
+}
+
+console.log('\n24. What is typed fills gaps and never overrides their file');
+{
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5513059078,YSLM73,Issued,KSAML2064',   // their file says so
+    '065-5513059077,YQX75R,Issued,',            // their file is silent
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2064' }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', reqNum: 'KSAML2053' }),
+  ];
+  const r = compareTeamSheet(sheet, ledger, ['KSAML2053']);
+  // The stated row keeps what their file said, so it still agrees with ours.
+  check('their own request wins', r.counts.REQ_DIFFERS, 0);
+  check('and the blank row took the typed one', r.counts.OK, 2);
+  // Their file did state a request somewhere, so that is what the screen
+  // should say it is reading.
+  check('the source is their sheet', r.reqSource, 'sheet');
+}
+
+console.log('\n25. Several requests typed for one sheet');
+{
+  // Nothing says which row belongs to which, so the only honest question
+  // left is whether a ticket is filed under one of them at all.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status',
+    '065-5513059078,YSLM73,Issued',
+    '065-5513059077,YQX75R,Issued',
+    '065-5513059076,ZZCL45,Issued',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', reqNum: 'KSAML2064' }),
+    tkt({ ticketNo: '5513059076', pnr: 'ZZCL45', reqNum: 'UAEVP711' }),
+  ];
+  const r = compareTeamSheet(sheet, ledger, ['KSAML2053', 'KSAML2064']);
+  check('both declared are in scope',
+    r.requests.includes('KSAML2053') && r.requests.includes('KSAML2064'), true);
+  // Two are inside the declared set, so nothing is said about which of the
+  // two each belongs to. The third is in neither.
+  check('only the outsider is questioned', r.counts.REQ_DIFFERS, 1);
+  check('and it is the right one',
+    r.findings.find(f => f.verdict === 'REQ_DIFFERS')?.serial, '5513059076');
+  check('the note says why',
+    r.findings.find(f => f.verdict === 'REQ_DIFFERS')?.note.includes('not among them'), true);
+  check('the declared set is carried', r.declared, ['KSAML2053', 'KSAML2064']);
+
+  // A request related to a declared one still counts as inside it.
+  const rel = compareTeamSheet(sheet, [
+    ...ledger.slice(0, 2),
+    tkt({ ticketNo: '5513059076', pnr: 'ZZCL45', reqNum: 'SA1157' }),
+    tkt({ ticketNo: '5599999999', pnr: 'AAAAAA', reqNum: 'KSAML2053-SA1157' }),
+  ], ['KSAML2053', 'KSAML2064']);
+  check('a related request is not an outsider', rel.counts.REQ_DIFFERS, 0);
+}
+
+console.log('\n26. A typed request is cleaned the same way a read one is');
+{
+  const sheet = parseTeamSheet('Ticket Number,PNR,Status\n065-5513059078,YSLM73,Issued').rows;
+  const ledger = [tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' })];
+  check('spacing and case', compareTeamSheet(sheet, ledger, ['ksaml 2053']).counts.OK, 1);
+  check('padding',          compareTeamSheet(sheet, ledger, ['  KSAML2053 ']).counts.OK, 1);
+  // An empty box is not a declaration.
+  check('blank is ignored', compareTeamSheet(sheet, ledger, ['', '  ']).reqSource, 'none');
+  check('and so is nothing at all', compareTeamSheet(sheet, ledger, []).reqSource, 'none');
+  // A declared request with no tickets at all is still worth showing: it is
+  // the request somebody expected this sheet to fill.
+  const empty = compareTeamSheet([], [], ['KSAML9999']);
+  check('a declared request is in scope even when empty', empty.requests, ['KSAML9999']);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

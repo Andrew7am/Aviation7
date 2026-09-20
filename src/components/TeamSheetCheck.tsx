@@ -1,11 +1,11 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { Ticket } from '../types';
 import {
   Upload, AlertTriangle, CheckCircle2, X, Loader2, FileSpreadsheet, Download,
   ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen,
 } from 'lucide-react';
 import { readFileAsText } from '../core/ImportEngine';
-import { parseTeamSheet } from '../core/parsers/teamSheet';
+import { parseTeamSheet, TeamSheetRow } from '../core/parsers/teamSheet';
 import {
   compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK,
 } from '../core/helpers/teamSheetCompare';
@@ -192,16 +192,43 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
-  const [report, setReport] = useState<TeamSheetReport | null>(null);
+  const [rows, setRows] = useState<TeamSheetRow[] | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
+  /**
+   * The request their sheet is for, typed by hand.
+   *
+   * Their export does not carry it today, and without it the main question
+   * - is this ticket in the same file on both sides - cannot be asked at
+   *   all. Typing it costs one field and turns the check back on.
+   *
+   * It is a person's claim rather than a column in their file, so it is
+   * labelled as one wherever it shows, and it never overwrites a request
+   * their sheet does state.
+   *
+   * Several may be given, separated by commas, for a sheet covering more
+   * than one. That cannot say which row belongs to which, so the filing
+   * check narrows to the question it can still answer honestly: is this
+   * ticket filed under one of them at all.
+   */
+  const [declaredText, setDeclaredText] = useState('');
+  const declared = useMemo(
+    () => declaredText.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean),
+    [declaredText]);
+
+  /* Recomputed rather than re-read: changing the request after the file is
+     in must not mean finding the file again. */
+  const report = useMemo<TeamSheetReport | null>(
+    () => (rows ? compareTeamSheet(rows, tickets, declared) : null),
+    [rows, tickets, declared]);
+
   const run = async (file: File) => {
-    setBusy(true); setError(''); setReport(null); setFileName(file.name);
+    setBusy(true); setError(''); setRows(null); setFileName(file.name);
     try {
       const text = await readFileAsText(file);
       const parsed = parseTeamSheet(text);
       if (parsed.problem) { setError(parsed.problem); return; }
-      setReport(compareTeamSheet(parsed.rows, tickets));
+      setRows(parsed.rows);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That file could not be read.');
     } finally {
@@ -235,7 +262,10 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
       [],
       ['THEIR SHEET', fileName],
       ['Requests covered', report.requests.join(', ')],
-      ['Their sheet named its requests', report.sheetHasReq ? 'yes' : 'NO'],
+      ['Request taken from',
+        report.reqSource === 'sheet' ? 'their own export'
+        : report.reqSource === 'typed' ? `typed by hand: ${report.declared.join(', ')}`
+        : 'nowhere — the filing check did not run'],
       ['Requests that agree',
         `${report.byRequest.filter(r => r.agrees).length} of ${report.byRequest.length}`],
       ['Rows on their sheet', report.theirRows],
@@ -276,6 +306,27 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
             <Download className="w-3.5 h-3.5" /> Export
           </button>
         )}
+      </div>
+
+      {/* Before the drop zone, because it is meant to be filled in first. */}
+      <div className="bg-white border border-slate-200 rounded-lg px-4 py-3">
+        <label className="flex flex-wrap items-center gap-3">
+          <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider shrink-0">
+            Request number
+          </span>
+          <input
+            value={declaredText}
+            onChange={e => setDeclaredText(e.target.value.toUpperCase())}
+            placeholder="KSAML2053"
+            className="font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded w-56
+                       focus:outline-none focus:ring-2 focus:ring-purple-500/20
+                       focus:border-purple-400" />
+          <span className="text-[11px] text-slate-500">
+            Which request their sheet is for. Their export does not carry it, so typing it
+            here turns the filing check on. Several, separated by commas, for a sheet
+            covering more than one.
+          </span>
+        </label>
       </div>
 
       <div
@@ -337,17 +388,37 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
 
           {/* Said plainly rather than hidden: without their request column the
               screen cannot answer the question it exists to answer. */}
-          {!report.sheetHasReq && (
+          {report.reqSource === 'none' && (
             <div className="bg-slate-100 border border-slate-300 rounded-lg px-4 py-3
                             flex items-start gap-2.5">
               <Info className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
               <span className="text-xs text-slate-700 leading-relaxed">
-                <b>Their export carries no request number.</b> The tickets still match, so
-                what is missing on each side is real — but the main question, whether a
-                ticket sits under the same request on both sides, cannot be asked at all.
-                Export their sheet again with the request column in it and every check below
-                gets sharper. Any column named Req, Req Num, Request or Request Number is
-                read.
+                <b>No request number, so the filing check did not run.</b> The tickets still
+                match, and what is missing on each side is real — but whether a ticket sits
+                under the same request on both sides cannot be asked. Type the request in
+                the field above, or export their sheet again with a column named Req, Req
+                Num, Request or Request Number.
+              </span>
+            </div>
+          )}
+
+          {/* A typed request is a person's claim, never presented as though
+              their file had said it. */}
+          {report.reqSource === 'typed' && (
+            <div className="bg-sky-50 border border-sky-200 rounded-lg px-4 py-3
+                            flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-sky-600 mt-0.5 shrink-0" />
+              <span className="text-xs text-sky-900 leading-relaxed">
+                {report.declared.length === 1 ? (
+                  <>Read as request <b className="font-mono">{report.declared[0]}</b> —
+                  from what you typed, not from their file. Every row on their sheet is
+                  being treated as belonging to it.</>
+                ) : (
+                  <>Read as covering <b className="font-mono">{report.declared.join(', ')}</b> —
+                  from what you typed, not from their file. With more than one, nothing says
+                  which row belongs to which, so a ticket is only questioned when it is
+                  filed under none of them.</>
+                )}
               </span>
             </div>
           )}

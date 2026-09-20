@@ -62,6 +62,24 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * the answer. A sheet carrying its own request numbers widens the boundary
  * to those as well.
  *
+ * WHEN THEIR EXPORT DOES NOT CARRY THE REQUEST
+ *
+ * It usually does not, today. So the request can be DECLARED instead - the
+ * person running the check types the request their sheet is for, before the
+ * file goes in, and the comparison proceeds as though their export had said
+ * it.
+ *
+ * That is a claim by a person rather than a column in a file, so it is
+ * labelled as one everywhere it shows, and it behaves differently depending
+ * on how much is claimed. One request declared means "this whole sheet is
+ * that request", and every check runs. Several declared means "this sheet
+ * covers these requests", which cannot say which row is which - so the
+ * per-ticket filing check narrows to the honest question it can still
+ * answer: is this ticket filed under one of them at all.
+ *
+ * A row that states its own request always keeps it. What somebody typed
+ * fills gaps; it never overrides their file.
+ *
  * A VOID IS NOT A GAP
  *
  * A ticket issued and voided the same day never reaches the supplier's
@@ -253,6 +271,17 @@ export interface TeamSheetReport {
    * so rather than showing a clean result that means less than it looks.
    */
   sheetHasReq: boolean;
+  /**
+   * Where the request on their side came from.
+   *
+   * 'sheet' - their export stated it. 'typed' - somebody declared it before
+   * the file went in. 'none' - nobody said, and the filing check could not
+   * run. Carried so the screen can never present a typed claim as though
+   * the file had said it.
+   */
+  reqSource: 'sheet' | 'typed' | 'none';
+  /** The requests declared by hand, as given. */
+  declared: string[];
   /** The requests the comparison covered, derived from the matches. */
   requests: string[];
   counts: Record<Verdict, number>;
@@ -276,7 +305,23 @@ const isRefund = (t: Ticket) =>
  *  sheet, so it takes no part in this. */
 const isTicket = (t: Ticket) => (t.status || '').toUpperCase() !== 'FUND';
 
-export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamSheetReport {
+export function compareTeamSheet(
+  sheet: TeamSheetRow[], ledger: Ticket[], declaredRaw: string[] = [],
+): TeamSheetReport {
+  /* What somebody typed before dropping the file. Cleaned the same way a
+     request read from a file is, so "ksaml 2053" and "KSAML2053" are one
+     thing here too. */
+  const declared = [...new Set(declaredRaw.map(x => (x || '').trim()).filter(x => reqKey(x)))];
+  const declaredKeys = new Set(declared.flatMap(reqParts));
+
+  /* One request declared is a claim about every row: this sheet is that
+     request. It is written onto the rows that do not state their own, so
+     every check below runs exactly as it would on an export that said it.
+     Several declared cannot say which row is which, so nothing is written
+     and the narrower check further down does what it can. */
+  if (declared.length === 1)
+    sheet = sheet.map(r => (reqKey(r.reqNum) ? r : { ...r, reqNum: declared[0] }));
+
   /* ── index our side by serial ─────────────────────────────────────────── */
   const ourBySerial = new Map<string, Ticket[]>();
   for (const t of ledger) {
@@ -296,7 +341,11 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
     theirBySerial.get(r.serial)!.push(r);
   }
 
-  const sheetHasReq = sheet.some(r => !!reqKey(r.reqNum));
+  // Their FILE, not what was typed onto it: the screen has to be able to
+  // say which of the two it is looking at.
+  const sheetHasReq = declared.length === 1
+    ? sheet.some(r => reqKey(r.reqNum) && !sameReq(r.reqNum, declared[0]))
+    : sheet.some(r => !!reqKey(r.reqNum));
 
   /* Which requests belong together, read out of the ledger - and out of
      their sheet too, since a combined request may be written on either
@@ -319,6 +368,9 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
     for (const r of rows) addReq(r.reqNum);
   }
   for (const r of noTicket) addReq(r.reqNum);
+  // Declared requests are in scope whether or not a ticket reached them:
+  // an empty request that should have held tickets is worth seeing.
+  for (const d of declared) addReq(d);
 
   const findings: Finding[] = [];
   let matched = 0;
@@ -377,6 +429,19 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
         continue;
       }
       // SAME: either the very same request, or one field naming both.
+    } else if (!theirReq && ourReq && declaredKeys.size > 0) {
+      /* Several requests were declared for the sheet as a whole. Which row
+         belongs to which cannot be known, so the only honest question left
+         is whether this ticket is filed under one of them at all - and a
+         ticket that is not is in neither of the files this sheet covers. */
+      const inDeclared = reqParts(ourReq).some(k => declaredKeys.has(k))
+        || declared.some(d => relatedReq(ourReq, d, relations) !== 'DIFFERENT');
+      if (!inDeclared) {
+        findings.push({ ...base, verdict: 'REQ_DIFFERS',
+          note: `We file it under ${ourReq}. This sheet was declared as`
+              + ` ${declared.join(', ')}, and ${ourReq} is not among them.` });
+        continue;
+      }
     }
 
     // Their sheet names a request and our row has none. Not a mismatch -
@@ -506,7 +571,10 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
     + [...ourExtra.values()].flat().length;
 
   return {
-    findings, byRequest, sheetHasReq, requests: [...requests].sort(), counts,
+    findings, byRequest, sheetHasReq,
+    reqSource: sheetHasReq ? 'sheet' : declared.length ? 'typed' : 'none',
+    declared,
+    requests: [...requests].sort(), counts,
     theirRows: sheet.length,
     theirTickets: theirBySerial.size,
     ourRows,
