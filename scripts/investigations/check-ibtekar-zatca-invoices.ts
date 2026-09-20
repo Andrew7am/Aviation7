@@ -63,12 +63,21 @@ async function read(path: string, file: string): Promise<Invoice> {
     text += (content.items as any[]).map(i => i.str).join('\n') + '\n';
   }
 
-  const tickets = [...text.matchAll(/(\d{3})-(\d{10})\s+(\d{4}-\d{2}-\d{2})/g)]
-    .map(x => ({ airline: x[1], no: x[2], date: x[3] }));
+  // The date is optional. Ibtekar's earlier ZATCA invoices list a ticket as
+  // number, passenger, sector with no date column at all; the later ones put
+  // a date after the number. Requiring one read every older invoice as empty
+  // - which is how invoice 1559 came to be reported as missing when it had
+  // been on the shared drive the whole time.
+  const tickets = [...text.matchAll(/(\d{3})-(\d{10})(?:\s+(\d{4}-\d{2}-\d{2}))?/g)]
+    .map(x => ({ airline: x[1], no: x[2], date: x[3] ?? '' }));
 
   return {
     file,
-    ref: (file.match(/INV\d{6}/i)?.[0] ?? '').toUpperCase(),
+    // Our filing reference. Usually the INV number in the file name; on the
+    // older invoices there is none, and the ledger files those under
+    // Ibtekar's own short serial instead.
+    ref: (file.match(/INV\d{6}/i)?.[0]
+          ?? file.match(/Invoice[_ ]?(\d{3,5})/i)?.[1] ?? '').toUpperCase(),
     serial: text.match(/InvoNO:\s*(\d+)/)?.[1] ?? '',
     date: text.match(/(\d{2}-\d{2}-20\d{2})/)?.[1] ?? '',
     // The one assurance the whole exercise depends on: a document that does
