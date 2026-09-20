@@ -61,9 +61,11 @@ interface Summary {
 
 interface Props {
   tickets: Ticket[];
+  /** Close or reopen one row, when the viewer is allowed to. */
+  onUpdateClosed?: (id: string, closed: boolean) => void;
 }
 
-export const Requests: React.FC<Props> = ({ tickets }) => {
+export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
   const [search, setSearch] = useState('');
   const [only, setOnly] = useState<'ALL' | State>('ALL');
   const [openReq, setOpenReq] = useState<string | null>(null);
@@ -153,7 +155,8 @@ export const Requests: React.FC<Props> = ({ tickets }) => {
   return (
     <div className="flex flex-col h-full bg-slate-100">
       {openReq && (
-        <RequestProfile reqNum={openReq} tickets={tickets} onClose={() => setOpenReq(null)} />
+        <RequestProfile reqNum={openReq} tickets={tickets} onUpdateClosed={onUpdateClosed}
+          onClose={() => setOpenReq(null)} />
       )}
 
       <div className="p-4 space-y-3 shrink-0 bg-white border-b border-slate-200">

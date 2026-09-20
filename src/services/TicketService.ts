@@ -118,8 +118,11 @@ export class TicketService {
 
     const fetchAll = async () => {
       try {
+        // `count: 'exact'` costs one cheap COUNT on the server and tells
+        // fetchAllRows how many pages there are, so it can ask for all of
+        // them at once instead of discovering the end a page at a time.
         const rows = await fetchAllRows<TicketRow>((from, to) =>
-          supabase.from('tickets').select('*').range(from, to)
+          supabase.from('tickets').select('*', { count: 'exact' }).range(from, to)
         );
         if (!cancelled) onData(rows.map(rowToTicket));
       } catch (e) {

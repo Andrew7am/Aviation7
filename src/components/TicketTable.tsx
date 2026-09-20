@@ -990,7 +990,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   return (
     <div className="flex flex-col h-full bg-slate-100">
       {profileReq && (
-        <RequestProfile reqNum={profileReq} tickets={tickets}
+        <RequestProfile reqNum={profileReq} tickets={tickets} onUpdateClosed={onUpdateClosed}
           onClose={() => setProfileReq(null)} />
       )}
       {/* Says what landed on the clipboard, not just that something did — a

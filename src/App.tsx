@@ -277,7 +277,8 @@ function MainApp({ user }: { user: User }) {
 
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
       {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} {...(isAdmin ? writeHandlers : {})} />}
-      {view === 'requests'  && <Requests tickets={tickets} />}
+      {view === 'requests'  && <Requests tickets={tickets}
+        {...(isAdmin ? { onUpdateClosed: handleUpdateClosed } : {})} />}
       {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}
       {view === 'notclosed' && <TicketTable title="Not Closed — Still To Reconcile" tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : {})} />}
       {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}

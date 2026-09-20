@@ -28,14 +28,52 @@ const PAGE_SIZE = 1000;
  * back short of PAGE_SIZE.
  */
 export async function fetchAllRows<T>(
-  query: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>
+  query: (from: number, to: number) =>
+    PromiseLike<{ data: T[] | null; error: { message: string } | null; count?: number | null }>
 ): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await query(from, from + PAGE_SIZE - 1);
-    if (error) throw new Error(error.message);
-    all.push(...(data ?? []));
-    if (!data || data.length < PAGE_SIZE) break;
+  const first = await query(0, PAGE_SIZE - 1);
+  if (first.error) throw new Error(first.error.message);
+  const head = first.data ?? [];
+  if (head.length < PAGE_SIZE) return head;
+
+  // Past the first page the rest are fetched TOGETHER rather than one after
+  // another. Each page is its own HTTP round trip and none of them depends on
+  // the last, so waiting for page three before asking for page four spends
+  // the whole table's latency in series: the ledger is six pages and the
+  // audit log nineteen, which is nineteen round trips to open one screen.
+  //
+  // A caller that asks for `{ count: 'exact' }` tells us how many pages there
+  // are, so every remaining one goes out at once. Without a count we cannot
+  // know where the end is, so pages are fetched in parallel BATCHES and the
+  // walk stops at the first short page - still parallel, and it never reads
+  // past the end by more than one batch.
+  const rest: T[][] = [];
+  const total = first.count ?? null;
+
+  if (total != null) {
+    const pages: Promise<{ data: T[] | null; error: { message: string } | null }>[] = [];
+    for (let from = PAGE_SIZE; from < total; from += PAGE_SIZE)
+      pages.push(Promise.resolve(query(from, from + PAGE_SIZE - 1)));
+    for (const r of await Promise.all(pages)) {
+      if (r.error) throw new Error(r.error.message);
+      rest.push(r.data ?? []);
+    }
+  } else {
+    const BATCH = 6;
+    for (let from = PAGE_SIZE; ; from += PAGE_SIZE * BATCH) {
+      const batch = await Promise.all(
+        Array.from({ length: BATCH }, (_, i) =>
+          Promise.resolve(query(from + i * PAGE_SIZE, from + (i + 1) * PAGE_SIZE - 1))));
+      let ended = false;
+      for (const r of batch) {
+        if (r.error) throw new Error(r.error.message);
+        const rows = r.data ?? [];
+        rest.push(rows);
+        if (rows.length < PAGE_SIZE) ended = true;
+      }
+      if (ended) break;
+    }
   }
-  return all;
+
+  return head.concat(...rest);
 }

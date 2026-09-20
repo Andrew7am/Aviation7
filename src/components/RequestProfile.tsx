@@ -31,6 +31,9 @@ const fmt = (n: number) =>
 
 interface Props {
   reqNum: string;
+  /** Close or reopen one row. Absent for a viewer, who sees the state but
+   *  cannot change it. */
+  onUpdateClosed?: (id: string, closed: boolean) => void;
   /** The WHOLE ledger, never a filtered slice — see the note above. */
   tickets: Ticket[];
   onClose: () => void;
@@ -53,7 +56,7 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
   </div>
 );
 
-export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose }) => {
+export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUpdateClosed }) => {
   const r = useMemo(() => {
     const key = reqNum.trim().toUpperCase();
     const rows = tickets.filter(t => (t.reqNum || '').trim().toUpperCase() === key
@@ -190,12 +193,20 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose }) =>
                 <div className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-3
                                 flex items-start gap-2.5">
                   <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                  <div className="text-xs text-amber-900">
+                  <div className="text-xs text-amber-900 flex-1">
                     <b>This request is only part closed.</b>{' '}
                     {r.closed.length} of its {r.rows.length} rows are closed and{' '}
                     <b>{r.open.length} {r.open.length === 1 ? 'is' : 'are'} not</b>
                     {show(r.openValue) !== '—' && <> — {show(r.openValue)} still outstanding</>}.
                     {' '}They are listed first below.
+                    {onUpdateClosed && (
+                      <button
+                        onClick={() => r.open.forEach(t => onUpdateClosed(t.id, true))}
+                        className="ml-2 bg-amber-600 text-white text-[10px] font-bold px-2 py-1
+                                   rounded hover:bg-amber-700 whitespace-nowrap">
+                        Close the remaining {r.open.length}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -281,8 +292,24 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose }) =>
                               {t.currency}
                             </span>
                           </td>
+                          {/* Closing belongs here rather than only on the
+                              ledger. This is the screen that shows a request
+                              is part finished, so it is the screen where the
+                              last two rows get dealt with - sending someone
+                              to another page to act on what they just found
+                              is how the finding gets lost. */}
                           <td className="px-3 py-1.5 text-center">
-                            {t.closed
+                            {onUpdateClosed ? (
+                              <button
+                                onClick={() => onUpdateClosed(t.id, !t.closed)}
+                                title={t.closed ? 'Reopen this row' : 'Close this row'}
+                                className={`text-[8px] font-sans font-bold px-1.5 py-0.5 rounded
+                                  transition ${t.closed
+                                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                                    : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
+                                {t.closed ? 'CLOSED' : 'OPEN'}
+                              </button>
+                            ) : t.closed
                               ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 inline" />
                               : <span className="bg-orange-100 text-orange-700 text-[8px] font-sans
                                                  font-bold px-1.5 py-0.5 rounded">OPEN</span>}
