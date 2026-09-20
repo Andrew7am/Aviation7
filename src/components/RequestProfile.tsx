@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { Ticket } from '../types';
 import {
-  X, AlertTriangle, CheckCircle2, Circle, TrendingDown, TrendingUp, Building2,
+  X, AlertTriangle, CheckCircle2, Circle, TrendingDown, TrendingUp, Building2, Download,
 } from 'lucide-react';
 import { classifyOffice, OFFICE_LABEL, Office } from '../core/helpers/reqOffice';
 
@@ -86,6 +87,61 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose }) =>
     };
   }, [reqNum, tickets]);
 
+  /**
+   * The request as a sheet, in the order the screen shows it.
+   *
+   * Open rows first, same as above: the file is usually going to whoever has
+   * to chase them, and burying them among seventy-two closed rows would undo
+   * the one thing this screen does. A Closed column reading Yes/No rather
+   * than TRUE/FALSE, because it is read by people, and a summary block under
+   * the rows so the totals travel with the file instead of having to be
+   * rebuilt by whoever opens it.
+   */
+  const exportSheet = () => {
+    const rows = r.sorted.map(t => ({
+      'Date':        t.date || '',
+      'A/L':         t.airlineCode || '',
+      'Ticket No.':  t.ticketNo,
+      'Source':      t.source || '',
+      'Type':        t.status || 'ISSUE',
+      'Passenger':   t.passengerName || '',
+      'PNR':         t.pnr || '',
+      'Req Num':     t.reqNum || '',
+      'Invoice':     t.vendorReference || '',
+      'Amount':      t.amount ?? 0,
+      'Curr':        t.currency || '',
+      'Closed':      t.closed ? 'Yes' : 'No',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const money = (m: Money) =>
+      Object.entries(m).map(([c, v]) => `${fmt(v)} ${c}`).join(' / ') || '—';
+    XLSX.utils.sheet_add_aoa(ws, [
+      [],
+      ['REQUEST', reqNum],
+      ['Office', r.office ? OFFICE_LABEL[r.office as Exclude<Office, ''>] : ''],
+      ['Suppliers', r.sources.join(', ')],
+      ['Rows', r.rows.length],
+      ['Closed', r.closed.length],
+      ['Not closed', r.open.length],
+      ['Tickets', r.issues.length],
+      ['Refunds', r.refunds.length],
+      ['Issued', money(r.issued)],
+      ['Refunded', money(r.refunded)],
+      ['Net', money(r.net)],
+      ...(r.mixed
+        ? [['STATUS', `PART CLOSED — ${r.open.length} of ${r.rows.length} still open,`
+            + ` ${money(r.openValue)} outstanding`]]
+        : [['STATUS', r.allClosed ? 'Fully closed' : 'Nothing closed yet']]),
+      ['Exported', new Date().toISOString().slice(0, 16).replace('T', ' ')],
+    ], { origin: -1 });
+
+    const wb = XLSX.utils.book_new();
+    // A sheet name cannot carry : \ / ? * [ ] and is capped at 31 characters.
+    XLSX.utils.book_append_sheet(wb, ws, reqNum.replace(/[:\\/?*[\]]/g, '-').slice(0, 31));
+    XLSX.writeFile(wb, `${reqNum.replace(/[^A-Za-z0-9_-]+/g, '_')}.xlsx`);
+  };
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
          onClick={onClose}>
@@ -106,9 +162,19 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose }) =>
               {r.sources.length > 0 && <span>· {r.sources.join(', ')}</span>}
             </p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 shrink-0">
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {r.rows.length > 0 && (
+              <button onClick={exportSheet}
+                title="Download this request as a spreadsheet"
+                className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px]
+                           font-bold px-3 py-1.5 rounded hover:bg-purple-700">
+                <Download className="w-3.5 h-3.5" /> Export
+              </button>
+            )}
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 space-y-4 overflow-auto">
