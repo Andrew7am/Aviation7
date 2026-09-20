@@ -6,15 +6,37 @@ import { AlertBanner } from './components/AlertBanner';
 import { Shell } from './components/Shell';
 import { Dashboard } from './components/Dashboard';
 import { TicketTable } from './components/TicketTable';
-import { Requests } from './components/Requests';
-import { ImportData } from './components/ImportData';
-import { VendorBalances } from './components/VendorBalances';
-import { VendorStatements } from './components/VendorStatements';
-import { Reports } from './components/Reports';
-import { ImportHistory } from './components/ImportHistory';
-import { ActivityLog } from './components/ActivityLog';
-import { Settings } from './components/Settings';
-import { ManualEntry } from './components/ManualEntry';
+
+/**
+ * Every screen except the two you land on is fetched when it is opened.
+ *
+ * All of them used to ship in one bundle - 1.2 MB before the dashboard could
+ * paint - and most of that is weight nobody asked for: the spreadsheet writer
+ * behind an export button, the charts on Reports, the whole of Settings. A
+ * screen nobody opens today should cost nothing today.
+ *
+ * Dashboard and the ledger stay eager. They are what opens first and what
+ * opens next, and splitting those would trade a smaller download for a
+ * spinner on the two screens most used.
+ */
+const Requests        = React.lazy(() => import('./components/Requests').then(m => ({ default: m.Requests })));
+const ImportData      = React.lazy(() => import('./components/ImportData').then(m => ({ default: m.ImportData })));
+const VendorBalances  = React.lazy(() => import('./components/VendorBalances').then(m => ({ default: m.VendorBalances })));
+const VendorStatements = React.lazy(() => import('./components/VendorStatements').then(m => ({ default: m.VendorStatements })));
+const Reports         = React.lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
+const ImportHistory   = React.lazy(() => import('./components/ImportHistory').then(m => ({ default: m.ImportHistory })));
+const ActivityLog     = React.lazy(() => import('./components/ActivityLog').then(m => ({ default: m.ActivityLog })));
+const Settings        = React.lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const ManualEntry     = React.lazy(() => import('./components/ManualEntry').then(m => ({ default: m.ManualEntry })));
+
+/** Shown while a screen's code is on its way. Deliberately plain: a skeleton
+ *  that mimics a table invites the reader to believe figures are loading when
+ *  what is loading is the page itself. */
+const Loading: React.FC = () => (
+  <div className="flex items-center justify-center h-full p-10">
+    <span className="text-[11px] font-mono text-slate-400">loading…</span>
+  </div>
+);
 import { AuditService, AuditRecord } from './services/AuditService';
 import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { summariseVendor } from './core/helpers/statementMath';
@@ -266,6 +288,7 @@ function MainApp({ user }: { user: User }) {
       onLogout={logout}
       banner={<AlertBanner alerts={alerts} onDismiss={dismissAlert} />}
     >
+      <React.Suspense fallback={<Loading />}>
       {showManualEntry && (
         <ManualEntry
           vendorNames={vendorBalancesLive.map(v => v.vendorName)}
@@ -309,6 +332,7 @@ function MainApp({ user }: { user: User }) {
       {view === 'settings'  && (isAdmin
         ? <Settings />
         : <div className="p-10 text-center text-slate-400 font-sans text-sm">Admin access required.</div>)}
+      </React.Suspense>
     </Shell>
   );
 }

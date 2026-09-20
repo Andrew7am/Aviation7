@@ -3,6 +3,16 @@ import { Ticket } from '../types';
 import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown, FolderOpen } from 'lucide-react';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { RequestProfile } from './RequestProfile';
+
+/**
+ * The spreadsheet writer, fetched the first time something is exported.
+ *
+ * xlsx is a few hundred kilobytes and it is only ever reached by pressing a
+ * button. Imported at the top of the file it rode into the first page load
+ * of every session, including the ones where nobody exports anything.
+ */
+const xlsx = () => import('xlsx');
+
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import { extractRoute } from '../core/helpers/extractRoute';
@@ -10,7 +20,6 @@ import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { classifyOffice, OFFICE_LABEL, type Office } from '../core/helpers/reqOffice';
 import { airlineName } from '../core/config/airlines';
 import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers/period';
-import * as XLSX from 'xlsx';
 
 interface TicketTableProps {
   tickets: Ticket[];
@@ -601,7 +610,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     return parts.join('-');
   };
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
+    const XLSX = await xlsx();
     /**
      * Columns are chosen from what the exported rows actually contain, so a
      * review sheet never carries a column that is the same on every line or
@@ -728,7 +738,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     'Passenger':  t.passengerName || '',
   });
 
-  const writeSheet = (rows: object[], sheetName: string, fileName: string) => {
+  const writeSheet = async (rows: object[], sheetName: string, fileName: string) => {
+    const XLSX = await xlsx();
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, sheetName);

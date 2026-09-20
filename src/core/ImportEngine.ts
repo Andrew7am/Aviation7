@@ -8,7 +8,6 @@
  * The actual per-vendor parsing lives in core/parsers/*Parser.ts — this file
  * intentionally does NOT parse rows itself.
  */
-import * as XLSX from 'xlsx';
 import { extractPdfRows, pdfRowsToCsv } from './helpers/pdfText';
 import { Ticket, FieldChange } from '../types';
 
@@ -615,8 +614,14 @@ export function readFileAsText(file: File): Promise<string> {
       reader.onerror = reject;
       reader.readAsArrayBuffer(file);
     } else {
-      reader.onload  = e => {
+      reader.onload  = async e => {
         try {
+          // Fetched here rather than imported at the top of the file. This
+          // module is loaded on every page load - detectDuplicates runs over
+          // the ledger the moment it arrives - so a static import dragged the
+          // whole spreadsheet library into the first paint of every session
+          // to serve a function that only runs when a file is dropped.
+          const XLSX = await import('xlsx');
           const wb = XLSX.read(e.target?.result, { type: 'array' });
           const ws = wb.Sheets[wb.SheetNames[0]];
           // rawNumbers keeps the cell's underlying value instead of the text

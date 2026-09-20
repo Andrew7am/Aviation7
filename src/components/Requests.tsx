@@ -3,9 +3,18 @@ import { Ticket } from '../types';
 import {
   Search, FolderOpen, AlertTriangle, CheckCircle2, Circle, Download, Building2,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { classifyOffice, OFFICE_LABEL, Office } from '../core/helpers/reqOffice';
 import { RequestProfile } from './RequestProfile';
+
+/**
+ * The spreadsheet writer, fetched the first time something is exported.
+ *
+ * xlsx is a few hundred kilobytes and it is only ever reached by pressing a
+ * button. Imported at the top of the file it rode into the first page load
+ * of every session, including the ones where nobody exports anything.
+ */
+const xlsx = () => import('xlsx');
+
 
 /**
  * Every request the agency has raised, as a list you can work down.
@@ -129,7 +138,8 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
 
   /** The list as it stands, filter and order included — what is on screen is
    *  what lands in the file. */
-  const exportList = () => {
+  const exportList = async () => {
+    const XLSX = await xlsx();
     const ws = XLSX.utils.json_to_sheet(shown.map(r => ({
       'Request': r.reqNum,
       'State': STATE_STYLE[r.state].label,

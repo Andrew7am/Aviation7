@@ -1,10 +1,19 @@
 import React, { useMemo } from 'react';
-import * as XLSX from 'xlsx';
 import { Ticket } from '../types';
 import {
   X, AlertTriangle, CheckCircle2, Circle, TrendingDown, TrendingUp, Building2, Download,
 } from 'lucide-react';
 import { classifyOffice, OFFICE_LABEL, Office } from '../core/helpers/reqOffice';
+
+/**
+ * The spreadsheet writer, fetched the first time something is exported.
+ *
+ * xlsx is a few hundred kilobytes and it is only ever reached by pressing a
+ * button. Imported at the top of the file it rode into the first page load
+ * of every session, including the ones where nobody exports anything.
+ */
+const xlsx = () => import('xlsx');
+
 
 /**
  * Everything booked under one request number, in one place.
@@ -100,7 +109,8 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
    * the rows so the totals travel with the file instead of having to be
    * rebuilt by whoever opens it.
    */
-  const exportSheet = () => {
+  const exportSheet = async () => {
+    const XLSX = await xlsx();
     const rows = r.sorted.map(t => ({
       'Date':        t.date || '',
       'A/L':         t.airlineCode || '',
