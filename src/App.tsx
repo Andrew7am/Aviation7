@@ -21,6 +21,7 @@ import { TicketTable } from './components/TicketTable';
  */
 const Requests        = React.lazy(() => import('./components/Requests').then(m => ({ default: m.Requests })));
 const ImportData      = React.lazy(() => import('./components/ImportData').then(m => ({ default: m.ImportData })));
+const TeamSheetCheck  = React.lazy(() => import('./components/TeamSheetCheck').then(m => ({ default: m.TeamSheetCheck })));
 const VendorBalances  = React.lazy(() => import('./components/VendorBalances').then(m => ({ default: m.VendorBalances })));
 const VendorStatements = React.lazy(() => import('./components/VendorStatements').then(m => ({ default: m.VendorStatements })));
 const Reports         = React.lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
@@ -47,8 +48,7 @@ import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
-  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen,
-} from 'lucide-react';
+  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
 const LOW_PCT = 0.2;
@@ -263,6 +263,7 @@ function MainApp({ user }: { user: User }) {
     { id: 'missing',   label: 'Action Required', icon: <AlertTriangle className="w-4 h-4" />, badge: missingReqCount, badgeColor: 'red' },
     { id: 'notclosed', label: 'Not Closed',      icon: <Circle className="w-4 h-4" />, badge: notClosedCount || undefined, badgeColor: 'amber' },
     ...(isAdmin ? [{ id: 'import' as ViewState, label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
+    { id: 'teamsheet', label: 'Team Sheet Check', icon: <FileSearch className="w-4 h-4" /> },
     { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
     { id: 'vendors',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
     { id: 'statements', label: 'Vendor Statements', icon: <FileText className="w-4 h-4" />, badge: statementGapCount || undefined, badgeColor: 'red' },
@@ -305,6 +306,9 @@ function MainApp({ user }: { user: User }) {
       {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}
       {view === 'notclosed' && <TicketTable title="Not Closed — Still To Reconcile" tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : {})} />}
       {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
+      {/* Read-only, so everybody gets it: the person closing a flight sheet
+          is not always the person who can write to the ledger. */}
+      {view === 'teamsheet' && <TeamSheetCheck tickets={tickets} />}
       {view === 'history'   && <ImportHistory records={importHistory} getErrorsFor={(id, cb) => importSvc.subscribeErrors(id, cb)} />}
       {/* No h-full on the wrapper below. Pinning it to the viewport meant
           an expanded vendor's transactions were taller than the box that
