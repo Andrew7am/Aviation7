@@ -193,40 +193,25 @@ export function validDateEntry(raw: string): string {
 }
 
 /**
- * A whole ticket on one line, for the clipboard.
+ * The four things that identify a ticket, for the clipboard.
  *
- * Copying a single cell answers "what is this PNR"; the question asked far
- * more often is "send me that ticket", and the answer to that is eleven cells
- * which nobody can drag a selection across in a monospace table — the
- * passenger column is truncated on screen, so the name cannot be selected at
- * all.
+ * Airline, number, passenger, PNR - and nothing else. This carried eleven
+ * fields at first, on the reasoning that more is safer. It is not: the person
+ * copying is sending a ticket to somebody, and the amount, the invoice
+ * reference and the closure state are our bookkeeping rather than the
+ * ticket's identity. Pasting them into a message to a supplier tells them
+ * things they have no business reading, and buries the four they need.
  *
- * Tab-separated rather than prose: pasted into Excel it lands as eleven
- * columns, and pasted into a chat it reads as a spaced line. One format serves
- * both, and neither needs the reader to unpick a sentence.
- *
- * The amount is the plain number for the same reason the totals are — a
- * spreadsheet should receive it as a value, not as text a locale re-reads.
+ * Tab-separated, so one format serves both uses: pasted into Excel it lands
+ * as four columns, pasted into a chat it reads as a spaced line.
  */
 export function ticketLine(t: Ticket): string {
-  const cells = [
+  return [
     t.airlineCode || '',
     t.ticketNo || '',
-    t.source || '',
-    t.status || '',
-    t.date || '',
     t.passengerName || '',
     t.pnr || '',
-    t.reqNum || '',
-    t.vendorReference || '',
-    t.amount == null ? '' : Number(t.amount).toFixed(2),
-    t.currency || '',
-  ];
-  // A trailing run of empty cells is noise on a chat line and an empty column
-  // in a spreadsheet either way, so it is trimmed; gaps in the middle are kept
-  // because dropping them would shift every column after them.
-  while (cells.length && !cells[cells.length - 1]) cells.pop();
-  return cells.join('\t');
+  ].join('\t');
 }
 
 /**
@@ -848,14 +833,14 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     const cell = el.closest('td');
     if (!cell) return;
 
-    // Source is the cell that copies the whole row rather than itself, and it
+    // Source is the cell that copies the ticket rather than itself, and it
     // earns that by having the least worth copying on its own: the vendor name
     // is usually the thing you filtered by to arrive here.
     const rowId = (cell.closest('[data-copy-row]') as HTMLElement | null)?.dataset.copyRow;
     if (rowId) {
       const t = byId.get(rowId);
       if (!t) return;
-      await copyText(ticketLine(t), `the whole ticket ${t.ticketNo}`);
+      await copyText(ticketLine(t), `${t.ticketNo} · ${t.passengerName || 'no name'}`);
       return;
     }
 
@@ -1420,7 +1405,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         {/* Nothing on screen would otherwise suggest a cell is clickable. */}
         <span className="text-slate-300 hidden sm:inline">|</span>
         <span className="text-slate-400 hidden sm:inline">
-          click a cell to copy it · click the source to copy the whole ticket{canEdit && ' · the editable ones open for editing'}
+          click a cell to copy it · click the source for A/L, ticket, name and PNR{canEdit && ' · the editable ones open for editing'}
         </span>
       </div>
 
@@ -1509,7 +1494,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     )}
                   </td>
                   <td className="px-3 py-2 cursor-copy" data-copy-row={ticket.id}
-                      title="Copy the whole ticket — airline, number, source, status, date, passenger, PNR, req number, invoice, amount">
+                      title="Copy the ticket — airline, number, passenger, PNR">
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold uppercase ${getSourceColor(ticket.source || '')}`}>
                       {ticket.source || 'UNKNOWN'}
                     </span>
