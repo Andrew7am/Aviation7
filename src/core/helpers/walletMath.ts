@@ -48,6 +48,7 @@ export function vendorMatchesSource(vendorName: string, ticketSource: string): b
  */
 export function drawsOnWallet(
   vendor: { openingDate?: string },
+  /** The date on the movement - a ticket's issue date, or a payment's. */
   ticketDate?: string,
 ): boolean {
   const from = (vendor.openingDate || '').trim();
@@ -98,8 +99,19 @@ export function calcVendorBalance(
     .filter(t => (t.status || '').toUpperCase() !== 'FUND')
     .filter(t => drawsOnWallet(vendor, t.date))
     .reduce((s, t) => s + t.amount, 0);
+  // An opening balance gates payments exactly as it gates tickets, and for the
+  // same reason: it is a statement about a moment, so whatever was paid before
+  // that moment is already inside the figure. Counting those payments again
+  // adds the entire settled history back on top of the balance.
+  //
+  // Until a wallet had both an opening date and a payment history this could
+  // not bite - IATA has the only opening date and has never been topped up -
+  // so it sat here looking like an asymmetry rather than a fault. Re-baselining
+  // NSA, which carries 5,150,031.50 of payments, would have produced a balance
+  // of 5,153,827.26 against a real one of 3,795.76.
   const topUpTotal = topUps
     .filter(tu => tu.vendorId === vendor.id)
+    .filter(tu => drawsOnWallet(vendor, tu.date))
     .reduce((s, tu) => s + tu.amount, 0);
 
   // One convention for every vendor: money paid in raises the balance, tickets
