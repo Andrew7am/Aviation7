@@ -172,18 +172,20 @@ function check(name: string, got: unknown, want: unknown, detail?: string) {
   /**
    * The admins the owner has approved, by name.
    *
-   * This used to assert a single admin, from when there was one. A second was
-   * added on 2026-08-17 and the owner confirmed it — so the rule is not "how
-   * many" but "which": listing them means a THIRD appearing still fails this,
-   * which is the thing worth catching. Relaxing it to a count would have
-   * turned the check off.
+   * The rule is not "how many" but "which": listing them means an unexpected
+   * name still fails this, which is the thing worth catching. Relaxing it to
+   * a count would turn the check off.
    *
-   * app_users carries no audit trail, so an unexpected name here is the only
-   * warning there would be. Add to this list only on the owner's say-so.
+   * It has moved twice. accounting1 was added on 2026-08-17 and removed again
+   * on 2026-09-20, both on the owner's say-so - the removal surfaced HERE,
+   * days later, because nothing else noticed. app_users has no audit trail:
+   * setRole writes to it directly with no trigger behind it, so a name
+   * appearing or vanishing from this list is the only record that it moved.
+   * That is why the list is spelled out, and why it is only ever edited when
+   * the owner has confirmed the change.
    */
   const APPROVED_ADMINS = [
     'accounting3@events-explorers.com',
-    'accounting1@events-explorers.com',
   ];
   const { rows: admins } = await c.query(`select email from app_users where role = 'admin'`);
   const names = (admins as any[]).map(a => String(a.email).toLowerCase()).sort();
