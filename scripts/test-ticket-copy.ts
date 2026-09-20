@@ -9,7 +9,7 @@
  *
  * So the test is as much about what is ABSENT as what is present.
  */
-import { ticketLine } from '../src/components/TicketTable';
+import { ticketLine, ticketLines, copyableTickets } from '../src/core/helpers/ticketClipboard';
 import type { Ticket } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -66,6 +66,53 @@ console.log('\n4. A missing field leaves its column empty, not shifted');
   check('number in place',    cells[1], '5066646722');
   check('name blank',         cells[2], '');
   check('PNR still last',     cells[3], 'XSQH59');
+}
+
+console.log('\n5. A whole filter at once: one ticket to a line');
+{
+  const rows = [
+    tkt({ id: 'a', ticketNo: '0000000001', passengerName: 'ONE', pnr: 'AAA111' }),
+    tkt({ id: 'b', ticketNo: '0000000002', passengerName: 'TWO', pnr: 'BBB222' }),
+    tkt({ id: 'c', ticketNo: '0000000003', passengerName: 'THREE', pnr: 'CCC333' }),
+  ];
+  const out = ticketLines(rows);
+  const lines = out.split('\n');
+  check('a line each',        lines.length, 3);
+  check('the order is kept',  lines.map(l => l.split('\t')[1]),
+                              ['0000000001', '0000000002', '0000000003']);
+  check('four fields on each',[...new Set(lines.map(l => l.split('\t').length))], [4]);
+  check('no trailing newline', out.endsWith('\n'), false);
+  // The same silence as a single ticket: a vendor's whole list must not carry
+  // the amounts out of the building either.
+  check('still no amounts',   out.includes('22261.5'), false);
+  check('still no req num',   out.includes('REQ11662'), false);
+  check('still no invoice',   out.includes('INV999'), false);
+}
+
+console.log('\n6. A top-up is not a ticket');
+{
+  // A wallet payment has no number, no passenger and no PNR. Left in, it
+  // copies as an empty line - a blank row in somebody's sheet that reads as
+  // a ticket whose details went missing.
+  const rows = [
+    tkt({ id: 'a', ticketNo: '0000000001', passengerName: 'ONE', pnr: 'AAA111' }),
+    tkt({ id: 'f', ticketNo: '', passengerName: '', pnr: '', airlineCode: '',
+          status: 'FUND', amount: -50000 }),
+    tkt({ id: 'b', ticketNo: '0000000002', passengerName: 'TWO', pnr: 'BBB222' }),
+  ];
+  check('dropped from the list', copyableTickets(rows).map(t => t.id), ['a', 'b']);
+  check('two lines, not three',  ticketLines(rows).split('\n').length, 2);
+  check('no empty line',         ticketLines(rows).includes('\n\t\t\t'), false);
+  check('lower case fund too',
+    copyableTickets([tkt({ status: 'fund' })]).length, 0);
+  check('a refund is a ticket and stays',
+    copyableTickets([tkt({ status: 'RFND', amount: -2810 })]).length, 1);
+}
+
+console.log('\n7. Nothing selected copies nothing');
+{
+  check('an empty list is an empty string', ticketLines([]), '');
+  check('one row has no newline at all', ticketLines([tkt()]).includes('\n'), false);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

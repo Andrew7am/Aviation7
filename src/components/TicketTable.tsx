@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Ticket } from '../types';
-import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown, FolderOpen } from 'lucide-react';
+import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown, FolderOpen, Copy } from 'lucide-react';
+import { writeClipboard } from '../utils/clipboard';
+import { ticketLine, ticketLines, copyableTickets } from '../core/helpers/ticketClipboard';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { RequestProfile } from './RequestProfile';
 
@@ -192,27 +194,6 @@ export function validDateEntry(raw: string): string {
   return iso;
 }
 
-/**
- * The four things that identify a ticket, for the clipboard.
- *
- * Airline, number, passenger, PNR - and nothing else. This carried eleven
- * fields at first, on the reasoning that more is safer. It is not: the person
- * copying is sending a ticket to somebody, and the amount, the invoice
- * reference and the closure state are our bookkeeping rather than the
- * ticket's identity. Pasting them into a message to a supplier tells them
- * things they have no business reading, and buries the four they need.
- *
- * Tab-separated, so one format serves both uses: pasted into Excel it lands
- * as four columns, pasted into a chat it reads as a spaced line.
- */
-export function ticketLine(t: Ticket): string {
-  return [
-    t.airlineCode || '',
-    t.ticketNo || '',
-    t.passengerName || '',
-    t.pnr || '',
-  ].join('\t');
-}
 
 /**
  * A total that can be clicked to copy.
@@ -239,25 +220,7 @@ const CopyableAmount: React.FC<{
   }, [state]);
 
   const copy = async () => {
-    const plain = value.toFixed(2);
-    try {
-      await navigator.clipboard.writeText(plain);
-      setState('copied');
-    } catch {
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = plain;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        const ok = document.execCommand('copy');
-        document.body.removeChild(ta);
-        setState(ok ? 'copied' : 'failed');
-      } catch {
-        setState('failed');
-      }
-    }
+    setState(await writeClipboard(value.toFixed(2)) ? 'copied' : 'failed');
   };
 
   return (
@@ -802,24 +765,33 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   /** Put `text` on the clipboard, and report it as `label`. */
   const copyText = async (text: string, label: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(label);
-    } catch {
-      // navigator.clipboard needs a secure context, which a plain http origin
-      // is not. The old textarea trick still works there.
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        const ok = document.execCommand('copy');
-        document.body.removeChild(ta);
-        setCopied(ok ? label : '');
-      } catch { /* nothing more to try; stay silent rather than alarm */ }
-    }
+    if (await writeClipboard(text)) setCopied(label);
+  };
+
+  /**
+   * Every row the filter is showing, on the clipboard at once.
+   *
+   * Closing a file goes: narrow to the supplier, work through what comes
+   * back, then hand that list to somebody. Lifting it a row at a time was
+   * the part still being done by hand, and dragging a selection down the
+   * table cannot do it either - the rows past the first page are not on
+   * screen to be dragged over.
+   *
+   * So it follows the FILTER rather than the page, and the button names the
+   * count for exactly that reason: what gets copied is what the filter
+   * holds, which is usually more than what is visible.
+   */
+  const copyRows = useMemo(() => copyableTickets(filtered), [filtered]);
+
+  const copyAll = async () => {
+    if (copyRows.length === 0) return;
+    // An unfiltered ledger is tens of thousands of lines and is almost never
+    // what was meant. Ask once, name the number, then let it through.
+    if (copyRows.length > 500
+      && !confirm(`Copy all ${copyRows.length.toLocaleString()} tickets in this filter?`
+        + `\n\nAirline, ticket number, passenger and PNR \u2014 one to a line.`)) return;
+    await copyText(ticketLines(copyRows),
+      `${copyRows.length.toLocaleString()} ticket${copyRows.length === 1 ? '' : 's'}`);
   };
 
   const handleCellClick = async (e: React.MouseEvent<HTMLTableSectionElement>) => {
@@ -1281,6 +1253,20 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             >
               <Download className="w-3 h-3" />
               Not Closed ({notClosedCount})
+            </button>
+          )}
+
+          {/* The filtered rows as text. Beside Export rather than among the
+              filters, because it answers the same question the exports do -
+              "give me this list" - only for a message instead of a file. */}
+          {copyRows.length > 0 && (
+            <button
+              onClick={copyAll}
+              title={`Copy ${copyRows.length.toLocaleString()} ticket(s) \u2014 airline, number, passenger, PNR, one to a line`}
+              className="px-2 py-1.5 bg-white text-slate-600 border border-slate-200 rounded text-[10px] font-bold uppercase tracking-widest hover:bg-slate-50 flex items-center gap-1"
+            >
+              <Copy className="w-3 h-3" />
+              Copy ({copyRows.length.toLocaleString()})
             </button>
           )}
 

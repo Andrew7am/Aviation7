@@ -1,9 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Ticket } from '../types';
 import {
-  X, AlertTriangle, CheckCircle2, Circle, TrendingDown, TrendingUp, Building2, Download,
+  X, AlertTriangle, CheckCircle2, Circle, TrendingDown, TrendingUp, Building2, Download, Copy,
 } from 'lucide-react';
 import { classifyOffice, OFFICE_LABEL, Office } from '../core/helpers/reqOffice';
+import { ticketLines, copyableTickets } from '../core/helpers/ticketClipboard';
+import { writeClipboard } from '../utils/clipboard';
 
 /**
  * The spreadsheet writer, fetched the first time something is exported.
@@ -100,6 +102,33 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
   }, [reqNum, tickets]);
 
   /**
+   * The whole request as text, in the order the screen shows it.
+   *
+   * The sheet is for filing; this is for saying. Closing a file ends in a
+   * message - to the supplier, to the office that raised it, to whoever asks
+   * what was on it - and that message wants the tickets, not our ledger. So
+   * it carries the same four fields a single ticket does: airline, number,
+   * passenger, PNR. The amounts, the invoice references and what is closed
+   * stay on this screen, where they belong.
+   *
+   * Open rows first, same as the table and the export, because those are the
+   * ones the message is usually about.
+   */
+  const [copied, setCopied] = useState(0);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(0), 1600);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  const copyRows = useMemo(() => copyableTickets(r.sorted), [r.sorted]);
+
+  const copyAll = async () => {
+    if (copyRows.length === 0) return;
+    if (await writeClipboard(ticketLines(copyRows))) setCopied(copyRows.length);
+  };
+
+  /**
    * The request as a sheet, in the order the screen shows it.
    *
    * Open rows first, same as above: the file is usually going to whoever has
@@ -176,6 +205,18 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {copyRows.length > 0 && (
+              <button onClick={copyAll}
+                title={`Copy all ${copyRows.length} ticket(s) — airline, number, passenger, PNR, one to a line`}
+                className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded
+                            border transition ${copied
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                {copied
+                  ? <><CheckCircle2 className="w-3.5 h-3.5" /> {copied} copied</>
+                  : <><Copy className="w-3.5 h-3.5" /> Copy ({copyRows.length})</>}
+              </button>
+            )}
             {r.rows.length > 0 && (
               <button onClick={exportSheet}
                 title="Download this request as a spreadsheet"
