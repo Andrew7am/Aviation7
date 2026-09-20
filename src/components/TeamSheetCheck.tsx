@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Ticket } from '../types';
 import {
   Upload, AlertTriangle, CheckCircle2, X, Loader2, FileSpreadsheet, Download,
-  ChevronDown, ChevronRight, Circle, Info,
+  ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen,
 } from 'lucide-react';
 import { readFileAsText } from '../core/ImportEngine';
 import { parseTeamSheet } from '../core/parsers/teamSheet';
@@ -32,6 +32,7 @@ const money = (n: number) =>
 /** How each verdict reads. Money findings in red; the two that are states of
  *  the world rather than disagreements in grey, so they never look like work. */
 const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
+  REQ_DIFFERS:          { chip: 'bg-red-100 text-red-700',        band: 'border-red-300',     money: true },
   NOT_IN_LEDGER:        { chip: 'bg-red-100 text-red-700',        band: 'border-red-200',     money: true },
   REFUND_NOT_IN_LEDGER: { chip: 'bg-red-100 text-red-700',        band: 'border-red-200',     money: true },
   NOT_ON_SHEET:         { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
@@ -45,6 +46,11 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
 /** What each verdict means, said once at the top of its group rather than
  *  repeated on every row. */
 const WHY: Record<Verdict, string> = {
+  REQ_DIFFERS:
+    'Both sides hold the ticket and each has filed it under a different request. This is'
+    + ' the one disagreement where every count still looks right: two requests are wrong at'
+    + ' once — one carrying a cost that is not its own, the other short of one that is —'
+    + ' and neither total says so. Settle which request is correct before closing either.',
   NOT_IN_LEDGER:
     'On their sheet and nowhere in our books. Either the supplier has not billed it yet,'
     + ' or an import missed it. Worth checking before the sheet is signed off.',
@@ -104,7 +110,7 @@ const Group: React.FC<{ verdict: Verdict; rows: Finding[] }> = ({ verdict, rows 
                                tracking-wider text-slate-400">
                   <th className="px-3 py-1.5">Ticket</th>
                   <th className="px-3 py-1.5">PNR</th>
-                  <th className="px-3 py-1.5">Request</th>
+                  <th className="px-3 py-1.5">Request <span className="normal-case">(ours → theirs)</span></th>
                   <th className="px-3 py-1.5">Their sheet</th>
                   <th className="px-3 py-1.5 text-right">Their cost</th>
                   <th className="px-3 py-1.5">Our books</th>
@@ -122,7 +128,18 @@ const Group: React.FC<{ verdict: Verdict; rows: Finding[] }> = ({ verdict, rows 
                         : <span className="text-slate-300">— none —</span>}
                     </td>
                     <td className="px-3 py-1.5 text-slate-500">{f.pnr || '—'}</td>
-                    <td className="px-3 py-1.5 text-purple-700">{f.reqNum || '—'}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      {f.verdict === 'REQ_DIFFERS' ? (
+                        // Both, because which is which IS the finding.
+                        <span className="flex items-center gap-1">
+                          <span className="text-purple-700 font-bold">{f.reqNum || '— none —'}</span>
+                          <ArrowLeftRight className="w-3 h-3 text-red-400 shrink-0" />
+                          <span className="text-red-600 font-bold">{f.theirReq}</span>
+                        </span>
+                      ) : (
+                        <span className="text-purple-700">{f.reqNum || '—'}</span>
+                      )}
+                    </td>
                     <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
                       {f.sheet
                         ? <>{f.sheet.rawStatus || '—'}
@@ -191,7 +208,8 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
       'Verdict':      VERDICT_LABEL[f.verdict],
       'Ticket':       f.serial ? (f.airlineCode ? `${f.airlineCode}-${f.serial}` : f.serial) : '',
       'PNR':          f.pnr,
-      'Request':      f.reqNum,
+      'Our request':   f.reqNum,
+      'Their request': f.theirReq,
       'Their row':    f.sheet?.rowNo ?? '',
       'Their status': f.sheet?.rawStatus ?? '',
       'Their cost':   f.sheet?.cost ?? '',
@@ -208,6 +226,9 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
       [],
       ['THEIR SHEET', fileName],
       ['Requests covered', report.requests.join(', ')],
+      ['Their sheet named its requests', report.sheetHasReq ? 'yes' : 'NO'],
+      ['Requests that agree',
+        `${report.byRequest.filter(r => r.agrees).length} of ${report.byRequest.length}`],
       ['Rows on their sheet', report.theirRows],
       ['Tickets on their sheet', report.theirTickets],
       ['Matched to our books', report.matched],
@@ -232,10 +253,11 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
             Team sheet check
           </h2>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
-            Drop the aviation team's ticket export here and it is read against our books:
-            what is on their sheet and not in ours, what is in ours and not on theirs, and
-            where a refund appears on one side only. Nothing is imported and nothing is
-            changed — this only reports.
+            Drop the aviation team's ticket export here and it is read against our books,
+            request by request: does each request hold the same tickets on both sides, is
+            any ticket filed under a different request here than there, and what is on one
+            list and not the other. Nothing is imported and nothing is changed — this only
+            reports.
           </p>
         </div>
         {report && (
@@ -304,6 +326,23 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
             </div>
           )}
 
+          {/* Said plainly rather than hidden: without their request column the
+              screen cannot answer the question it exists to answer. */}
+          {!report.sheetHasReq && (
+            <div className="bg-slate-100 border border-slate-300 rounded-lg px-4 py-3
+                            flex items-start gap-2.5">
+              <Info className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
+              <span className="text-xs text-slate-700 leading-relaxed">
+                <b>Their export carries no request number.</b> The tickets still match, so
+                what is missing on each side is real — but the main question, whether a
+                ticket sits under the same request on both sides, cannot be asked at all.
+                Export their sheet again with the request column in it and every check below
+                gets sharper. Any column named Req, Req Num, Request or Request Number is
+                read.
+              </span>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             <Tile label="Rows on their sheet" value={report.theirRows} />
             <Tile label="Tickets on it" value={report.theirTickets} />
@@ -328,6 +367,68 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
             </span>
           </div>
 
+          {/* Request by request: the row a sheet is actually closed on. */}
+          {report.byRequest.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+              <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center
+                              justify-between text-[9px] font-bold uppercase text-slate-500">
+                <span>Request by request</span>
+                <span className={report.byRequest.every(r => r.agrees)
+                  ? 'text-emerald-600' : 'text-red-600'}>
+                  {report.byRequest.filter(r => r.agrees).length} of {report.byRequest.length} agree
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left min-w-[620px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-[9px] uppercase
+                                   tracking-wider text-slate-400">
+                      <th className="px-3 py-1.5">Request</th>
+                      <th className="px-3 py-1.5 text-right">On their sheet</th>
+                      <th className="px-3 py-1.5 text-right">In our books</th>
+                      <th className="px-3 py-1.5 text-right">Only theirs</th>
+                      <th className="px-3 py-1.5 text-right">Only ours</th>
+                      <th className="px-3 py-1.5 text-right">Misfiled</th>
+                      <th className="px-3 py-1.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono text-xs">
+                    {report.byRequest.map(r => (
+                      <tr key={r.reqNum}
+                          className={`border-b border-slate-50 ${r.agrees ? '' : 'bg-red-50/40'}`}>
+                        <td className="px-3 py-1.5 font-bold text-purple-700 whitespace-nowrap">
+                          <span className="flex items-center gap-1.5">
+                            <FolderOpen className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                            {r.reqNum}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-slate-600">{r.theirTickets}</td>
+                        <td className="px-3 py-1.5 text-right text-slate-600">{r.ourTickets}</td>
+                        <td className={`px-3 py-1.5 text-right font-bold
+                          ${r.onlyTheirs ? 'text-red-600' : 'text-slate-300'}`}>
+                          {r.onlyTheirs || '—'}
+                        </td>
+                        <td className={`px-3 py-1.5 text-right font-bold
+                          ${r.onlyOurs ? 'text-amber-600' : 'text-slate-300'}`}>
+                          {r.onlyOurs || '—'}
+                        </td>
+                        <td className={`px-3 py-1.5 text-right font-bold
+                          ${r.misfiled ? 'text-red-600' : 'text-slate-300'}`}>
+                          {r.misfiled || '—'}
+                        </td>
+                        <td className="px-3 py-1.5 text-right">
+                          {r.agrees
+                            ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 inline" />
+                            : <AlertTriangle className="w-3.5 h-3.5 text-red-500 inline" />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
             {order.map(v => (
               <Group key={v} verdict={v}
@@ -340,8 +441,9 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
       {!report && !busy && !error && (
         <p className="text-[11px] text-slate-400 italic flex items-center gap-1.5">
           <FileSpreadsheet className="w-3.5 h-3.5" />
-          Their export needs a ticket number column. Everything else it carries — PNR,
-          status, refund, request — is used when it is there and skipped when it is not.
+          Their export needs a ticket number column, and should carry the request number —
+          that is what the comparison is built on. PNR, status and refund are used when
+          they are there.
         </p>
       )}
     </div>

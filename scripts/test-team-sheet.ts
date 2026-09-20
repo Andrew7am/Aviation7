@@ -12,7 +12,7 @@
 import {
   parseTeamSheet, teamSerial, teamStatus, money, currencyOf,
 } from '../src/core/parsers/teamSheet';
-import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
+import { compareTeamSheet, reqKey, sameReq } from '../src/core/helpers/teamSheetCompare';
 import type { Ticket } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -267,6 +267,143 @@ console.log('\n13. A sheet that names its own request widens the boundary');
   check('boundary taken from their sheet', r.requests, ['KSAML2053']);
   check('our unlisted ticket is found', r.counts.NOT_ON_SHEET, 1);
   check('and theirs is reported unbilled', r.counts.NOT_IN_LEDGER, 1);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+console.log('\n14. The request is the point: same ticket, different file');
+{
+  // Both sides hold both tickets. Nothing is missing, every count agrees,
+  // and one of them is in the wrong request - which is the only way two
+  // request totals can be wrong while everything looks right.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5513059078,YSLM73,Issued,KSAML2053',
+    '065-5513059077,YQX75R,Issued,KSAML2064',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', reqNum: 'KSAML2053' }),
+  ];
+  const r = compareTeamSheet(sheet, ledger);
+
+  check('the misfiling is found',  r.counts.REQ_DIFFERS, 1);
+  check('the agreeing one is left alone', r.counts.OK, 1);
+  const f = r.findings.find(x => x.verdict === 'REQ_DIFFERS')!;
+  check('on the right ticket',     f.serial, '5513059077');
+  check('our request is carried',  f.reqNum, 'KSAML2053');
+  check('and theirs beside it',    f.theirReq, 'KSAML2064');
+  check('the note names both',
+    f.note.includes('KSAML2053') && f.note.includes('KSAML2064'), true);
+  // It is reported first. A missing ticket is at least visible as a gap;
+  // this one is invisible everywhere else.
+  check('reported before anything else', r.findings[0].verdict, 'REQ_DIFFERS');
+  check('and it is not a clean sheet', r.clean, false);
+}
+
+console.log('\n15. Spelling is not filing');
+{
+  check('case only',      sameReq('KSAML2053', 'ksaml2053'), true);
+  check('a space',        sameReq('KSAML 2053', 'KSAML2053'), true);
+  check('a dash',         sameReq('KSAML-2053', 'KSAML2053'), true);
+  check('padding',        sameReq('  KSAML2053  ', 'KSAML2053'), true);
+  check('a real difference', sameReq('KSAML2053', 'KSAML2064'), false);
+  // A request that genuinely covers two is not either of its halves.
+  check('a combined request stays itself',
+    sameReq('KSAML1145-UAEFM2193', 'KSAML1145'), false);
+  check('the key strips only punctuation', reqKey('ksa ml-2053.'), 'KSAML2053');
+  check('blank', reqKey(''), '');
+
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5513059078,YSLM73,Issued,ksaml 2053',
+  ].join('\n')).rows;
+  const r = compareTeamSheet(sheet,
+    [tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' })]);
+  check('so a differently typed request is not a mismatch', r.counts.REQ_DIFFERS, 0);
+  check('it agrees', r.counts.OK, 1);
+}
+
+console.log('\n16. Their sheet has a request and our row has none');
+{
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5513059078,YSLM73,Issued,KSAML2053',
+  ].join('\n')).rows;
+  const r = compareTeamSheet(sheet,
+    [tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: '' })]);
+  check('raised as a filing difference', r.counts.REQ_DIFFERS, 1);
+  check('and it says our row has none',
+    r.findings[0].note.includes('no request at all'), true);
+  // Worth having: their sheet can fill the gap our books left.
+  check('their request is on the finding', r.findings[0].theirReq, 'KSAML2053');
+}
+
+console.log('\n17. Request by request — the row a sheet is closed on');
+{
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5513059078,YSLM73,Issued,KSAML2053',
+    '065-5513059077,YQX75R,Issued,KSAML2053',
+    '065-5513059099,ZZWM3X,Issued,KSAML2053',   // theirs only
+    '065-5513059100,ZZCL45,Issued,KSAML2064',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', reqNum: 'KSAML2053' }),
+    tkt({ ticketNo: '5513059555', pnr: 'QQQQQQ', reqNum: 'KSAML2053' }),  // ours only
+    tkt({ ticketNo: '5513059100', pnr: 'ZZCL45', reqNum: 'KSAML2064' }),
+  ];
+  const r = compareTeamSheet(sheet, ledger);
+  check('both requests listed', r.byRequest.map(x => x.reqNum), ['KSAML2053', 'KSAML2064']);
+
+  const a = r.byRequest[0];
+  check('their count',   a.theirTickets, 3);
+  check('our count',     a.ourTickets, 3);
+  check('only theirs',   a.onlyTheirs, 1);
+  check('only ours',     a.onlyOurs, 1);
+  check('does not agree', a.agrees, false);
+
+  const b = r.byRequest[1];
+  check('the clean request agrees', b.agrees, true);
+  check('with one each way', [b.theirTickets, b.ourTickets, b.onlyTheirs, b.onlyOurs],
+    [1, 1, 0, 0]);
+
+  // The counts are equal on a misfiling, which is exactly why the misfiled
+  // column has to exist: without it that request reads as balanced.
+  const mis = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5513059078,YSLM73,Issued,KSAML2064',
+  ].join('\n')).rows, [tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' })]);
+  check('a misfiling is counted on BOTH requests',
+    mis.byRequest.map(x => [x.reqNum, x.misfiled]),
+    [['KSAML2053', 1], ['KSAML2064', 1]]);
+  check('and neither request agrees', mis.byRequest.every(x => x.agrees), false);
+}
+
+console.log('\n18. A sheet with no request column says so, and still does its half');
+{
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status',
+    '065-5513059078,YSLM73,Issued',
+  ].join('\n')).rows;
+  const r = compareTeamSheet(sheet, [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' }),
+    tkt({ ticketNo: '5513059555', pnr: 'QQQQQQ', reqNum: 'KSAML2053' }),
+  ]);
+  check('the screen is told', r.sheetHasReq, false);
+  // No request on their side means no filing to disagree with. Claiming a
+  // mismatch there would be inventing one.
+  check('no filing difference is invented', r.counts.REQ_DIFFERS, 0);
+  // The half that can still be answered, is.
+  check('what we hold and they do not is still found', r.counts.NOT_ON_SHEET, 1);
+  check('their side is counted against what we file it under',
+    r.byRequest.map(x => [x.theirTickets, x.ourTickets, x.onlyOurs]), [[1, 2, 1]]);
+
+  const withReq = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Request',
+    '065-5513059078,YSLM73,Issued,KSAML2053',
+  ].join('\n')).rows, []);
+  check('and a sheet that has one says that', withReq.sheetHasReq, true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
