@@ -1,4 +1,4 @@
-import { supabase } from '../utils/supabase';
+import { supabase, fetchAllRows } from '../utils/supabase';
 
 export interface AuditRecord {
   id:          string;
@@ -70,6 +70,49 @@ export class AuditService {
       .limit(limit);
     if (error) throw new Error(error.message);
     return (data as AuditRow[] ?? []).map(rowToAudit);
+  }
+
+  /** How many entries are older than `days`, so the screen can say what a
+   *  prune would remove before it removes it. */
+  static async countOlderThan(days: number): Promise<number> {
+    const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
+    const { count, error } = await supabase
+      .from('audit_log')
+      .select('*', { count: 'exact', head: true })
+      .lt('performed_at', cutoff);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+  }
+
+  /** Every entry older than `days`, for the copy taken before a prune. */
+  static async listOlderThan(days: number): Promise<AuditRecord[]> {
+    const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
+    const rows = await fetchAllRows<AuditRow>((from, to) =>
+      supabase.from('audit_log').select('*', { count: 'exact' })
+        .lt('performed_at', cutoff)
+        .order('performed_at', { ascending: false })
+        .range(from, to));
+    return rows.map(rowToAudit);
+  }
+
+  /**
+   * Delete the entries older than `days`.
+   *
+   * The database refuses anything inside the last seven days whatever is
+   * asked for here (migration 0024), so a change made this week cannot be
+   * erased in the same week. The guard below is only so the screen fails
+   * with a sentence rather than a silent no-op.
+   *
+   * Returns how many rows went, which is the count the server actually
+   * deleted rather than the estimate shown beforehand.
+   */
+  static async pruneOlderThan(days: number): Promise<number> {
+    if (days < 7) throw new Error('The last seven days cannot be cleared.');
+    const cutoff = new Date(Date.now() - days * 86400_000).toISOString();
+    const { data, error } = await supabase
+      .from('audit_log').delete().lt('performed_at', cutoff).select('id');
+    if (error) throw new Error(error.message);
+    return (data ?? []).length;
   }
 
   static async setRole(userId: string, role: 'admin' | 'member'): Promise<void> {

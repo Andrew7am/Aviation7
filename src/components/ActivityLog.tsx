@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { AuditService, AuditRecord, AppUser } from '../services/AuditService';
-import { Search, Download, ShieldCheck, ShieldOff, Users, Activity, Undo2 } from 'lucide-react';
+import { Search, Download, ShieldCheck, ShieldOff, Users, Activity, Undo2, Trash2 } from 'lucide-react';
 import { undoableAction, undoneAuditId } from '../core/helpers/undoableAction';
 import * as XLSX from 'xlsx';
 
@@ -40,6 +40,71 @@ export const ActivityLog: React.FC<{
   const [tab, setTab]         = useState<'activity' | 'people'>('activity');
   const [loading, setLoading] = useState(true);
   const [undoing, setUndoing] = useState('');
+
+  /**
+   * Clearing old entries.
+   *
+   * Worth saying what this is not: the screen reads 500 rows through an index
+   * in about a quarter of a millisecond, so the table's size has never been
+   * what makes anything slow and removing rows will not speed anything up.
+   * This is housekeeping, and the button says so rather than promising a
+   * performance it cannot deliver.
+   *
+   * A copy is always taken first. The audit log is the record of who changed
+   * what - the one table whose worth comes from nobody being able to edit it
+   * - so deleting from it without a file to fall back on is the part that
+   * would be hard to undo. The last seven days are refused by the database
+   * itself, not just here.
+   */
+  // 30 rather than 90: the log only reaches back about three months, so a
+  // 90-day default opens on "Nothing to clear" and reads as broken when it is
+  // merely accurate.
+  const [pruneDays, setPruneDays] = useState(30);
+  const [pruneCount, setPruneCount] = useState<number | null>(null);
+  const [pruning, setPruning] = useState(false);
+  const [pruneMsg, setPruneMsg] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    setPruneCount(null);
+    AuditService.countOlderThan(pruneDays)
+      .then(n => { if (live) setPruneCount(n); })
+      .catch(() => { if (live) setPruneCount(null); });
+    return () => { live = false; };
+  }, [pruneDays, rows.length]);
+
+  const runPrune = async () => {
+    if (!pruneCount) return;
+    const older = `older than ${pruneDays} days`;
+    if (!confirm(
+      `Clear ${pruneCount.toLocaleString()} audit entries ${older}?\n\n`
+      + `A spreadsheet of them downloads first, and the last 7 days are never `
+      + `touched. This does not make the screen faster — it reads 500 rows `
+      + `either way.`)) return;
+
+    setPruning(true);
+    setPruneMsg('');
+    try {
+      // The copy goes first. If the download fails, nothing is deleted.
+      const doomed = await AuditService.listOlderThan(pruneDays);
+      const XLSX = await import('xlsx');
+      const ws = XLSX.utils.json_to_sheet(doomed.map(r => ({
+        'When': r.performedAt, 'Who': r.actorEmail, 'Action': r.action,
+        'Type': r.entityType, 'Entity': r.entity, 'What changed': r.detail,
+      })));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Audit log');
+      XLSX.writeFile(wb, `Audit_log_before_${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+      const gone = await AuditService.pruneOlderThan(pruneDays);
+      setPruneMsg(`${gone.toLocaleString()} entries cleared. A copy was downloaded first.`);
+      setPruneCount(await AuditService.countOlderThan(pruneDays));
+    } catch (e) {
+      setPruneMsg(e instanceof Error ? e.message : 'Could not clear the log.');
+    } finally {
+      setPruning(false);
+    }
+  };
 
   useEffect(() => {
     const unsub = AuditService.subscribeAudit(r => { setRows(r); setLoading(false); });
@@ -160,7 +225,37 @@ export const ActivityLog: React.FC<{
               className="ml-auto px-2 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-blue-700 flex items-center gap-1">
               <Download className="w-3 h-3" /> Export
             </button>
+
+            {/* Housekeeping, deliberately not dressed up as a speed control. */}
+            <span className="w-px h-5 bg-slate-200" />
+            <select value={pruneDays} onChange={e => setPruneDays(Number(e.target.value))}
+              className="px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
+              <option value={30}>Older than 30 days</option>
+              <option value={90}>Older than 90 days</option>
+              <option value={180}>Older than 6 months</option>
+              <option value={365}>Older than a year</option>
+            </select>
+            <button onClick={runPrune} disabled={pruning || !pruneCount}
+              title={pruneCount
+                ? `Download a copy, then delete ${pruneCount.toLocaleString()} entries`
+                : 'Nothing is old enough to clear'}
+              className="px-2 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest
+                         flex items-center gap-1 transition
+                         disabled:bg-slate-100 disabled:text-slate-400
+                         bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">
+              <Trash2 className="w-3 h-3" />
+              {pruning ? 'Clearing…'
+                : pruneCount === null ? 'Clear…'
+                : pruneCount ? `Clear ${pruneCount.toLocaleString()}`
+                : 'Nothing to clear'}
+            </button>
           </div>
+
+          {pruneMsg && (
+            <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900 shrink-0">
+              {pruneMsg}
+            </div>
+          )}
 
           <div className="flex-1 mx-4 my-4 bg-white border border-slate-200 rounded-lg overflow-auto">
             <table className="w-full text-left border-collapse min-w-[900px]">
