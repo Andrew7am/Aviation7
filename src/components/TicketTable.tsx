@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Ticket } from '../types';
-import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown } from 'lucide-react';
+import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown, FolderOpen } from 'lucide-react';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
+import { RequestProfile } from './RequestProfile';
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import { extractRoute } from '../core/helpers/extractRoute';
@@ -760,6 +761,17 @@ export const TicketTable: React.FC<TicketTableProps> = ({
    * every cell, and for an admin it is everything except the four that open an
    * editor, which keep their own click.
    */
+  /**
+   * The request whose profile is open, if any.
+   *
+   * It is handed the WHOLE ticket list rather than the filtered one on screen.
+   * The profile's job is to say whether a request is part closed, and a view
+   * filtered to Not Closed contains only the open rows - from inside it, a
+   * request with seventy-two closed rows and two open ones is indistinguishable
+   * from one with two rows. The filter belongs on the way in, not on the data.
+   */
+  const [profileReq, setProfileReq] = useState<string | null>(null);
+
   const [copied, setCopied] = useState('');
   useEffect(() => {
     if (!copied) return;
@@ -913,6 +925,10 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-slate-100">
+      {profileReq && (
+        <RequestProfile reqNum={profileReq} tickets={tickets}
+          onClose={() => setProfileReq(null)} />
+      )}
       {/* Says what landed on the clipboard, not just that something did — a
           click near a cell edge could otherwise copy the neighbour without
           anyone noticing. */}
@@ -1503,15 +1519,33 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                       </span>
                     )}
                   </td>
+                  {/* Two actions on one cell, and they must not fight. Admins
+                      edit req numbers constantly - 388 of them last month - so
+                      the click stays the editor it has always been, and the
+                      profile gets a control of its own rather than stealing
+                      it. A cell that does something different depending on
+                      where in it you land is worse than a second button. */}
                   <td className="px-3 py-2">
                     {isEditing(ticket.id, 'reqNum') ? editorInput : (
-                      <div
-                        className={`font-bold inline-block px-1 py-0.5 rounded ${canEdit ? 'cursor-pointer hover:bg-slate-100' : ''} ${ticket.reqNum ? 'text-blue-600 underline' : 'text-red-400 italic'}`}
-                        data-editable
-                        onClick={() => startEdit(ticket, 'reqNum')}
-                        title={canEdit ? 'Click to edit' : undefined}
-                      >
-                        {ticket.reqNum || '[+ ADD]'}
+                      <div className="flex items-center gap-1 group/req">
+                        <div
+                          className={`font-bold inline-block px-1 py-0.5 rounded ${canEdit ? 'cursor-pointer hover:bg-slate-100' : ''} ${ticket.reqNum ? 'text-blue-600 underline' : 'text-red-400 italic'}`}
+                          data-editable
+                          onClick={() => startEdit(ticket, 'reqNum')}
+                          title={canEdit ? 'Click to edit' : undefined}
+                        >
+                          {ticket.reqNum || '[+ ADD]'}
+                        </div>
+                        {ticket.reqNum && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setProfileReq(ticket.reqNum); }}
+                            title={`Open everything booked under ${ticket.reqNum}`}
+                            className="shrink-0 p-0.5 rounded text-slate-300 hover:text-purple-600
+                                       hover:bg-purple-50 opacity-0 group-hover/req:opacity-100
+                                       focus:opacity-100 transition">
+                            <FolderOpen className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     )}
                   </td>
