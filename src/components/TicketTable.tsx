@@ -27,7 +27,7 @@ interface TicketTableProps {
   onBulkUpdateClosed?: (ids: string[], closed: boolean) => Promise<void>;
 }
 
-type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr' | 'route' | 'cabinClass';
+type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr' | 'route' | 'cabinClass' | 'date';
 
 /**
  * A document the vendor issued, by its own numbering.
@@ -159,6 +159,28 @@ function getSourceColor(source: string) {
     if (s.includes(key)) return val;
   }
   return 'bg-slate-100 text-slate-700';
+}
+
+/**
+ * A hand-typed date, checked before it is believed.
+ *
+ * A date picker still hands back whatever was typed into it, and a date is
+ * not an ordinary field: the whole ledger is cut by it. A row dated 2062
+ * would sit outside every period forever, foot nowhere, and never be looked
+ * at again - the same silence the missing date caused, wearing a number.
+ *
+ * So three things have to hold: the shape, the day actually existing (31
+ * February parses and then quietly becomes 3 March), and the year being one
+ * the agency has traded in. Returns the date when all three do, and empty
+ * when any does not, so the caller has nothing ambiguous to act on.
+ */
+export function validDateEntry(raw: string): string {
+  const iso = (raw || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return '';
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== iso) return '';
+  if (iso < '2024-01-01' || iso > '2027-12-31') return '';
+  return iso;
 }
 
 /**
@@ -837,14 +859,37 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     await copyText(text, text);
   };
 
+  /**
+   * A date can be filled in, never changed.
+   *
+   * Every other editable cell corrects what a report got wrong. A date does
+   * not behave like that: the whole ledger is cut by it. Periods, vendor
+   * statements, the BSP settlement window and every opening balance are
+   * decided by which side of a date a row falls on, so moving one silently
+   * re-bills a settled period, and the balance that comes out still looks
+   * like money.
+   *
+   * A row with NO date is the opposite case - it sits in no period at all,
+   * cancels out of every movement, and is the reason a total quietly fails
+   * to foot. Thirteen rows are in that state. Letting those be filled in
+   * costs nothing and removes them from the ledger's blind spot.
+   *
+   * So: editable only while empty. A date already recorded is set through an
+   * import, from the document that states it, with the audit trail that
+   * comes with that.
+   */
+  const canSetDate = (t: Ticket) => canEdit && !(t.date || '').trim();
+
   const startEdit = (ticket: Ticket, field: EditableField) => {
     if (!canEdit) return;
+    if (field === 'date' && !canSetDate(ticket)) return;
     const current =
       field === 'reqNum'          ? (ticket.reqNum || '')
       : field === 'passengerName' ? (ticket.passengerName || '')
       : field === 'pnr'           ? (ticket.pnr || '')
       : field === 'route'         ? (ticket.route || '')
       : field === 'cabinClass'    ? (ticket.cabinClass || '')
+      : field === 'date'          ? (ticket.date || '')
       : String(ticket.amount ?? '');
     setEditingCell({ id: ticket.id, field });
     setEditValue(current);
@@ -868,6 +913,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       // hand groups with the imported ones in the route ranking instead of
       // sitting beside them as a near-duplicate.
       onUpdateTicket?.(id, { route: extractRoute(raw) || raw.toUpperCase() });
+    } else if (field === 'date') {
+      const iso = validDateEntry(raw);
+      if (iso) onUpdateTicket?.(id, { date: iso });
     } else if (field === 'cabinClass') {
       // Both columns move together. cabin_raw is what the source called it,
       // and for a cabin chosen from this list the source IS this list — so
@@ -892,6 +940,22 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
       onBlur={commitEdit}
       className="w-24 px-1.5 py-0.5 text-xs font-bold border border-blue-400 rounded focus:outline-none focus:ring-1 ring-blue-400"
+      autoFocus
+    />
+  );
+
+  /** A real date picker, so the only thing that can be typed is a date. */
+  const editorDate = (
+    <input
+      type="date"
+      value={editValue}
+      min="2024-01-01"
+      max="2027-12-31"
+      onChange={e => setEditValue(e.target.value)}
+      onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
+      onBlur={commitEdit}
+      className="px-1.5 py-0.5 text-xs font-mono border border-blue-400 rounded
+                 focus:outline-none focus:ring-1 ring-blue-400"
       autoFocus
     />
   );
@@ -1445,7 +1509,21 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                       : <span className="text-slate-300">—</span>
                     }
                   </td>
-                  <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{ticket.date}</td>
+                  {/* Only a missing date opens an editor. One already
+                      recorded is plain text, exactly as it has always been. */}
+                  <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
+                    {isEditing(ticket.id, 'date') ? editorDate
+                      : ticket.date ? ticket.date
+                      : canSetDate(ticket) ? (
+                        <span
+                          data-editable
+                          onClick={() => startEdit(ticket, 'date')}
+                          title="This row has no date, so it sits in no period. Click to set one."
+                          className="text-red-500 italic font-bold cursor-pointer
+                                     hover:bg-red-50 px-1 py-0.5 rounded"
+                        >[+ DATE]</span>
+                      ) : <span className="text-red-400 italic">no date</span>}
+                  </td>
                   <td className="px-3 py-2 text-[10px] text-slate-400">
                     {isEditing(ticket.id, 'route') ? editorInput : (
                       <span
