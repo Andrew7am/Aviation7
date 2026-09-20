@@ -481,17 +481,12 @@ export function ledgerAccount(
   };
   const charged = ours.filter(t => draws(t.date));
 
-  // A payment made before the wallet opened is part of whatever produced the
-  // opening figure, so it is not added again - the same rule the tickets get,
-  // and calcVendorBalance applies it too.
-  const credited = pays.filter(p => draws(p.date));
-
   /** Our balance at the close of `day`, exactly as calcVendorBalance has it. */
   const at = (day: string): number | null => {
     if (!wallet) return null;
     const upTo = (d?: string) => { const x = (d || '').slice(0, 10); return !x || x <= day; };
     const t = charged.filter(x => upTo(x.date)).reduce((n, x) => n + (x.amount || 0), 0);
-    const p = credited.filter(x => upTo(x.date)).reduce((n, x) => n + (x.amount || 0), 0);
+    const p = pays.filter(x => upTo(x.date)).reduce((n, x) => n + (x.amount || 0), 0);
     return round2(wallet.initialBalance + p - t);
   };
 
@@ -503,12 +498,7 @@ export function ledgerAccount(
   const starts = [days[0], stmts[0]?.periodStart].filter(Boolean).sort() as string[];
   const ends = [days[days.length - 1], stmts[stmts.length - 1]?.periodEnd, through]
     .filter(Boolean).sort() as string[];
-  // The account begins where the wallet was opened, not where the rows do.
-  // An opening balance closes off everything behind it: those periods were
-  // settled by whatever produced the figure, and recomputing them would print
-  // a movement with no balance to move, which is a table that does not foot
-  // and an argument nobody is still having.
-  const first = openedOn && openedOn > starts[0] ? openedOn : starts[0];
+  const first = starts[0];
   const last = ends[ends.length - 1];
 
   const spans: { from: string; to: string; statement: VendorStatement | null }[] = [];
@@ -523,8 +513,7 @@ export function ledgerAccount(
       }
     };
     for (const s of stmts) {
-      if (s.periodEnd < cursor) continue;            // already inside a span,
-                                                     // or behind the baseline
+      if (s.periodEnd < cursor) continue;            // already inside a span
       if (s.periodStart > cursor) months(dayBefore(s.periodStart));
       spans.push({
         from: s.periodStart > cursor ? s.periodStart : cursor,
@@ -578,12 +567,7 @@ export function ledgerAccount(
     periods.pop();
   }
 
-  // Only a statement the account still reaches can be compared against. One
-  // that closed before the baseline describes a period we no longer recompute,
-  // so quoting a difference against it would report an argument that the
-  // opening figure already settled.
-  const comparable = stmts.filter(s => !openedOn || s.periodEnd >= openedOn);
-  const lastStated = comparable[comparable.length - 1] ?? null;
+  const lastStated = stmts[stmts.length - 1] ?? null;
   const ourAtStated = lastStated ? at(lastStated.periodEnd) : null;
 
   return {
