@@ -12,7 +12,9 @@
 import {
   parseTeamSheet, teamSerial, teamStatus, money, currencyOf,
 } from '../src/core/parsers/teamSheet';
-import { compareTeamSheet, reqKey, sameReq } from '../src/core/helpers/teamSheetCompare';
+import {
+  compareTeamSheet, reqKey, sameReq, reqParts, buildRelations, relatedReq,
+} from '../src/core/helpers/teamSheetCompare';
 import type { Ticket } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -404,6 +406,106 @@ console.log('\n18. A sheet with no request column says so, and still does its ha
     '065-5513059078,YSLM73,Issued,KSAML2053',
   ].join('\n')).rows, []);
   check('and a sheet that has one says that', withReq.sheetHasReq, true);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+console.log('\n19. A req field can name more than one request');
+{
+  // Every joining style the ledger actually contains.
+  check('a dash',        reqParts('KSAML43-SA1157'), ['KSAML43', 'SA1157']);
+  check('spaces around it', reqParts('KSAFM2175 - KSAML1533'), ['KSAFM2175', 'KSAML1533']);
+  check('a pipe',        reqParts('SA765|REQ10567'), ['SA765', 'REQ10567']);
+  check('a label between', reqParts('REQ10949|FIT|REQ11432'), ['REQ10949', 'REQ11432']);
+  check('nothing between', reqParts('UAECO201UAECO250'), ['UAECO201', 'UAECO250']);
+  // The long prefix must survive: KSAMLMI1446, not SAMLMI1446.
+  check('a long office prefix', reqParts('KSAMLMI1446-SA1196'), ['KSAMLMI1446', 'SA1196']);
+  check('an ordinary one',  reqParts('KSAML2053'), ['KSAML2053']);
+  check('lower case',       reqParts('ksaml2053'), ['KSAML2053']);
+
+  // A label is one thing, however many dashes it has. Splitting ADM-NOT AN
+  // ADM into two requests would invent one that does not exist.
+  check('a label with a dash', reqParts('ADM-NOT AN ADM'), ['ADMNOTANADM']);
+  check('a plain label',       reqParts('COMPANY EXPENSE'), ['COMPANYEXPENSE']);
+  check('nothing',             reqParts(''), []);
+}
+
+console.log('\n20. Cash tickets: two requests that belong together');
+{
+  // The ledger says these two are one piece of work, the only way it can:
+  // one row filed under both.
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', reqNum: 'KSAML43-SA1157' }),
+    tkt({ ticketNo: '5513059077', reqNum: 'KSAML43' }),
+    tkt({ ticketNo: '5513059076', reqNum: 'SA1157' }),
+    tkt({ ticketNo: '5513059075', reqNum: 'KSAML2053' }),
+  ];
+  const rel = buildRelations(ledger);
+  check('linked',        relatedReq('KSAML43', 'SA1157', rel), 'RELATED');
+  check('both ways',     relatedReq('SA1157', 'KSAML43', rel), 'RELATED');
+  check('itself',        relatedReq('KSAML43', 'KSAML43', rel), 'SAME');
+  check('one field naming both counts as the same',
+    relatedReq('KSAML43-SA1157', 'SA1157', rel), 'SAME');
+  check('an unrelated request', relatedReq('KSAML43', 'KSAML2053', rel), 'DIFFERENT');
+  check('a request nobody linked', relatedReq('KSAML2053', 'UAEVP711', rel), 'DIFFERENT');
+
+  // A written with B, B written with C: all three are one piece of work,
+  // because that is what the two rows say between them.
+  const chain = buildRelations([
+    { reqNum: 'A1-B2' }, { reqNum: 'B2-C3' },
+  ]);
+  check('relations carry through', relatedReq('A1', 'C3', chain), 'RELATED');
+}
+
+console.log('\n21. So a cash split is not reported as a misfiling');
+{
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    // The row that records the two as one piece of work, on both sides.
+    '065-5513059078,AAAAAA,Issued,KSAML43-SA1157',
+    // And the cash ticket, which they raised under the other number.
+    '065-5513059077,YQX75R,Issued,SA1157',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'AAAAAA', reqNum: 'KSAML43-SA1157' }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', reqNum: 'KSAML43' }),
+  ];
+  const r = compareTeamSheet(sheet, ledger);
+  check('not called a mistake', r.counts.REQ_DIFFERS, 0);
+  check('reported as related',  r.counts.REQ_RELATED, 1);
+  check('the note says why',
+    r.findings.find(f => f.verdict === 'REQ_RELATED')!.note.includes('one piece of work'), true);
+  // The whole point: this does not stop a sheet being closed.
+  check('and the sheet can still be closed', r.clean, true);
+
+  // Without that link in the ledger it IS a misfiling, and is reported so.
+  const unlinked = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5513059077,YQX75R,Issued,SA1157',
+  ].join('\n')).rows;
+  const noLink = compareTeamSheet(unlinked,
+    [tkt({ ticketNo: '5513059077', pnr: 'YQX75R', reqNum: 'KSAML43' })]);
+  check('unlinked requests are still caught', noLink.counts.REQ_DIFFERS, 1);
+  check('and that does stop the sheet', noLink.clean, false);
+}
+
+console.log('\n22. A combined request counts under both its halves');
+{
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5513059078,AAAAAA,Issued,KSAML43',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'AAAAAA', reqNum: 'KSAML43-SA1157' }),
+  ];
+  const r = compareTeamSheet(sheet, ledger);
+  // Keyed on the whole string, both requests would look empty.
+  check('both requests are in scope', r.requests, ['KSAML43', 'SA1157']);
+  check('and both hold the ticket',
+    r.byRequest.map(x => [x.reqNum, x.ourTickets]), [['KSAML43', 1], ['SA1157', 1]]);
+  check('their naming one half is agreement, not a mismatch', r.counts.OK, 1);
+  check('each names the other',
+    r.byRequest.map(x => x.related), [['SA1157'], ['KSAML43']]);
+  check('nothing to settle', r.clean, true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -22,6 +22,21 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * other short of one that is - and both totals look perfectly reasonable.
  * That is why a misfiled ticket is reported above a missing one.
  *
+ * BUT TWO REQUESTS ARE NOT ALWAYS TWO DIFFERENT THINGS
+ *
+ * A ticket paid in cash is raised under its own request, and that request
+ * belongs with the one it was split from. The ledger has said so all along,
+ * in the only place it could: fourteen req fields name two requests at once
+ * - KSAML43-SA1157, KSAML1294-SA1168, KSAFM2175 - KSAML1533 - and between
+ * them they carry 261 rows. Each of those is somebody recording that these
+ * two requests are one piece of work.
+ *
+ * So the relations are read out of the ledger rather than configured. A req
+ * field naming several requests links them; their sheet saying SA1157 where
+ * we say KSAML43 is then reported as RELATED and not as a mistake. Treating
+ * that as misfiled would raise a finding on every cash ticket in the system
+ * and teach everyone to ignore the column.
+ *
  * WHAT IS COMPARED, AND WHAT DELIBERATELY IS NOT
  *
  * The ticket number is the identity and it is compared. The request is
@@ -58,6 +73,7 @@ import { TeamSheetRow } from '../parsers/teamSheet';
 export type Verdict =
   | 'OK'
   | 'REQ_DIFFERS'
+  | 'REQ_RELATED'
   | 'NOT_IN_LEDGER'
   | 'VOID_NOT_BILLED'
   | 'REFUND_NOT_IN_LEDGER'
@@ -69,6 +85,7 @@ export type Verdict =
 export const VERDICT_LABEL: Record<Verdict, string> = {
   OK:                   'Agrees',
   REQ_DIFFERS:          'Filed under a different request',
+  REQ_RELATED:          'A related request',
   NOT_IN_LEDGER:        'Not in our ledger',
   VOID_NOT_BILLED:      'Void — never billed',
   REFUND_NOT_IN_LEDGER: 'Refund not in our ledger',
@@ -90,9 +107,88 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   REFUND_NOT_ON_SHEET: 4,
   REFUND_DIFFERS: 5,
   NOT_ISSUED_YET: 6,
-  VOID_NOT_BILLED: 7,
-  OK: 8,
+  // Two requests that belong together - a cash ticket beside the request it
+  // was split from. Worth seeing, never worth chasing.
+  REQ_RELATED: 7,
+  VOID_NOT_BILLED: 8,
+  OK: 9,
 };
+
+/**
+ * The requests named in one req field.
+ *
+ * Most fields name one. Some name two, because the work was split - most
+ * often a cash-paid ticket raised under its own number beside the request
+ * it came from - and they are written every way people write them:
+ * "KSAML43-SA1157", "KSAFM2175 - KSAML1533", "SA765|REQ10567",
+ * "REQ10949|FIT|REQ11432", and "UAECO201UAECO250" with nothing between
+ * them at all. So the parts are found by their shape rather than by any
+ * separator: letters followed by digits, which is what a request number is.
+ *
+ * A field with no such shape in it - ADM, COMPANY EXPENSE, ADM-NOT AN ADM,
+ * somebody's name - is one part, itself. Splitting those on the dash would
+ * invent two requests out of one label.
+ */
+const REQ_PART = /[A-Z]+\d+/g;
+
+export function reqParts(raw: string | undefined | null): string[] {
+  const s = (raw || '').toUpperCase();
+  const found = s.match(REQ_PART) || [];
+  if (found.length > 1) return [...new Set(found)];
+  const whole = reqKey(s);
+  return whole ? [whole] : [];
+}
+
+/**
+ * Which requests belong with which, learned from the ledger.
+ *
+ * Every req field that names more than one request is a statement that
+ * those requests are one piece of work, so the links are read from the
+ * data rather than kept in a list somebody has to maintain. Relations are
+ * transitive: A written with B and B written with C puts all three
+ * together, because that is what the three rows are saying between them.
+ */
+export function buildRelations(ledger: { reqNum?: string }[]): Map<string, Set<string>> {
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    if (!parent.has(x)) parent.set(x, x);
+    while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x)!)!); x = parent.get(x)!; }
+    return x;
+  };
+  const union = (a: string, b: string) => { const ra = find(a), rb = find(b); if (ra !== rb) parent.set(ra, rb); };
+
+  for (const t of ledger) {
+    const parts = reqParts(t.reqNum).map(reqKey).filter(Boolean);
+    for (let i = 1; i < parts.length; i++) union(parts[0], parts[i]);
+  }
+
+  const groups = new Map<string, Set<string>>();
+  for (const k of parent.keys()) {
+    const root = find(k);
+    if (!groups.has(root)) groups.set(root, new Set());
+    groups.get(root)!.add(k);
+  }
+  // Keyed by every member, so a lookup is one get.
+  const byMember = new Map<string, Set<string>>();
+  for (const g of groups.values())
+    for (const k of g) byMember.set(k, g);
+  return byMember;
+}
+
+/** Whether two requests are the same request, or two that belong together. */
+export function relatedReq(
+  a: string, b: string, relations: Map<string, Set<string>>,
+): 'SAME' | 'RELATED' | 'DIFFERENT' {
+  const A = reqParts(a).map(reqKey), B = reqParts(b).map(reqKey);
+  if (!A.length || !B.length) return 'DIFFERENT';
+  // One field naming several requests already contains the other's answer.
+  if (A.some(x => B.includes(x))) return 'SAME';
+  for (const x of A) {
+    const group = relations.get(x);
+    if (group && B.some(y => group.has(y))) return 'RELATED';
+  }
+  return 'DIFFERENT';
+}
 
 /**
  * Two request numbers that mean the same request.
@@ -137,6 +233,10 @@ export interface RequestLine {
   onlyOurs: number;
   /** Tickets both sides hold, filed under different requests. */
   misfiled: number;
+  /** Requests this one belongs with, as the ledger has recorded them - a
+   *  cash-paid split, usually. Shown so a count that looks short is read
+   *  beside the request the rest of it is under. */
+  related: string[];
   agrees: boolean;
 }
 
@@ -198,9 +298,19 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
 
   const sheetHasReq = sheet.some(r => !!reqKey(r.reqNum));
 
+  /* Which requests belong together, read out of the ledger - and out of
+     their sheet too, since a combined request may be written on either
+     side. See the note on relations above. */
+  const relations = buildRelations([
+    ...ledger.map(t => ({ reqNum: t.reqNum })),
+    ...sheet.map(r => ({ reqNum: r.reqNum })),
+  ]);
+
   /* ── the boundary: every request either side names ────────────────────── */
   const requests = new Set<string>();
-  const addReq = (r: string) => { if (reqKey(r)) requests.add(r.trim().toUpperCase()); };
+  // Each part separately: a row filed "KSAML43-SA1157" puts BOTH requests
+  // in scope, which is the point of writing them together.
+  const addReq = (r: string) => { for (const part of reqParts(r)) requests.add(part); };
   for (const [serial, rows] of theirBySerial) {
     for (const t of ourBySerial.get(serial) ?? []) addReq(t.reqNum || '');
     // A sheet that names its own requests widens the boundary to them even
@@ -249,11 +359,24 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
        they hold it in different files. Reported before anything else,
        because it is the only disagreement that leaves every count looking
        right - two requests are wrong and neither of them says so. */
-    if (theirReq && ourReq && !sameReq(theirReq, ourReq)) {
-      findings.push({ ...base, verdict: 'REQ_DIFFERS',
-        note: `We file it under ${ourReq}; their sheet files it under ${theirReq}.`
-            + ' One of the two requests is carrying a ticket that is not its own.' });
-      continue;
+    if (theirReq && ourReq) {
+      const how = relatedReq(ourReq, theirReq, relations);
+      if (how === 'RELATED') {
+        // A cash-paid ticket under its own number beside the request it was
+        // split from. The ledger says elsewhere that these two go together,
+        // so this is worth seeing and not worth chasing.
+        findings.push({ ...base, verdict: 'REQ_RELATED',
+          note: `We file it under ${ourReq}, their sheet under ${theirReq} —`
+              + ' two requests the ledger already records as one piece of work.' });
+        continue;
+      }
+      if (how === 'DIFFERENT') {
+        findings.push({ ...base, verdict: 'REQ_DIFFERS',
+          note: `We file it under ${ourReq}; their sheet files it under ${theirReq}.`
+              + ' One of the two requests is carrying a ticket that is not its own.' });
+        continue;
+      }
+      // SAME: either the very same request, or one field naming both.
     }
 
     // Their sheet names a request and our row has none. Not a mismatch -
@@ -314,8 +437,7 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
   const ourExtra = new Map<string, Ticket[]>();
   for (const t of ledger) {
     if (!isTicket(t)) continue;
-    const req = (t.reqNum || '').trim().toUpperCase();
-    if (!req || !requests.has(req)) continue;
+    if (!reqParts(t.reqNum || '').some(x => requests.has(x))) continue;
     const k = ticketMatchKey(t.ticketNo || '');
     if (!k || theirSerials.has(k)) continue;
     if (!ourExtra.has(k)) ourExtra.set(k, []);
@@ -341,12 +463,15 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
   const ourSerialsByReq = new Map<string, Set<string>>();
   for (const t of ledger) {
     if (!isTicket(t)) continue;
-    const k = reqKey(t.reqNum || '');
-    if (!k) continue;
     const serial = ticketMatchKey(t.ticketNo || '');
     if (!serial) continue;
-    if (!ourSerialsByReq.has(k)) ourSerialsByReq.set(k, new Set());
-    ourSerialsByReq.get(k)!.add(serial);
+    // A row filed "KSAML43-SA1157" counts under both, because it is under
+    // both. Keying on the whole string instead would leave each of those
+    // requests looking as though it held nothing.
+    for (const k of reqParts(t.reqNum || '')) {
+      if (!ourSerialsByReq.has(k)) ourSerialsByReq.set(k, new Set());
+      ourSerialsByReq.get(k)!.add(serial);
+    }
   }
 
   const byRequest: RequestLine[] = [...requests].sort().map(req => {
@@ -360,23 +485,24 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
     const theirSet = new Set<string>();
     for (const [serial, rows] of theirBySerial) {
       const stated = rows.find(r => reqKey(r.reqNum));
-      if (sheetHasReq) { if (stated && reqKey(stated.reqNum) === key) theirSet.add(serial); }
+      if (sheetHasReq) { if (stated && reqParts(stated.reqNum).includes(key)) theirSet.add(serial); }
       else if (ourSet.has(serial)) theirSet.add(serial);
     }
-    const misfiled = findings.filter(f =>
-      f.verdict === 'REQ_DIFFERS'
-      && (reqKey(f.reqNum) === key || reqKey(f.theirReq) === key)).length;
+    const touches = (f: Finding) =>
+      reqParts(f.reqNum).includes(key) || reqParts(f.theirReq).includes(key);
+    const misfiled = findings.filter(f => f.verdict === 'REQ_DIFFERS' && touches(f)).length;
+    const related = [...(relations.get(key) ?? [])].filter(x => x !== key).sort();
     const onlyTheirs = [...theirSet].filter(x => !ourSet.has(x)).length;
     const onlyOurs = [...ourSet].filter(x => !theirSet.has(x)).length;
     return {
       reqNum: req, theirTickets: theirSet.size, ourTickets: ourSet.size,
-      onlyTheirs, onlyOurs, misfiled,
+      onlyTheirs, onlyOurs, misfiled, related,
       agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0,
     };
   });
 
-  const ourRows = [...ourBySerial.values()].flat()
-    .filter(t => requests.has((t.reqNum || '').trim().toUpperCase())).length
+  const inScope = (t: Ticket) => reqParts(t.reqNum || '').some(k => requests.has(k));
+  const ourRows = [...ourBySerial.values()].flat().filter(inScope).length
     + [...ourExtra.values()].flat().length;
 
   return {
@@ -387,7 +513,11 @@ export function compareTeamSheet(sheet: TeamSheetRow[], ledger: Ticket[]): TeamS
     matched,
     // A void and a row still on hold are states of the world, not
     // disagreements, so a sheet carrying only those is a clean sheet.
+    // A void, a row still on hold and a related request are states of the
+    // world rather than disagreements, so a sheet carrying only those is a
+    // sheet that can be closed.
     clean: findings.every(f =>
-      f.verdict === 'OK' || f.verdict === 'VOID_NOT_BILLED' || f.verdict === 'NOT_ISSUED_YET'),
+      f.verdict === 'OK' || f.verdict === 'VOID_NOT_BILLED'
+      || f.verdict === 'NOT_ISSUED_YET' || f.verdict === 'REQ_RELATED'),
   };
 }

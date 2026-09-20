@@ -39,6 +39,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   REFUND_NOT_ON_SHEET:  { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REFUND_DIFFERS:       { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   NOT_ISSUED_YET:       { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
+  REQ_RELATED:          { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   VOID_NOT_BILLED:      { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   OK:                   { chip: 'bg-emerald-100 text-emerald-700',band: 'border-emerald-200', money: false },
 };
@@ -66,6 +67,10 @@ const WHY: Record<Verdict, string> = {
   REFUND_DIFFERS:
     'Both sides refunded, for different amounts. One of the two figures is wrong, and the'
     + ' difference is the amount at stake.',
+  REQ_RELATED:
+    'Each side files it under a different request, and the ledger already records those'
+    + ' two as one piece of work — a cash-paid ticket raised under its own number beside'
+    + ' the request it was split from. Listed so it is seen, not so it is chased.',
   NOT_ISSUED_YET:
     'Their rows with no ticket number — still on hold. Nothing to compare until a ticket'
     + ' is issued.',
@@ -129,12 +134,16 @@ const Group: React.FC<{ verdict: Verdict; rows: Finding[] }> = ({ verdict, rows 
                     </td>
                     <td className="px-3 py-1.5 text-slate-500">{f.pnr || '—'}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
-                      {f.verdict === 'REQ_DIFFERS' ? (
+                      {f.verdict === 'REQ_DIFFERS' || f.verdict === 'REQ_RELATED' ? (
                         // Both, because which is which IS the finding.
                         <span className="flex items-center gap-1">
                           <span className="text-purple-700 font-bold">{f.reqNum || '— none —'}</span>
-                          <ArrowLeftRight className="w-3 h-3 text-red-400 shrink-0" />
-                          <span className="text-red-600 font-bold">{f.theirReq}</span>
+                          <ArrowLeftRight className={`w-3 h-3 shrink-0 ${
+                            f.verdict === 'REQ_RELATED' ? 'text-sky-400' : 'text-red-400'}`} />
+                          <span className={`font-bold ${
+                            f.verdict === 'REQ_RELATED' ? 'text-sky-700' : 'text-red-600'}`}>
+                            {f.theirReq}
+                          </span>
                         </span>
                       ) : (
                         <span className="text-purple-700">{f.reqNum || '—'}</span>
@@ -400,6 +409,15 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
                           <span className="flex items-center gap-1.5">
                             <FolderOpen className="w-3.5 h-3.5 text-purple-400 shrink-0" />
                             {r.reqNum}
+                            {/* A request whose other half is elsewhere. Without
+                                this, its count reads as short. */}
+                            {r.related.length > 0 && (
+                              <span className="text-[9px] font-sans font-bold text-sky-700
+                                               bg-sky-50 border border-sky-200 rounded px-1 py-0.5"
+                                title="Recorded in the ledger as one piece of work with these">
+                                with {r.related.join(', ')}
+                              </span>
+                            )}
                           </span>
                         </td>
                         <td className="px-3 py-1.5 text-right text-slate-600">{r.theirTickets}</td>
