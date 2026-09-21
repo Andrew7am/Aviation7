@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Ticket } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
+import type { SupportedCurrency } from '../core/helpers/resolveCurrency';
 import { knownSources } from '../core/config/sources';
 import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { splitTicketNo } from '../core/helpers/ticketIdentity';
@@ -31,6 +32,21 @@ const TYPES = [
 
 type EntryType = typeof TYPES[number]['key'];
 
+/**
+ * The currencies a ticket can be recorded in.
+ *
+ * Exactly the four the rest of the system understands, and no more. It
+ * would be easy to list every currency an airline's website might charge
+ * in - one team sheet carried euros and three American carriers in dollars
+ * - but a ticket saved in a currency the wallets, the statements and the
+ * vendor balances cannot read is worse than one nobody recorded: it would
+ * sit in a total that is quietly wrong instead of a gap somebody can see.
+ *
+ * Widening this means widening SupportedCurrency and everything that
+ * converts, and that is a decision about the books rather than a dropdown.
+ */
+export const CURRENCIES: SupportedCurrency[] = ['SAR', 'AED', 'USD', 'EUR'];
+
 /** Sentinel for the dropdown entry that opens a free-text vendor name. Not a
  *  value anything is ever saved under. */
 const OTHER = '__other__';
@@ -51,10 +67,28 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
   const [amount, setAmount]   = useState('');
   const [reqNum, setReqNum]   = useState('');
   const [cabin, setCabin]     = useState('');
+  const [ref, setRef]         = useState('');
   const [saving, setSaving]   = useState(false);
   const [error, setError]     = useState('');
 
-  const currency = useMemo(() => sourceToCurrency(vendor), [vendor]);
+  /**
+   * The currency, which the vendor usually settles the question of and
+   * sometimes cannot.
+   *
+   * Every vendor with a wallet bills in one currency, so it is read from
+   * the vendor and nobody has to think about it. A ticket bought on an
+   * airline's own website has no vendor in that sense: the aviation team's
+   * sheet carries easyJet in EUR, JetBlue and United in USD, Wizz Air in
+   * AED - and read from the name, all four would be filed as Saudi riyals,
+   * because the rule's answer when it recognises nothing is SAR.
+   *
+   * So the vendor proposes and the person disposes. Touching the selector
+   * pins it; leaving it alone lets it keep following the vendor, which is
+   * what it should do for the eight vendors that have a wallet.
+   */
+  const [pinnedCurrency, setPinnedCurrency] = useState<SupportedCurrency | ''>('');
+  const impliedCurrency = useMemo(() => sourceToCurrency(vendor), [vendor]);
+  const currency = pinnedCurrency || impliedCurrency;
 
   /**
    * Ticket number and airline, split the one way the rest of the app splits
@@ -121,7 +155,9 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
         // cabin picked from a list has nothing else behind it.
         cabinClass:      cabin || undefined,
         cabinRaw:        cabin ? CABIN_LABEL[cabin as Exclude<Cabin, ''>] : undefined,
-        vendorReference: '',
+        // An online booking's own confirmation - the only reference it will
+        // ever have, since no supplier will invoice it.
+        vendorReference: ref.trim().toUpperCase(),
         // REISSUE settles like an issue, so it is stored as ISSUE for the
         // balance but keeps "REISSUE" as its transaction type for the record.
         status:          type === 'REISSUE' ? 'ISSUE' : type,
@@ -217,6 +253,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
               <p className="text-[10px] text-slate-400 mt-1 font-mono">
                 {vendor.trim() ? `Settles in ${currency}` : 'Pick or type a vendor'}
                 {vendor.trim() && isNewVendor && ' · new vendor'}
+                {pinnedCurrency && pinnedCurrency !== impliedCurrency && ' · currency set by hand'}
                 {typingVendor && (
                   <button type="button"
                           onClick={() => { setTypingVendor(false); setVendor(suggestions[0] ?? ''); }}
@@ -229,6 +266,34 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
             <div>
               <label className={label}>Date</label>
               <input type="date" value={date} onChange={e => setDate(e.target.value)} className={field} />
+            </div>
+            <div>
+              <label className={label}>Currency</label>
+              <select value={currency}
+                      onChange={e => setPinnedCurrency(e.target.value as SupportedCurrency)}
+                      className={field}>
+                {CURRENCIES.map(x => (
+                  <option key={x} value={x}>
+                    {x}{x === impliedCurrency ? ` — what ${vendor.trim() || 'this vendor'} settles in` : ''}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                {pinnedCurrency && pinnedCurrency !== impliedCurrency
+                  ? 'Set by hand. The vendor implies ' + impliedCurrency + '.'
+                  : 'Follows the vendor. Change it for a ticket bought in another currency.'}
+              </p>
+            </div>
+            <div>
+              {/* An online booking has no invoice to come; its confirmation
+                  number is the only reference it will ever carry. */}
+              <label className={label}>Booking reference</label>
+              <input value={ref} onChange={e => setRef(e.target.value)}
+                     placeholder="confirmation or invoice number"
+                     className={field} />
+              <p className="text-[10px] text-slate-400 mt-1 font-mono">
+                Optional — what the airline or site called this booking.
+              </p>
             </div>
             <div>
               {/* Recorded at the point of sale, which is the only place it is

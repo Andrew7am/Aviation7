@@ -7,6 +7,7 @@
  */
 import { resolveCurrency } from '../src/core/helpers/resolveCurrency';
 import { classifyAgainstExisting, detectDuplicatesAgainstExisting } from '../src/core/ImportEngine';
+import { CURRENCIES } from '../src/components/ManualEntry';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -86,6 +87,25 @@ console.log('\n6. A currency difference is reported, not swallowed');
     [mk({ id: 'held', source: 'IATA BSP', currency: 'EUR' })]);
   check('a currency-only settlement is not called a duplicate', r.duplicates.length, 0);
   check('it settles instead', r.settlements.length, 1);
+}
+
+console.log('\nThe currencies manual entry offers');
+{
+  // A ticket bought on an airline's own website can be charged in anything,
+  // and the dropdown could list anything. It must not: the wallets, the
+  // statements and the vendor balances read four currencies, and a ticket
+  // saved outside them would sit inside a total that is quietly wrong
+  // rather than in a gap somebody can see.
+  //
+  // Worth a test rather than a comment because strict mode is off in this
+  // project, so adding 'EGP' to that list would compile without a murmur.
+  const SUPPORTED = ['SAR', 'AED', 'USD', 'EUR'];
+  for (const c of CURRENCIES)
+    check(`${c} is a currency the rest of the system reads`, SUPPORTED.includes(c), true);
+  check('and all four are offered', CURRENCIES.length, 4);
+  // The two the vendors settle in have to be there, whatever else is.
+  check('SAR is offered', CURRENCIES.includes('SAR'), true);
+  check('AED is offered', CURRENCIES.includes('AED'), true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
