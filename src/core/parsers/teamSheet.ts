@@ -46,6 +46,9 @@ export interface TeamSheetRow {
    * than dropped, because a row nobody can see is a row nobody checks.
    */
   unreadable: boolean;
+  /** …and that Excel is why: "6.55512E+11". Their export can fix that one;
+   *  the others need somebody to look at the row. */
+  excelDamaged: boolean;
   /** The 10-digit serial, or '' when the row has no ticket yet. */
   serial: string;
   airlineCode: string;
@@ -132,7 +135,7 @@ export function currencyOf(raw: unknown): string {
 }
 
 /**
- * Every ticket number their cell names.
+ * Every document their cell names.
  *
  * Their column holds one number most of the time, in whatever shape the
  * person typed: "065-5513373360", "065 5513059137", "065-5513059104/",
@@ -151,20 +154,139 @@ export function currencyOf(raw: unknown): string {
  * which turned the first of those into ticket 5121293203 - a number that
  * exists nowhere, reported as missing from our books, sending somebody to
  * look for a ticket that was never issued. So there is no "last ten digits"
- * fallback any more. A document is found by its shape, all of them are
- * found, and a cell whose shape says nothing yields nothing.
+ * fallback. A document is found by its shape, all of them are found, and a
+ * cell whose shape says nothing yields nothing.
+ *
+ * AND NOT EVERY DOCUMENT IS AN IATA TICKET
+ *
+ * The low-cost carriers do not issue one. FlyAdeal, flydubai, flynas and
+ * Air Arabia give a booking reference - EDINGX, RX12237H6T9J5, 8K6NYC -
+ * and that reference IS the document: our ledger stores 188 of them in the
+ * ticket number itself. Treating those as unreadable, which this did at
+ * first, refused to match twenty-nine tickets that were sitting in both
+ * lists under the same reference.
+ *
+ * A reference is told from noise by shape: at least five characters, at
+ * least one letter and one digit, nothing else in it. That admits every
+ * carrier reference seen in either system and excludes "F3" (an airline
+ * code in the wrong column), "2000", "0", "--3pax +1inf" and
+ * "1.ALORENI/FOZIAH ABDULLAH".
  */
 const DOC = /(\d{3})[\s\u2013\u2014-]?(\d{10})(?!\d)|(?<![\d])(\d{10})(?!\d)/g;
+
+/** Excel's wreckage of a 13-digit number stored as a number. The plus sign
+ *  is required and the whole cell must be it, so a booking reference like
+ *  6E3M6D is never mistaken for one. */
+const EXCEL_DAMAGE = /^\d(\.\d+)?E\+\d+$/i;
+
+/**
+ * A carrier's own booking reference, which for an LCC is the document.
+ *
+ * Two shapes, because the carriers use two. flydubai and Air Arabia mix
+ * letters and digits - RX12237H6T9J5, 8K6NYC - and FlyAdeal's are six
+ * letters with no digit at all: EDINGX, FYIQFD, REENWK, all three of which
+ * sit in our own ledger as ticket numbers.
+ *
+ * The all-letter form has to be bounded tightly or it swallows any word in
+ * the column, so it must be exactly six characters AND already uppercase in
+ * their file. That takes every reference either system holds and leaves
+ * "Issued", "EMD", "fz" and a passenger's name where they belong: reported
+ * as cells that are not a ticket number.
+ */
+const REFERENCE = /^(?=.*[A-Z])[A-Z0-9]{5,15}$/;
+const isReference = (piece: string) => {
+  const up = piece.toUpperCase();
+  if (!REFERENCE.test(up)) return false;
+  if (/\d/.test(up)) return true;
+  return piece.length === 6 && piece === up;
+};
+
+/**
+ * A range written the way people write consecutive tickets.
+ *
+ *     176-5512938024-25        two tickets, ...024 and ...025
+ *     1763000541793-794        the same shorthand, in our own ledger
+ *
+ * The tail after the last dash replaces the end of the serial. Both systems
+ * use it, and neither could see the second ticket until now: a cell reading
+ * "...024-25" matched one ticket and the other existed nowhere.
+ *
+ * Bounded on purpose. The tail must be shorter than the serial, must count
+ * FORWARD, and must not run more than twenty - anything else is not a range
+ * but two numbers that happen to sit beside a dash, and expanding it would
+ * be inventing tickets, which is the fault this whole reader exists to
+ * avoid repeating.
+ */
+const RANGE = /(\d{10})-(\d{1,3})(?!\d)/;
+
+function expandRange(serial: string, tail: string): string[] {
+  if (tail.length >= serial.length) return [];
+  const last = serial.slice(0, serial.length - tail.length) + tail;
+  const from = Number(serial), to = Number(last);
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to)) return [];
+  if (to <= from || to - from > 20) return [];
+  const out: string[] = [];
+  for (let n = from + 1; n <= to; n++) out.push(String(n).padStart(serial.length, '0'));
+  return out;
+}
+
+/**
+ * The pieces a cell is made of.
+ *
+ * Their sheet separates several documents with newlines, commas,
+ * semicolons, pipes, "//" — and with TABS, which is what a paste out of a
+ * spreadsheet leaves behind. A tab left unsplit is how "180-5512938098"
+ * and "618-5512878156" ran together into 551-2938098618, a ticket that
+ * exists nowhere.
+ */
+const splitCell = (text: string) =>
+  text.split(/[\n\r\t,;]+|\s*\/\/\s*|\s\|\s|\s{2,}/).map(x => x.trim()).filter(Boolean);
+
+/** Documents in one piece, ranges expanded. */
+function docsIn(piece: string): { serial: string; airlineCode: string }[] {
+  const out: { serial: string; airlineCode: string }[] = [];
+  for (const m of piece.matchAll(DOC)) {
+    const serial = m[2] ?? m[3];
+    const airlineCode = m[1] ?? '';
+    out.push({ serial, airlineCode });
+    // "...024-25": the tail belongs to the document just read.
+    const after = piece.slice(m.index! + m[0].length);
+    const range = after.match(/^-(\d{1,3})(?!\d)/);
+    if (range) for (const n of expandRange(serial, range[1])) out.push({ serial: n, airlineCode });
+  }
+  return out;
+}
 
 export function teamSerials(raw: unknown): { serial: string; airlineCode: string }[] {
   const text = String(raw ?? '');
   const out: { serial: string; airlineCode: string }[] = [];
   const seen = new Set<string>();
-  for (const m of text.matchAll(DOC)) {
-    const serial = m[2] ?? m[3];
-    if (!serial || seen.has(serial)) continue;
-    seen.add(serial);
-    out.push({ serial, airlineCode: m[1] ?? '' });
+  const add = (d: { serial: string; airlineCode: string }) => {
+    if (!d.serial || seen.has(d.serial)) return;
+    seen.add(d.serial);
+    out.push(d);
+  };
+
+  for (const piece of splitCell(text)) {
+    const found = docsIn(piece);
+    if (found.length) { found.forEach(add); continue; }
+
+    // Nothing in the piece as written. A document number typed with spaces
+    // inside it - "084 2318 700 632" - is still that document, so try once
+    // more with the spaces out. Only when the piece yielded nothing, never
+    // as the first reading: joining first is what runs two documents
+    // together into a third that is neither.
+    const tight = piece.replace(/\s+/g, '');
+    const joined = docsIn(tight);
+    if (joined.length) { joined.forEach(add); continue; }
+
+    if (EXCEL_DAMAGE.test(tight)) continue;
+    // Tested as written, not after stripping punctuation out of it: a
+    // carrier reference is one unbroken token, and "--3pax +1inf" reduced
+    // to 3PAX1INF looks exactly like one once the spaces and signs are
+    // thrown away.
+    const cleanPiece = piece.trim();
+    if (isReference(cleanPiece)) add({ serial: cleanPiece.toUpperCase(), airlineCode: '' });
   }
   return out;
 }
@@ -175,21 +297,29 @@ export function teamSerial(raw: unknown): { serial: string; airlineCode: string 
 }
 
 /**
- * A cell that was meant to carry a ticket number and does not.
+ * A cell that was meant to carry a document and does not.
  *
  * "--", "---", "0" and blank are how their sheet writes "not issued yet",
- * and those are states, not faults. Anything else with digits in it that
- * yielded no document is a number that got damaged on the way out of their
- * system - "6.55512E+11" - and somebody has to be told, because the row
- * cannot be checked at all.
+ * and those are states, not faults. What is left is a cell somebody has to
+ * look at: a number Excel destroyed ("6.55512E+11"), an airline code typed
+ * into the ticket column ("F3"), a count of passengers ("--3pax +1inf"), a
+ * passenger's name. None of those can be checked against anything.
  */
 export function ticketUnreadable(raw: unknown): boolean {
   const text = String(raw ?? '').trim();
   if (!text) return false;
   if (teamSerials(text).length > 0) return false;
   if (/^[-\u2013\u2014\s]*$/.test(text)) return false;      // --, ---
-  if (/^0+(\.0+)?$/.test(text)) return false;                // 0
-  return /\d/.test(text);
+  if (/^0+(\.0+)?$/.test(text)) return false;                // 0, 00, 000
+  return true;
+}
+
+/** Excel destroyed the number: a 13-digit ticket stored as a number comes
+ *  back as "6.55512E+11" with its digits gone for good. Anchored, and the
+ *  plus sign required, so a booking reference like 6E3M6D is not mistaken
+ *  for one. */
+export function excelDamaged(raw: unknown): boolean {
+  return EXCEL_DAMAGE.test(String(raw ?? '').trim());
 }
 
 /**
@@ -262,6 +392,7 @@ export function parseTeamSheet(text: string): ParsedTeamSheet {
       groupSize: docs.length,
       siblings: docs.map(d => d.serial).filter(x => x && x !== serial),
       unreadable: docs.length === 0 && ticketUnreadable(rawTicket),
+      excelDamaged: docs.length === 0 && excelDamaged(rawTicket),
       serial, airlineCode,
       pnr: at(r, col.pnr).replace(/\s+/g, '').toUpperCase(),
       status: teamStatus(rawStatus),

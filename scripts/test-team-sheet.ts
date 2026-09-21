@@ -10,7 +10,8 @@
  * a tidy invented one.
  */
 import {
-  parseTeamSheet, teamSerial, teamSerials, ticketUnreadable, teamStatus, money, currencyOf,
+  parseTeamSheet, teamSerial, teamSerials, ticketUnreadable, excelDamaged,
+  teamStatus, money, currencyOf,
 } from '../src/core/parsers/teamSheet';
 import {
   compareTeamSheet, reqKey, sameReq, reqParts, buildRelations, relatedReq,
@@ -760,6 +761,88 @@ console.log('\n31. A damaged number identified by its PNR');
   check('the damaged row claims nothing',
     taken.findings.find(f => f.verdict === 'UNREADABLE')?.serial, '');
   check('the readable row matched it', taken.counts.OK, 1);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+console.log('\n32. The separators their cells really use');
+{
+  // A tab is what a paste out of a spreadsheet leaves behind, and it was
+  // the one separator not being split on - which ran 180-5512938098 and
+  // 618-5512878156 together into 551-2938098618, a ticket that exists
+  // nowhere. The same fault as 5121293203, by a different route.
+  const tabbed = '176-5512938024\t180-5512878154 , 180-5512938098\t618-5512878156';
+  const got = teamSerials(tabbed).map(d => `${d.airlineCode}-${d.serial}`);
+  check('tabs split',  got,
+    ['176-5512938024', '180-5512878154', '180-5512938098', '618-5512878156']);
+  check('no number invented across a tab',
+    got.some(x => x.includes('2938098618')), false);
+  check('a double slash splits',
+    teamSerials('176-5512878152 // 180-5512878155').map(d => d.serial),
+    ['5512878152', '5512878155']);
+  check('two spaces split',
+    teamSerials('180-5512938022        618-5512938112').map(d => d.serial),
+    ['5512938022', '5512938112']);
+
+  // A number typed with spaces inside it is still one number - but only
+  // when reading the piece as written yielded nothing, so joining can
+  // never run two documents into a third.
+  check('spaces inside one number', teamSerials('084 2318 700 632').map(d => d.serial),
+    ['2318700632']);
+  check('and its airline', teamSerials('084 2318 700 632')[0].airlineCode, '084');
+}
+
+console.log('\n33. Consecutive tickets written as a range');
+{
+  // Both systems write them this way, and until now the second ticket of
+  // every pair existed nowhere.
+  check('two', teamSerials('176-5512938024-25').map(d => d.serial),
+    ['5512938024', '5512938025']);
+  check('a three-digit tail', teamSerials('1763000541793-794').map(d => d.serial),
+    ['3000541793', '3000541794']);
+  check('the airline carries to both',
+    teamSerials('176-5512938024-25').map(d => d.airlineCode), ['176', '176']);
+  check('a longer run fills in',
+    teamSerials('065-5512129318-20').map(d => d.serial),
+    ['5512129318', '5512129319', '5512129320']);
+
+  // Bounded, because an unbounded range is another way to invent tickets.
+  check('a backwards range is not a range',
+    teamSerials('065-5512129320-18').map(d => d.serial), ['5512129320']);
+  check('a wild jump is not a range',
+    teamSerials('065-5512129318-99').map(d => d.serial), ['5512129318']);
+  check('a tail as long as the serial is not a range',
+    teamSerials('5512129318-5512129319').map(d => d.serial),
+    ['5512129318', '5512129319']);
+}
+
+console.log('\n34. A carrier reference is a document too');
+{
+  // The low-cost carriers issue no IATA ticket; the booking reference IS
+  // the document, and our ledger stores 188 of them as the ticket number.
+  // Calling them unreadable refused to match tickets sitting in both lists
+  // under the same reference.
+  check('letters and digits', teamSerials('RX12237H6T9J5').map(d => d.serial), ['RX12237H6T9J5']);
+  check('flydubai', teamSerials('8K6NYC').map(d => d.serial), ['8K6NYC']);
+  check('six letters, no digit — FlyAdeal', teamSerials('EDINGX').map(d => d.serial), ['EDINGX']);
+  check('two in one cell', teamSerials('RBA5VB // B7YYHM').map(d => d.serial),
+    ['RBA5VB', 'B7YYHM']);
+  check('lower case is lifted', teamSerials('rx12237h6t9j5').map(d => d.serial), ['RX12237H6T9J5']);
+
+  // And the things in that column that are not documents at all.
+  for (const junk of ['F3', 'fz', 'EMD', '2000', '10000', '22222', '02', '1',
+                      'Issued', 'NICOLETTE LEE NOBLE', '--3pax +1inf',
+                      '1.ALORENI/FOZIAH ABDULLAH', 'AIR ARABIA'])
+    check(`"${junk}" is not a document`, teamSerials(junk).length, 0);
+  // A word of exactly six letters would pass the all-letter shape, so it
+  // has to be uppercase in their file as every real reference is.
+  check('a capitalised word is not a reference', teamSerials('Issued').length, 0);
+  check('but an uppercase six is', teamSerials('ZJOHIT').map(d => d.serial), ['ZJOHIT']);
+
+  check('Excel wreckage is still not a reference', teamSerials('6.55512E+11').length, 0);
+  check('and is still called damage', excelDamaged('6.55512E+11'), true);
+  check('a reference with an E is not damage', excelDamaged('6E3M6D'), false);
+  check('and is read as the reference it is',
+    teamSerials('6E3M6D').map(d => d.serial), ['6E3M6D']);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
