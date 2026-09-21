@@ -893,45 +893,68 @@ console.log('\n36. A serial is never matched against a PNR');
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
-console.log('\n37. A refund gap their markup explains is not a finding');
+console.log('\n37. A refund has two right answers, before and after our commission');
 {
-  // Their refund carries the same uplift their cost does. Across a full
-  // export the gaps cluster under 2.8% and the next one up is 3.9%, so
-  // three per cent is where their pricing stops and a mistake starts.
+  // We keep both: totalDoc is what the airline refunded, amount is what
+  // reached us once our commission came back off it. Their sheet records
+  // sometimes one and sometimes the other, so agreement with either is
+  // agreement. Real figures from 065-5513427734.
   const sheet = (refund: number) => parseTeamSheet([
     'Ticket Number,PNR,Status,Refund Amount',
-    `065-5513059077,YQX75R,Cancelled/Refunded,${refund}`,
+    `065-5513427734,XNGWTQ,Cancelled/Refunded,${refund}`,
   ].join('\n')).rows;
   const ledger: Ticket[] = [
-    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: 12000 }),
-    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: -10000, status: 'REFUND' }),
+    tkt({ ticketNo: '5513427734', pnr: 'XNGWTQ', amount: 846, totalDoc: 940, commission: 94 }),
+    tkt({ ticketNo: '5513427734', pnr: 'XNGWTQ', amount: -316, totalDoc: 410,
+          commission: -94, status: 'REFUND' }),
   ];
 
-  // The two the report was wrong about, to the percentage: 2.56% and 2.78%.
-  check('2.5% is their markup',  compareTeamSheet(sheet(10250), ledger).counts.REFUND_DIFFERS, 0);
-  check('2.8% is their markup',  compareTeamSheet(sheet(10280), ledger).counts.REFUND_DIFFERS, 0);
-  check('a few fils is nothing', compareTeamSheet(sheet(10000.4), ledger).counts.REFUND_DIFFERS, 0);
-  check('exactly equal',         compareTeamSheet(sheet(10000), ledger).counts.REFUND_DIFFERS, 0);
-  // And the ones that are not.
-  check('4% is too wide',        compareTeamSheet(sheet(10400), ledger).counts.REFUND_DIFFERS, 1);
-  check('30% certainly is',      compareTeamSheet(sheet(13000), ledger).counts.REFUND_DIFFERS, 1);
-  check('and it works downwards too',
-    compareTeamSheet(sheet(7000), ledger).counts.REFUND_DIFFERS, 1);
+  check('their figure is our net',   compareTeamSheet(sheet(316), ledger).counts.REFUND_DIFFERS, 0);
+  // The one this was getting wrong: their 410 IS our 410, before commission.
+  check('their figure is our gross', compareTeamSheet(sheet(410), ledger).counts.REFUND_DIFFERS, 0);
+  check('the gross one agrees',      compareTeamSheet(sheet(410), ledger).counts.OK, 1);
+  // Neither, and by more than rounding.
+  check('neither of the two',        compareTeamSheet(sheet(900), ledger).counts.REFUND_DIFFERS, 1);
 
-  // The floor: a small refund can be 4% adrift over a trivial sum.
-  const small: Ticket[] = [
-    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: 500 }),
-    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: -308, status: 'REFUND' }),
-  ];
-  check('twelve dirhams is not worth a finding',
-    compareTeamSheet(sheet(320), small).counts.REFUND_DIFFERS, 0);
-  check('even though it is 3.9%',
-    Math.abs(100 * (320 - 308) / 308) > 3, true);
-
-  const f = compareTeamSheet(sheet(13000), ledger).findings
+  const f = compareTeamSheet(sheet(900), ledger).findings
     .find(x => x.verdict === 'REFUND_DIFFERS')!;
-  check('the note gives both figures', f.note.includes('13,000.00') && f.note.includes('10,000.00'), true);
-  check('and says how far apart as a share', f.note.includes('30.0%'), true);
+  check('the note gives both of ours',
+    f.note.includes('316.00 after commission') && f.note.includes('410.00 before'), true);
+  check('and the nearest gap', f.note.includes('490.00'), true);
+
+  // A ticket with no commission has one answer, and it still works.
+  const plain: Ticket[] = [
+    tkt({ ticketNo: '5513427734', pnr: 'XNGWTQ', amount: 940, totalDoc: 940 }),
+    tkt({ ticketNo: '5513427734', pnr: 'XNGWTQ', amount: -410, totalDoc: 410, status: 'REFUND' }),
+  ];
+  check('no commission, agrees',   compareTeamSheet(sheet(410), plain).counts.REFUND_DIFFERS, 0);
+  check('no commission, disagrees', compareTeamSheet(sheet(900), plain).counts.REFUND_DIFFERS, 1);
+  check('and the note gives one figure, not two',
+    compareTeamSheet(sheet(900), plain).findings
+      .find(x => x.verdict === 'REFUND_DIFFERS')!.note.includes('after commission'), false);
+}
+
+console.log('\n37b. Rounding between two systems is not a disagreement');
+{
+  // What this keeps out: fils. What it keeps in: the four real gaps on the
+  // export, the smallest of which is 120.
+  const sheet = (refund: number) => parseTeamSheet([
+    'Ticket Number,PNR,Status,Refund Amount',
+    `065-5513058939,YLGKIH,Cancelled/Refunded,${refund}`,
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513058939', pnr: 'YLGKIH', amount: 2630, totalDoc: 2630 }),
+    tkt({ ticketNo: '5513058939', pnr: 'YLGKIH', amount: -2050, totalDoc: 2050, status: 'REFUND' }),
+  ];
+  check('twenty-two fils',   compareTeamSheet(sheet(2050.22), ledger).counts.REFUND_DIFFERS, 0);
+  check('nine dirhams',      compareTeamSheet(sheet(2059), ledger).counts.REFUND_DIFFERS, 0);
+  check('forty-nine',        compareTeamSheet(sheet(2099), ledger).counts.REFUND_DIFFERS, 0);
+  check('fifty is the line', compareTeamSheet(sheet(2100), ledger).counts.REFUND_DIFFERS, 1);
+  // The real one: their sheet says 600 came back, ours says 2,050.
+  check('and the real one', compareTeamSheet(sheet(600), ledger).counts.REFUND_DIFFERS, 1);
+  check('by 1,450',
+    compareTeamSheet(sheet(600), ledger).findings
+      .find(x => x.verdict === 'REFUND_DIFFERS')!.note.includes('1,450.00'), true);
 }
 
 console.log('\n38. A refund their sheet states twice cannot be compared');

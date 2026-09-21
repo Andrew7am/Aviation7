@@ -52,26 +52,27 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * thirty times stops being read the first time. Both figures are carried so
  * they can be looked at; neither is called an error.
  *
- * THE REFUND CARRIES THE MARKUP TOO
+ * A REFUND HAS TWO RIGHT ANSWERS: BEFORE AND AFTER OUR COMMISSION
  *
- * That was learnt late. On the first sheet the refunds agreed to the fils,
- * so they looked like the one figure both sides took from the same place.
- * On the full export they do not, and the gaps fall into three bands:
+ * This took two wrong attempts to see. The gaps were first reported in
+ * full, which raised two dozen findings; then written off as "their
+ * markup" and filtered by a percentage, which was a guess dressed as a
+ * rule. Both were wrong, and the real relationship is exact:
  *
- *     eight within a few fils            rounding
- *     nine between 1.3% and 2.8%         their markup, the same as the cost
- *     then a jump to 3.9, 4.2, 8.5,
- *     29.8, 30.6 and -70.7 per cent      something actually wrong
+ *     they refund 2,890.00 = our document 2,890.00 less 226.00 commission,
+ *                            so our ledger carries 2,664.00
+ *     they refund   410.00 = our document   410.00 less  94.00 commission,
+ *                            so our ledger carries   316.00
  *
- * So a gap that their markup could explain is not reported. The line is
- * drawn at three per cent of our refund AND fifty in currency, and both
- * halves matter: the percentage keeps the markup out, and the floor keeps
- * out a twelve-dirham gap that happens to be 3.9% of a small refund.
+ * We keep both figures - `totalDoc` is what the airline refunded, `amount`
+ * is what reached us once our commission came back off it - and their
+ * sheet records sometimes one and sometimes the other. On a full export 95
+ * of their figures equal our net exactly, 12 equal our gross exactly, and
+ * the rest are the real disagreements.
  *
- * Two tickets on that sheet - 2540225915 at 2.56% and 2540225918 at 2.78% -
- * were reported as disagreements and were nothing of the kind. Both sides
- * agreed exactly on what was KEPT; they differed only on a gross figure
- * that was never the same quantity on both sides.
+ * So a refund agrees when their figure matches EITHER of ours to the fils.
+ * No percentage and nothing to tune: two exact comparisons, because both
+ * are true answers to "how much was refunded".
  *
  * HOW THE COMPARISON IS SCOPED
  *
@@ -376,15 +377,14 @@ export interface TeamSheetReport {
 }
 
 /**
- * How far apart two refund figures may be before it means anything.
+ * Below this, a refund gap is two systems rounding, not a disagreement.
  *
- * Their markup sits on their refund. Measured across a full export it runs
- * from a few fils to 2.8%, and the next gap above that is 3.9% - so three
- * per cent separates "their pricing" from "somebody is wrong", and fifty
- * in currency keeps a trivial gap on a small refund out of the report.
+ * The real gaps on a full export are 120, 1,450, 2,224 and 2,757; what it
+ * keeps out are twelve fils, twenty-two fils and a nine-dirham difference
+ * on a four-thousand-dirham refund. Nobody is going to chase those, and a
+ * report that lists them is a report that gets skimmed.
  */
-export const MARKUP_BAND = 0.03;
-export const MARKUP_FLOOR = 50;
+export const REFUND_FLOOR = 50;
 
 const money = (n: number) =>
   Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -610,24 +610,27 @@ export function compareTeamSheet(
 
     if (theySayRefunded && ourRefunds.length > 0) {
       const theirs = rows.reduce((s, r) => s + Math.abs(r.refund ?? 0), 0);
-      const ourSum = ourRefunds.reduce((s, t) => s + Math.abs(t.amount || 0), 0);
+      // Both of ours: what reached us, and what the airline refunded before
+      // our own commission came back off it. Their sheet records either.
+      const ourNet = ourRefunds.reduce((s, t) => s + Math.abs(t.amount || 0), 0);
+      const ourGross = ourRefunds.reduce((s, t) => s + Math.abs(t.totalDoc || t.amount || 0), 0);
       // A figure written once for a cell naming three tickets is the
       // booking's, not this ticket's. Comparing it against one ticket's
       // refund would report a difference on all three every time.
       const shared = rows.some(r => r.groupSize > 1);
-      const gap = theirs - ourSum;
-      // Their markup rides on the refund as it does on the cost, so a gap
-      // it could account for is not a disagreement. See the note above for
-      // where these two numbers come from.
-      const beyondMarkup = Math.abs(gap) > MARKUP_BAND * ourSum && Math.abs(gap) >= MARKUP_FLOOR;
+      // Agreement with either is agreement, so the nearer one is the gap.
+      const gap = Math.abs(theirs - ourNet) <= Math.abs(theirs - ourGross)
+        ? theirs - ourNet : theirs - ourGross;
       // Only when they actually stated a figure; a blank is not a zero.
-      if (!shared && rows.some(r => r.refund != null) && beyondMarkup) {
-        const pct = ourSum ? Math.abs(100 * gap / ourSum).toFixed(1) : '—';
+      if (!shared && rows.some(r => r.refund != null) && Math.abs(gap) >= REFUND_FLOOR) {
+        const cur = ourRefunds[0].currency || '';
+        const both = Math.abs(ourGross - ourNet) >= 0.01
+          ? `${money(ourNet)} after commission, ${money(ourGross)} before`
+          : money(ourNet);
         findings.push({ ...base, verdict: 'REFUND_DIFFERS',
-          note: `They refund ${money(theirs)}, we hold ${money(ourSum)}`
-              + ` ${ourRefunds[0].currency || ''}`.trimEnd()
-              + ` — ${money(gap)} apart, ${pct}% of ours. Too wide for their markup,`
-              + ' which runs under three per cent.' });
+          note: `They refund ${money(theirs)}, we hold ${both} ${cur}`.trimEnd()
+              + ` — ${money(gap)} apart at the nearest. Neither our commission nor`
+              + ' rounding, so one of the two records is wrong.' });
         continue;
       }
     }
