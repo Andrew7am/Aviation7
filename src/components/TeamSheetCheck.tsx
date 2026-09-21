@@ -158,7 +158,22 @@ const Group: React.FC<{
                         </button>
                       ) : <span className="text-slate-300">— none —</span>}
                     </td>
-                    <td className="px-3 py-1.5 text-slate-500">{f.pnr || '—'}</td>
+                    {/* The PNR travels as often as the number does: it is
+                        what an airline's own site asks for, and what finds a
+                        booking again when the ticket number will not. */}
+                    <td className="px-3 py-1.5 text-slate-500">
+                      {f.pnr ? (
+                        <button type="button"
+                          onClick={() => onCopy(f.pnr)}
+                          title="Copy the PNR"
+                          className="group flex items-center gap-1.5 text-slate-500
+                                     rounded px-1 -mx-1 hover:bg-slate-100 transition-colors">
+                          <Copy className="w-3 h-3 text-slate-300 shrink-0
+                                           group-hover:text-slate-500" />
+                          {f.pnr}
+                        </button>
+                      ) : '—'}
+                    </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
                       {f.verdict === 'REQ_DIFFERS' || f.verdict === 'REQ_RELATED' ? (
                         // Both, because which is which IS the finding.
