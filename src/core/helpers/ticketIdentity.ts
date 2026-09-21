@@ -106,5 +106,14 @@ export function formatTicketNo(ticketNo: string, airlineCode?: string): string {
 export function ticketMatchKey(ticketNo: string): string {
   const s = (ticketNo || '').replace(/\s+/g, '').toUpperCase();
   const joined = s.match(JOINED_FORM);
-  return joined ? joined[2] : s;
+  if (joined) return joined[2];
+  // The same thirteen digits written with the dash people put in them -
+  // "065-5513059068". Every screen that prints a full document number
+  // prints it this way, so it is the form that gets pasted back into a
+  // search box, and without this it matched nothing at all.
+  //
+  // Narrow on purpose: only a 3-and-10 digit pair is treated this way, so
+  // an identifier that merely contains a dash keeps every character.
+  const dashed = s.match(/^(\d{3})[-\u2013\u2014](\d{10})$/);
+  return dashed ? dashed[2] : s;
 }

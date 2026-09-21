@@ -1,14 +1,15 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Ticket } from '../types';
 import {
   Upload, AlertTriangle, CheckCircle2, X, Loader2, FileSpreadsheet, Download,
-  ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen,
+  ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen, Copy,
 } from 'lucide-react';
 import { readFileAsText } from '../core/ImportEngine';
 import { parseTeamSheet, TeamSheetRow } from '../core/parsers/teamSheet';
 import {
   compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK,
 } from '../core/helpers/teamSheetCompare';
+import { writeClipboard } from '../utils/clipboard';
 
 const xlsx = () => import('xlsx');
 
@@ -88,7 +89,9 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
   </div>
 );
 
-const Group: React.FC<{ verdict: Verdict; rows: Finding[] }> = ({ verdict, rows }) => {
+const Group: React.FC<{
+  verdict: Verdict; rows: Finding[]; onCopy: (text: string) => void;
+}> = ({ verdict, rows, onCopy }) => {
   const tone = TONE[verdict];
   const [open, setOpen] = useState(verdict !== 'OK');
   if (!rows.length) return null;
@@ -127,10 +130,22 @@ const Group: React.FC<{ verdict: Verdict; rows: Finding[] }> = ({ verdict, rows 
                 {rows.map(f => (
                   <tr key={`${f.verdict}-${f.serial || f.pnr}-${f.sheet?.rowNo ?? 0}`}
                       className="border-b border-slate-50">
+                    {/* The number is the thing that travels: into a message to
+                        the team, into a supplier's portal, into the search box
+                        of whatever system is being checked against. Typing it
+                        off a screen is how a digit gets dropped. */}
                     <td className="px-3 py-1.5 font-bold text-slate-700 whitespace-nowrap">
-                      {f.serial
-                        ? (f.airlineCode ? `${f.airlineCode}-${f.serial}` : f.serial)
-                        : <span className="text-slate-300">— none —</span>}
+                      {f.serial ? (
+                        <button type="button"
+                          onClick={() => onCopy(f.airlineCode ? `${f.airlineCode}-${f.serial}` : f.serial)}
+                          title="Copy the ticket number"
+                          className="group flex items-center gap-1.5 font-bold text-slate-700
+                                     rounded px-1 -mx-1 hover:bg-slate-100 transition-colors">
+                          <Copy className="w-3 h-3 text-slate-300 shrink-0
+                                           group-hover:text-slate-500" />
+                          {f.airlineCode ? `${f.airlineCode}-${f.serial}` : f.serial}
+                        </button>
+                      ) : <span className="text-slate-300">— none —</span>}
                     </td>
                     <td className="px-3 py-1.5 text-slate-500">{f.pnr || '—'}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
@@ -211,6 +226,19 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
    * check narrows to the question it can still answer honestly: is this
    * ticket filed under one of them at all.
    */
+  /** What was last put on the clipboard, named rather than merely confirmed:
+   *  two tickets a row apart differ by one digit. */
+  const [copied, setCopied] = useState('');
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(''), 1400);
+    return () => clearTimeout(t);
+  }, [copied]);
+
+  const copy = async (text: string) => {
+    if (await writeClipboard(text)) setCopied(text);
+  };
+
   const [declaredText, setDeclaredText] = useState('');
   const declared = useMemo(
     () => declaredText.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean),
@@ -286,6 +314,14 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
 
   return (
     <div className="p-6 space-y-4">
+      {copied && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
+                        bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg
+                        text-[11px] font-mono max-w-md">
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span className="truncate">Copied <span className="font-bold">{copied}</span></span>
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">
@@ -520,7 +556,7 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
 
           <div className="space-y-2">
             {order.map(v => (
-              <Group key={v} verdict={v}
+              <Group key={v} verdict={v} onCopy={copy}
                 rows={report.findings.filter(f => f.verdict === v)} />
             ))}
           </div>

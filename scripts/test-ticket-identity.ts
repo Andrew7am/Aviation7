@@ -52,6 +52,22 @@ eq('same airline code',  portal.airlineCode, bsp.airlineCode);
 eq('match key agrees across spellings',
    ticketMatchKey('2352540225922') === ticketMatchKey('2540225922'), true);
 
+console.log('\n6b. The match key reads the dashed spelling too');
+// Every screen prints a full document number as "065-5513059068", so that
+// is the form that gets copied off one and pasted into another's search.
+eq('dashed matches bare',
+   ticketMatchKey('065-5513059068') === ticketMatchKey('5513059068'), true);
+eq('dashed matches joined',
+   ticketMatchKey('065-5513059068') === ticketMatchKey('0655513059068'), true);
+eq('an en dash too', ticketMatchKey('065\u20135513059068'), '5513059068');
+eq('spaces as before', ticketMatchKey(' 065 5513059068 '), '5513059068');
+// Narrow on purpose: anything that is not a 3-and-10 digit pair keeps every
+// character, so an identifier that merely contains a dash is not mangled.
+eq('a reference with a dash is untouched',
+   ticketMatchKey('FUND-2026-08'), 'FUND-2026-08');
+eq('a short dashed pair is untouched', ticketMatchKey('06-55130'), '06-55130');
+eq('a PNR is untouched', ticketMatchKey('SF4JXT'), 'SF4JXT');
+
 console.log('\n7. Display form rebuilds the full document number');
 eq('serial + code', formatTicketNo('2540225922', '235'), '235-2540225922');
 eq('no code -> bare serial', formatTicketNo('2540225922', ''), '2540225922');
