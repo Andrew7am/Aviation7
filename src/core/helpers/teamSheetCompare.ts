@@ -90,6 +90,21 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * against one ticket's refund; only its presence is checked, and the note
  * says the figure covers the group.
  *
+ * THE SAME REFERENCE IN TWO DIFFERENT COLUMNS
+ *
+ * For a carrier that issues no IATA ticket, the booking reference is both
+ * the booking AND the document - and the two systems did not pick the same
+ * column for it. Our Riyadh Air rows keep RX12237ZB622D in the PNR and a
+ * numeric document beside it; their sheet keeps RX12237ZB622D in the ticket
+ * column. Matching ticket against ticket, those never meet, and 41 tickets
+ * that are plainly in both lists were reported as missing from one.
+ *
+ * So a reference that finds nothing in our ticket column is looked for in
+ * our PNR column as well, and the other way round. Only a REFERENCE: a
+ * ten-digit serial is never matched against a PNR, because a serial in a
+ * PNR column would be somebody's mistake rather than a filing convention,
+ * and pairing them on that basis would invent a match.
+ *
  * A VOID IS NOT A GAP
  *
  * A ticket issued and voided the same day never reaches the supplier's
@@ -102,6 +117,7 @@ export type Verdict =
   | 'OK'
   | 'REQ_DIFFERS'
   | 'REQ_RELATED'
+  | 'FILED_ELSEWHERE'
   | 'NOT_IN_LEDGER'
   | 'VOID_NOT_BILLED'
   | 'REFUND_NOT_IN_LEDGER'
@@ -115,6 +131,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   OK:                   'Agrees',
   REQ_DIFFERS:          'Filed under a different request',
   REQ_RELATED:          'A related request',
+  FILED_ELSEWHERE:      'In both, in different columns',
   NOT_IN_LEDGER:        'Not in our ledger',
   VOID_NOT_BILLED:      'Void — never billed',
   REFUND_NOT_IN_LEDGER: 'Refund not in our ledger',
@@ -143,6 +160,9 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   // Two requests that belong together - a cash ticket beside the request it
   // was split from. Worth seeing, never worth chasing.
   REQ_RELATED: 7,
+  // The same reference, one side's ticket column against the other's PNR.
+  // Nothing is missing; the filing differs.
+  FILED_ELSEWHERE: 7.5,
   VOID_NOT_BILLED: 8,
   OK: 9,
 };
@@ -236,6 +256,13 @@ export const reqKey = (s: string | undefined | null) =>
   (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export const sameReq = (a: string, b: string) => reqKey(a) === reqKey(b);
+
+/** A booking reference rather than an IATA serial. Only these are looked
+ *  for across the ticket and PNR columns - see the note above. */
+const isReference = (s: string) => /^[A-Z0-9]{5,15}$/.test(s) && /[A-Z]/.test(s);
+
+const pnrKey = (s: string | undefined | null) =>
+  (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export interface Finding {
   verdict: Verdict;
@@ -358,6 +385,18 @@ export function compareTeamSheet(
 
   // Their FILE, not what was typed onto it: the screen has to be able to
   // say which of the two it is looking at.
+  /* Their reference may be sitting in our PNR column, and ours in theirs.
+     Built once, used in both directions below. */
+  const ourByPnr = new Map<string, Ticket[]>();
+  for (const t of ledger) {
+    if (!isTicket(t)) continue;
+    const k = pnrKey(t.pnr);
+    if (!k) continue;
+    if (!ourByPnr.has(k)) ourByPnr.set(k, []);
+    ourByPnr.get(k)!.push(t);
+  }
+  const theirPnrs = new Set(sheet.map(r => pnrKey(r.pnr)).filter(Boolean));
+
   const sheetHasReq = declared.length === 1
     ? sheet.some(r => reqKey(r.reqNum) && !sameReq(r.reqNum, declared[0]))
     : sheet.some(r => !!reqKey(r.reqNum));
@@ -389,6 +428,10 @@ export function compareTeamSheet(
 
   const findings: Finding[] = [];
   const theirSerials = new Set(theirBySerial.keys());
+  /** Rows of ours already accounted for by a finding on their side, so the
+   *  sweep below does not report the same tickets a second time as missing
+   *  from a sheet that plainly carries them. */
+  const claimed = new Set<string>();
   let matched = 0;
 
   /* ── walk their side ──────────────────────────────────────────────────── */
@@ -405,6 +448,19 @@ export function compareTeamSheet(
     };
 
     if (ours.length === 0) {
+      // A carrier reference we file under the PNR instead. Nothing is
+      // missing; the two systems chose different columns for one value.
+      const filedUnderPnr = isReference(serial) ? (ourByPnr.get(serial) ?? []) : [];
+      if (filedUnderPnr.length) {
+        for (const t of filedUnderPnr) claimed.add(ticketMatchKey(t.ticketNo || ''));
+        findings.push({
+          ...base, verdict: 'FILED_ELSEWHERE', ours: filedUnderPnr,
+          reqNum: (filedUnderPnr.find(t => (t.reqNum || '').trim())?.reqNum || '').trim() || theirReq,
+          note: `Their ticket column holds ${serial}; ours holds it as the PNR, against`
+              + ` ${filedUnderPnr.length} row(s). The same booking, filed differently.`,
+        });
+        continue;
+      }
       // Issued and voided before the supplier ever billed it. Their sheet
       // shows both events; ours shows nothing, and that is correct.
       if (theySayVoid) {
@@ -567,7 +623,10 @@ export function compareTeamSheet(
     // claimedByPnr: their sheet does carry it, on a row whose number their
     // export damaged. Reporting it as missing as well would be counting the
     // same fault twice.
-    if (!k || theirSerials.has(k) || claimedByPnr.has(k)) continue;
+    if (!k || theirSerials.has(k) || claimedByPnr.has(k) || claimed.has(k)) continue;
+    // And our reference sitting in THEIR PNR column, which is the same
+    // filing difference read from the other end.
+    if (isReference(k) && theirPnrs.has(k)) continue;
     if (!ourExtra.has(k)) ourExtra.set(k, []);
     ourExtra.get(k)!.push(t);
   }
@@ -619,6 +678,7 @@ export function compareTeamSheet(
     // A ticket their sheet carries on a row whose number was damaged is on
     // their sheet, whatever the cell now reads.
     for (const serial of claimedByPnr) if (ourSet.has(serial)) theirSet.add(serial);
+    for (const serial of claimed) if (ourSet.has(serial)) theirSet.add(serial);
     const touches = (f: Finding) =>
       reqParts(f.reqNum).includes(key) || reqParts(f.theirReq).includes(key);
     const misfiled = findings.filter(f => f.verdict === 'REQ_DIFFERS' && touches(f)).length;
@@ -652,6 +712,7 @@ export function compareTeamSheet(
     // sheet that can be closed.
     clean: findings.every(f =>
       f.verdict === 'OK' || f.verdict === 'VOID_NOT_BILLED'
-      || f.verdict === 'NOT_ISSUED_YET' || f.verdict === 'REQ_RELATED'),
+      || f.verdict === 'NOT_ISSUED_YET' || f.verdict === 'REQ_RELATED'
+      || f.verdict === 'FILED_ELSEWHERE'),
   };
 }

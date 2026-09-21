@@ -42,6 +42,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   NOT_ISSUED_YET:       { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   UNREADABLE:           { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REQ_RELATED:          { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
+  FILED_ELSEWHERE:      { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   VOID_NOT_BILLED:      { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   OK:                   { chip: 'bg-emerald-100 text-emerald-700',band: 'border-emerald-200', money: false },
 };
@@ -77,6 +78,11 @@ const WHY: Record<Verdict, string> = {
     'Their export lost these ticket numbers — a 13-digit number stored as a number comes'
     + ' out as 6.55512E+11 with the digits gone for good. Nothing about these rows can be'
     + ' checked. Ask them to export the ticket column as text.',
+  FILED_ELSEWHERE:
+    'The carriers that issue no IATA ticket give a booking reference that is both the'
+    + ' booking and the document, and the two systems put it in different columns — theirs'
+    + ' in the ticket column, ours in the PNR. Nothing is missing here; it is the same'
+    + ' booking read from two sides.',
   NOT_ISSUED_YET:
     'Their rows with no ticket number — still on hold. Nothing to compare until a ticket'
     + ' is issued.',

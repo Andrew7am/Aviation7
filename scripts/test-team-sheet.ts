@@ -845,5 +845,52 @@ console.log('\n34. A carrier reference is a document too');
     teamSerials('6E3M6D').map(d => d.serial), ['6E3M6D']);
 }
 
+/* ────────────────────────────────────────────────────────────────────────── */
+console.log('\n35. The same reference in two different columns');
+{
+  // A carrier that issues no IATA ticket gives one reference that is both
+  // the booking and the document, and the two systems chose different
+  // columns for it: our Riyadh Air rows keep RX12237ZB622D in the PNR with
+  // a numeric document beside it, their sheet keeps it in the ticket
+  // column. Matching ticket against ticket, those never meet.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    'RX12237ZB622D,RX12237ZB622D,Issued,UAEVP575',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '2100060907', pnr: 'RX12237ZB622D', reqNum: 'UAEVP575', amount: 6670 }),
+    tkt({ ticketNo: '4200006305', pnr: 'RX12237ZB622D', reqNum: 'UAEVP575', amount: 450 }),
+  ];
+  const r = compareTeamSheet(sheet, ledger);
+  check('not called missing',        r.counts.NOT_IN_LEDGER, 0);
+  check('reported as a filing difference', r.counts.FILED_ELSEWHERE, 1);
+  check('and it carries our rows',
+    r.findings.find(f => f.verdict === 'FILED_ELSEWHERE')?.ours.length, 2);
+  check('the request comes from ours',
+    r.findings.find(f => f.verdict === 'FILED_ELSEWHERE')?.reqNum, 'UAEVP575');
+  check('and ours are not reported missing either', r.counts.NOT_ON_SHEET, 0);
+  check('the sheet can still be closed', r.clean, true);
+
+  // The other way round: our reference sitting in their PNR column.
+  const flip = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status\n065-5513059078,EDINGX,Issued').rows,
+    [tkt({ ticketNo: '5513059078', pnr: 'EDINGX' }),
+     tkt({ ticketNo: 'EDINGX', pnr: 'EDINGX', source: 'FlyAdeal DXB', amount: 867.89 })]);
+  check('our reference in their PNR column is not missing', flip.counts.NOT_ON_SHEET, 0);
+}
+
+console.log('\n36. A serial is never matched against a PNR');
+{
+  // A ten-digit document in a PNR column is somebody's mistake, not a
+  // filing convention. Pairing on it would invent a match.
+  const sheet = parseTeamSheet(
+    'Ticket Number,PNR,Status\n065-5513059078,YSLM73,Issued').rows;
+  const r = compareTeamSheet(sheet,
+    [tkt({ ticketNo: '9999999999', pnr: '5513059078', reqNum: 'KSAML2053' })], ['KSAML2053']);
+  check('no cross-column match on a serial', r.counts.FILED_ELSEWHERE, 0);
+  check('theirs is still reported missing', r.counts.NOT_IN_LEDGER, 1);
+  check('and ours still reported unlisted', r.counts.NOT_ON_SHEET, 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
