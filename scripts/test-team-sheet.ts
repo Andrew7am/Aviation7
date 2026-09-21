@@ -10,7 +10,7 @@
  * a tidy invented one.
  */
 import {
-  parseTeamSheet, teamSerial, teamStatus, money, currencyOf,
+  parseTeamSheet, teamSerial, teamSerials, ticketUnreadable, teamStatus, money, currencyOf,
 } from '../src/core/parsers/teamSheet';
 import {
   compareTeamSheet, reqKey, sameReq, reqParts, buildRelations, relatedReq,
@@ -610,6 +610,156 @@ console.log('\n26. A typed request is cleaned the same way a read one is');
   // the request somebody expected this sheet to fill.
   const empty = compareTeamSheet([], [], ['KSAML9999']);
   check('a declared request is in scope even when empty', empty.requests, ['KSAML9999']);
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+console.log('\n27. One cell, several tickets');
+{
+  // Their export puts a whole booking in one cell when it was issued or
+  // refunded as one. Both shapes appear in the same file.
+  const stacked = '065-5512129318/P1\n065-5512129319/P2\n065-5512129320/P3';
+  check('three from a stacked cell', teamSerials(stacked).map(x => x.serial),
+    ['5512129318', '5512129319', '5512129320']);
+  check('their airlines too', teamSerials(stacked).map(x => x.airlineCode),
+    ['065', '065', '065']);
+  check('three from a comma-separated cell',
+    teamSerials('065-5512559596,065-5512559597,065-5512559598').map(x => x.serial),
+    ['5512559596', '5512559597', '5512559598']);
+  check('an ordinary cell still gives one',
+    teamSerials('065-5513059078').map(x => x.serial), ['5513059078']);
+  check('the same number twice is one',
+    teamSerials('065-5513059078, 065-5513059078').map(x => x.serial), ['5513059078']);
+
+  // The fault this replaced: the digits of the whole cell with the last ten
+  // kept, which turned the stacked cell into ticket 5121293203 - a number
+  // that exists nowhere, reported as missing, sending somebody to look for
+  // a ticket that was never issued.
+  check('no number is invented from the join',
+    teamSerials(stacked).some(x => x.serial === '5121293203'), false);
+  check('and a cell of pure noise yields nothing',
+    teamSerials('N/A - see email').map(x => x.serial), []);
+}
+
+console.log('\n28. Each ticket in a shared cell becomes a row of its own');
+{
+  const p = parseTeamSheet([
+    'Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,Refund Amount',
+    '"065-5512129318/P1\n065-5512129319/P2\n065-5512129320/P3",ZTWOXW,Cancelled/Refunded,5730,5730 AED,',
+  ].join('\n'));
+  check('three rows out of one', p.rows.length, 3);
+  check('each knows the group size', p.rows.map(r => r.groupSize), [3, 3, 3]);
+  check('and who it shared with', p.rows[0].siblings, ['5512129319', '5512129320']);
+  check('they share their line number', p.rows.map(r => r.rowNo), [2, 2, 2]);
+  check('and their status', p.rows.every(r => r.status === 'REFUNDED'), true);
+  check('and their PNR', p.rows.every(r => r.pnr === 'ZTWOXW'), true);
+
+  // Three tickets on their sheet, three in our books, all refunded.
+  const ledger: Ticket[] = ['5512129318', '5512129319', '5512129320'].flatMap(n => [
+    tkt({ ticketNo: n, pnr: 'ZTWOXW', amount: 2470, reqNum: 'KSAML1198' }),
+    tkt({ ticketNo: n, pnr: 'ZTWOXW', amount: -1910, status: 'REFUND', reqNum: 'KSAML1198' }),
+  ]);
+  const r = compareTeamSheet(p.rows, ledger);
+  check('all three agree', r.counts.OK, 3);
+  // Before the split, one invented ticket was reported missing and the
+  // three real ones were reported as refunds their sheet did not show.
+  check('nothing is called missing', r.counts.NOT_IN_LEDGER, 0);
+  check('and no refund is called unrecorded', r.counts.REFUND_NOT_ON_SHEET, 0);
+  check('the sheet is clean', r.clean, true);
+}
+
+console.log('\n29. The money on a shared cell belongs to the booking');
+{
+  const p = parseTeamSheet([
+    'Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,Refund Amount',
+    '"065-5512129318,065-5512129319",ZTWOXW,Cancelled/Refunded,5730,5730 AED,3820',
+  ].join('\n'));
+  const ledger: Ticket[] = ['5512129318', '5512129319'].flatMap(n => [
+    tkt({ ticketNo: n, pnr: 'ZTWOXW', amount: 2865 }),
+    tkt({ ticketNo: n, pnr: 'ZTWOXW', amount: -1910, status: 'REFUND' }),
+  ]);
+  const r = compareTeamSheet(p.rows, ledger);
+  // 3,820 is the pair's refund, not either ticket's 1,910. Compared against
+  // one ticket it would report a difference on both, every time.
+  check('a shared figure is not compared per ticket', r.counts.REFUND_DIFFERS, 0);
+  check('both agree', r.counts.OK, 2);
+  // A figure on a cell naming ONE ticket is still compared.
+  const single = parseTeamSheet([
+    'Ticket Number,PNR,Status,Refund Amount',
+    '065-5512129318,ZTWOXW,Cancelled/Refunded,3820',
+  ].join('\n'));
+  check('an ordinary row still has its refund checked',
+    compareTeamSheet(single.rows, ledger.slice(0, 2)).counts.REFUND_DIFFERS, 1);
+}
+
+console.log('\n30. A ticket number their export damaged');
+{
+  // Excel stores a 13-digit number as a number and rounds it away.
+  check('scientific notation is unreadable', ticketUnreadable('6.55512E+11'), true);
+  check('and so is the other one',           ticketUnreadable('2.35551E+12'), true);
+  // Their ways of writing "not issued yet" are states, not faults.
+  check('two dashes are not damage',  ticketUnreadable('--'), false);
+  check('three dashes either',        ticketUnreadable('---'), false);
+  check('a zero is not damage',       ticketUnreadable('0'), false);
+  check('nor a blank',                ticketUnreadable(''), false);
+  check('nor a readable number',      ticketUnreadable('065-5513059078'), false);
+
+  const p = parseTeamSheet([
+    'Ticket Number,PNR,Status',
+    '6.55512E+11,XEBUG7,Issued',
+    '---,ZV2XCQ,On Hold',
+  ].join('\n'));
+  check('the damaged row survives', p.rows.length, 2);
+  check('flagged',       p.rows[0].unreadable, true);
+  check('the hold is not', p.rows[1].unreadable, false);
+  check('and the raw cell is kept to show them', p.rows[0].rawTicket, '6.55512E+11');
+
+  const r = compareTeamSheet(p.rows, [], ['KSAML1198']);
+  check('reported',   r.counts.UNREADABLE, 1);
+  check('separately from the hold', r.counts.NOT_ISSUED_YET, 1);
+  check('the note quotes their cell',
+    r.findings.find(f => f.verdict === 'UNREADABLE')!.note.includes('6.55512E+11'), true);
+}
+
+console.log('\n31. A damaged number identified by its PNR');
+{
+  const p = parseTeamSheet([
+    'Ticket Number,PNR,Status',
+    '6.55512E+11,XEBUG7,Issued',
+  ].join('\n'));
+  // Exactly one ticket of ours carries that PNR and nothing else on their
+  // sheet accounts for it, so the row is that ticket.
+  const one = compareTeamSheet(p.rows,
+    [tkt({ ticketNo: '5512369246', pnr: 'XEBUG7', reqNum: 'KSAML1198' })], ['KSAML1198']);
+  check('the ticket is named',
+    one.findings.find(f => f.verdict === 'UNREADABLE')?.serial, '5512369246');
+  check('the note says how',
+    one.findings.find(f => f.verdict === 'UNREADABLE')!.note.includes('PNR XEBUG7 identifies it'),
+    true);
+  // And it must not ALSO be reported as missing from their sheet - that
+  // would be counting one fault twice.
+  check('not reported missing as well', one.counts.NOT_ON_SHEET, 0);
+  check('their side is credited with it', one.byRequest[0].theirTickets, 1);
+
+  // Ambiguity is not guessed at. A PNR covering three tickets cannot say
+  // which one a damaged row is.
+  const many = compareTeamSheet(p.rows, [
+    tkt({ ticketNo: '5512369246', pnr: 'XEBUG7', reqNum: 'KSAML1198' }),
+    tkt({ ticketNo: '5512369247', pnr: 'XEBUG7', reqNum: 'KSAML1198' }),
+  ], ['KSAML1198']);
+  check('nothing is claimed',
+    many.findings.find(f => f.verdict === 'UNREADABLE')?.serial, '');
+  check('and both are still reported as unaccounted for', many.counts.NOT_ON_SHEET, 2);
+
+  // Nor when their sheet already accounts for that PNR's ticket elsewhere.
+  const taken = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status',
+    '6.55512E+11,XEBUG7,Issued',
+    '065-5512369246,XEBUG7,Issued',
+  ].join('\n')).rows,
+    [tkt({ ticketNo: '5512369246', pnr: 'XEBUG7', reqNum: 'KSAML1198' })], ['KSAML1198']);
+  check('the damaged row claims nothing',
+    taken.findings.find(f => f.verdict === 'UNREADABLE')?.serial, '');
+  check('the readable row matched it', taken.counts.OK, 1);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

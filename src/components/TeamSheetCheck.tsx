@@ -40,6 +40,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   REFUND_NOT_ON_SHEET:  { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REFUND_DIFFERS:       { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   NOT_ISSUED_YET:       { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
+  UNREADABLE:           { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REQ_RELATED:          { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   VOID_NOT_BILLED:      { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   OK:                   { chip: 'bg-emerald-100 text-emerald-700',band: 'border-emerald-200', money: false },
@@ -72,6 +73,10 @@ const WHY: Record<Verdict, string> = {
     'Each side files it under a different request, and the ledger already records those'
     + ' two as one piece of work — a cash-paid ticket raised under its own number beside'
     + ' the request it was split from. Listed so it is seen, not so it is chased.',
+  UNREADABLE:
+    'Their export lost these ticket numbers — a 13-digit number stored as a number comes'
+    + ' out as 6.55512E+11 with the digits gone for good. Nothing about these rows can be'
+    + ' checked. Ask them to export the ticket column as text.',
   NOT_ISSUED_YET:
     'Their rows with no ticket number — still on hold. Nothing to compare until a ticket'
     + ' is issued.',
@@ -171,9 +176,18 @@ const Group: React.FC<{
                         : <span className="text-slate-300">not on it</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right text-slate-600 whitespace-nowrap">
-                      {f.sheet?.cost != null
-                        ? `${money(f.sheet.cost)} ${f.sheet.currency}`.trim()
-                        : <span className="text-slate-300">—</span>}
+                      {f.sheet?.cost != null ? (
+                        <>
+                          {`${money(f.sheet.cost)} ${f.sheet.currency}`.trim()}
+                          {/* Their cell named several tickets, so the figure
+                              beside it is the booking's, not this one's. */}
+                          {f.sheet.groupSize > 1 && (
+                            <span className="block text-[9px] text-slate-400 font-sans">
+                              for {f.sheet.groupSize} tickets
+                            </span>
+                          )}
+                        </>
+                      ) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
                       {f.ours.length

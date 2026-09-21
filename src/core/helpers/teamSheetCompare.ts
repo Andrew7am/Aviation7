@@ -80,6 +80,16 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * A row that states its own request always keeps it. What somebody typed
  * fills gaps; it never overrides their file.
  *
+ * ONE CELL, SEVERAL TICKETS
+ *
+ * Their export puts a whole booking in one cell when it was issued or
+ * refunded as one - three numbers with /P1 /P2 /P3 after them, or separated
+ * by commas. The parser splits those into a ticket each, which is what they
+ * are, but the MONEY on that cell belongs to the booking rather than to any
+ * one of them. So a refund figure shared by three tickets is never compared
+ * against one ticket's refund; only its presence is checked, and the note
+ * says the figure covers the group.
+ *
  * A VOID IS NOT A GAP
  *
  * A ticket issued and voided the same day never reaches the supplier's
@@ -98,6 +108,7 @@ export type Verdict =
   | 'REFUND_NOT_ON_SHEET'
   | 'REFUND_DIFFERS'
   | 'NOT_ISSUED_YET'
+  | 'UNREADABLE'
   | 'NOT_ON_SHEET';
 
 export const VERDICT_LABEL: Record<Verdict, string> = {
@@ -110,6 +121,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   REFUND_NOT_ON_SHEET:  'Refunded, their sheet does not say so',
   REFUND_DIFFERS:       'Refund differs',
   NOT_ISSUED_YET:       'No ticket number yet',
+  UNREADABLE:           'Their ticket number is damaged',
   NOT_ON_SHEET:         'Not on their sheet',
 };
 
@@ -124,6 +136,9 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   NOT_ON_SHEET: 3,
   REFUND_NOT_ON_SHEET: 4,
   REFUND_DIFFERS: 5,
+  // A row that cannot be checked at all. Above the states of the world,
+  // because somebody has to go and ask for the number.
+  UNREADABLE: 5.5,
   NOT_ISSUED_YET: 6,
   // Two requests that belong together - a cash ticket beside the request it
   // was split from. Worth seeing, never worth chasing.
@@ -373,6 +388,7 @@ export function compareTeamSheet(
   for (const d of declared) addReq(d);
 
   const findings: Finding[] = [];
+  const theirSerials = new Set(theirBySerial.keys());
   let matched = 0;
 
   /* ── walk their side ──────────────────────────────────────────────────── */
@@ -474,8 +490,12 @@ export function compareTeamSheet(
     if (theySayRefunded && ourRefunds.length > 0) {
       const theirs = rows.reduce((s, r) => s + Math.abs(r.refund ?? 0), 0);
       const ourSum = ourRefunds.reduce((s, t) => s + Math.abs(t.amount || 0), 0);
+      // A figure written once for a cell naming three tickets is the
+      // booking's, not this ticket's. Comparing it against one ticket's
+      // refund would report a difference on all three every time.
+      const shared = rows.some(r => r.groupSize > 1);
       // Only when they actually stated a figure; a blank is not a zero.
-      if (rows.some(r => r.refund != null) && Math.abs(theirs - ourSum) >= 0.01) {
+      if (!shared && rows.some(r => r.refund != null) && Math.abs(theirs - ourSum) >= 0.01) {
         findings.push({ ...base, verdict: 'REFUND_DIFFERS',
           note: `They refund ${money(theirs)}, we hold ${money(ourSum)}`
               + ` ${ourRefunds[0].currency || ''}`.trimEnd()
@@ -488,23 +508,66 @@ export function compareTeamSheet(
   }
 
   /* ── their rows with no ticket number ─────────────────────────────────── */
-  for (const r of noTicket)
+  /**
+   * A damaged number can often still be identified by its PNR.
+   *
+   * Excel turns a ticket number into 6.55512E+11 and the digits are gone,
+   * but the booking reference beside it survives. If exactly one ticket of
+   * ours carries that PNR and nothing else on their sheet accounts for it,
+   * the row is that ticket - and saying so is worth more than reporting the
+   * same ticket twice, once as damaged on their side and once as missing
+   * from their sheet.
+   *
+   * Only when it is unambiguous. A PNR covering three tickets cannot say
+   * which one a damaged row is, and guessing there would be inventing the
+   * very thing the last fix removed.
+   */
+  const claimedByPnr = new Set<string>();
+  for (const r of noTicket) {
+    let identified: Ticket[] = [];
+    if (r.unreadable && r.pnr) {
+      const candidates = ledger.filter(t =>
+        isTicket(t)
+        && (t.pnr || '').replace(/\s+/g, '').toUpperCase() === r.pnr
+        && !theirSerials.has(ticketMatchKey(t.ticketNo || ''))
+        && reqParts(t.reqNum || '').some(k => requests.has(k)));
+      const serials = [...new Set(candidates.map(t => ticketMatchKey(t.ticketNo || '')))];
+      if (serials.length === 1) {
+        identified = candidates;
+        claimedByPnr.add(serials[0]);
+      }
+    }
+
     findings.push({
-      verdict: 'NOT_ISSUED_YET', serial: '', airlineCode: '', pnr: r.pnr, sheet: r,
-      ours: [], reqNum: r.reqNum, theirReq: r.reqNum,
-      note: r.status === 'ON_HOLD'
-        ? 'Still on hold on their side — no ticket has been issued to compare.'
-        : 'Their row carries no ticket number, so there is nothing to match it on.',
+      verdict: r.unreadable ? 'UNREADABLE' : 'NOT_ISSUED_YET',
+      serial: identified.length ? ticketMatchKey(identified[0].ticketNo || '') : '',
+      airlineCode: identified[0]?.airlineCode || '', pnr: r.pnr, sheet: r,
+      ours: identified,
+      reqNum: identified[0]?.reqNum?.trim() || r.reqNum, theirReq: r.reqNum,
+      note: r.unreadable
+        // Excel stored a 13-digit number as a number and rounded it away.
+        ? `Their cell reads "${r.rawTicket}" — the number was lost on the way out of`
+          + ' their system, most likely by being stored as a number.'
+          + (identified.length
+            ? ` PNR ${r.pnr} identifies it as this ticket, which is in our books, so nothing`
+              + ' is missing — but their record still needs the number put back.'
+            : ' Ask for the export with the ticket column as text.')
+        : r.status === 'ON_HOLD'
+          ? 'Still on hold on their side — no ticket has been issued to compare.'
+          : 'Their row carries no ticket number, so there is nothing to match it on.',
     });
+  }
 
   /* ── our side: anything under those requests they never mention ───────── */
-  const theirSerials = new Set(theirBySerial.keys());
   const ourExtra = new Map<string, Ticket[]>();
   for (const t of ledger) {
     if (!isTicket(t)) continue;
     if (!reqParts(t.reqNum || '').some(x => requests.has(x))) continue;
     const k = ticketMatchKey(t.ticketNo || '');
-    if (!k || theirSerials.has(k)) continue;
+    // claimedByPnr: their sheet does carry it, on a row whose number their
+    // export damaged. Reporting it as missing as well would be counting the
+    // same fault twice.
+    if (!k || theirSerials.has(k) || claimedByPnr.has(k)) continue;
     if (!ourExtra.has(k)) ourExtra.set(k, []);
     ourExtra.get(k)!.push(t);
   }
@@ -553,6 +616,9 @@ export function compareTeamSheet(
       if (sheetHasReq) { if (stated && reqParts(stated.reqNum).includes(key)) theirSet.add(serial); }
       else if (ourSet.has(serial)) theirSet.add(serial);
     }
+    // A ticket their sheet carries on a row whose number was damaged is on
+    // their sheet, whatever the cell now reads.
+    for (const serial of claimedByPnr) if (ourSet.has(serial)) theirSet.add(serial);
     const touches = (f: Finding) =>
       reqParts(f.reqNum).includes(key) || reqParts(f.theirReq).includes(key);
     const misfiled = findings.filter(f => f.verdict === 'REQ_DIFFERS' && touches(f)).length;

@@ -28,6 +28,24 @@ export interface TeamSheetRow {
   /** 1-based line in their file, so a finding can be pointed at. */
   rowNo: number;
   rawTicket: string;
+  /**
+   * How many ticket numbers their one cell named, and which.
+   *
+   * Their export puts a whole booking in one cell when it was refunded or
+   * issued together - three numbers separated by newlines with /P1 /P2 /P3
+   * after them, or by commas. Each becomes a row of its own here, because
+   * each is a ticket, but they keep a note of the others: the money on that
+   * cell is the booking's, not any one ticket's.
+   */
+  groupSize: number;
+  siblings: string[];
+  /**
+   * The cell held something that should have been a ticket number and could
+   * not be read. Nearly always Excel: a 13-digit number stored as a number
+   * comes out as "6.55512E+11" with the digits gone for good. Flagged rather
+   * than dropped, because a row nobody can see is a row nobody checks.
+   */
+  unreadable: boolean;
   /** The 10-digit serial, or '' when the row has no ticket yet. */
   serial: string;
   airlineCode: string;
@@ -114,33 +132,64 @@ export function currencyOf(raw: unknown): string {
 }
 
 /**
- * Their ticket number, as a serial we can match on.
+ * Every ticket number their cell names.
  *
- * Their column holds "065-5513373360", "065 5513059137", "065-5513059104/",
- * "--", "0" and blank, all in the same file. A row with no ticket is not a
- * broken row - it is a booking still on hold - so it comes back with an
- * empty serial and is reported as such rather than dropped.
+ * Their column holds one number most of the time, in whatever shape the
+ * person typed: "065-5513373360", "065 5513059137", "065-5513059104/",
+ * "--", "0", blank. A row with no ticket is not a broken row - it is a
+ * booking still on hold - so it comes back empty and is reported as such.
+ *
+ * But it also holds SEVERAL, when a booking was issued or refunded as one:
+ *
+ *     065-5512129318/P1
+ *     065-5512129319/P2      one cell, three tickets
+ *     065-5512129320/P3
+ *
+ *     065-5512559596,065-5512559597,065-5512559598
+ *
+ * This used to take the digits of the whole cell and keep the last ten,
+ * which turned the first of those into ticket 5121293203 - a number that
+ * exists nowhere, reported as missing from our books, sending somebody to
+ * look for a ticket that was never issued. So there is no "last ten digits"
+ * fallback any more. A document is found by its shape, all of them are
+ * found, and a cell whose shape says nothing yields nothing.
  */
-export function teamSerial(raw: unknown): { serial: string; airlineCode: string } {
-  const text = String(raw ?? '').trim();
-  const digits = text.replace(/\D/g, '');
-  if (!digits || /^0+$/.test(digits)) return { serial: '', airlineCode: '' };
+const DOC = /(\d{3})[\s\u2013\u2014-]?(\d{10})(?!\d)|(?<![\d])(\d{10})(?!\d)/g;
 
-  // Keep only what a document number is made of, so a stray slash or a
-  // trailing full stop does not defeat the readers below.
-  const clean = text.replace(/[^\d\- ]/g, '').trim();
-  const split = splitTicketNo(clean);
-  const serial = ticketMatchKey(split.ticketNo);
-  if (/^\d{10}$/.test(serial)) return { serial, airlineCode: split.airlineCode };
-
-  // Anything else that still carries a full document: take the last ten
-  // digits and, when there are thirteen, the three in front of them.
-  if (digits.length >= 10) {
-    const last10 = digits.slice(-10);
-    const head = digits.slice(0, digits.length - 10);
-    return { serial: last10, airlineCode: /^\d{3}$/.test(head) ? head : split.airlineCode };
+export function teamSerials(raw: unknown): { serial: string; airlineCode: string }[] {
+  const text = String(raw ?? '');
+  const out: { serial: string; airlineCode: string }[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(DOC)) {
+    const serial = m[2] ?? m[3];
+    if (!serial || seen.has(serial)) continue;
+    seen.add(serial);
+    out.push({ serial, airlineCode: m[1] ?? '' });
   }
-  return { serial: '', airlineCode: '' };
+  return out;
+}
+
+/** The first, for a cell expected to name one. */
+export function teamSerial(raw: unknown): { serial: string; airlineCode: string } {
+  return teamSerials(raw)[0] ?? { serial: '', airlineCode: '' };
+}
+
+/**
+ * A cell that was meant to carry a ticket number and does not.
+ *
+ * "--", "---", "0" and blank are how their sheet writes "not issued yet",
+ * and those are states, not faults. Anything else with digits in it that
+ * yielded no document is a number that got damaged on the way out of their
+ * system - "6.55512E+11" - and somebody has to be told, because the row
+ * cannot be checked at all.
+ */
+export function ticketUnreadable(raw: unknown): boolean {
+  const text = String(raw ?? '').trim();
+  if (!text) return false;
+  if (teamSerials(text).length > 0) return false;
+  if (/^[-\u2013\u2014\s]*$/.test(text)) return false;      // --, ---
+  if (/^0+(\.0+)?$/.test(text)) return false;                // 0
+  return /\d/.test(text);
 }
 
 /**
@@ -198,12 +247,21 @@ export function parseTeamSheet(text: string): ParsedTeamSheet {
   for (let i = 1; i < grid.rows.length; i++) {
     const r = grid.rows[i];
     if (!r.some(cell => (cell || '').trim())) continue;
-    const { serial, airlineCode } = teamSerial(at(r, col.ticket));
+    const rawTicket = at(r, col.ticket);
+    const docs = teamSerials(rawTicket);
     const rawStatus = at(r, col.status);
     const totalCell = at(r, col.total);
-    rows.push({
+
+    // One row per ticket their cell named. A cell that named none still
+    // produces a row - it is either a booking on hold or a number their
+    // export damaged, and both have to be visible.
+    const found = docs.length ? docs : [{ serial: '', airlineCode: '' }];
+    for (const { serial, airlineCode } of found) rows.push({
       rowNo: i + 1,
-      rawTicket: at(r, col.ticket),
+      rawTicket,
+      groupSize: docs.length,
+      siblings: docs.map(d => d.serial).filter(x => x && x !== serial),
+      unreadable: docs.length === 0 && ticketUnreadable(rawTicket),
       serial, airlineCode,
       pnr: at(r, col.pnr).replace(/\s+/g, '').toUpperCase(),
       status: teamStatus(rawStatus),
