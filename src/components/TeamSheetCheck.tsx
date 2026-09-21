@@ -39,6 +39,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   NOT_ON_SHEET:         { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REFUND_NOT_ON_SHEET:  { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REFUND_DIFFERS:       { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
+  TWICE_ON_THEIR_SHEET: { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   NOT_ISSUED_YET:       { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   UNREADABLE:           { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REQ_RELATED:          { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
@@ -68,8 +69,15 @@ const WHY: Record<Verdict, string> = {
     'We hold a refund their sheet does not show. Their record may be behind, or the credit'
     + ' belongs to another booking.',
   REFUND_DIFFERS:
-    'Both sides refunded, for different amounts. One of the two figures is wrong, and the'
-    + ' difference is the amount at stake.',
+    'Both sides refunded, and the two figures are further apart than their markup can'
+    + ' explain. Their refund carries the same uplift their cost does — measured across a'
+    + ' full export it runs under three per cent — so only the gaps wider than that are'
+    + ' listed here. Something on one of the two sides is wrong.',
+  TWICE_ON_THEIR_SHEET:
+    'Their sheet states a refund for one ticket on more than one row. Their normal shape is'
+    + ' two rows — one Issued, one Cancelled/Refunded — with only the second carrying a'
+    + ' figure; these carry two. Until their record settles on one number there is nothing'
+    + ' ours can be compared against, so the refund check stands aside for them.',
   REQ_RELATED:
     'Each side files it under a different request, and the ledger already records those'
     + ' two as one piece of work — a cash-paid ticket raised under its own number beside'
@@ -107,6 +115,18 @@ const Group: React.FC<{
   const [open, setOpen] = useState(verdict !== 'OK');
   if (!rows.length) return null;
 
+  /**
+   * A finding about refunds shows the refunds.
+   *
+   * The money columns used to show their COST beside our NET whatever the
+   * finding was, which on a refund row put two figures side by side that
+   * often agree — 770.00 against 770.00 — under a note claiming a
+   * difference of 240.90. The evidence for the finding was the one thing
+   * not on the screen.
+   */
+  const refundRow = verdict === 'REFUND_DIFFERS' || verdict === 'TWICE_ON_THEIR_SHEET'
+    || verdict === 'REFUND_NOT_IN_LEDGER' || verdict === 'REFUND_NOT_ON_SHEET';
+
   return (
     <div className={`bg-white border ${tone.band} rounded-lg overflow-hidden`}>
       <button onClick={() => setOpen(o => !o)}
@@ -131,9 +151,13 @@ const Group: React.FC<{
                   <th className="px-3 py-1.5">PNR</th>
                   <th className="px-3 py-1.5">Request <span className="normal-case">(ours → theirs)</span></th>
                   <th className="px-3 py-1.5">Their sheet</th>
-                  <th className="px-3 py-1.5 text-right">Their cost</th>
+                  <th className="px-3 py-1.5 text-right">
+                    {refundRow ? 'Their refund' : 'Their cost'}
+                  </th>
                   <th className="px-3 py-1.5">Our books</th>
-                  <th className="px-3 py-1.5 text-right">Our net</th>
+                  <th className="px-3 py-1.5 text-right">
+                    {refundRow ? 'Our refund' : 'Our net'}
+                  </th>
                   <th className="px-3 py-1.5">What it means</th>
                 </tr>
               </thead>
@@ -197,7 +221,11 @@ const Group: React.FC<{
                         : <span className="text-slate-300">not on it</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right text-slate-600 whitespace-nowrap">
-                      {f.sheet?.cost != null ? (
+                      {refundRow ? (
+                        f.sheet?.refund != null
+                          ? `${money(f.sheet.refund)} ${f.sheet.currency}`.trim()
+                          : <span className="text-slate-300">none stated</span>
+                      ) : f.sheet?.cost != null ? (
                         <>
                           {`${money(f.sheet.cost)} ${f.sheet.currency}`.trim()}
                           {/* Their cell named several tickets, so the figure
@@ -216,13 +244,21 @@ const Group: React.FC<{
                         : <span className="text-slate-300">nothing</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right whitespace-nowrap">
-                      {f.ours.length ? (
-                        <span className={f.ours.some(t => (t.amount || 0) < 0)
-                          ? 'text-emerald-600' : 'text-slate-600'}>
-                          {money(f.ours.reduce((s, t) => s + (t.amount || 0), 0))}{' '}
-                          <span className="text-slate-400">{f.ours[0].currency}</span>
-                        </span>
-                      ) : <span className="text-slate-300">—</span>}
+                      {f.ours.length ? (() => {
+                        const refunds = f.ours.filter(t => (t.amount || 0) < 0);
+                        const shown = refundRow
+                          ? refunds.reduce((s, t) => s + Math.abs(t.amount || 0), 0)
+                          : f.ours.reduce((s, t) => s + (t.amount || 0), 0);
+                        if (refundRow && !refunds.length)
+                          return <span className="text-slate-300">none</span>;
+                        return (
+                          <span className={refundRow || refunds.length
+                            ? 'text-emerald-600' : 'text-slate-600'}>
+                            {money(shown)}{' '}
+                            <span className="text-slate-400">{f.ours[0].currency}</span>
+                          </span>
+                        );
+                      })() : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-1.5 text-slate-500 font-sans max-w-[320px]">
                       {f.note}

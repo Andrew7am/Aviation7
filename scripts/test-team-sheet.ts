@@ -892,5 +892,90 @@ console.log('\n36. A serial is never matched against a PNR');
   check('and ours still reported unlisted', r.counts.NOT_ON_SHEET, 1);
 }
 
+/* ────────────────────────────────────────────────────────────────────────── */
+console.log('\n37. A refund gap their markup explains is not a finding');
+{
+  // Their refund carries the same uplift their cost does. Across a full
+  // export the gaps cluster under 2.8% and the next one up is 3.9%, so
+  // three per cent is where their pricing stops and a mistake starts.
+  const sheet = (refund: number) => parseTeamSheet([
+    'Ticket Number,PNR,Status,Refund Amount',
+    `065-5513059077,YQX75R,Cancelled/Refunded,${refund}`,
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: 12000 }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: -10000, status: 'REFUND' }),
+  ];
+
+  // The two the report was wrong about, to the percentage: 2.56% and 2.78%.
+  check('2.5% is their markup',  compareTeamSheet(sheet(10250), ledger).counts.REFUND_DIFFERS, 0);
+  check('2.8% is their markup',  compareTeamSheet(sheet(10280), ledger).counts.REFUND_DIFFERS, 0);
+  check('a few fils is nothing', compareTeamSheet(sheet(10000.4), ledger).counts.REFUND_DIFFERS, 0);
+  check('exactly equal',         compareTeamSheet(sheet(10000), ledger).counts.REFUND_DIFFERS, 0);
+  // And the ones that are not.
+  check('4% is too wide',        compareTeamSheet(sheet(10400), ledger).counts.REFUND_DIFFERS, 1);
+  check('30% certainly is',      compareTeamSheet(sheet(13000), ledger).counts.REFUND_DIFFERS, 1);
+  check('and it works downwards too',
+    compareTeamSheet(sheet(7000), ledger).counts.REFUND_DIFFERS, 1);
+
+  // The floor: a small refund can be 4% adrift over a trivial sum.
+  const small: Ticket[] = [
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: 500 }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: -308, status: 'REFUND' }),
+  ];
+  check('twelve dirhams is not worth a finding',
+    compareTeamSheet(sheet(320), small).counts.REFUND_DIFFERS, 0);
+  check('even though it is 3.9%',
+    Math.abs(100 * (320 - 308) / 308) > 3, true);
+
+  const f = compareTeamSheet(sheet(13000), ledger).findings
+    .find(x => x.verdict === 'REFUND_DIFFERS')!;
+  check('the note gives both figures', f.note.includes('13,000.00') && f.note.includes('10,000.00'), true);
+  check('and says how far apart as a share', f.note.includes('30.0%'), true);
+}
+
+console.log('\n38. A refund their sheet states twice cannot be compared');
+{
+  // Their normal shape is two rows, one Issued and one Cancelled/Refunded,
+  // with only the second carrying a figure. Sometimes both carry one, and
+  // adding those together is how 815 became 1,630 and was reported as a
+  // disagreement with our books by exactly the amount they had repeated.
+  const twice = parseTeamSheet([
+    'Ticket Number,PNR,Status,Refund Amount',
+    '065-5512369322,ZG2MIC,Cancelled/Refunded,815',
+    '065-5512369322,ZG2MIC,Cancelled/Refunded,815',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5512369322', pnr: 'ZG2MIC', amount: 835 }),
+    tkt({ ticketNo: '5512369322', pnr: 'ZG2MIC', amount: -815, status: 'REFUND' }),
+  ];
+  const r = compareTeamSheet(twice, ledger);
+  check('not reported as a difference', r.counts.REFUND_DIFFERS, 0);
+  check('reported as their duplication', r.counts.TWICE_ON_THEIR_SHEET, 1);
+  const f = r.findings.find(x => x.verdict === 'TWICE_ON_THEIR_SHEET')!;
+  check('the note names both rows', f.note.includes('row 2') && f.note.includes('row 3'), true);
+  check('and what we hold',          f.note.includes('815.00'), true);
+
+  // Their ordinary two rows — issue then refund, one figure — still compare.
+  const normal = parseTeamSheet([
+    'Ticket Number,PNR,Status,Refund Amount',
+    '065-5512369322,ZG2MIC,Issued,',
+    '065-5512369322,ZG2MIC,Cancelled/Refunded,815',
+  ].join('\n')).rows;
+  const ok = compareTeamSheet(normal, ledger);
+  check('one figure across two rows is normal', ok.counts.TWICE_ON_THEIR_SHEET, 0);
+  check('and it agrees', ok.counts.OK, 1);
+
+  // Two different figures is the same contradiction, not a partial refund
+  // we can add up: one of the two rows is wrong.
+  const conflicting = parseTeamSheet([
+    'Ticket Number,PNR,Status,Refund Amount',
+    '065-5512369322,ZG2MIC,Cancelled/Refunded,10410',
+    '065-5512369322,ZG2MIC,Cancelled/Refunded,740',
+  ].join('\n')).rows;
+  check('two different figures too',
+    compareTeamSheet(conflicting, ledger).counts.TWICE_ON_THEIR_SHEET, 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

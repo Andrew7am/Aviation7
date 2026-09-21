@@ -52,6 +52,27 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * thirty times stops being read the first time. Both figures are carried so
  * they can be looked at; neither is called an error.
  *
+ * THE REFUND CARRIES THE MARKUP TOO
+ *
+ * That was learnt late. On the first sheet the refunds agreed to the fils,
+ * so they looked like the one figure both sides took from the same place.
+ * On the full export they do not, and the gaps fall into three bands:
+ *
+ *     eight within a few fils            rounding
+ *     nine between 1.3% and 2.8%         their markup, the same as the cost
+ *     then a jump to 3.9, 4.2, 8.5,
+ *     29.8, 30.6 and -70.7 per cent      something actually wrong
+ *
+ * So a gap that their markup could explain is not reported. The line is
+ * drawn at three per cent of our refund AND fifty in currency, and both
+ * halves matter: the percentage keeps the markup out, and the floor keeps
+ * out a twelve-dirham gap that happens to be 3.9% of a small refund.
+ *
+ * Two tickets on that sheet - 2540225915 at 2.56% and 2540225918 at 2.78% -
+ * were reported as disagreements and were nothing of the kind. Both sides
+ * agreed exactly on what was KEPT; they differed only on a gross figure
+ * that was never the same quantity on both sides.
+ *
  * HOW THE COMPARISON IS SCOPED
  *
  * "What is missing from their sheet" only means something inside a boundary.
@@ -105,6 +126,19 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * PNR column would be somebody's mistake rather than a filing convention,
  * and pairing them on that basis would invent a match.
  *
+ * A TICKET THEIR SHEET STATES A REFUND FOR TWICE
+ *
+ * Their normal shape is two rows per refunded ticket - one Issued, one
+ * Cancelled/Refunded - and only the second carries a figure. Sometimes
+ * both carry one: 5512369322 appears twice, each row refunding 815, and
+ * 5513059004 appears twice refunding 10,410 and 740. Added together those
+ * make 1,630 and 11,150, and both were reported as disagreeing with our
+ * books by exactly the amount their own sheet had repeated.
+ *
+ * A record that contradicts itself cannot be compared against anything, so
+ * it is not: the contradiction is reported instead, with both figures, and
+ * the refund check stands aside until their side settles on one number.
+ *
  * A VOID IS NOT A GAP
  *
  * A ticket issued and voided the same day never reaches the supplier's
@@ -123,6 +157,7 @@ export type Verdict =
   | 'REFUND_NOT_IN_LEDGER'
   | 'REFUND_NOT_ON_SHEET'
   | 'REFUND_DIFFERS'
+  | 'TWICE_ON_THEIR_SHEET'
   | 'NOT_ISSUED_YET'
   | 'UNREADABLE'
   | 'NOT_ON_SHEET';
@@ -137,6 +172,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   REFUND_NOT_IN_LEDGER: 'Refund not in our ledger',
   REFUND_NOT_ON_SHEET:  'Refunded, their sheet does not say so',
   REFUND_DIFFERS:       'Refund differs',
+  TWICE_ON_THEIR_SHEET: 'Their sheet refunds it twice',
   NOT_ISSUED_YET:       'No ticket number yet',
   UNREADABLE:           'Their ticket number is damaged',
   NOT_ON_SHEET:         'Not on their sheet',
@@ -153,6 +189,9 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   NOT_ON_SHEET: 3,
   REFUND_NOT_ON_SHEET: 4,
   REFUND_DIFFERS: 5,
+  // Their own record disagrees with itself, so nothing can be compared
+  // against it until they settle on one figure.
+  TWICE_ON_THEIR_SHEET: 5.2,
   // A row that cannot be checked at all. Above the states of the world,
   // because somebody has to go and ask for the number.
   UNREADABLE: 5.5,
@@ -335,6 +374,17 @@ export interface TeamSheetReport {
   /** True when nothing needs anybody's attention. */
   clean: boolean;
 }
+
+/**
+ * How far apart two refund figures may be before it means anything.
+ *
+ * Their markup sits on their refund. Measured across a full export it runs
+ * from a few fils to 2.8%, and the next gap above that is 3.9% - so three
+ * per cent separates "their pricing" from "somebody is wrong", and fifty
+ * in currency keeps a trivial gap on a small refund out of the report.
+ */
+export const MARKUP_BAND = 0.03;
+export const MARKUP_FLOOR = 50;
 
 const money = (n: number) =>
   Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -543,6 +593,21 @@ export function compareTeamSheet(
       continue;
     }
 
+    /* Their sheet stating a refund on more than one row for one ticket.
+       Summing those is how 815 became 1,630 - see the note above. */
+    const refundRows = rows.filter(r => r.refund != null);
+    if (theySayRefunded && refundRows.length > 1) {
+      const each = refundRows.map(r => `${money(r.refund!)} on row ${r.rowNo}`).join(' and ');
+      findings.push({ ...base, verdict: 'TWICE_ON_THEIR_SHEET',
+        note: `Their sheet states a refund for this ticket more than once — ${each}.`
+            + (ourRefunds.length
+              ? ` We hold ${money(ourRefunds.reduce((s, t) => s + Math.abs(t.amount || 0), 0))}`
+                + ` ${ourRefunds[0].currency || ''}`.trimEnd() + '.'
+              : ' We hold no refund at all.')
+            + ' Nothing can be reconciled until their record settles on one figure.' });
+      continue;
+    }
+
     if (theySayRefunded && ourRefunds.length > 0) {
       const theirs = rows.reduce((s, r) => s + Math.abs(r.refund ?? 0), 0);
       const ourSum = ourRefunds.reduce((s, t) => s + Math.abs(t.amount || 0), 0);
@@ -550,12 +615,19 @@ export function compareTeamSheet(
       // booking's, not this ticket's. Comparing it against one ticket's
       // refund would report a difference on all three every time.
       const shared = rows.some(r => r.groupSize > 1);
+      const gap = theirs - ourSum;
+      // Their markup rides on the refund as it does on the cost, so a gap
+      // it could account for is not a disagreement. See the note above for
+      // where these two numbers come from.
+      const beyondMarkup = Math.abs(gap) > MARKUP_BAND * ourSum && Math.abs(gap) >= MARKUP_FLOOR;
       // Only when they actually stated a figure; a blank is not a zero.
-      if (!shared && rows.some(r => r.refund != null) && Math.abs(theirs - ourSum) >= 0.01) {
+      if (!shared && rows.some(r => r.refund != null) && beyondMarkup) {
+        const pct = ourSum ? Math.abs(100 * gap / ourSum).toFixed(1) : '—';
         findings.push({ ...base, verdict: 'REFUND_DIFFERS',
           note: `They refund ${money(theirs)}, we hold ${money(ourSum)}`
               + ` ${ourRefunds[0].currency || ''}`.trimEnd()
-              + ` — a difference of ${money(theirs - ourSum)}.` });
+              + ` — ${money(gap)} apart, ${pct}% of ours. Too wide for their markup,`
+              + ' which runs under three per cent.' });
         continue;
       }
     }
