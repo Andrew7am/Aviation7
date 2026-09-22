@@ -38,8 +38,13 @@ console.log('\n1. Their portal is one of our vendors under another name');
 {
   check('Ibtkar RUH is Ibtekar',      portalSource('Ibtkar RUH').source, 'Ibtekar');
   check('NSA Portal (RUH) is NSA',    portalSource('NSA Portal (RUH)').source, 'NSA');
-  check('IATA Portal (UAE) is IATA',  portalSource('IATA Portal (UAE)').source, 'IATA');
-  check('BSP Link is IATA too',       portalSource('BSP Link').source, 'IATA');
+  /* The LEDGER'S spelling, not the vendor's short name. Every BSP row we
+     hold is filed under "IATA BSP"; the wallet is called "IATA" and
+     reaches them by substring. Mapping the portal to the wallet's name
+     put a confirmed ticket under a bare "IATA" — a second spelling of one
+     vendor, invisible to every report that groups by source. */
+  check('IATA Portal (UAE) is IATA BSP', portalSource('IATA Portal (UAE)').source, 'IATA BSP');
+  check('BSP Link is IATA BSP too',      portalSource('BSP Link').source, 'IATA BSP');
   check('RTS is RTS',                 portalSource('RTS').source, 'RTS');
   check('XY is flynas',               portalSource('XY').source, 'Flynas');
   check('flydubai',                   portalSource('flydubai').source, 'FlyDubai');
@@ -66,7 +71,7 @@ console.log('\n1. Their portal is one of our vendors under another name');
 console.log('\n2. Their cell is sometimes two portals');
 {
   const both = portalSource('IATA Portal (UAE),RTS');
-  check('the first one we know names it', both.source, 'IATA');
+  check('the first one we know names it', both.source, 'IATA BSP');
   check('their word keeps both',          both.portal, 'IATA Portal (UAE), RTS');
   check('and neither is held',            both.heldBack, false);
 
@@ -76,7 +81,7 @@ console.log('\n2. Their cell is sometimes two portals');
   const mixed = portalSource('IATA Portal (UAE),NSA Portal (RUH)');
   check('a held part holds the row',      mixed.heldBack, true);
   check('the reason travels with it',     mixed.why.includes('wallet'), true);
-  check('the vendor is still the first',  mixed.source, 'IATA');
+  check('the vendor is still the first',  mixed.source, 'IATA BSP');
 }
 
 /* ── 3. only Ibtekar and NSA are held ─────────────────────────────────── */
@@ -335,7 +340,7 @@ console.log('\n13. The question the column was added to answer');
   const spread = new Map<string, number>();
   for (const p of out) spread.set(p.source, (spread.get(p.source) ?? 0) + 1);
   check('by vendor', [...spread].sort(),
-    [['Airline Website', 1], ['IATA', 1], ['Ibtekar', 1], ['RTS', 2]]);
+    [['Airline Website', 1], ['IATA BSP', 1], ['Ibtekar', 1], ['RTS', 2]]);
   check('one of them is held', out.filter(p => p.heldBack).length, 1);
   check('four can be worked on', out.filter(p => !p.heldBack).length, 4);
 
@@ -527,6 +532,53 @@ console.log('\n19. A reissue at no charge is not a ticket to record');
   check('only the real one is proposed', out.length, 1);
   check('and it is the charged one',     out[0].ticketNo, '5512878170');
   check('priced at their figure',        out[0].amount, 900);
+}
+
+/* -- 20. one vendor, one spelling --------------------------------------- */
+console.log('\n20. Every portal maps to a name the ledger already uses');
+{
+  // A proposal's vendor becomes a ticket's `source`, and `source` is what
+  // reports group by and what wallet matching keys on. A name that is not
+  // already in use is a SECOND SPELLING of an existing vendor, and a
+  // second spelling is a row nobody's report can see.
+  //
+  // This is not hypothetical. The IATA portal was mapped to "IATA", the
+  // name of the wallet, while every BSP row we hold is filed under "IATA
+  // BSP". One confirmed ticket went into the ledger under the bare name
+  // and 77 more were queued behind it before a ledger-wide invariant
+  // caught it.
+  const LEDGER = new Set([
+    'IATA BSP', 'NSA', 'RTS', 'Ibtekar', 'FlyAdeal DXB', 'FlyAdeal KSA',
+    'Turkish Airlines', 'FlyDubai', 'AirArabia', 'Flynas', 'Riyadh Air',
+    'Gold Medal', 'Airline Website',
+  ]);
+
+  const PORTALS = [
+    'IATA Portal (UAE)', 'BSP Link', 'Ibtkar RUH', 'NSA Portal (RUH)', 'RTS',
+    'AL Website', 'F3', 'Turkish Airlines Portal', 'flydubai',
+    'Riyadh Air Portal', 'XY', 'Air Arabia Portal',
+  ];
+
+  for (const portal of PORTALS) {
+    const m = portalSource(portal);
+    const names = m.source ? [m.source] : m.choices;
+    check(`"${portal}" maps into the ledger`,
+      names.length > 0 && names.every(n => LEDGER.has(n)), true);
+  }
+
+  // And a mapped name has to be one the dropdown offers, or the reviewer
+  // meets a select that does not contain the vendor already on their row.
+  const offered = knownSources([], [...LEDGER]);
+  for (const portal of PORTALS) {
+    const m = portalSource(portal);
+    const names = m.source ? [m.source] : m.choices;
+    check(`"${portal}" is pickable`, names.every(n => offered.includes(n)), true);
+  }
+
+  // The specific trap, named: the wallet's short name is not the ticket's
+  // source, and nothing may map to it.
+  check('nothing maps to the bare wallet name',
+    PORTALS.some(x => portalSource(x).source === 'IATA'), false);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

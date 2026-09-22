@@ -118,7 +118,12 @@ export class PendingTicketService {
 
   subscribe(onData: (p: PendingTicket[]) => void) {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let running = false;
+
     const fetchAll = async () => {
+      if (cancelled || running) return;
+      running = true;
       try {
         const rows = await fetchAllRows<Row>((from, to) =>
           supabase.from('pending_tickets').select('*')
@@ -126,13 +131,36 @@ export class PendingTicketService {
         );
         if (!cancelled) onData(rows.map(rowTo));
       } catch (e) { console.error('pending_tickets error', e); }
+      finally { running = false; }
     };
+
+    /**
+     * Coalesce a burst into one read.
+     *
+     * Every write to this table comes back as its own realtime event, and
+     * every event used to refetch the whole queue. Working down a page —
+     * pick a vendor, fix a price, confirm — is three writes in as many
+     * seconds, so the screen fetched two hundred rows three times and
+     * re-rendered in the middle of somebody typing. Confirming in bulk
+     * was worse: one full read per ticket.
+     *
+     * A quarter second is below noticing and above a burst.
+     */
+    const soon = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(fetchAll, 250);
+    };
+
     fetchAll();
     const channel = supabase
       .channel(`pending-tickets-${this.userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pending_tickets' }, fetchAll)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pending_tickets' }, soon)
       .subscribe();
-    return () => { cancelled = true; supabase.removeChannel(channel); };
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
   }
 
   /**

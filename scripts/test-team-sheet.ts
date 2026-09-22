@@ -1293,7 +1293,9 @@ console.log('\n46. Every finding says where the ticket was bought');
   ].join('\n')).rows, []);
 
   const byTkt = (t: string) => r.findings.find(f => f.serial === t)!;
-  check('their word becomes ours',  byTkt('5513373411').issuedFrom, 'IATA');
+  // The ledger's spelling, not the wallet's short name - see the note in
+  // teamPortals: a bare "IATA" is a second spelling of one vendor.
+  check('their word becomes ours',  byTkt('5513373411').issuedFrom, 'IATA BSP');
   check('and theirs is kept',       byTkt('5513373411').portal, 'IATA Portal (UAE)');
   check('a wallet vendor is held',  byTkt('5513373410').heldBack, true);
   check('an ordinary one is not',   byTkt('5513373411').heldBack, false);

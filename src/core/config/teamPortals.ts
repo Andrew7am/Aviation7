@@ -41,7 +41,14 @@ export interface PortalMatch {
 const PORTALS: { match: RegExp; source: string; choices?: string[] }[] = [
   { match: /ibtkar|ibtekar/,              source: 'Ibtekar' },
   { match: /\bnsa\b/,                     source: 'NSA' },
-  { match: /iata|bsp/,                    source: 'IATA' },
+  /* The ledger's own spelling, not the vendor's short name.
+     Every BSP row we hold is filed under "IATA BSP"; the wallet is called
+     "IATA" and reaches them by substring. Mapping this portal to the
+     wallet's name put one confirmed ticket under a bare "IATA" — a second
+     spelling of the same vendor, invisible to every report that groups by
+     source, and 77 more were queued behind it. The ticket's source has to
+     be what the ledger already calls those tickets. */
+  { match: /iata|bsp/,                    source: 'IATA BSP' },
   { match: /\brts\b/,                     source: 'RTS' },
   { match: /turkish/,                     source: 'Turkish Airlines' },
   { match: /riyadh\s*air/,                source: 'Riyadh Air' },

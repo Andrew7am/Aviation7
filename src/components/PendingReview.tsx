@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { PendingTicket } from '../types';
 import { knownSources } from '../core/config/sources';
 import { CURRENCIES } from './ManualEntry';
@@ -6,6 +6,7 @@ import { whyNotConfirmable } from '../core/helpers/pendingFromFindings';
 import { writeClipboard } from '../utils/clipboard';
 import {
   CheckCircle2, X, Loader2, Copy, AlertTriangle, Lock, Undo2, Trash2, Inbox,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 
 /**
@@ -48,6 +49,288 @@ import {
 const money = (n: number) =>
   Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/**
+ * How many proposals are on screen at once.
+ *
+ * Every one of them is a form: six inputs, two selects with a dozen
+ * options each, and a handful of badges. Two hundred of those is upwards
+ * of two thousand DOM nodes that React has to reconcile whenever anything
+ * in the parent changes, and the screen visibly stalled. Twenty-five is
+ * about a screenful and a half — enough to work through without paging
+ * constantly, small enough that the page never stops responding.
+ *
+ * The counts, the money and the vendor chips are all still computed over
+ * everything, so the page bounds what is DRAWN and never what is said.
+ */
+const PER_PAGE = 25;
+
+/**
+ * One proposal.
+ *
+ * Its own component, and memoised, because there are two hundred of them
+ * and the parent's state changes on every keystroke in the search box and
+ * on every realtime event. Without this, typing one character re-rendered
+ * two hundred cards carrying six inputs and a fifteen-option select each,
+ * and the screen came to a stop.
+ */
+interface RowProps {
+  p: PendingTicket;
+  sources: string[];
+  canWrite: boolean;
+  working: boolean;
+  field: string;
+  onCopy: (text: string) => void;
+  onPatch: (p: PendingTicket, patch: Partial<PendingTicket>) => void;
+  onConfirm: (p: PendingTicket) => void;
+  onReject: (p: PendingTicket) => void;
+  onReopen: (p: PendingTicket) => void;
+  onDelete: (p: PendingTicket) => void;
+}
+
+const Row = React.memo(function Row({
+  p, sources, canWrite, working, field,
+  onCopy, onPatch, onConfirm, onReject, onReopen, onDelete,
+}: RowProps) {
+  const blocked = whyNotConfirmable(p);
+  const priced = !!p.amount;
+      /* Their Net Cost, copied in and not yet looked at. Worth saying
+         out loud on the row: it is right about two times in three, and
+         the third time is the reason this screen exists. */
+      const untouched = priced && p.theirCost != null
+        && Math.abs(p.amount) === Math.abs(p.theirCost);
+      /* Their cell named more than one ticket, so the figure beside it
+         is the booking's. 123 of the first 206 are like this, one of
+         them a cell of 45 against 139,500 — which is why nothing is
+         divided automatically and nothing is prefilled. */
+      const shared = (p.theirGroup ?? 1) > 1;
+      return (
+        <div key={p.id}
+          className={`bg-white border rounded-lg overflow-hidden ${
+            p.heldBack ? 'border-amber-200' : blocked ? 'border-slate-200'
+                                                      : 'border-emerald-200'}`}>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5
+                          border-b border-slate-50">
+            <button type="button" onClick={() => onCopy(
+              p.airlineCode && p.ticketNo ? `${p.airlineCode}-${p.ticketNo}` : p.ticketNo)}
+              className="group flex items-center gap-1.5 font-mono text-xs font-bold
+                         text-slate-700 rounded px-1 -mx-1 hover:bg-slate-100">
+              <Copy className="w-3 h-3 text-slate-300 group-hover:text-slate-500" />
+              {p.airlineCode && p.ticketNo ? `${p.airlineCode}-${p.ticketNo}` : p.ticketNo || '—'}
+            </button>
+            {/* For a carrier that issues no IATA ticket the booking
+                reference IS the document, so both columns hold the same
+                value and printing it twice is noise. */}
+            {p.pnr && p.pnr !== p.ticketNo && (
+              <button type="button" onClick={() => onCopy(p.pnr!)}
+                className="group flex items-center gap-1.5 font-mono text-[11px] text-slate-500
+                           rounded px-1 -mx-1 hover:bg-slate-100">
+                <Copy className="w-3 h-3 text-slate-300 group-hover:text-slate-500" />
+                {p.pnr}
+              </button>
+            )}
+            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5
+                              rounded ${p.transactionType === 'REFUND'
+                ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+              {p.transactionType || 'ISSUE'}
+            </span>
+            {p.theirPortal && (
+              <span className="text-[10px] text-slate-400 font-mono"
+                    title="Their own word for where it was bought">
+                their portal: {p.theirPortal}
+              </span>
+            )}
+            {/* Their figure, labelled every time it is shown. */}
+            {!!p.theirCost && (
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                shared ? 'bg-sky-50 text-sky-700'
+                : untouched ? 'bg-amber-50 text-amber-700' : 'text-slate-400'}`}>
+                {/* A shared cell is the one case where their figure is
+                    not this ticket's, so it never reads as a price. */}
+                {shared
+                  ? `${money(p.theirCost)} ${p.currency} covers ${p.theirGroup} tickets`
+                  : untouched
+                    ? `${money(p.theirCost)} ${p.currency} — their figure, not checked yet`
+                    : `they said ${money(p.theirCost)} ${p.currency}`}
+              </span>
+            )}
+            {p.state !== 'PENDING' && (
+              <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5
+                                rounded ml-auto ${p.state === 'CONFIRMED'
+                  ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                {p.state === 'CONFIRMED' ? 'recorded' : 'turned down'}
+              </span>
+            )}
+          </div>
+
+          <div className="px-4 py-3 flex flex-wrap items-end gap-3">
+            <label className="block">
+              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+                Vendor that billed it
+              </span>
+              <select
+                value={p.source} disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
+                onChange={e => onPatch(p, { source: e.target.value })}
+                className={`${field} w-44 ${p.source ? '' : 'border-amber-300 bg-amber-50'}`}>
+                <option value="">— pick one —</option>
+                {/* The row's own vendor first when the list does not
+                    carry it. A <select> whose value matches no option
+                    renders blank, which would show "no vendor" on a row
+                    that has one and lose it the moment anybody touched
+                    the field. */}
+                {p.source && !sources.includes(p.source) && (
+                  <option value={p.source}>{p.source}</option>
+                )}
+                {sources.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+                Date
+              </span>
+              <input type="date" value={p.date}
+                disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
+                onChange={e => onPatch(p, { date: e.target.value })}
+                className={`${field} w-36`} />
+            </label>
+
+            <label className="block">
+              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+                What it cost{' '}
+                {shared
+                  ? <span className="text-sky-500">· 1 of {p.theirGroup}</span>
+                  : untouched && <span className="text-amber-500">· theirs</span>}
+              </span>
+              <input
+                type="number" step="0.01" defaultValue={p.amount ? Math.abs(p.amount) : ''}
+                disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
+                placeholder="0.00"
+                onBlur={e => {
+                  const v = Number(e.target.value.replace(/[^0-9.-]/g, ''));
+                  const next = Number.isNaN(v) ? 0 : Math.abs(v);
+                  if (next === Math.abs(p.amount)) return;
+                  onPatch(p, { amount: next, totalDoc: next });
+                }}
+                className={`${field} w-32 text-right ${
+                  priced ? (untouched ? 'border-amber-200' : '')
+                         : 'border-amber-300 bg-amber-50'}`} />
+            </label>
+
+            <label className="block">
+              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+                Currency
+              </span>
+              <select value={p.currency || 'AED'}
+                disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
+                onChange={e => onPatch(p, { currency: e.target.value as PendingTicket['currency'] })}
+                className={`${field} w-20`}>
+                {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+                Request {p.theirReq && <span className="text-slate-300">(theirs)</span>}
+              </span>
+              <input defaultValue={p.reqNum}
+                disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
+                onBlur={e => {
+                  const v = e.target.value.trim().toUpperCase();
+                  if (v !== p.reqNum) onPatch(p, { reqNum: v });
+                }}
+                className={`${field} w-32`} />
+            </label>
+
+            <label className="block">
+              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+                Passenger
+              </span>
+              <input defaultValue={p.passengerName || ''}
+                disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
+                placeholder="their sheet does not say"
+                onBlur={e => {
+                  const v = e.target.value.trim().toUpperCase();
+                  if (v !== (p.passengerName || '')) onPatch(p, { passengerName: v });
+                }}
+                className={`${field} w-48`} />
+            </label>
+
+            {p.state === 'PENDING' && canWrite && (
+              <div className="flex items-center gap-2 ml-auto">
+                {blocked ? (
+                  <span className="flex items-center gap-1.5 text-[10px] text-slate-500
+                                   max-w-[280px] leading-snug">
+                    {p.heldBack
+                      ? <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      : <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                    {/* The reason for a hold is long and is already
+                        written across the bottom of the row, where it
+                        is readable. Saying it twice in half the width
+                        is saying it once, badly. */}
+                    {p.heldBack ? 'Held back' : blocked}
+                  </span>
+                ) : (
+                  <button onClick={() => onConfirm(p)}
+                    disabled={working}
+                    className="flex items-center gap-1.5 bg-emerald-600 text-white text-[11px]
+                               font-bold px-3 py-1.5 rounded hover:bg-emerald-700
+                               disabled:opacity-50">
+                    {working ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                             : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    Confirm
+                  </button>
+                )}
+                {onReject && (
+                  <button onClick={() => onReject(p)} disabled={working}
+                    title="Not a ticket for our books"
+                    className="text-[11px] font-bold text-slate-400 hover:text-red-600 px-2 py-1.5">
+                    Not ours
+                  </button>
+                )}
+              </div>
+            )}
+
+            {p.state === 'REJECTED' && canWrite && (
+              <div className="flex items-center gap-2 ml-auto">
+                {onReopen && (
+                  <button onClick={() => onReopen(p)} disabled={working}
+                    className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500
+                               hover:text-slate-800 px-2 py-1.5">
+                    <Undo2 className="w-3.5 h-3.5" /> Put it back
+                  </button>
+                )}
+                {onDelete && (
+                  <button onClick={() => onDelete(p)} disabled={working}
+                    title="Remove it from the list for good"
+                    className="text-slate-300 hover:text-red-600 px-1 py-1.5">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {(p.note || p.heldBackWhy || p.reviewNote) && (
+            <div className="px-4 pb-2.5 space-y-1">
+              {p.heldBackWhy && (
+                <p className="text-[10px] text-amber-700 leading-relaxed flex items-start gap-1.5">
+                  <Lock className="w-3 h-3 mt-px shrink-0" />{p.heldBackWhy}
+                </p>
+              )}
+              {p.note && !p.heldBackWhy && (
+                <p className="text-[10px] text-slate-500 leading-relaxed">{p.note}</p>
+              )}
+              {p.reviewNote && (
+                <p className="text-[10px] text-slate-600 leading-relaxed">
+                  <b>Turned down:</b> {p.reviewNote}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )
+});
+
 interface Props {
   pending: PendingTicket[];
   vendorNames?: string[];
@@ -69,6 +352,7 @@ export const PendingReview: React.FC<Props> = ({
   const [vendorFilter, setVendorFilter] = useState('');
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState('');
+  const [pageNo, setPageNo] = useState(0);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
 
@@ -131,31 +415,71 @@ export const PendingReview: React.FC<Props> = ({
 
   const ready = rows.filter(p => !whyNotConfirmable(p)).length;
 
-  const copy = async (text: string) => {
+  /* ── what is on screen ────────────────────────────────────────────────
+     Only the drawing is paged. Every count above is over the whole list. */
+  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const page = useMemo(
+    () => rows.slice(pageNo * PER_PAGE, (pageNo + 1) * PER_PAGE),
+    [rows, pageNo]);
+
+  /* Back to the first page whenever the list underneath changes, so a
+     filter that leaves four rows never lands on an empty page seven. And
+     back inside the list when confirming the last row shortens it. */
+  useEffect(() => { setPageNo(0); }, [tab, vendorFilter, search]);
+  useEffect(() => { if (pageNo >= pages) setPageNo(pages - 1); }, [pages, pageNo]);
+
+  const copy = useCallback(async (text: string) => {
     if (await writeClipboard(text)) {
       setCopied(text);
       setTimeout(() => setCopied(''), 1600);
     }
-  };
+  }, []);
 
-  const run = async (id: string, fn: () => Promise<unknown>) => {
+  /**
+   * Run one action, and say something useful when it fails.
+   *
+   * "TypeError: Failed to fetch" is what the browser says when a request
+   * never reached the server at all, and on its own it tells nobody
+   * anything — least of all whether their edit was saved. So the message
+   * names what was being done and what to do about it.
+   */
+  const run = useCallback(async (id: string, what: string, fn: () => Promise<unknown>) => {
     setBusy(id); setError('');
     try { await fn(); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      setError(/failed to fetch|networkerror|load failed/i.test(raw)
+        ? `${what} did not reach the server — the connection dropped. Nothing was saved;`
+          + ' check you are online and try it again.'
+        : `${what} failed: ${raw}`);
+    }
     finally { setBusy(''); }
-  };
+  }, []);
 
-  const patch = (p: PendingTicket, patchIn: Partial<PendingTicket>) =>
-    onPatch && run(p.id, () => onPatch(p.id, patchIn));
+  const patch = useCallback((p: PendingTicket, patchIn: Partial<PendingTicket>) => {
+    if (onPatch) run(p.id, 'That change', () => onPatch(p.id, patchIn));
+  }, [onPatch, run]);
 
-  const reject = (p: PendingTicket) => {
+  const confirm = useCallback((p: PendingTicket) => {
+    if (onConfirm) run(p.id, `Recording ${p.ticketNo || p.pnr}`, () => onConfirm(p));
+  }, [onConfirm, run]);
+
+  const reopen = useCallback((p: PendingTicket) => {
+    if (onReopen) run(p.id, 'Putting it back', () => onReopen(p.id));
+  }, [onReopen, run]);
+
+  const remove = useCallback((p: PendingTicket) => {
+    if (onDelete) run(p.id, 'Removing it', () => onDelete(p.id));
+  }, [onDelete, run]);
+
+  const reject = useCallback((p: PendingTicket) => {
     if (!onReject) return;
     const why = window.prompt(
       'Why is this not a ticket for our books?\n\nWhat you write here is the only record'
       + ' that it was looked at rather than ignored.', '');
     if (why === null) return;
-    run(p.id, () => onReject(p.id, why));
-  };
+    run(p.id, 'Turning it down', () => onReject(p.id, why));
+  }, [onReject, run]);
 
   const tabClass = (t: Tab) =>
     `px-3 py-1.5 text-[11px] font-bold rounded transition-colors ${
@@ -294,248 +618,33 @@ export const PendingReview: React.FC<Props> = ({
 
       {/* ── the queue ───────────────────────────────────────────────────── */}
       <div className="space-y-2">
-        {rows.map(p => {
-          const blocked = whyNotConfirmable(p);
-          const working = busy === p.id;
-          const priced = !!p.amount;
-          /* Their Net Cost, copied in and not yet looked at. Worth saying
-             out loud on the row: it is right about two times in three, and
-             the third time is the reason this screen exists. */
-          const untouched = priced && p.theirCost != null
-            && Math.abs(p.amount) === Math.abs(p.theirCost);
-          /* Their cell named more than one ticket, so the figure beside it
-             is the booking's. 123 of the first 206 are like this, one of
-             them a cell of 45 against 139,500 — which is why nothing is
-             divided automatically and nothing is prefilled. */
-          const shared = (p.theirGroup ?? 1) > 1;
-          return (
-            <div key={p.id}
-              className={`bg-white border rounded-lg overflow-hidden ${
-                p.heldBack ? 'border-amber-200' : blocked ? 'border-slate-200'
-                                                          : 'border-emerald-200'}`}>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5
-                              border-b border-slate-50">
-                <button type="button" onClick={() => copy(
-                  p.airlineCode && p.ticketNo ? `${p.airlineCode}-${p.ticketNo}` : p.ticketNo)}
-                  className="group flex items-center gap-1.5 font-mono text-xs font-bold
-                             text-slate-700 rounded px-1 -mx-1 hover:bg-slate-100">
-                  <Copy className="w-3 h-3 text-slate-300 group-hover:text-slate-500" />
-                  {p.airlineCode && p.ticketNo ? `${p.airlineCode}-${p.ticketNo}` : p.ticketNo || '—'}
-                </button>
-                {/* For a carrier that issues no IATA ticket the booking
-                    reference IS the document, so both columns hold the same
-                    value and printing it twice is noise. */}
-                {p.pnr && p.pnr !== p.ticketNo && (
-                  <button type="button" onClick={() => copy(p.pnr!)}
-                    className="group flex items-center gap-1.5 font-mono text-[11px] text-slate-500
-                               rounded px-1 -mx-1 hover:bg-slate-100">
-                    <Copy className="w-3 h-3 text-slate-300 group-hover:text-slate-500" />
-                    {p.pnr}
-                  </button>
-                )}
-                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5
-                                  rounded ${p.transactionType === 'REFUND'
-                    ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                  {p.transactionType || 'ISSUE'}
-                </span>
-                {p.theirPortal && (
-                  <span className="text-[10px] text-slate-400 font-mono"
-                        title="Their own word for where it was bought">
-                    their portal: {p.theirPortal}
-                  </span>
-                )}
-                {/* Their figure, labelled every time it is shown. */}
-                {!!p.theirCost && (
-                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                    shared ? 'bg-sky-50 text-sky-700'
-                    : untouched ? 'bg-amber-50 text-amber-700' : 'text-slate-400'}`}>
-                    {/* A shared cell is the one case where their figure is
-                        not this ticket's, so it never reads as a price. */}
-                    {shared
-                      ? `${money(p.theirCost)} ${p.currency} covers ${p.theirGroup} tickets`
-                      : untouched
-                        ? `${money(p.theirCost)} ${p.currency} — their figure, not checked yet`
-                        : `they said ${money(p.theirCost)} ${p.currency}`}
-                  </span>
-                )}
-                {p.state !== 'PENDING' && (
-                  <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5
-                                    rounded ml-auto ${p.state === 'CONFIRMED'
-                      ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
-                    {p.state === 'CONFIRMED' ? 'recorded' : 'turned down'}
-                  </span>
-                )}
-              </div>
-
-              <div className="px-4 py-3 flex flex-wrap items-end gap-3">
-                <label className="block">
-                  <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
-                    Vendor that billed it
-                  </span>
-                  <select
-                    value={p.source} disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
-                    onChange={e => patch(p, { source: e.target.value })}
-                    className={`${field} w-44 ${p.source ? '' : 'border-amber-300 bg-amber-50'}`}>
-                    <option value="">— pick one —</option>
-                    {/* The row's own vendor first when the list does not
-                        carry it. A <select> whose value matches no option
-                        renders blank, which would show "no vendor" on a row
-                        that has one and lose it the moment anybody touched
-                        the field. */}
-                    {p.source && !sources.includes(p.source) && (
-                      <option value={p.source}>{p.source}</option>
-                    )}
-                    {sources.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
-                    Date
-                  </span>
-                  <input type="date" value={p.date}
-                    disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
-                    onChange={e => patch(p, { date: e.target.value })}
-                    className={`${field} w-36`} />
-                </label>
-
-                <label className="block">
-                  <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
-                    What it cost{' '}
-                    {shared
-                      ? <span className="text-sky-500">· 1 of {p.theirGroup}</span>
-                      : untouched && <span className="text-amber-500">· theirs</span>}
-                  </span>
-                  <input
-                    type="number" step="0.01" defaultValue={p.amount ? Math.abs(p.amount) : ''}
-                    disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
-                    placeholder="0.00"
-                    onBlur={e => {
-                      const v = Number(e.target.value.replace(/[^0-9.-]/g, ''));
-                      const next = Number.isNaN(v) ? 0 : Math.abs(v);
-                      if (next === Math.abs(p.amount)) return;
-                      patch(p, { amount: next, totalDoc: next });
-                    }}
-                    className={`${field} w-32 text-right ${
-                      priced ? (untouched ? 'border-amber-200' : '')
-                             : 'border-amber-300 bg-amber-50'}`} />
-                </label>
-
-                <label className="block">
-                  <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
-                    Currency
-                  </span>
-                  <select value={p.currency || 'AED'}
-                    disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
-                    onChange={e => patch(p, { currency: e.target.value as PendingTicket['currency'] })}
-                    className={`${field} w-20`}>
-                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
-                    Request {p.theirReq && <span className="text-slate-300">(theirs)</span>}
-                  </span>
-                  <input defaultValue={p.reqNum}
-                    disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
-                    onBlur={e => {
-                      const v = e.target.value.trim().toUpperCase();
-                      if (v !== p.reqNum) patch(p, { reqNum: v });
-                    }}
-                    className={`${field} w-32`} />
-                </label>
-
-                <label className="block">
-                  <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
-                    Passenger
-                  </span>
-                  <input defaultValue={p.passengerName || ''}
-                    disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
-                    placeholder="their sheet does not say"
-                    onBlur={e => {
-                      const v = e.target.value.trim().toUpperCase();
-                      if (v !== (p.passengerName || '')) patch(p, { passengerName: v });
-                    }}
-                    className={`${field} w-48`} />
-                </label>
-
-                {p.state === 'PENDING' && canWrite && (
-                  <div className="flex items-center gap-2 ml-auto">
-                    {blocked ? (
-                      <span className="flex items-center gap-1.5 text-[10px] text-slate-500
-                                       max-w-[280px] leading-snug">
-                        {p.heldBack
-                          ? <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                          : <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
-                        {/* The reason for a hold is long and is already
-                            written across the bottom of the row, where it
-                            is readable. Saying it twice in half the width
-                            is saying it once, badly. */}
-                        {p.heldBack ? 'Held back' : blocked}
-                      </span>
-                    ) : (
-                      <button onClick={() => onConfirm && run(p.id, () => onConfirm(p))}
-                        disabled={working}
-                        className="flex items-center gap-1.5 bg-emerald-600 text-white text-[11px]
-                                   font-bold px-3 py-1.5 rounded hover:bg-emerald-700
-                                   disabled:opacity-50">
-                        {working ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                 : <CheckCircle2 className="w-3.5 h-3.5" />}
-                        Confirm
-                      </button>
-                    )}
-                    {onReject && (
-                      <button onClick={() => reject(p)} disabled={working}
-                        title="Not a ticket for our books"
-                        className="text-[11px] font-bold text-slate-400 hover:text-red-600 px-2 py-1.5">
-                        Not ours
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {p.state === 'REJECTED' && canWrite && (
-                  <div className="flex items-center gap-2 ml-auto">
-                    {onReopen && (
-                      <button onClick={() => run(p.id, () => onReopen(p.id))} disabled={working}
-                        className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500
-                                   hover:text-slate-800 px-2 py-1.5">
-                        <Undo2 className="w-3.5 h-3.5" /> Put it back
-                      </button>
-                    )}
-                    {onDelete && (
-                      <button onClick={() => run(p.id, () => onDelete(p.id))} disabled={working}
-                        title="Remove it from the list for good"
-                        className="text-slate-300 hover:text-red-600 px-1 py-1.5">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {(p.note || p.heldBackWhy || p.reviewNote) && (
-                <div className="px-4 pb-2.5 space-y-1">
-                  {p.heldBackWhy && (
-                    <p className="text-[10px] text-amber-700 leading-relaxed flex items-start gap-1.5">
-                      <Lock className="w-3 h-3 mt-px shrink-0" />{p.heldBackWhy}
-                    </p>
-                  )}
-                  {p.note && !p.heldBackWhy && (
-                    <p className="text-[10px] text-slate-500 leading-relaxed">{p.note}</p>
-                  )}
-                  {p.reviewNote && (
-                    <p className="text-[10px] text-slate-600 leading-relaxed">
-                      <b>Turned down:</b> {p.reviewNote}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {page.map(p => (
+          <Row key={p.id} p={p} sources={sources} canWrite={canWrite}
+            working={busy === p.id} field={field}
+            onCopy={copy} onPatch={patch} onConfirm={confirm}
+            onReject={reject} onReopen={reopen} onDelete={remove} />
+        ))}
       </div>
+
+      {pages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-1">
+          <button onClick={() => setPageNo(n => Math.max(0, n - 1))} disabled={pageNo === 0}
+            className="flex items-center gap-1 text-[11px] font-bold text-slate-500
+                       hover:text-slate-800 disabled:opacity-30 px-2 py-1.5">
+            <ChevronLeft className="w-3.5 h-3.5" /> Back
+          </button>
+          <span className="text-[11px] text-slate-500 font-mono">
+            {pageNo * PER_PAGE + 1}–{Math.min((pageNo + 1) * PER_PAGE, rows.length)}
+            {' '}of <b className="text-slate-700">{rows.length}</b>
+          </span>
+          <button onClick={() => setPageNo(n => Math.min(pages - 1, n + 1))}
+            disabled={pageNo >= pages - 1}
+            className="flex items-center gap-1 text-[11px] font-bold text-slate-500
+                       hover:text-slate-800 disabled:opacity-30 px-2 py-1.5">
+            Next <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };
