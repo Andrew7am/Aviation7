@@ -146,6 +146,7 @@ export function pendingFromFindings(
       theirReq: f.theirReq || '',
       theirCost: isRefund ? (s.refund ?? undefined) : (s.cost ?? undefined),
       theirGroup: s.groupSize,
+      theirCell: s.rawTicket,
       finding: f.verdict,
       note: f.note,
       heldBack: f.heldBack,

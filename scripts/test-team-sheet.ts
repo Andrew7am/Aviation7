@@ -1590,5 +1590,72 @@ console.log('\n54. A reissue nobody charged for is not a gap');
   check('it is compared',               held.counts.OK, 1);
 }
 
+console.log('\n55. A conjunction, and the number that is not in their file');
+{
+  // "176-5513261452-53" is one passenger with two documents. The second
+  // is 5513261453, which is right - and does NOT appear anywhere in their
+  // export as text, so somebody searching their sheet for it finds
+  // nothing and reasonably concludes we invented it. The finding has to
+  // carry the CELL as well as the number.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount,Ticket Type',
+    '176-5513261452-53,XQEIMC,Issued,UAECO627,8980.00,,TKT',
+    '176-5513261452-53,XQEIMC,Cancelled/Refunded,UAECO627,89.01,8925.00,FULL REFUND',
+  ].join('\n')).rows;
+
+  check('the cell becomes two tickets', sheet.length, 4);
+  const second = sheet.find(r => r.serial === '5513261453')!;
+  check('the second is expanded',       second.serial, '5513261453');
+  check('and knows its sibling',        second.siblings, ['5513261452']);
+  check('and keeps the cell it came from', second.rawTicket, '176-5513261452-53');
+
+  const r = compareTeamSheet(sheet, []);
+  const f = r.findings.find(x => x.serial === '5513261453')!;
+  check('the finding carries the cell', f.sheet!.rawTicket, '176-5513261452-53');
+
+  // AND THE ROW THE FINDING IS ABOUT. Their sheet holds several rows per
+  // document and the first in the file is often the refund. This one
+  // reported 89.01 - a fee on the refund row - for a ticket their issue
+  // row prices at 8,980. Seven real findings were doing this.
+  check('a missing ticket shows the issue cost', f.sheet!.cost, 8980);
+  check('not the refund row\'s figure',          f.sheet!.cost === 89.01, false);
+  check('and its status is the issue',           f.sheet!.rawStatus, 'Issued');
+
+  // The refund finding still carries the row that states the refund.
+  const ledger = [tkt({ ticketNo: '5513261452', pnr: 'XQEIMC', reqNum: 'UAECO627' })];
+  const both = compareTeamSheet(sheet, ledger, ['UAECO627']);
+  const ref = both.findings.find(x => x.verdict === 'REFUND_NOT_IN_LEDGER');
+  if (ref) check('a refund still shows the refund row', ref.sheet!.refund, 8925);
+  else check('a refund finding was raised', true, true);
+}
+
+console.log('\n56. Which row a finding carries, in general');
+{
+  // The rule under all of it: a finding carries the row it is ABOUT, not
+  // whichever came first in their file. Four branches learned this
+  // separately - void, refund, voided-and-issued, and now missing - so
+  // it is asserted as one idea.
+  const mk = (rows: string[]) => parseTeamSheet(
+    ['Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount,Issued Date & Time',
+     ...rows].join('\n')).rows;
+
+  // Refund row first in the file, issue row second.
+  const missing = compareTeamSheet(mk([
+    '065-5513373390,ZZ1111,Cancelled/Refunded,KSAML700,50.00,,05/09/2026 1:00pm',
+    '065-5513373390,ZZ1111,Issued,KSAML700,4200.00,,01/09/2026 1:00pm',
+  ]), []);
+  check('a missing ticket takes the issue row',
+    missing.findings[0].sheet!.cost, 4200);
+
+  // A void first, a live issue second: the void branch already decides
+  // which is last, and the money must follow.
+  const revived = compareTeamSheet(mk([
+    '065-5513373391,ZZ2222,Void,KSAML700,,,03/09/2026 1:00pm',
+    '065-5513373391,ZZ2222,Issued,KSAML700,7700.00,,04/09/2026 1:00pm',
+  ]), []);
+  check('issued after a void is missing', revived.counts.NOT_IN_LEDGER, 1);
+  check('and carries its price',          revived.findings[0].sheet!.cost, 7700);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

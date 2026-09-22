@@ -79,6 +79,15 @@ create table if not exists pending_tickets (
   -- AED. Those arrive unpriced, and this is what tells the reviewer what
   -- they are dividing.
   their_group      integer not null default 1,
+  -- Their ticket cell, exactly as it reads in their export.
+  --
+  -- A conjunction is written in shorthand: "176-5513261452-53" is one
+  -- passenger with two documents, and the second is 5513261453. That
+  -- number is correct and it is NOT in their file as text, so somebody
+  -- searching their sheet for it finds nothing and reasonably concludes
+  -- the system invented it. Keeping the cell is what makes the search
+  -- land.
+  their_cell       text,
   -- The check's verdict, e.g. NOT_IN_LEDGER, REFUND_NOT_IN_LEDGER.
   finding          text,
   -- The sentence the check wrote, in the reader's own terms.

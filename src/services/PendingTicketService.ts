@@ -26,6 +26,7 @@ type Row = {
   their_req: string | null;
   their_cost: number | null;
   their_group: number;
+  their_cell: string | null;
   finding: string | null;
   note: string | null;
   held_back: boolean;
@@ -61,6 +62,7 @@ const rowTo = (r: Row): PendingTicket => ({
   theirReq: r.their_req ?? undefined,
   theirCost: r.their_cost == null ? undefined : Number(r.their_cost),
   theirGroup: r.their_group ?? 1,
+  theirCell: r.their_cell ?? undefined,
   finding: r.finding ?? undefined,
   note: r.note ?? undefined,
   heldBack: r.held_back,
@@ -96,6 +98,7 @@ const toRow = (p: PendingTicket, userId: string) => ({
   their_req: p.theirReq || '',
   their_cost: p.theirCost ?? null,
   their_group: p.theirGroup ?? 1,
+  their_cell: p.theirCell || '',
   finding: p.finding || '',
   note: p.note || '',
   held_back: !!p.heldBack,
@@ -213,6 +216,7 @@ export class PendingTicketService {
         their_req: p.theirReq || '',
         their_cost: p.theirCost ?? null,
         their_group: p.theirGroup ?? 1,
+        their_cell: p.theirCell || '',
         finding: p.finding || '',
         note: p.note || '',
         held_back: !!p.heldBack,

@@ -786,7 +786,17 @@ export function compareTeamSheet(
               + ' came last. If it was voided there is nothing to record; if it was issued'
               + ' again, this is a ticket we do not have.' });
       } else {
-        findings.push({ ...base, verdict: 'NOT_IN_LEDGER',
+        /* The row that says what it cost to ISSUE it.
+           Their sheet holds several rows per document and `first` is
+           whichever came up the file, which is often the refund. On
+           176-5513261452-53 that reported 89.01 — a fee on the refund row
+           — for a ticket their issue row prices at 8,980. Seven findings
+           were carrying a figure that belonged to a different event on
+           the same document. Same trap as the void and refund branches
+           above, and the same answer: carry the row the finding is about. */
+        const issued = rows.find(x =>
+          x.status !== 'REFUNDED' && x.status !== 'VOID' && x.cost != null) ?? first;
+        findings.push({ ...base, sheet: issued, verdict: 'NOT_IN_LEDGER',
           note: theirReq
             ? `On their sheet under ${theirReq} and nowhere in our books — either the`
               + ' supplier has not billed it yet, or an import missed it.'

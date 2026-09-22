@@ -190,6 +190,10 @@ export interface PendingTicket {
    *  figure is this ticket's and was copied into `amount`; more means it
    *  is the booking's and the row arrived unpriced. */
   theirGroup?: number;
+  /** Their ticket cell as it reads in their export. A conjunction is
+   *  written "176-5513261452-53", so the second document never appears in
+   *  their file as text and searching for it finds nothing. */
+  theirCell?: string;
   /** The check's verdict — NOT_IN_LEDGER, REFUND_NOT_IN_LEDGER. */
   finding?: string;
   note?: string;

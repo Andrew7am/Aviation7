@@ -133,6 +133,23 @@ const Row = React.memo(function Row({
                 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
               {p.transactionType || 'ISSUE'}
             </span>
+            {/* Their cell, when it does not read as the number we took out
+                of it. A conjunction is written "176-5513261452-53": the
+                second document is 5513261453, which is correct and does
+                NOT appear in their file as text — so anybody searching
+                their sheet for it finds nothing and concludes we made it
+                up. This is the line that makes the search land. */}
+            {p.theirCell && p.theirCell !== p.ticketNo
+              && !p.theirCell.endsWith(p.ticketNo) && (
+              <button type="button" onClick={() => onCopy(p.theirCell!)}
+                title="Search their sheet for this — it is the cell the number came out of"
+                className="group flex items-center gap-1.5 text-[10px] font-mono
+                           text-sky-700 bg-sky-50 rounded px-1.5 py-0.5 hover:bg-sky-100">
+                <Copy className="w-3 h-3 text-sky-300 group-hover:text-sky-600" />
+                their cell: {p.theirCell.length > 40
+                  ? p.theirCell.slice(0, 40) + '…' : p.theirCell}
+              </button>
+            )}
             {p.theirPortal && (
               <span className="text-[10px] text-slate-400 font-mono"
                     title="Their own word for where it was bought">

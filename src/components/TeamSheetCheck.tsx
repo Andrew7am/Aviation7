@@ -253,7 +253,19 @@ const Group: React.FC<{
                     <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
                       {f.sheet
                         ? <>{f.sheet.rawStatus || '—'}
-                            <span className="text-slate-300"> · row {f.sheet.rowNo}</span></>
+                            <span className="text-slate-300"> · row {f.sheet.rowNo}</span>
+                            {/* Their cell, when the number above is not in
+                                it as text. A conjunction is written
+                                "176-5513261452-53" and the second document
+                                is 5513261453 — correct, and not findable by
+                                searching their sheet for it. */}
+                            {f.serial && !f.sheet.rawTicket.includes(f.serial) && (
+                              <span className="block text-[9px] text-sky-700 font-mono">
+                                their cell: {f.sheet.rawTicket.length > 34
+                                  ? f.sheet.rawTicket.slice(0, 34) + '…'
+                                  : f.sheet.rawTicket}
+                              </span>
+                            )}</>
                         : <span className="text-slate-300">not on it</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right text-slate-600 whitespace-nowrap">
