@@ -112,6 +112,29 @@ function pick(headers: string[], candidates: string[], loose = true): number {
 }
 
 /**
+ * Every column whose name starts with one of these, in file order.
+ *
+ * Their export carries the request in TWO columns - "REQ No (Auto) (MICE)"
+ * and "REQ No (Auto) (Trip)" - because a booking is raised against one kind
+ * of request or the other. Across a full export every row fills exactly
+ * one of them and never both, so reading only the first column found
+ * dropped the request on 706 of 1,903 rows and would have reported every
+ * one of them as filed differently from our books.
+ *
+ * Exact and starts-with only, never containment: their account column is
+ * called "MICE Account (from Aviation Requests)" and contains the word.
+ */
+function pickAll(headers: string[], candidates: string[]): number[] {
+  const H = headers.map(norm);
+  const cs = candidates.map(norm);
+  const out: number[] = [];
+  H.forEach((h, i) => {
+    if (cs.some(c => h === c || h.startsWith(c))) out.push(i);
+  });
+  return out;
+}
+
+/**
  * A number out of a cell that may carry separators, a currency or nothing.
  *
  * "2,530.00" is two and a half thousand; "588,00" is five hundred and
@@ -367,6 +390,9 @@ export function parseTeamSheet(text: string): ParsedTeamSheet {
     req:     pick(headers, ['req num', 'reqnum', 'req no', 'req', 'request number',
                             'request no', 'request'], false),
   };
+  // …and every one of them, because there can be more than one.
+  const reqCols = pickAll(headers, ['req num', 'reqnum', 'req no', 'req',
+                                    'request number', 'request no', 'request']);
 
   if (col.ticket < 0)
     return { rows: [], headers, problem: 'No ticket number column in that file.' };
@@ -409,7 +435,8 @@ export function parseTeamSheet(text: string): ParsedTeamSheet {
       member: at(r, col.member),
       airline: at(r, col.airline),
       portal: at(r, col.portal),
-      reqNum: at(r, col.req).toUpperCase(),
+      // Whichever of their request columns this row filled in.
+      reqNum: (reqCols.map(i => at(r, i)).find(Boolean) ?? '').toUpperCase(),
       ticketType: at(r, col.type),
     });
   }

@@ -1000,5 +1000,42 @@ console.log('\n38. A refund their sheet states twice cannot be compared');
     compareTeamSheet(conflicting, ledger).counts.TWICE_ON_THEIR_SHEET, 1);
 }
 
+console.log('\n39. Their export carries the request in two columns');
+{
+  // A booking is raised against a MICE request or a Trip one, and their
+  // export has a column for each. Every row fills exactly one and never
+  // both. Reading only the first column found dropped the request on 706
+  // of 1,903 rows, and every one of them would have been reported as
+  // filed differently from our books.
+  const HEAD = 'Ticket Number,PNR,Status,'
+    + 'REQ No (Auto) (MICE) (from Aviation Quotations),'
+    + 'REQ No (Auto) (Trip) (from Aviation Quotations)';
+  const two = parseTeamSheet([
+    HEAD,
+    '065-5513059078,YSLM73,Issued,KSAML2053,',
+    '065-5513059077,YQX75R,Issued,,UAEVP420',
+  ].join('\n'));
+  check('the MICE column is read', two.rows[0].reqNum, 'KSAML2053');
+  check('and the Trip column too', two.rows[1].reqNum, 'UAEVP420');
+
+  // Their account column contains the words "Aviation Requests" and must
+  // never be taken for one of them.
+  const withAccount = parseTeamSheet([
+    'Ticket Number,PNR,Status,'
+      + 'MICE Account (from Aviation Requests) (from Aviation Quotations),'
+      + 'REQ No (Auto) (Trip) (from Aviation Quotations)',
+    '065-5513059078,YSLM73,Issued,AbbVie,UAEVP420',
+  ].join('\n'));
+  check('the account is not a request', withAccount.rows[0].reqNum, 'UAEVP420');
+  check('and it is still read as the account', withAccount.rows[0].account, 'AbbVie');
+
+  // One column still works, which is every other export.
+  const single = parseTeamSheet(
+    'Ticket Number,PNR,Status,Req Num\n065-5513059078,YSLM73,Issued,KSAML2053');
+  check('a single column is unaffected', single.rows[0].reqNum, 'KSAML2053');
+  check('and none at all is still blank',
+    parseTeamSheet('Ticket Number,PNR,Status\n065-5513059078,YSLM73,Issued').rows[0].reqNum, '');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
