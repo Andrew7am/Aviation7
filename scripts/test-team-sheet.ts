@@ -1172,6 +1172,18 @@ console.log('\n43. The last thing that happened decides whether it is void');
   check('nor silently reported',   sameDay.counts.NOT_IN_LEDGER, 0);
   check('the note carries both statuses',
     sameDay.findings[0].note.includes('Void') && sameDay.findings[0].note.includes('Issued'), true);
+  // The row shown must be the one with the money on it. Their void row
+  // carries no cost, and on five of the six real cases it comes first -
+  // so reporting `first` would say nothing is at stake on a ticket worth
+  // 26,540.
+  const priced = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Issued Date & Time,Net Cost',
+    '065-5513427676,XWV33D,Void,UAEVP711,11/09/2026 1:00pm,',
+    '065-5513427676,XWV33D,Issued,UAEVP711,11/09/2026 1:00pm,26540',
+  ].join('\n')).rows;
+  const pf = compareTeamSheet(priced, []).findings[0];
+  check('the priced row is the one shown', pf.sheet?.cost, 26540);
+  check('and it is the issued one',        pf.sheet?.status, 'ISSUED');
   // A question is not a settled state, so the sheet cannot be closed on it.
   check('and it stops the sheet being clean', sameDay.clean, false);
 

@@ -585,7 +585,7 @@ export function compareTeamSheet(
     // a live ticket we do not hold is a missing ticket, not a question.
     const voidAndIssued = anyVoid && !theySayVoid
       && atLatest.some(r => r.status === 'VOID');
-    const base = {
+    const base: Omit<Finding, 'verdict' | 'note'> = {
       serial, airlineCode: first.airlineCode, pnr: first.pnr, sheet: first, ours,
       reqNum: ourReq, theirReq,
     };
@@ -610,6 +610,12 @@ export function compareTeamSheet(
         findings.push({ ...base, verdict: 'VOID_NOT_BILLED',
           note: 'Voided on their side, so no supplier ever billed it. Nothing to record.' });
       } else if (voidAndIssued) {
+        // Show the row that carries the money. `first` is whichever of
+        // their rows came up the file, and on five of the six that is the
+        // void, which has no cost - so the finding would report nothing
+        // at stake on a ticket worth 26,540.
+        const priced = rows.find(x => x.status !== 'VOID' && x.cost != null) ?? first;
+        base.sheet = priced;
         const both = rows.map(r => `${r.rawStatus}${r.issued ? ' ' + r.issued : ''}`
           + (r.cost != null ? ` for ${money(r.cost)}` : '')).join(', and ');
         findings.push({ ...base, verdict: 'VOID_AND_ISSUED',
