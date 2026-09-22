@@ -350,6 +350,14 @@ export const PendingReview: React.FC<Props> = ({
                     onChange={e => patch(p, { source: e.target.value })}
                     className={`${field} w-44 ${p.source ? '' : 'border-amber-300 bg-amber-50'}`}>
                     <option value="">— pick one —</option>
+                    {/* The row's own vendor first when the list does not
+                        carry it. A <select> whose value matches no option
+                        renders blank, which would show "no vendor" on a row
+                        that has one and lose it the moment anybody touched
+                        the field. */}
+                    {p.source && !sources.includes(p.source) && (
+                      <option value={p.source}>{p.source}</option>
+                    )}
                     {sources.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </label>

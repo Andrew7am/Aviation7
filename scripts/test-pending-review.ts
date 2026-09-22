@@ -11,6 +11,7 @@
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
 import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
 import { portalSource, issuedFrom } from '../src/core/config/teamPortals';
+import { knownSources, BUILTIN_SOURCES } from '../src/core/config/sources';
 import {
   pendingFromFindings, whyNotConfirmable, canConfirm, dedupeKey, ticketFromPending,
 } from '../src/core/helpers/pendingFromFindings';
@@ -406,6 +407,43 @@ console.log('\n15. From their row to our ledger, end to end');
   // And their figure never reached it.
   check('their 2,530 is nowhere in it', t.amount === proposal.theirCost, false);
   check('but it is still on the proposal', priced.theirCost, 2530);
+}
+
+/* -- 16. a card purchase has to be filable ------------------------------ */
+console.log('\n16. Bought on the airline\'s own site, with nobody to invoice us');
+{
+  // 35 tickets on one sheet from 17 airlines, none of which bills us. The
+  // portal maps them to "Airline Website", and if that name is not one the
+  // vendor list offers then every one of those rows meets a dropdown with
+  // no matching option - which renders EMPTY, showing "no vendor" on a row
+  // that has one and losing it the moment anybody touches the field. That
+  // is how they came to be unrecordable in the first place.
+  check('the portal maps to it',
+    portalSource('AL Website').source, 'Airline Website');
+  check('and the vendor list offers it',
+    BUILTIN_SOURCES.includes('Airline Website'), true);
+  check('so a row carrying it finds itself',
+    knownSources([], []).includes('Airline Website'), true);
+
+  // It is a name, not a wallet. Nothing about it should look like a vendor
+  // that settles, and nothing holds it back the way Ibtekar is held back.
+  check('nothing holds it back', portalSource('AL Website').heldBack, false);
+
+  const r = compareTeamSheet(sheet([
+    '2121158834,MHSKUE,Issued,1195.00,,15/09/2026 1:00pm,AL Website,UAEVP711',
+  ]), []);
+  const [p] = build(r.findings);
+  check('the proposal carries the name', p.source, 'Airline Website');
+  check('and only wants a price',
+    whyNotConfirmable(p).startsWith('Enter what it actually cost'), true);
+
+  const t = ticketFromPending({ ...p, amount: 1195, totalDoc: 1195 }, 'i', 'u1');
+  check('and the ledger row keeps it', t.source, 'Airline Website');
+
+  // The dropdown is still built from the ledger as well, so a vendor
+  // somebody typed once is one click away the next time.
+  check('a ledger vendor still shows',
+    knownSources([], ['Sabre Direct']).includes('Sabre Direct'), true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

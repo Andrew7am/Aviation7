@@ -13,6 +13,13 @@ export const BUILTIN_SOURCES = [
   'IATA', 'NSA', 'FlyAdeal KSA', 'FlyAdeal DXB',
   'Flynas', 'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal',
   'Riyadh Air', 'Turkish Airlines',
+  // Bought on the airline's own site with a card. Not a vendor: nobody
+  // invoices us and no balance is kept. It is here because those tickets
+  // are real and had nowhere to be filed - 35 of them on one sheet, from
+  // seventeen different airlines, most of which will never bill us once.
+  // Without a name they were unrecordable, which is how they came to be
+  // missing from the books in the first place.
+  'Airline Website',
 ];
 
 /**
