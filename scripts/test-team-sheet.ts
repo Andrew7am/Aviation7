@@ -1037,5 +1037,71 @@ console.log('\n39. Their export carries the request in two columns');
     parseTeamSheet('Ticket Number,PNR,Status\n065-5513059078,YSLM73,Issued').rows[0].reqNum, '');
 }
 
+console.log('\n40. MLMI and FM are one department written two ways');
+{
+  // The agency's own rule: if the number matches it is the same file,
+  // whichever of the two is written. Eight of the ninety-four "filed
+  // differently" findings were nothing but this spelling.
+  check('the same request', sameReq('UAEMLMI2221', 'UAEFM2221'), true);
+  check('and again',        sameReq('UAEMLMI2071', 'UAEFM2071'), true);
+  check('either way round', sameReq('UAEFM2071', 'UAEMLMI2071'), true);
+  check('KSA too',          sameReq('KSAMLMI1446', 'KSAFM1446'), true);
+  // The number still has to match. Folding the letters must not fold the
+  // requests themselves together.
+  check('a different number is a different request',
+    sameReq('KSAMLMI1446', 'KSAFM1470'), false);
+  check('and a different office still differs',
+    sameReq('UAEMLMI2221', 'KSAFM2221'), false);
+  check('ML is not MLMI',   sameReq('UAEML2221', 'UAEFM2221'), false);
+
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5513059078,YSLM73,Issued,UAEFM2221',
+  ].join('\n')).rows;
+  check('so it is not reported as misfiled',
+    compareTeamSheet(sheet, [tkt({ ticketNo: '5513059078', pnr: 'YSLM73',
+      reqNum: 'UAEMLMI2221' })]).counts.REQ_DIFFERS, 0);
+}
+
+console.log('\n41. Nothing of ours predates their system');
+{
+  // Their first ticket is dated 9 February 2026. Our rows from before that
+  // cannot be on a sheet that did not exist, and 230 of them were being
+  // reported as missing from one.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Issued Date & Time',
+    '065-5513059078,YSLM73,Issued,KSAML2053,09/02/2026 10:00am',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', date: '2026-02-09' }),
+    // Under the same request, and issued before their sheet begins.
+    tkt({ ticketNo: '5599999901', pnr: 'AAAAAA', date: '2025-11-30' }),
+    // And one from after, which is a real gap.
+    tkt({ ticketNo: '5599999902', pnr: 'BBBBBB', date: '2026-06-01' }),
+  ];
+  const r = compareTeamSheet(sheet, ledger);
+  check('the floor is read from their file', r.sheetFrom, '2026-02-09');
+  check('the older row is not reported',     r.counts.NOT_ON_SHEET, 1);
+  check('and it is the newer one',
+    r.findings.find(f => f.verdict === 'NOT_ON_SHEET')?.serial, '5599999902');
+  // Counted, never silently dropped.
+  check('the older row is counted',          r.beforeTheirSystem, 1);
+  // A row dated the same day as their first ticket is inside, not outside.
+  const sameDay = compareTeamSheet(sheet, [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', date: '2026-02-09' }),
+    tkt({ ticketNo: '5599999903', pnr: 'CCCCCC', date: '2026-02-09' }),
+  ]);
+  check('the first day itself is in scope', sameDay.counts.NOT_ON_SHEET, 1);
+  check('and nothing is counted as older',  sameDay.beforeTheirSystem, 0);
+
+  // A sheet with no dates at all sets no floor, and everything is compared.
+  const undated = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num\n065-5513059078,YSLM73,Issued,KSAML2053').rows,
+    ledger);
+  check('no dates, no floor',        undated.sheetFrom, '');
+  check('so the old row is reported', undated.counts.NOT_ON_SHEET, 2);
+  check('and none counted as older',  undated.beforeTheirSystem, 0);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

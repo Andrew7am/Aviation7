@@ -540,6 +540,22 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
               tone={needsWork ? 'text-red-600' : 'text-emerald-600'} />
           </div>
 
+          {/* Their sheet has a beginning, and our ledger is older than it.
+              Said out loud, because the count is also the honest measure
+              of how much of our books this check can speak to. */}
+          {report.beforeTheirSystem > 0 && (
+            <div className="flex items-start gap-2 text-[11px] text-slate-500 bg-slate-50
+                            border border-slate-200 rounded-lg px-3 py-2">
+              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" />
+              <span>
+                Their sheet begins <b className="font-mono text-slate-700">{report.sheetFrom}</b>.
+                {' '}<b>{report.beforeTheirSystem}</b> of our tickets under these requests were
+                issued before that, so they are outside this comparison rather than missing
+                from it — there was no sheet for them to be on.
+              </span>
+            </div>
+          )}
+
           <div className="flex items-start gap-2 text-[11px] text-slate-500 bg-slate-50
                           border border-slate-200 rounded-lg px-3 py-2">
             <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" />

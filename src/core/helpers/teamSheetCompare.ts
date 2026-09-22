@@ -140,6 +140,22 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * it is not: the contradiction is reported instead, with both figures, and
  * the refund check stands aside until their side settles on one number.
  *
+ * NOTHING BEFORE THEIR SYSTEM EXISTED
+ *
+ * Their first ticket is dated 9 February 2026. Anything of ours issued
+ * before that cannot be on their sheet, because there was no sheet - and
+ * 165 of our rows were being reported as missing from one for that
+ * reason alone.
+ *
+ * So the earliest date on their export is a floor, and our older rows sit
+ * under it. They are counted and named on the screen rather than dropped:
+ * a row nobody can see is a row nobody checks, and the count is also the
+ * honest measure of how much of our ledger this comparison can speak to
+ * at all.
+ *
+ * Read from their file, never configured. When they send a sheet covering
+ * only last month, the floor moves to last month by itself.
+ *
  * A VOID IS NOT A GAP
  *
  * A ticket issued and voided the same day never reaches the supplier's
@@ -292,8 +308,21 @@ export function relatedReq(
  * is, so KSAML1145-UAEFM2193, which really is a request covering two, stays
  * distinct from either half.
  */
+/**
+ * MLMI and FM are the same department, written two ways.
+ *
+ * UAEMLMI2221 and UAEFM2221 are one request; so are UAEMLMI2071 and
+ * UAEFM2071, and KSAMLMI1446 and KSAFM1446. The agency confirmed it: if
+ * the number matches, it is the same file whichever of the two is
+ * written. Eight of the ninety-four "filed differently" findings were
+ * nothing but this spelling.
+ *
+ * Only that one pair is folded together, and only as whole letters inside
+ * a code - the numbers still have to match, so KSAMLMI1446 and KSAFM1470
+ * remain two different requests.
+ */
 export const reqKey = (s: string | undefined | null) =>
-  (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/MLMI/g, 'FM');
 
 export const sameReq = (a: string, b: string) => reqKey(a) === reqKey(b);
 
@@ -372,6 +401,14 @@ export interface TeamSheetReport {
   theirTickets: number;
   ourRows: number;
   matched: number;
+  /**
+   * The earliest ticket on their sheet, and how many of ours predate it.
+   *
+   * Our older rows are out of this comparison's reach, not missing from
+   * it. Carried so the screen can say so.
+   */
+  sheetFrom: string;
+  beforeTheirSystem: number;
   /** True when nothing needs anybody's attention. */
   clean: boolean;
 }
@@ -446,6 +483,10 @@ export function compareTeamSheet(
     ourByPnr.get(k)!.push(t);
   }
   const theirPnrs = new Set(sheet.map(r => pnrKey(r.pnr)).filter(Boolean));
+
+  /* The day their system starts. Everything of ours older than this is
+     outside the comparison rather than missing from it - see the note. */
+  const sheetFrom = sheet.map(r => r.issued).filter(Boolean).sort()[0] ?? '';
 
   const sheetHasReq = declared.length === 1
     ? sheet.some(r => reqKey(r.reqNum) && !sameReq(r.reqNum, declared[0]))
@@ -691,6 +732,7 @@ export function compareTeamSheet(
 
   /* ── our side: anything under those requests they never mention ───────── */
   const ourExtra = new Map<string, Ticket[]>();
+  const tooOld = new Set<string>();
   for (const t of ledger) {
     if (!isTicket(t)) continue;
     if (!reqParts(t.reqNum || '').some(x => requests.has(x))) continue;
@@ -702,6 +744,9 @@ export function compareTeamSheet(
     // And our reference sitting in THEIR PNR column, which is the same
     // filing difference read from the other end.
     if (isReference(k) && theirPnrs.has(k)) continue;
+    // Issued before their sheet began. Counted below, never reported as
+    // missing from a sheet that did not exist yet.
+    if (sheetFrom && (t.date || '') && (t.date as string) < sheetFrom) { tooOld.add(k); continue; }
     if (!ourExtra.has(k)) ourExtra.set(k, []);
     ourExtra.get(k)!.push(t);
   }
@@ -773,6 +818,7 @@ export function compareTeamSheet(
 
   return {
     findings, byRequest, sheetHasReq,
+    sheetFrom, beforeTheirSystem: tooOld.size,
     reqSource: sheetHasReq ? 'sheet' : declared.length ? 'typed' : 'none',
     declared,
     requests: [...requests].sort(), counts,
