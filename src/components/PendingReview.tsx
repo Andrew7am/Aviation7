@@ -13,24 +13,29 @@ import {
  *
  * The check finds a couple of hundred tickets that are on the aviation
  * team's sheet and in nobody's books. Importing them in one go would be the
- * obvious thing and the wrong one: their sheet carries their markup, their
- * quoting currency and their idea of the request, so a bulk import would put
- * a couple of hundred unverified rows into the ledger and move every vendor
+ * obvious thing and the wrong one: their currency, their idea of the
+ * request and their price are all theirs, so a bulk import would put a
+ * couple of hundred unverified rows into the ledger and move every vendor
  * balance at once, with no record of who agreed to any of it.
  *
  * So each proposal waits here until somebody prices it and confirms it, and
  * confirming is what writes the ticket. Nothing on this screen is in the
  * ledger; nothing on it moves a balance or shows in a report.
  *
- * WHAT THE REVIEWER HAS TO SUPPLY, AND WHY IT IS NOT PREFILLED
+ * WHAT ARRIVES FILLED IN, AND WHAT DOES NOT
  *
- * The price. Their cost column is a quote with their uplift on it — 1,371
- * SAR beside our 1,340 AED for the same ticket — and the actual cost is the
- * one thing the reviewer has and the sheet does not. It is shown, labelled
- * as theirs, and it is not copied into the amount.
+ * The price arrives filled in from their "Net Cost", which is a net — the
+ * marked-up rate lives in a column of their sheet that is never read. It
+ * matches our own figure exactly about two times in three, so a blank
+ * would have been the worse default. A row keeps `theirCost` beside the
+ * amount, so a figure nobody has checked still looks different from one
+ * somebody corrected, and the tile at the top counts them.
  *
- * Sometimes the vendor. Their portal names an airline where two of our
- * houses bill for it, and only a person knows which.
+ * It arrives EMPTY when their cell named several tickets, because the
+ * money on that cell is the booking's and would treble the cost.
+ *
+ * Sometimes the vendor is empty too. Their portal names an airline where
+ * two of our houses bill for it, and only a person knows which.
  *
  * WHAT CANNOT BE CONFIRMED AT ALL
  *
@@ -104,18 +109,22 @@ export const PendingReview: React.FC<Props> = ({
   /**
    * What is waiting, kept in two piles that must never be added together.
    *
-   * A priced row carries OUR figure; an unpriced one carries only theirs,
-   * which has their markup on it and is in whichever currency they quoted.
-   * One total across both would be a number that is partly ours and partly
-   * theirs and true of nothing.
+   * A row somebody has corrected carries OUR figure; one nobody has
+   * touched still carries theirs. They are close but they are not the
+   * same claim, and one total across both would be a number that is
+   * partly checked and partly not, and true of nothing.
    */
   const waiting = useMemo(() => {
     const ours = new Map<string, number>();
     const theirs = new Map<string, number>();
     for (const p of rows) {
       const cur = p.currency || 'AED';
-      if (p.amount) ours.set(cur, (ours.get(cur) ?? 0) + Math.abs(p.amount));
-      else if (p.theirCost) theirs.set(cur, (theirs.get(cur) ?? 0) + Math.abs(p.theirCost));
+      const v = Math.abs(p.amount || p.theirCost || 0);
+      if (!v) continue;
+      // Untouched means the amount is still exactly what they said.
+      const untouched = p.theirCost != null && Math.abs(p.amount) === Math.abs(p.theirCost);
+      const into = untouched ? theirs : ours;
+      into.set(cur, (into.get(cur) ?? 0) + v);
     }
     return { ours: [...ours], theirs: [...theirs] };
   }, [rows]);
@@ -173,10 +182,10 @@ export const PendingReview: React.FC<Props> = ({
         <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
           Tickets the team-sheet check found on their sheet and in nobody's books. None of
           them is in the ledger and none of them is moving a balance — each waits here until
-          somebody prices it and presses Confirm, and Confirm is what records it.
-          {' '}<b className="text-slate-600">Their cost is not our cost</b>: their column
-          carries their markup and their quoting currency, so it is shown beside the row
-          and never copied into it.
+          somebody checks it and presses Confirm, and Confirm is what records it.
+          {' '}<b className="text-slate-600">The price is theirs until you touch it</b>:
+          it comes from their Net Cost, which matches ours about two times in three, and
+          the row says so for as long as nobody has changed it.
         </p>
       </div>
 
@@ -238,15 +247,16 @@ export const PendingReview: React.FC<Props> = ({
             <span className="text-slate-500"> held back</span></span>
           {waiting.ours.length > 0 && (
             <span className="text-slate-500">
-              priced{' '}
+              checked{' '}
               {waiting.ours.map(([c, v]) => (
                 <b key={c} className="font-mono text-slate-700 mr-2">{money(v)} {c}</b>
               ))}
             </span>
           )}
           {waiting.theirs.length > 0 && (
-            <span className="text-slate-500" title="Their figure, with their markup on it">
-              not yet priced — they say{' '}
+            <span className="text-slate-500"
+                  title="Their Net Cost, copied in and not yet looked at">
+              still their figure{' '}
               {waiting.theirs.map(([c, v]) => (
                 <b key={c} className="font-mono text-amber-700 mr-2">{money(v)} {c}</b>
               ))}
@@ -288,6 +298,16 @@ export const PendingReview: React.FC<Props> = ({
           const blocked = whyNotConfirmable(p);
           const working = busy === p.id;
           const priced = !!p.amount;
+          /* Their Net Cost, copied in and not yet looked at. Worth saying
+             out loud on the row: it is right about two times in three, and
+             the third time is the reason this screen exists. */
+          const untouched = priced && p.theirCost != null
+            && Math.abs(p.amount) === Math.abs(p.theirCost);
+          /* Their cell named more than one ticket, so the figure beside it
+             is the booking's. 123 of the first 206 are like this, one of
+             them a cell of 45 against 139,500 — which is why nothing is
+             divided automatically and nothing is prefilled. */
+          const shared = (p.theirGroup ?? 1) > 1;
           return (
             <div key={p.id}
               className={`bg-white border rounded-lg overflow-hidden ${
@@ -327,8 +347,15 @@ export const PendingReview: React.FC<Props> = ({
                 {/* Their figure, labelled every time it is shown. */}
                 {!!p.theirCost && (
                   <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
-                    priced ? 'text-slate-400' : 'bg-amber-50 text-amber-700'}`}>
-                    they say {money(p.theirCost)} {p.currency} — theirs, with their markup
+                    shared ? 'bg-sky-50 text-sky-700'
+                    : untouched ? 'bg-amber-50 text-amber-700' : 'text-slate-400'}`}>
+                    {/* A shared cell is the one case where their figure is
+                        not this ticket's, so it never reads as a price. */}
+                    {shared
+                      ? `${money(p.theirCost)} ${p.currency} covers ${p.theirGroup} tickets`
+                      : untouched
+                        ? `${money(p.theirCost)} ${p.currency} — their figure, not checked yet`
+                        : `they said ${money(p.theirCost)} ${p.currency}`}
                   </span>
                 )}
                 {p.state !== 'PENDING' && (
@@ -374,7 +401,10 @@ export const PendingReview: React.FC<Props> = ({
 
                 <label className="block">
                   <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
-                    What it actually cost
+                    What it cost{' '}
+                    {shared
+                      ? <span className="text-sky-500">· 1 of {p.theirGroup}</span>
+                      : untouched && <span className="text-amber-500">· theirs</span>}
                   </span>
                   <input
                     type="number" step="0.01" defaultValue={p.amount ? Math.abs(p.amount) : ''}
@@ -387,7 +417,8 @@ export const PendingReview: React.FC<Props> = ({
                       patch(p, { amount: next, totalDoc: next });
                     }}
                     className={`${field} w-32 text-right ${
-                      priced ? '' : 'border-amber-300 bg-amber-50'}`} />
+                      priced ? (untouched ? 'border-amber-200' : '')
+                             : 'border-amber-300 bg-amber-50'}`} />
                 </label>
 
                 <label className="block">

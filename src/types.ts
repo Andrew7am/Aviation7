@@ -182,10 +182,14 @@ export interface PendingTicket {
   theirPortal?: string;
   /** The request THEIR sheet files it under, kept apart from reqNum. */
   theirReq?: string;
-  /** Their own figure, kept beside the proposal and never treated as ours:
-   *  their column carries their markup and their quoting currency. A
-   *  starting point for whoever prices the row, not a price. */
+  /** Their own "Net Cost", kept beside `amount` after being copied into
+   *  it, so a figure nobody has checked can still be told from one
+   *  somebody corrected. */
   theirCost?: number;
+  /** How many tickets shared the cell `theirCost` came from. 1 means the
+   *  figure is this ticket's and was copied into `amount`; more means it
+   *  is the booking's and the row arrived unpriced. */
+  theirGroup?: number;
   /** The check's verdict — NOT_IN_LEDGER, REFUND_NOT_IN_LEDGER. */
   finding?: string;
   note?: string;

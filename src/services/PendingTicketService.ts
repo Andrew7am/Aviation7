@@ -25,6 +25,7 @@ type Row = {
   their_portal: string | null;
   their_req: string | null;
   their_cost: number | null;
+  their_group: number;
   finding: string | null;
   note: string | null;
   held_back: boolean;
@@ -59,6 +60,7 @@ const rowTo = (r: Row): PendingTicket => ({
   theirPortal: r.their_portal ?? undefined,
   theirReq: r.their_req ?? undefined,
   theirCost: r.their_cost == null ? undefined : Number(r.their_cost),
+  theirGroup: r.their_group ?? 1,
   finding: r.finding ?? undefined,
   note: r.note ?? undefined,
   heldBack: r.held_back,
@@ -93,6 +95,7 @@ const toRow = (p: PendingTicket, userId: string) => ({
   their_portal: p.theirPortal || '',
   their_req: p.theirReq || '',
   their_cost: p.theirCost ?? null,
+  their_group: p.theirGroup ?? 1,
   finding: p.finding || '',
   note: p.note || '',
   held_back: !!p.heldBack,
@@ -133,14 +136,22 @@ export class PendingTicketService {
   }
 
   /**
-   * Raise a batch, without disturbing anything already decided.
+   * Raise a batch, without disturbing anything a person has touched.
    *
-   * A sheet gets checked several times. On the second run every proposal
-   * comes back, and the ones somebody has already confirmed or rejected must
-   * stay as they left them — re-raising a confirmed ticket would offer the
-   * same ticket for entry twice. So the rows already on file are read first
-   * and anything not still PENDING is dropped from the batch; the rest are
-   * upserted on `dedupe`, which refreshes a proposal whose evidence changed.
+   * The sheet is checked every few weeks and every run brings back every
+   * proposal it found last time, so this has to be careful twice over.
+   *
+   * A CONFIRMED or REJECTED proposal is left exactly as it was found.
+   * Re-raising a confirmed one would offer the same ticket for entry a
+   * second time.
+   *
+   * A proposal still PENDING is REFRESHED, not replaced. Only the evidence
+   * is written back — what their sheet now says, which portal, which
+   * request, what the check concluded — and never the fields somebody
+   * reviews: the vendor they picked, the price they corrected, the
+   * passenger they filled in. An upsert would have overwritten all of
+   * those, so a fortnight of review would be undone by the next upload,
+   * silently, in one click.
    *
    * Returns what happened, because "nothing was added" and "nothing was
    * found" look identical on a screen and mean opposite things.
@@ -158,16 +169,31 @@ export class PendingTicketService {
       for (const r of data ?? []) existing.set(r.dedupe, r.state);
     }
 
-    const settled = batch.filter(p => existing.has(p.dedupe) && existing.get(p.dedupe) !== 'PENDING');
-    const live = batch.filter(p => !settled.includes(p));
-    const refreshed = live.filter(p => existing.has(p.dedupe)).length;
+    const settled = batch.filter(p => existing.get(p.dedupe) && existing.get(p.dedupe) !== 'PENDING');
+    const fresh = batch.filter(p => !existing.has(p.dedupe));
+    const again = batch.filter(p => existing.get(p.dedupe) === 'PENDING');
 
-    for (let i = 0; i < live.length; i += 200) {
+    for (let i = 0; i < fresh.length; i += 200) {
       const { error } = await supabase.from('pending_tickets')
-        .upsert(live.slice(i, i + 200).map(p => toRow(p, this.userId)), { onConflict: 'dedupe' });
+        .insert(fresh.slice(i, i + 200).map(p => toRow(p, this.userId)));
       if (error) throw new Error(error.message);
     }
-    return { added: live.length - refreshed, refreshed, settled: settled.length };
+
+    for (const p of again) {
+      const { error } = await supabase.from('pending_tickets').update({
+        their_portal: p.theirPortal || '',
+        their_req: p.theirReq || '',
+        their_cost: p.theirCost ?? null,
+        their_group: p.theirGroup ?? 1,
+        finding: p.finding || '',
+        note: p.note || '',
+        held_back: !!p.heldBack,
+        held_back_why: p.heldBackWhy || '',
+      }).eq('dedupe', p.dedupe);
+      if (error) throw new Error(error.message);
+    }
+
+    return { added: fresh.length, refreshed: again.length, settled: settled.length };
   }
 
   /** Correct a proposal in place — a vendor picked, a price entered. */

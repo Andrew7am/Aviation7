@@ -70,7 +70,7 @@ const WHY: Record<Verdict, string> = {
     'We hold a refund their sheet does not show. Their record may be behind, or the credit'
     + ' belongs to another booking.',
   REFUND_DIFFERS:
-    'Both sides refunded, and the two figures are further apart than their markup can'
+    'Both sides refunded, and the two figures are further apart than rounding can'
     + ' explain. Their refund carries the same uplift their cost does — measured across a'
     + ' full export it runs under three per cent — so only the gaps wider than that are'
     + ' listed here. Something on one of the two sides is wrong.',
@@ -736,7 +736,7 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => 
                 {report.requests.length ? report.requests.join(', ') : 'no request'}
               </b>
               {' '}— the requests their matched tickets belong to. Costs are shown but never
-              compared: their figure carries their markup and is often quoted in another
+              compared: their net and ours are recorded at different moments and often in another
               currency, so a difference there is not a finding.
             </span>
           </div>

@@ -45,19 +45,33 @@ import { portalSource } from '../config/teamPortals';
  * because both sides state it and, on the sheets seen so far, the two agree
  * to the fils.
  *
- * The cost is NOT compared. Their figure carries their markup and is written
- * in whichever currency the booking was quoted in: on one sheet their column
- * read 1,371 SAR beside our 1,340 AED, and 2,530 beside our 2,520, for
- * tickets that are certainly the same ticket. Flagging those would raise
- * thirty findings out of thirty-one matches, and a report that is wrong
- * thirty times stops being read the first time. Both figures are carried so
- * they can be looked at; neither is called an error.
+ * The cost is NOT compared, and the reason is not the one written here for
+ * a long time. Their "Net Cost" is a genuine net: their sheet keeps the
+ * marked-up rate in a separate column ("Rate with MU") that is never read.
+ * Measured across a full export, on 986 rows where both sides hold one
+ * priced ticket in the same currency:
+ *
+ *     533   their net equals our net, to the fils
+ *      86   their net equals our gross
+ *      63   within a dirham of ours
+ *     149   between 1 and 20 out, mostly a flat ten
+ *     155   further out than that
+ *
+ * So 84% agree within twenty, and where the rest differ theirs is lower on
+ * 184 and higher on 183 - symmetric, which a markup never is. It is not an
+ * uplift; it is two systems recording a price at two moments, sometimes in
+ * two currencies, with fees landing on one side and not the other.
+ *
+ * It is still not compared, because 155 findings nobody can act on would
+ * bury the ones they can. Both figures are carried so they can be looked
+ * at; neither is called an error. The 29 that differ by more than a
+ * thousand are worth somebody's afternoon, and are not this screen's job.
  *
  * A REFUND HAS TWO RIGHT ANSWERS: BEFORE AND AFTER OUR COMMISSION
  *
  * This took two wrong attempts to see. The gaps were first reported in
  * full, which raised two dozen findings; then written off as "their
- * markup" and filtered by a percentage, which was a guess dressed as a
+ * uplift" and filtered by a percentage, which was a guess dressed as a
  * rule. Both were wrong, and the real relationship is exact:
  *
  *     they refund 2,890.00 = our document 2,890.00 less 226.00 commission,

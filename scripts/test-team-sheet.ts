@@ -232,7 +232,10 @@ console.log('\n11. Things the comparison must NOT do');
   check('another request is left alone',
     r.findings.some(f => f.serial === '5599999999'), false);
   // Their cost is 1,430 against our 1,430 here, but the point is that even a
-  // wild difference is not a finding - their column carries their markup.
+  // wild difference is not a finding: the two are recorded at different
+  // moments and often in different currencies. See the note in the
+  // comparator - it is not an uplift, and 155 unactionable findings would
+  // bury the ones anybody can act on.
   const marked = compareTeamSheet(
     parseTeamSheet(CSV.replace('1430.00,,1430 AED', '9999.00,,9999 SAR')).rows, ledger);
   check('a different cost is not a finding', marked.counts.OK, 2);
@@ -1474,6 +1477,52 @@ console.log('\n52. Running the same period twice says the same thing');
   check('the new one, and only it', later.counts.NOT_IN_LEDGER, 1);
   check('by number',
     later.findings.find(f => f.verdict === 'NOT_IN_LEDGER')!.serial, '5510000052');
+}
+
+console.log('\n53. Their sheet prices every ticket twice, and one of them is a quote');
+{
+  // Net Cost                       2530.00   what the ticket cost
+  // Total Cost with Currency       2530 AED  the same, with the currency
+  // Rate with MU (Manual Entry)    2800.00   the same with a markup on it
+  //
+  // "MU" is markup: what the client is quoted, not what anybody paid. It
+  // has no business in an accounting comparison, and a loose match on a
+  // renamed header must never be able to reach it.
+  const rows = parseTeamSheet([
+    'Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,'
+      + 'Rate with MU (Manual Entry),Refund Amount,Req Num',
+    '065-5513373335,YSLM73,Issued,2530.00,2530 AED,2800.00,,KSAML2218',
+  ].join('\n')).rows;
+  check('the net is the cost',      rows[0].cost, 2530);
+  check('and not the marked-up one', rows[0].cost === 2800, false);
+  check('the currency comes from the total', rows[0].currency, 'AED');
+
+  // The dangerous case: their export drops the Net Cost column entirely.
+  // A loose match then has to find nothing rather than fall through to
+  // the quote, because a quote silently filed as a cost is the one error
+  // nobody would ever spot.
+  const noNet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Rate with MU (Manual Entry),Req Num',
+    '065-5513373336,YSLM74,Issued,2800.00,KSAML2218',
+  ].join('\n')).rows;
+  check('with no net column, no cost at all', noNet[0].cost, null);
+
+  // However they spell it.
+  for (const header of ['Rate with MU', 'Markup Rate', 'Mark-Up', 'Cost with MU']) {
+    const r = parseTeamSheet([
+      `Ticket Number,PNR,Status,${header},Req Num`,
+      '065-5513373337,YSLM75,Issued,2800.00,KSAML2218',
+    ].join('\n')).rows;
+    check(`"${header}" is never the cost`, r[0].cost, null);
+  }
+
+  // And the refund is read from their own column, spelt their way.
+  const ref = parseTeamSheet([
+    'Ticket Number,PNR,Status,Net Cost,Refund Amount,Refund Recieved?,Req Num',
+    '065-5513373338,YSLM76,Cancelled/Refunded,2890.00,2890.00,checked,KSAML2218',
+  ].join('\n')).rows;
+  check('the refund amount is read', ref[0].refund, 2890);
+  check('and their spelling of received', ref[0].refundReceived, true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

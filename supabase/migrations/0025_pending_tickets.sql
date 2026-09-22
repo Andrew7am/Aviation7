@@ -4,10 +4,10 @@
 -- The check reads the aviation team's sheet against our ledger and comes back
 -- with a couple of hundred tickets that are on their sheet and in nobody's
 -- books. Every one of them probably belongs in the ledger, and not one of them
--- should go in on the say-so of a comparison: their sheet carries their markup,
--- their currency, their idea of the request number, and a ticket typed in from
--- it is a ticket nobody checked. Writing them straight into `tickets` would
--- also move every vendor balance the moment a file was uploaded.
+-- should go in on the say-so of a comparison: their currency, their idea of
+-- the request number and their price are all theirs, and a ticket taken from
+-- it whole is a ticket nobody checked. Writing them straight into `tickets`
+-- would also move every vendor balance the moment a file was uploaded.
 --
 -- So they land here instead. A pending ticket is a PROPOSAL: the ticket as it
 -- would be recorded, beside the evidence for it — which of their portals sold
@@ -65,12 +65,20 @@ create table if not exists pending_tickets (
   -- The request THEIR sheet files it under, kept apart from req_num so the
   -- reviewer can see what was proposed and what it was proposed from.
   their_req        text,
-  -- Their own cost figure, kept beside the proposal and never treated as
-  -- ours. Their column carries their markup and their quoting currency --
-  -- 1,371 SAR beside our 1,340 AED for the same ticket -- so it is a
-  -- starting point for whoever prices the row, not a price. The screen says
-  -- so for as long as `amount` still equals it.
+  -- Their own "Net Cost", kept beside `amount` after being copied into it.
+  -- It is a genuine net -- their marked-up rate lives in a column of its
+  -- own that is never read -- and it matches ours exactly about two times
+  -- in three. Keeping it lets the screen tell a figure nobody has checked
+  -- from one somebody corrected.
   their_cost       numeric,
+  -- How many tickets shared the cell their_cost came from.
+  --
+  -- 1 means the figure is this ticket's and was copied into `amount`.
+  -- More means it is the BOOKING'S: 123 of the first 206 proposals came
+  -- out of a shared cell, one of them holding 45 tickets against 139,500
+  -- AED. Those arrive unpriced, and this is what tells the reviewer what
+  -- they are dividing.
+  their_group      integer not null default 1,
   -- The check's verdict, e.g. NOT_IN_LEDGER, REFUND_NOT_IN_LEDGER.
   finding          text,
   -- The sentence the check wrote, in the reader's own terms.

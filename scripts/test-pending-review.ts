@@ -125,14 +125,19 @@ console.log('\n5. Their cost is carried, never copied');
   // uplift on it, in whichever currency it was quoted in; the actual cost
   // is the one thing the reviewer has and the sheet does not.
   check('their figure is kept',   p.theirCost, 2530);
-  check('and is NOT our amount',  p.amount, 0);
-  check('nor our document',       p.totalDoc, 0);
-  check('so it cannot be confirmed', canConfirm(p), false);
-  check('and it says why',
-    whyNotConfirmable(p), 'Enter what it actually cost — their figure carries their markup.');
+  // It is a NET - their marked-up rate lives in a column that is never
+  // read - so it is copied in rather than left blank. It matches our own
+  // figure exactly about two times in three, and a blank on 221 rows is
+  // the worse default.
+  check('and it is copied in',    p.amount, 2530);
+  check('as the document too',    p.totalDoc, 2530);
+  check('so it can be confirmed', canConfirm(p), true);
 
-  // Priced by a person, it goes.
-  check('priced, it is ready', canConfirm({ ...p, amount: 2400 }), true);
+  // Corrected by a person, both figures are kept, so an untouched row
+  // still looks different from a checked one.
+  const fixed = { ...p, amount: 2400 };
+  check('a correction sticks',    fixed.amount, 2400);
+  check('and theirs is still there', fixed.theirCost, 2530);
 }
 
 /* ── 6. a refund IS prefilled, and negative ───────────────────────────── */
@@ -198,8 +203,11 @@ console.log('\n8. When their portal names an airline, not a vendor');
   // of the two and the screen should ask for the quick thing first.
   check('and that is what it asks for first',
     whyNotConfirmable(p), 'Pick the vendor that billed it.');
-  check('once picked, it asks for the price',
-    whyNotConfirmable({ ...p, source: 'FlyAdeal KSA' }).startsWith('Enter what it actually cost'), true);
+  // And once picked there is nothing else to ask: their net came across
+  // with it, and their cell named one ticket.
+  check('once picked, it is ready',
+    whyNotConfirmable({ ...p, source: 'FlyAdeal KSA' }), '');
+  check('at their figure', p.amount, 610);
 }
 
 /* ── 9. what else comes across ────────────────────────────────────────── */
@@ -268,7 +276,14 @@ console.log('\n11. A proposal is not a ticket until a person finishes it');
   check('no vendor',                 whyNotConfirmable({ ...base, source: '  ' }),
     'Pick the vendor that billed it.');
   check('no date',                   whyNotConfirmable({ ...base, date: '' }), 'Give it a date.');
-  check('no price',                  whyNotConfirmable({ ...base, amount: 0 }).startsWith('Enter what'), true);
+  // Two reasons a row can be unpriced, and they are said differently:
+  // telling somebody their cell priced a whole booking when it priced
+  // nothing sends them looking for a division that does not exist.
+  check('no price, no figure',       whyNotConfirmable({ ...base, amount: 0 }),
+    'Enter what it cost — their sheet states no figure for it.');
+  check('no price, shared cell',
+    whyNotConfirmable({ ...base, amount: 0, theirGroup: 3 }),
+    'Enter what it cost — their figure covers all 3 tickets in that cell.');
   check('nothing to identify it',
     whyNotConfirmable({ ...base, ticketNo: '', pnr: '' }), 'No ticket number and no PNR.');
   // A reference in the PNR is identity enough - that is how every LCC row
@@ -391,12 +406,13 @@ console.log('\n15. From their row to our ledger, end to end');
   ]), []);
   const [proposal] = build(r.findings);
 
-  // As raised it cannot be confirmed, because nobody has priced it.
-  check('as raised, not confirmable', canConfirm(proposal), false);
+  // As raised it already carries their net and can be confirmed.
+  check('as raised, it is confirmable', canConfirm(proposal), true);
+  check('at their figure',              proposal.amount, 2530);
 
-  // Priced by a person, it becomes exactly the ticket we would have keyed.
+  // Corrected by a person, it becomes exactly the ticket we would have keyed.
   const priced: PendingTicket = { ...proposal, amount: 2480, totalDoc: 2480 };
-  check('priced, it is confirmable', canConfirm(priced), true);
+  check('and stays confirmable', canConfirm(priced), true);
 
   const t = ticketFromPending(priced, 'tid', 'u1');
   check('the ledger row', [t.ticketNo, t.airlineCode, t.pnr, t.source, t.date,
@@ -405,8 +421,9 @@ console.log('\n15. From their row to our ledger, end to end');
      'KSAML2218', 'ISSUE']);
 
   // And their figure never reached it.
-  check('their 2,530 is nowhere in it', t.amount === proposal.theirCost, false);
-  check('but it is still on the proposal', priced.theirCost, 2530);
+  check('the correction reached the ledger', t.amount, 2480);
+  check('and their figure did not',          t.amount === proposal.theirCost, false);
+  check('but it is still on the proposal',   priced.theirCost, 2530);
 }
 
 /* -- 16. a card purchase has to be filable ------------------------------ */
@@ -434,8 +451,7 @@ console.log('\n16. Bought on the airline\'s own site, with nobody to invoice us'
   ]), []);
   const [p] = build(r.findings);
   check('the proposal carries the name', p.source, 'Airline Website');
-  check('and only wants a price',
-    whyNotConfirmable(p).startsWith('Enter what it actually cost'), true);
+  check('and is ready to go',            whyNotConfirmable(p), '');
 
   const t = ticketFromPending({ ...p, amount: 1195, totalDoc: 1195 }, 'i', 'u1');
   check('and the ledger row keeps it', t.source, 'Airline Website');
@@ -444,6 +460,56 @@ console.log('\n16. Bought on the airline\'s own site, with nobody to invoice us'
   // somebody typed once is one click away the next time.
   check('a ledger vendor still shows',
     knownSources([], ['Sabre Direct']).includes('Sabre Direct'), true);
+}
+
+/* -- 17. one cell, several tickets, one price --------------------------- */
+console.log('\n17. A price that belongs to a booking is not a ticket\'s price');
+{
+  // Their export puts a whole booking in one cell when it was issued
+  // together - three numbers with /P1 /P2 /P3 after them - and the money
+  // beside that cell is the BOOKING'S. Copying it onto each ticket would
+  // treble the cost, which is the one way prefilling could do real harm.
+  const r = compareTeamSheet(sheet([
+    '"065-5513373301/P1\n065-5513373302/P2\n065-5513373303/P3",YSLM99,Issued,'
+      + '7590.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+  ]), []);
+  const out = build(r.findings);
+  check('three tickets out of one cell', out.length, 3);
+  check('and not one of them is priced', out.map(p => p.amount), [0, 0, 0]);
+  check('their figure is still shown',   out.map(p => p.theirCost), [7590, 7590, 7590]);
+  check('each one says what it is dividing',
+    out.every(p => whyNotConfirmable(p)
+      === 'Enter what it cost — their figure covers all 3 tickets in that cell.'), true);
+  check('and carries the count',   out.map(p => p.theirGroup), [3, 3, 3]);
+
+  // One ticket in the cell: prefilled, as it should be.
+  const one = build(compareTeamSheet(sheet([
+    '065-5513373304,YSLM98,Issued,2530.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+  ]), []).findings);
+  check('a single ticket is priced', one[0].amount, 2530);
+}
+
+/* -- 18. a refund comes from their Refund Amount ------------------------ */
+console.log('\n18. The refund is their own column, and it is taken as it stands');
+{
+  const rows = sheet([
+    '065-5513373310,YSLM97,Issued,2890.00,,01/09/2026 1:00pm,IATA Portal (UAE),KSAML2218',
+    '065-5513373310,YSLM97,Cancelled/Refunded,,2890.00,05/09/2026 1:00pm,IATA Portal (UAE),KSAML2218',
+  ]);
+  const ledger: Ticket[] = [{
+    id: 't1', ticketNo: '5513373310', source: 'IATA', date: '2026-09-01',
+    amount: 2664, commission: 226, totalDoc: 2890, reqNum: 'KSAML2218',
+    pnr: 'YSLM97', status: 'ISSUE', currency: 'AED', userId: 'u1',
+  }];
+  const [p] = build(compareTeamSheet(rows, ledger, ['KSAML2218']).findings
+    .filter(f => f.verdict === 'REFUND_NOT_IN_LEDGER'));
+
+  // Their Refund Amount, not their Net Cost - the two sit on different
+  // rows of the same document and only one of them is the refund.
+  check('the refund amount, not the cost', Math.abs(p.amount), 2890);
+  check('stored negative',                 p.amount, -2890);
+  check('and carried beside it',           p.theirCost, 2890);
+  check('ready to record',                 canConfirm(p), true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

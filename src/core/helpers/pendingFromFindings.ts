@@ -19,19 +19,30 @@ import { portalSource } from '../config/teamPortals';
  * vendor all come across: those are facts of the booking and their sheet is
  * the better witness for every one of them.
  *
- * THE PRICE DOES NOT. Their cost column carries their markup and is written
- * in whichever currency the booking was quoted in — 1,371 SAR beside our
- * 1,340 AED for the same ticket. Copying it into `amount` would put a wrong
- * number into the ledger with a confirm button beside it, which is worse
- * than putting none there at all. So their figure is kept as `theirCost`,
- * `amount` starts at zero, and a proposal cannot be confirmed until somebody
- * prices it. That is the one thing the sheet genuinely cannot tell us and
- * the one thing the reviewer genuinely has.
+ * THE PRICE COMES ACROSS TOO, AND THAT WAS ONCE WRONG
  *
- * A refund is different and is prefilled. Their refund figure is not a
- * quote, it is what the airline actually gave back, and on a full export 95
- * of them match our net to the fils and 12 match our gross. There is nothing
- * to correct, so there is no reason to make somebody retype it.
+ * Their "Net Cost" was treated here as a marked-up figure and deliberately
+ * not copied, so every proposal arrived at zero and could not be confirmed
+ * until somebody typed a price. That was a misreading. Their sheet keeps
+ * the marked-up rate in a column of its own ("Rate with MU") which is
+ * never read; "Net Cost" is a net. Measured on 986 rows where both sides
+ * hold one priced ticket in one currency, it equals our net exactly 533
+ * times, our gross 86 times, and sits within a dirham 63 times more.
+ *
+ * So it is prefilled. A figure that is right two times in three and
+ * correctable in one click beats a blank on 221 rows, and the row keeps
+ * `theirCost` beside it so an untouched figure can still be told from a
+ * checked one.
+ *
+ * ONE CELL, SEVERAL TICKETS, ONE PRICE
+ *
+ * Except when their cell named more than one ticket. The money on that
+ * cell is the BOOKING'S, not any one ticket's, so prefilling three tickets
+ * from it would treble the cost. Those arrive at zero and say why.
+ *
+ * A refund is prefilled for a different reason: it is not a price anybody
+ * quoted, it is what the airline actually gave back, and on a full export
+ * 95 of them match our net to the fils and 12 match our gross.
  *
  * WHAT CANNOT BE PROPOSED AT ALL
  *
@@ -103,10 +114,16 @@ export function pendingFromFindings(
       // the reviewer's. An empty source is what stops the confirm.
       source: match.source,
       date: s.issued || '',
-      // Not their figure. See the note above.
-      amount: isRefund && s.refund != null ? refundAmount(s.refund) : 0,
+      // Their net, which is a net. Zero when their cell named several
+      // tickets: that figure is the booking's and would treble the cost.
+      // See the note above.
+      amount: isRefund
+        ? (s.refund != null ? refundAmount(s.refund) : 0)
+        : (s.groupSize === 1 && s.cost != null ? Math.abs(s.cost) : 0),
       commission: 0,
-      totalDoc: isRefund && s.refund != null ? Math.abs(s.refund) : 0,
+      totalDoc: isRefund
+        ? (s.refund != null ? Math.abs(s.refund) : 0)
+        : (s.groupSize === 1 && s.cost != null ? Math.abs(s.cost) : 0),
       // We hold no row for it, so their request is the only one there is.
       // Kept in both places: this is what it would be filed under, and
       // `theirReq` is the record of where that came from.
@@ -128,6 +145,7 @@ export function pendingFromFindings(
       theirPortal: match.portal,
       theirReq: f.theirReq || '',
       theirCost: isRefund ? (s.refund ?? undefined) : (s.cost ?? undefined),
+      theirGroup: s.groupSize,
       finding: f.verdict,
       note: f.note,
       heldBack: f.heldBack,
@@ -144,10 +162,11 @@ export function pendingFromFindings(
 /**
  * Whether a proposal is complete enough to become a ticket.
  *
- * Three things stop it, and each is something only a person can settle:
- * a vendor, because their portal sometimes names an airline rather than the
- * house that bills us; a price, because theirs carries their markup; and the
- * held-back rule, which no amount of filling in can satisfy.
+ * Three things stop it, and each is something only a person can settle: a
+ * vendor, because their portal sometimes names an airline rather than the
+ * house that bills us; a price, on the rows where their cell priced a whole
+ * booking rather than this ticket; and the held-back rule, which no amount
+ * of filling in can satisfy.
  */
 export function whyNotConfirmable(p: PendingTicket): string {
   if (p.state !== 'PENDING') return `Already ${p.state.toLowerCase()}.`;
@@ -155,7 +174,14 @@ export function whyNotConfirmable(p: PendingTicket): string {
   if (!p.source.trim()) return 'Pick the vendor that billed it.';
   if (!p.ticketNo.trim() && !(p.pnr || '').trim()) return 'No ticket number and no PNR.';
   if (!p.date.trim()) return 'Give it a date.';
-  if (!p.amount) return 'Enter what it actually cost — their figure carries their markup.';
+  if (!p.amount) {
+    // Two different reasons a row arrives unpriced, and telling somebody
+    // their cell priced a whole booking when it in fact priced nothing
+    // sends them looking for a division that does not exist.
+    return (p.theirGroup ?? 1) > 1
+      ? `Enter what it cost — their figure covers all ${p.theirGroup} tickets in that cell.`
+      : 'Enter what it cost — their sheet states no figure for it.';
+  }
   return '';
 }
 
