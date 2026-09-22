@@ -1133,5 +1133,59 @@ console.log('\n42. "Our request" means ours, and is empty when we have none');
   check('theirs beside it',      mf.theirReq, 'UAECO623');
 }
 
+console.log('\n43. The last thing that happened decides whether it is void');
+{
+  // Any mention of "void" used to send a ticket to the void bucket and
+  // out of the report. Ten documents on their sheet carry a void row AND
+  // an issued row, four of those issued rows for five figures - a ticket
+  // voided and then issued again under the same number is live.
+  const sheet = (rows: string[]) => parseTeamSheet(
+    ['Ticket Number,PNR,Status,Req Num,Issued Date & Time', ...rows].join('\n')).rows;
+
+  // Issued, then voided the next day: nothing was ever billed.
+  const voided = compareTeamSheet(sheet([
+    '065-5513373335,YSLM73,Issued,KSAML2218,03/09/2026 1:00pm',
+    '065-5513373335,YSLM73,Void,KSAML2218,04/09/2026 1:00pm',
+  ]), []);
+  check('void last is a void', voided.counts.VOID_NOT_BILLED, 1);
+  check('and not a missing ticket', voided.counts.NOT_IN_LEDGER, 0);
+
+  // Voided, then issued again the next day: that ticket is live, and we
+  // do not have it.
+  const revived = compareTeamSheet(sheet([
+    '065-5513373335,YSLM73,Void,KSAML2218,03/09/2026 1:00pm',
+    '065-5513373335,YSLM73,Issued,KSAML2218,04/09/2026 1:00pm',
+  ]), []);
+  check('issued last is not a void', revived.counts.VOID_NOT_BILLED, 0);
+  check('it is a ticket we do not have', revived.counts.NOT_IN_LEDGER, 1);
+
+  // Both on one day: their sheet cannot say which came last, so it asks.
+  const sameDay = compareTeamSheet(sheet([
+    '065-5513427673,XNO5DZ,Void,KSAML2218,10/09/2026 1:00pm',
+    '065-5513427673,XNO5DZ,Issued,KSAML2218,10/09/2026 1:00pm',
+  ]), []);
+  check('a tie is neither',        sameDay.counts.VOID_AND_ISSUED, 1);
+  check('not silently dropped',    sameDay.counts.VOID_NOT_BILLED, 0);
+  check('nor silently reported',   sameDay.counts.NOT_IN_LEDGER, 0);
+  check('the note carries both statuses',
+    sameDay.findings[0].note.includes('Void') && sameDay.findings[0].note.includes('Issued'), true);
+  // A question is not a settled state, so the sheet cannot be closed on it.
+  check('and it stops the sheet being clean', sameDay.clean, false);
+
+  // Nothing but voids is still a void.
+  check('void only', compareTeamSheet(sheet([
+    '065-5513373335,YSLM73,Void,KSAML2218,03/09/2026 1:00pm',
+  ]), []).counts.VOID_NOT_BILLED, 1);
+
+  // None of this applies when we DO hold the ticket: then it is compared
+  // like any other, because our books are the better witness.
+  const held = compareTeamSheet(sheet([
+    '065-5513373335,YSLM73,Issued,KSAML2218,03/09/2026 1:00pm',
+    '065-5513373335,YSLM73,Void,KSAML2218,04/09/2026 1:00pm',
+  ]), [tkt({ ticketNo: '5513373335', pnr: 'YSLM73', reqNum: 'KSAML2218' })]);
+  check('a void we hold is not dropped', held.counts.VOID_NOT_BILLED, 0);
+  check('it is compared',                held.counts.OK, 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

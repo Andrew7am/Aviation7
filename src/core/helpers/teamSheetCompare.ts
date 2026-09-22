@@ -156,12 +156,23 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * Read from their file, never configured. When they send a sheet covering
  * only last month, the floor moves to last month by itself.
  *
- * A VOID IS NOT A GAP
+ * A VOID IS NOT A GAP, BUT A VOID IS NOT ALWAYS A VOID
  *
- * A ticket issued and voided the same day never reaches the supplier's
- * invoice, so its absence from our ledger is correct. Reporting it as
- * missing would be reporting the system working. It is counted separately
- * and said plainly.
+ * A ticket issued and voided never reaches the supplier's invoice, so its
+ * absence from our ledger is correct. Reporting it as missing would be
+ * reporting the system working. It is counted separately and said plainly.
+ *
+ * What is NOT safe is treating any mention of a void as the end of the
+ * story. Ten documents on their sheet carry a void row AND an issued row,
+ * and four of those issued rows are for 13,200 to 26,540 AED - a ticket
+ * voided and then issued again under the same number is live, and
+ * dropping it because the word "void" appears somewhere would hide the
+ * largest single thing this check could find.
+ *
+ * So the LAST thing that happened decides. Their dates settle it when
+ * they differ. When a void and an issue share one date the sheet cannot
+ * say which came last, and that is reported rather than guessed - six of
+ * the ten are in that state.
  */
 
 export type Verdict =
@@ -171,6 +182,7 @@ export type Verdict =
   | 'FILED_ELSEWHERE'
   | 'NOT_IN_LEDGER'
   | 'VOID_NOT_BILLED'
+  | 'VOID_AND_ISSUED'
   | 'REFUND_NOT_IN_LEDGER'
   | 'REFUND_NOT_ON_SHEET'
   | 'REFUND_DIFFERS'
@@ -186,6 +198,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   FILED_ELSEWHERE:      'In both, in different columns',
   NOT_IN_LEDGER:        'Not in our ledger',
   VOID_NOT_BILLED:      'Void — never billed',
+  VOID_AND_ISSUED:      'Voided and issued the same day',
   REFUND_NOT_IN_LEDGER: 'Refund not in our ledger',
   REFUND_NOT_ON_SHEET:  'Refunded, their sheet does not say so',
   REFUND_DIFFERS:       'Refund differs',
@@ -219,6 +232,9 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   // The same reference, one side's ticket column against the other's PNR.
   // Nothing is missing; the filing differs.
   FILED_ELSEWHERE: 7.5,
+  // Their sheet says both and cannot say which came last. Above a plain
+  // void, because somebody has to look.
+  VOID_AND_ISSUED: 3.5,
   VOID_NOT_BILLED: 8,
   OK: 9,
 };
@@ -541,7 +557,20 @@ export function compareTeamSheet(
     const theirReq = (rows.find(r => reqKey(r.reqNum))?.reqNum || '').trim();
     const ourReq = (ours.find(t => reqKey(t.reqNum || ''))?.reqNum || '').trim();
     const theySayRefunded = rows.some(r => r.status === 'REFUNDED');
-    const theySayVoid = rows.some(r => r.status === 'VOID');
+
+    /* Whether a void was the LAST thing that happened to this document.
+       Their dates settle it; a tie cannot, and is reported instead. See
+       the note above - four of the ties carry five figures. */
+    const dates = rows.map(r => r.issued).filter(Boolean).sort();
+    const latest = dates[dates.length - 1] ?? '';
+    const atLatest = latest ? rows.filter(r => r.issued === latest) : rows;
+    const anyVoid = rows.some(r => r.status === 'VOID');
+    const theySayVoid = anyVoid && atLatest.every(r => r.status === 'VOID');
+    // Only a genuine tie: a void and something else sharing the last date.
+    // A void that is plainly NOT the last word leaves the ticket live, and
+    // a live ticket we do not hold is a missing ticket, not a question.
+    const voidAndIssued = anyVoid && !theySayVoid
+      && atLatest.some(r => r.status === 'VOID');
     const base = {
       serial, airlineCode: first.airlineCode, pnr: first.pnr, sheet: first, ours,
       reqNum: ourReq, theirReq,
@@ -566,6 +595,13 @@ export function compareTeamSheet(
       if (theySayVoid) {
         findings.push({ ...base, verdict: 'VOID_NOT_BILLED',
           note: 'Voided on their side, so no supplier ever billed it. Nothing to record.' });
+      } else if (voidAndIssued) {
+        const both = rows.map(r => `${r.rawStatus}${r.issued ? ' ' + r.issued : ''}`
+          + (r.cost != null ? ` for ${money(r.cost)}` : '')).join(', and ');
+        findings.push({ ...base, verdict: 'VOID_AND_ISSUED',
+          note: `Their sheet says ${both} — the same date on both, so it cannot say which`
+              + ' came last. If it was voided there is nothing to record; if it was issued'
+              + ' again, this is a ticket we do not have.' });
       } else {
         findings.push({ ...base, verdict: 'NOT_IN_LEDGER',
           note: theirReq
@@ -844,5 +880,6 @@ export function compareTeamSheet(
       f.verdict === 'OK' || f.verdict === 'VOID_NOT_BILLED'
       || f.verdict === 'NOT_ISSUED_YET' || f.verdict === 'REQ_RELATED'
       || f.verdict === 'FILED_ELSEWHERE'),
+    // VOID_AND_ISSUED deliberately absent: it is a question, not a state.
   };
 }
