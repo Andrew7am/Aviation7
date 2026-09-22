@@ -355,6 +355,17 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => 
   };
 
   const [declaredText, setDeclaredText] = useState('');
+  /**
+   * The stretch of time this copy of their sheet is for.
+   *
+   * The sheet is taken every few weeks, and without this every check
+   * reports the same couple of hundred findings from February and the new
+   * ones are lost among them. Both ends are optional: left empty, the
+   * check behaves exactly as it did before, floored at their own first
+   * ticket.
+   */
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const declared = useMemo(
     () => declaredText.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean),
     [declaredText]);
@@ -362,8 +373,8 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => 
   /* Recomputed rather than re-read: changing the request after the file is
      in must not mean finding the file again. */
   const report = useMemo<TeamSheetReport | null>(
-    () => (rows ? compareTeamSheet(rows, tickets, declared) : null),
-    [rows, tickets, declared]);
+    () => (rows ? compareTeamSheet(rows, tickets, declared, { from: fromDate, to: toDate }) : null),
+    [rows, tickets, declared, fromDate, toDate]);
 
   const run = async (file: File) => {
     setBusy(true); setError(''); setRows(null); setFileName(file.name);
@@ -530,6 +541,38 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => 
             covering more than one.
           </span>
         </label>
+
+        {/* The period. Second, because a sheet for one request usually needs
+            no dates and a periodic copy of the whole sheet usually needs no
+            request - whichever you are doing, one of these two rows is the
+            one you fill in. */}
+        <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-slate-100">
+          <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider shrink-0">
+            Period
+          </span>
+          <div className="flex items-center gap-2">
+            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+              className="font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded
+                         focus:outline-none focus:ring-2 focus:ring-purple-500/20
+                         focus:border-purple-400" />
+            <span className="text-[11px] text-slate-400">to</span>
+            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+              className="font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded
+                         focus:outline-none focus:ring-2 focus:ring-purple-500/20
+                         focus:border-purple-400" />
+            {(fromDate || toDate) && (
+              <button onClick={() => { setFromDate(''); setToDate(''); }}
+                className="text-[11px] text-slate-400 hover:text-slate-700 px-1">clear</button>
+            )}
+          </div>
+          <span className="text-[11px] text-slate-500 flex-1 min-w-[280px]">
+            What this copy of their sheet covers. Their rows outside it are set aside, and
+            nothing of ours outside it is reported as missing.{' '}
+            <b className="text-slate-600">Your books are searched in full whatever you put
+            here</b> — their date is when a ticket was issued and ours is when the supplier
+            billed it, and those cross a month end.
+          </span>
+        </div>
       </div>
 
       <div
@@ -639,7 +682,8 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => 
           {/* Their sheet has a beginning, and our ledger is older than it.
               Said out loud, because the count is also the honest measure
               of how much of our books this check can speak to. */}
-          {(report.beforeTheirSystem > 0 || report.onHold > 0) && (
+          {(report.beforeTheirSystem > 0 || report.onHold > 0
+            || report.theirOutsidePeriod > 0) && (
             <div className="flex items-start gap-2 text-[11px] text-slate-500 bg-slate-50
                             border border-slate-200 rounded-lg px-3 py-2">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" />
@@ -649,10 +693,36 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => 
                   ticket issued — nothing for our books to be missing, so they are left out.
                   {' '}</>
                 )}
-                Their sheet begins <b className="font-mono text-slate-700">{report.sheetFrom}</b>.
-                {' '}<b>{report.beforeTheirSystem}</b> of our tickets under these requests were
-                issued before that, so they are outside this comparison rather than missing
-                from it — there was no sheet for them to be on.
+                {/* A period somebody typed and a floor taken from their own
+                    sheet are different claims and are never worded alike. */}
+                {report.periodFromSource === 'typed' || report.periodToSource === 'typed' ? (
+                  <>
+                    This sheet was read as{' '}
+                    <b className="font-mono text-slate-700">
+                      {report.period.from || 'the beginning'}
+                    </b>{' '}to{' '}
+                    <b className="font-mono text-slate-700">
+                      {report.period.to || 'today'}
+                    </b>.
+                    {report.theirOutsidePeriod > 0 && (
+                      <> <b>{report.theirOutsidePeriod}</b> of their rows fall outside it and
+                      were set aside.</>
+                    )}
+                    {report.beforeTheirSystem > 0 && (
+                      <> <b>{report.beforeTheirSystem}</b> of ours do too, so they are not
+                      reported as missing from a sheet that does not cover them.</>
+                    )}
+                    {' '}Your books were searched in full whatever their date.
+                  </>
+                ) : (
+                  <>
+                    Their sheet begins{' '}
+                    <b className="font-mono text-slate-700">{report.sheetFrom}</b>.
+                    {' '}<b>{report.beforeTheirSystem}</b> of our tickets under these requests
+                    were issued before that, so they are outside this comparison rather than
+                    missing from it — there was no sheet for them to be on.
+                  </>
+                )}
               </span>
             </div>
           )}

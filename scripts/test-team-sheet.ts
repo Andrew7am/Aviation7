@@ -1306,5 +1306,175 @@ console.log('\n46. Every finding says where the ticket was bought');
   check('our own source answers it', mine.issuedFrom, 'RTS');
 }
 
+console.log('\n47. A period bounds what is reported, never what is matched');
+{
+  // The sheet is taken every few weeks. Without a period every check
+  // reports the same findings from February and the new ones are lost.
+  const sheet = (rows: string[]) => parseTeamSheet(
+    ['Ticket Number,PNR,Status,Req Num,Net Cost,Issued Date & Time,Portal',
+     ...rows].join('\n')).rows;
+
+  const theirs = sheet([
+    '065-5510000001,AAA111,Issued,KSAML100,100.00,05/02/2026 1:00pm,RTS',
+    '065-5510000002,BBB222,Issued,KSAML100,200.00,10/08/2026 1:00pm,RTS',
+    '065-5510000003,CCC333,Issued,KSAML100,300.00,20/09/2026 1:00pm,RTS',
+  ]);
+
+  // No period: everything is asked about, as it always was.
+  const all = compareTeamSheet(theirs, [], ['KSAML100']);
+  check('with no period, all three',   all.counts.NOT_IN_LEDGER, 3);
+  check('and nothing set aside',       all.theirOutsidePeriod, 0);
+  check('the floor is their own first', all.period.from, '2026-02-05');
+  check('and it says where it came from', all.periodFromSource, 'sheet');
+  check('with no ceiling',             all.periodToSource, 'none');
+
+  // August only: their February and September rows are set aside.
+  const aug = compareTeamSheet(theirs, [], ['KSAML100'],
+    { from: '2026-08-01', to: '2026-08-31' });
+  check('only August is asked about',  aug.counts.NOT_IN_LEDGER, 1);
+  check('two are set aside',           aug.theirOutsidePeriod, 2);
+  check('and it is the August one',
+    aug.findings.find(f => f.verdict === 'NOT_IN_LEDGER')!.serial, '5510000002');
+  check('the period is the typed one', [aug.period.from, aug.period.to],
+    ['2026-08-01', '2026-08-31']);
+  check('and says a person typed it',  aug.periodFromSource, 'typed');
+  check('both ends',                   aug.periodToSource, 'typed');
+
+  // One end only.
+  const openEnd = compareTeamSheet(theirs, [], ['KSAML100'], { from: '2026-08-01' });
+  check('an open end still runs on',   openEnd.counts.NOT_IN_LEDGER, 2);
+  check('one set aside',               openEnd.theirOutsidePeriod, 1);
+}
+
+console.log('\n48. Their date and our date are not the same date');
+{
+  // The trap this rule exists for. Their date is when the ticket was
+  // ISSUED; ours is when the supplier BILLED it, and an invoice crosses a
+  // month end without asking anybody. Searching only the window would
+  // report a ticket as missing while it sits in our books - a finding that
+  // sends somebody to record a ticket we already have, and the worst kind
+  // of wrong this screen can produce.
+  const theirs = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Issued Date & Time',
+    '065-5510000010,DDD444,Issued,KSAML200,500.00,03/09/2026 1:00pm',
+  ].join('\n')).rows;
+
+  // Ours carries it under the PREVIOUS month's billing date.
+  const ours = [tkt({
+    ticketNo: '5510000010', pnr: 'DDD444', reqNum: 'KSAML200',
+    amount: 480, date: '2026-08-28',
+  })];
+
+  const r = compareTeamSheet(theirs, ours, ['KSAML200'],
+    { from: '2026-09-01', to: '2026-09-30' });
+  check('their row is in the period',   r.theirOutsidePeriod, 0);
+  check('and it is found in our books', r.matched, 1);
+  check('so nothing is missing',        r.counts.NOT_IN_LEDGER, 0);
+  check('it simply agrees',             r.counts.OK, 1);
+
+  // And our August row is not then reported as one THEY are missing: it is
+  // outside the period, so it is counted rather than listed.
+  check('nor reported the other way',   r.counts.NOT_ON_SHEET, 0);
+}
+
+console.log('\n49. What the period leaves out on our side');
+{
+  const theirs = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Issued Date & Time',
+    '065-5510000020,EEE555,Issued,KSAML300,500.00,10/09/2026 1:00pm',
+  ].join('\n')).rows;
+
+  // Three of ours under the same request: one inside the period and two
+  // outside it, one either side.
+  const ours = [
+    tkt({ ticketNo: '5510000020', pnr: 'EEE555', reqNum: 'KSAML300', date: '2026-09-10' }),
+    tkt({ ticketNo: '5510000021', pnr: 'FFF666', reqNum: 'KSAML300', date: '2026-09-15' }),
+    tkt({ ticketNo: '5510000022', pnr: 'GGG777', reqNum: 'KSAML300', date: '2026-07-01' }),
+    tkt({ ticketNo: '5510000023', pnr: 'HHH888', reqNum: 'KSAML300', date: '2026-11-20' }),
+  ];
+
+  const r = compareTeamSheet(theirs, ours, ['KSAML300'],
+    { from: '2026-09-01', to: '2026-09-30' });
+  check('one of ours is theirs to explain', r.counts.NOT_ON_SHEET, 1);
+  check('and it is the September one',
+    r.findings.find(f => f.verdict === 'NOT_ON_SHEET')!.serial, '5510000021');
+  // Either side of the window, not just before it - a ceiling has to work
+  // the same way a floor does.
+  check('July and November are set aside', r.beforeTheirSystem, 2);
+}
+
+console.log('\n50. A period cannot speak about a date nobody wrote down');
+{
+  // Dropping an undated row would hide a real gap behind a blank cell, on
+  // either side.
+  const theirs = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Issued Date & Time',
+    '065-5510000030,III999,Issued,KSAML400,500.00,',
+  ].join('\n')).rows;
+  const r = compareTeamSheet(theirs, [], ['KSAML400'],
+    { from: '2026-09-01', to: '2026-09-30' });
+  check('an undated row of theirs stays', r.counts.NOT_IN_LEDGER, 1);
+  check('and is not set aside',           r.theirOutsidePeriod, 0);
+
+  const ours = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num\n065-5510000031,JJJ000,Issued,KSAML400').rows,
+    [tkt({ ticketNo: '5510000099', pnr: 'KKK111', reqNum: 'KSAML400', date: '' })],
+    ['KSAML400'], { from: '2026-09-01', to: '2026-09-30' });
+  check('an undated row of ours stays',   ours.counts.NOT_ON_SHEET, 1);
+  check('and is not counted as outside',  ours.beforeTheirSystem, 0);
+}
+
+console.log('\n51. A set-aside row takes no part in anything');
+{
+  // A row outside the period must not turn up later as a match, as a
+  // duplicate, or as a claim on one of ours. It is not filtered from the
+  // report at the end - it never enters the comparison.
+  const theirs = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Issued Date & Time',
+    '065-5510000040,LLL222,Issued,KSAML500,500.00,15/02/2026 1:00pm',
+    '065-5510000041,MMM333,Issued,KSAML500,600.00,15/09/2026 1:00pm',
+  ].join('\n')).rows;
+
+  // We hold the February one. Outside the window, it is neither matched
+  // nor reported - and crucially it is not reported as ours-only either.
+  const ours = [tkt({
+    ticketNo: '5510000040', pnr: 'LLL222', reqNum: 'KSAML500', date: '2026-02-15',
+  })];
+  const r = compareTeamSheet(theirs, ours, ['KSAML500'],
+    { from: '2026-09-01', to: '2026-09-30' });
+  check('only one row was compared', r.theirRows, 1);
+  check('the other set aside',       r.theirOutsidePeriod, 1);
+  check('nothing matched',           r.matched, 0);
+  check('September is missing',      r.counts.NOT_IN_LEDGER, 1);
+  check('and February is silent',    r.counts.NOT_ON_SHEET, 0);
+  check('entirely silent',           r.findings.length, 1);
+}
+
+console.log('\n52. Running the same period twice says the same thing');
+{
+  // The whole point of a period: a fortnight later, with the sheet grown
+  // by one ticket, the check reports the one ticket and not the hundred
+  // that were settled last time.
+  const rows = [
+    '065-5510000050,NNN444,Issued,KSAML600,100.00,05/08/2026 1:00pm',
+    '065-5510000051,OOO555,Issued,KSAML600,200.00,20/08/2026 1:00pm',
+  ];
+  const period = { from: '2026-09-01', to: '2026-09-30' };
+  const mk = (extra: string[] = []) => parseTeamSheet(
+    ['Ticket Number,PNR,Status,Req Num,Net Cost,Issued Date & Time',
+     ...rows, ...extra].join('\n')).rows;
+
+  const first = compareTeamSheet(mk(), [], ['KSAML600'], period);
+  check('August is nobody\'s business in September', first.counts.NOT_IN_LEDGER, 0);
+  check('and the sheet reads clean',                 first.clean, true);
+
+  const later = compareTeamSheet(
+    mk(['065-5510000052,PPP666,Issued,KSAML600,300.00,12/09/2026 1:00pm']),
+    [], ['KSAML600'], period);
+  check('the new one, and only it', later.counts.NOT_IN_LEDGER, 1);
+  check('by number',
+    later.findings.find(f => f.verdict === 'NOT_IN_LEDGER')!.serial, '5510000052');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

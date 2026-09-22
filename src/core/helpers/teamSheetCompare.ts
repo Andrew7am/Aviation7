@@ -141,6 +141,33 @@ import { portalSource } from '../config/teamPortals';
  * it is not: the contradiction is reported instead, with both figures, and
  * the refund check stands aside until their side settles on one number.
  *
+ * A PERIOD BOUNDS WHAT IS REPORTED, NEVER WHAT IS MATCHED
+ *
+ * The sheet gets checked every few weeks, not once. Without a period every
+ * check reports the same two hundred findings from February, and the
+ * fifteen new ones are lost in them - which is how a report stops being
+ * read.
+ *
+ * So a period can be given: "this sheet is 1 August to 15 September". Their
+ * rows outside it are set aside and counted; ours outside it are never
+ * reported as missing from a sheet that does not cover them.
+ *
+ * What the period must NOT do is narrow the search. A ticket their sheet
+ * dates 3 September may sit in our books dated 28 August - their date is
+ * when it was issued, ours is when the supplier billed it, and an invoice
+ * crosses a month end without asking anybody. Matching against only the
+ * window would report that ticket as missing from our books while it sits
+ * in them, which is the worst kind of wrong: a finding that sends somebody
+ * to record a ticket we already have.
+ *
+ * So the whole ledger is always searched, whatever the period. The period
+ * decides which of THEIR rows are asked about and which of OURS may be
+ * reported back; it never decides where we look.
+ *
+ * A row with no date is never excluded by a period, on either side. A
+ * period cannot say anything about a date nobody wrote down, and dropping
+ * those rows would hide real gaps behind a blank cell.
+ *
  * NOTHING BEFORE THEIR SYSTEM EXISTED
  *
  * Their first ticket is dated 9 February 2026. Anything of ours issued
@@ -464,6 +491,24 @@ export interface TeamSheetReport {
    * it. Carried so the screen can say so.
    */
   sheetFrom: string;
+  /**
+   * The period actually applied, and where each end came from.
+   *
+   * 'typed' means somebody said so before the file went in; 'sheet' means
+   * it was taken from their own earliest ticket; 'none' means that end is
+   * open. Kept apart so the screen can never present a floor the check
+   * guessed as one the person chose.
+   */
+  period: { from: string; to: string };
+  periodFromSource: 'typed' | 'sheet' | 'none';
+  periodToSource: 'typed' | 'none';
+  /** Their rows dated outside the period. Set aside, never reported. */
+  theirOutsidePeriod: number;
+  /**
+   * Ours dated outside the period — older than the floor or later than the
+   * ceiling. Out of this comparison's reach, not missing from it, and
+   * counted so the screen can say so.
+   */
   beforeTheirSystem: number;
   /** Their held options, with no ticket issued. Counted, never listed:
    *  there is nothing for our books to be missing. */
@@ -482,6 +527,28 @@ export interface TeamSheetReport {
  */
 export const REFUND_FLOOR = 50;
 
+/**
+ * The stretch of time a sheet is for, as yyyy-MM-dd.
+ *
+ * Either end may be left out. With no `from`, the floor is their sheet's
+ * own first ticket, which is what the check did before periods existed.
+ * With no `to`, the sheet runs to today.
+ */
+export interface Period {
+  from?: string;
+  to?: string;
+}
+
+/** Whether a date falls in the period. A blank date always does - see the
+ *  note above: a period cannot speak about a date nobody wrote down. */
+export function inPeriod(date: string, from: string, to: string): boolean {
+  const d = (date || '').trim();
+  if (!d) return true;
+  if (from && d < from) return false;
+  if (to && d > to) return false;
+  return true;
+}
+
 const money = (n: number) =>
   Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -495,6 +562,7 @@ const isTicket = (t: Ticket) => (t.status || '').toUpperCase() !== 'FUND';
 
 export function compareTeamSheet(
   sheet: TeamSheetRow[], ledger: Ticket[], declaredRaw: string[] = [],
+  periodRaw: Period = {},
 ): TeamSheetReport {
   /* What somebody typed before dropping the file. Cleaned the same way a
      request read from a file is, so "ksaml 2053" and "KSAML2053" are one
@@ -509,6 +577,27 @@ export function compareTeamSheet(
      and the narrower check further down does what it can. */
   if (declared.length === 1)
     sheet = sheet.map(r => (reqKey(r.reqNum) ? r : { ...r, reqNum: declared[0] }));
+
+  /* ── the period this sheet is for ──────────────────────────────────────
+     Resolved before anything is indexed, because their out-of-window rows
+     must not reach the comparison at all - a row set aside should not turn
+     up later as a match, a duplicate or a claim on one of ours.
+
+     The floor falls back to their own earliest ticket, which is what this
+     did before periods existed, so a check run without one behaves exactly
+     as it always has. */
+  const everyIssued = sheet.map(r => r.issued).filter(Boolean).sort();
+  const typedFrom = (periodRaw.from || '').trim();
+  const typedTo = (periodRaw.to || '').trim();
+  const from = typedFrom || (everyIssued[0] ?? '');
+  const to = typedTo;
+
+  const theirOutsidePeriod = sheet.filter(r => !inPeriod(r.issued, from, to)).length;
+  // Only a typed floor removes their rows. Their own earliest ticket is by
+  // definition their earliest, so it excludes nothing - but a period typed
+  // by hand is a claim about what the sheet covers, and a row outside it is
+  // a row the person did not mean to send.
+  if (theirOutsidePeriod) sheet = sheet.filter(r => inPeriod(r.issued, from, to));
 
   /* ── index our side by serial ─────────────────────────────────────────── */
   const ourBySerial = new Map<string, Ticket[]>();
@@ -847,9 +936,11 @@ export function compareTeamSheet(
     // And our reference sitting in THEIR PNR column, which is the same
     // filing difference read from the other end.
     if (isReference(k) && theirPnrs.has(k)) continue;
-    // Issued before their sheet began. Counted below, never reported as
-    // missing from a sheet that did not exist yet.
-    if (sheetFrom && (t.date || '') && (t.date as string) < sheetFrom) { tooOld.add(k); continue; }
+    // Outside the stretch this sheet is for. Counted below, never reported
+    // as missing from a sheet that does not cover it. Note this is the ONLY
+    // place a date narrows anything: every lookup above searched the whole
+    // ledger, so a ticket of theirs matched one of ours whatever its date.
+    if (!inPeriod((t.date as string) || '', from, to)) { tooOld.add(k); continue; }
     if (!ourExtra.has(k)) ourExtra.set(k, []);
     ourExtra.get(k)!.push(t);
   }
@@ -941,6 +1032,10 @@ export function compareTeamSheet(
   return {
     findings, byRequest, sheetHasReq,
     sheetFrom, beforeTheirSystem: tooOld.size, onHold,
+    period: { from, to },
+    periodFromSource: typedFrom ? 'typed' : from ? 'sheet' : 'none',
+    periodToSource: typedTo ? 'typed' : 'none',
+    theirOutsidePeriod,
     reqSource: sheetHasReq ? 'sheet' : declared.length ? 'typed' : 'none',
     declared,
     requests: [...requests].sort(), counts,
