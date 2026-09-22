@@ -1,0 +1,333 @@
+/**
+ * The review queue: what the check proposes, and what stops a proposal.
+ *
+ *   npx tsx scripts/test-pending-review.ts
+ *
+ * Two rules carry the whole screen and both are easy to get quietly wrong:
+ * their cost must never become our amount, and an Ibtekar or NSA ticket must
+ * never become a ticket at all. Each is asserted from the outside, on the
+ * shapes their real export produces.
+ */
+import { parseTeamSheet } from '../src/core/parsers/teamSheet';
+import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
+import { portalSource, issuedFrom } from '../src/core/config/teamPortals';
+import {
+  pendingFromFindings, whyNotConfirmable, canConfirm, dedupeKey,
+} from '../src/core/helpers/pendingFromFindings';
+import type { PendingTicket, Ticket } from '../src/types';
+
+let passed = 0, failed = 0;
+function check(name: string, got: unknown, want: unknown) {
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  if (ok) { passed++; console.log(`   ok   ${name}`); }
+  else { failed++; console.log(`   FAIL ${name}\n        got  ${JSON.stringify(got)}\n        want ${JSON.stringify(want)}`); }
+}
+
+let n = 0;
+const ids = () => `id-${++n}`;
+const build = (findings: any[]) =>
+  pendingFromFindings(findings, { newId: ids, userId: 'u1' });
+
+const sheet = (rows: string[], header =
+  'Ticket Number,PNR,Status,Net Cost,Refund Amount,Issued Date & Time,Portal,REQ No (Auto) (MICE)') =>
+  parseTeamSheet([header, ...rows].join('\n')).rows;
+
+/* ── 1. their portal, read as one of our vendors ──────────────────────── */
+console.log('\n1. Their portal is one of our vendors under another name');
+{
+  check('Ibtkar RUH is Ibtekar',      portalSource('Ibtkar RUH').source, 'Ibtekar');
+  check('NSA Portal (RUH) is NSA',    portalSource('NSA Portal (RUH)').source, 'NSA');
+  check('IATA Portal (UAE) is IATA',  portalSource('IATA Portal (UAE)').source, 'IATA');
+  check('BSP Link is IATA too',       portalSource('BSP Link').source, 'IATA');
+  check('RTS is RTS',                 portalSource('RTS').source, 'RTS');
+  check('XY is flynas',               portalSource('XY').source, 'Flynas');
+  check('flydubai',                   portalSource('flydubai').source, 'FlyDubai');
+  check('Riyadh Air Portal',          portalSource('Riyadh Air Portal').source, 'Riyadh Air');
+  check('Air Arabia Portal',          portalSource('Air Arabia Portal').source, 'AirArabia');
+  check('Turkish Airlines Portal',    portalSource('Turkish Airlines Portal').source, 'Turkish Airlines');
+  check('AL Website is the card',     portalSource('AL Website').source, 'Airline Website');
+
+  // F3 is FlyAdeal's designator and FlyAdeal bills from two houses. Their
+  // column names the airline, so the table must not pick one.
+  const f3 = portalSource('F3');
+  check('F3 names no single vendor',  f3.source, '');
+  check('it offers both',             f3.choices, ['FlyAdeal KSA', 'FlyAdeal DXB']);
+  check('and says so in one line',    issuedFrom('F3'), 'FlyAdeal KSA or FlyAdeal DXB');
+
+  // A word nobody has mapped comes back as itself rather than as nothing:
+  // "we do not know" and "their cell was empty" are different answers.
+  check('an unknown portal is itself', issuedFrom('Sabre Red'), 'Sabre Red');
+  check('an empty one is empty',       issuedFrom(''), '');
+  check('and matches nothing',         portalSource('').source, '');
+}
+
+/* ── 2. two portals in one cell ───────────────────────────────────────── */
+console.log('\n2. Their cell is sometimes two portals');
+{
+  const both = portalSource('IATA Portal (UAE),RTS');
+  check('the first one we know names it', both.source, 'IATA');
+  check('their word keeps both',          both.portal, 'IATA Portal (UAE), RTS');
+  check('and neither is held',            both.heldBack, false);
+
+  // The safe way round: a held-back part holds the whole row. The cost of
+  // holding one ticket for review is a question; the cost of keying a
+  // wallet ticket twice is a wrong balance.
+  const mixed = portalSource('IATA Portal (UAE),NSA Portal (RUH)');
+  check('a held part holds the row',      mixed.heldBack, true);
+  check('the reason travels with it',     mixed.why.includes('wallet'), true);
+  check('the vendor is still the first',  mixed.source, 'IATA');
+}
+
+/* ── 3. only Ibtekar and NSA are held ─────────────────────────────────── */
+console.log('\n3. Only the two that settle against a wallet are held');
+{
+  const held = ['Ibtkar RUH', 'NSA Portal (RUH)'];
+  const free = ['IATA Portal (UAE)', 'RTS', 'AL Website', 'F3', 'flydubai',
+                'Riyadh Air Portal', 'XY', 'Air Arabia Portal', 'BSP Link',
+                'Turkish Airlines Portal'];
+  check('held',      held.map(p => portalSource(p).heldBack), [true, true]);
+  check('not held',  free.map(p => portalSource(p).heldBack), free.map(() => false));
+}
+
+/* ── 4. what the check proposes, and what it refuses to ───────────────── */
+console.log('\n4. Only a ticket our books do not have becomes a proposal');
+{
+  const rows = sheet([
+    // On their sheet, in nobody's books.
+    '065-5513373335,YSLM73,Issued,2530.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+    // In both, filed under different requests - a disagreement to settle,
+    // not a ticket to add. Proposing it would create a second copy.
+    '065-5513373336,YSLM74,Issued,1200.00,,03/09/2026 1:00pm,RTS,KSAML2219',
+  ]);
+  const ledger: Ticket[] = [{
+    id: 't1', ticketNo: '5513373336', source: 'RTS', date: '2026-09-03',
+    amount: 1180, commission: 0, totalDoc: 1180, reqNum: 'KSAML9999',
+    pnr: 'YSLM74', status: 'ISSUE', currency: 'AED', userId: 'u1',
+  }];
+  const r = compareTeamSheet(rows, ledger, ['KSAML2218', 'KSAML2219', 'KSAML9999']);
+  const out = build(r.findings);
+  check('one proposal, not two', out.length, 1);
+  check('and it is the missing one', out[0].ticketNo, '5513373335');
+  check('the misfiled one is untouched',
+    r.findings.some(f => f.verdict === 'REQ_DIFFERS'), true);
+}
+
+/* ── 5. their price is not our price ──────────────────────────────────── */
+console.log('\n5. Their cost is carried, never copied');
+{
+  const r = compareTeamSheet(sheet([
+    '065-5513373335,YSLM73,Issued,2530.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+  ]), []);
+  const [p] = build(r.findings);
+
+  // The whole reason the queue exists. Their column is a quote with their
+  // uplift on it, in whichever currency it was quoted in; the actual cost
+  // is the one thing the reviewer has and the sheet does not.
+  check('their figure is kept',   p.theirCost, 2530);
+  check('and is NOT our amount',  p.amount, 0);
+  check('nor our document',       p.totalDoc, 0);
+  check('so it cannot be confirmed', canConfirm(p), false);
+  check('and it says why',
+    whyNotConfirmable(p), 'Enter what it actually cost — their figure carries their markup.');
+
+  // Priced by a person, it goes.
+  check('priced, it is ready', canConfirm({ ...p, amount: 2400 }), true);
+}
+
+/* ── 6. a refund IS prefilled, and negative ───────────────────────────── */
+console.log('\n6. A refund is not a quote, so it is filled in');
+{
+  // Their refund figure is what the airline actually gave back, and it
+  // matches our net or our gross to the fils. Nothing to correct, so
+  // nothing to retype.
+  const rows = sheet([
+    '065-5513373340,YSLM80,Issued,2890.00,,01/09/2026 1:00pm,IATA Portal (UAE),KSAML2218',
+    '065-5513373340,YSLM80,Cancelled/Refunded,,2890.00,05/09/2026 1:00pm,IATA Portal (UAE),KSAML2218',
+  ]);
+  const ledger: Ticket[] = [{
+    id: 't1', ticketNo: '5513373340', source: 'IATA', date: '2026-09-01',
+    amount: 2664, commission: 226, totalDoc: 2890, reqNum: 'KSAML2218',
+    pnr: 'YSLM80', status: 'ISSUE', currency: 'AED', userId: 'u1',
+  }];
+  const r = compareTeamSheet(rows, ledger, ['KSAML2218']);
+  check('the refund is the finding', r.counts.REFUND_NOT_IN_LEDGER, 1);
+
+  const [p] = build(r.findings.filter(f => f.verdict === 'REFUND_NOT_IN_LEDGER'));
+  check('it is a refund',        p.transactionType, 'REFUND');
+  check('stored negative',       p.amount, -2890);
+  check('document positive',     p.totalDoc, 2890);
+  check('and it is ready to go', canConfirm(p), true);
+}
+
+/* ── 7. Ibtekar and NSA are raised and cannot be confirmed ────────────── */
+console.log('\n7. A wallet vendor is listed, counted, and closed');
+{
+  const r = compareTeamSheet(sheet([
+    '065-5513373350,YSLM90,Issued,4100.00,,03/09/2026 1:00pm,Ibtkar RUH,KSAML2218',
+    '065-5513373351,YSLM91,Issued,900.00,,03/09/2026 1:00pm,NSA Portal (RUH),KSAML2218',
+  ]), []);
+  const out = build(r.findings);
+
+  // Raised, because a gap nobody can see is a gap nobody closes.
+  check('both are raised', out.length, 2);
+  check('both held',       out.map(p => p.heldBack), [true, true]);
+  check('the vendor is still named', out.map(p => p.source), ['Ibtekar', 'NSA']);
+
+  // And closed, because keying one moves the wallet twice.
+  check('neither can be confirmed', out.map(canConfirm), [false, false]);
+  check('the reason is the wallet',
+    out[0].heldBackWhy!.includes('credit wallet'), true);
+
+  // Not even fully filled in. The hold is not a missing field.
+  const filled: PendingTicket = { ...out[0], amount: 4000, date: '2026-09-03' };
+  check('filling it in changes nothing', canConfirm(filled), false);
+  check('and it still says why', whyNotConfirmable(filled).includes('wallet'), true);
+}
+
+/* ── 8. the vendor their sheet cannot name ────────────────────────────── */
+console.log('\n8. When their portal names an airline, not a vendor');
+{
+  const r = compareTeamSheet(sheet([
+    '065-5513373360,YSLM95,Issued,610.00,,03/09/2026 1:00pm,F3,KSAML2218',
+  ]), []);
+  const [p] = build(r.findings);
+  check('no vendor is guessed', p.source, '');
+  check('their word is kept',   p.theirPortal, 'F3');
+  // Asked for before the price, because picking from a list is the quicker
+  // of the two and the screen should ask for the quick thing first.
+  check('and that is what it asks for first',
+    whyNotConfirmable(p), 'Pick the vendor that billed it.');
+  check('once picked, it asks for the price',
+    whyNotConfirmable({ ...p, source: 'FlyAdeal KSA' }).startsWith('Enter what it actually cost'), true);
+}
+
+/* ── 9. what else comes across ────────────────────────────────────────── */
+console.log('\n9. Everything their sheet is the better witness for');
+{
+  const r = compareTeamSheet(sheet([
+    '065-5513373370,ZQ4XYZ,Issued,1500.00,,14/07/2026 9:30am,RTS,KSAML2300',
+  ]), []);
+  const [p] = build(r.findings);
+  check('the ticket',   p.ticketNo, '5513373370');
+  check('the airline',  p.airlineCode, '065');
+  check('the PNR',      p.pnr, 'ZQ4XYZ');
+  check('the date',     p.date, '2026-07-14');
+  check('the vendor',   p.source, 'RTS');
+  // We hold no row for it, so their request is the only one there is - and
+  // where it came from is recorded beside it rather than lost.
+  check('their request becomes ours', p.reqNum, 'KSAML2300');
+  check('and stays labelled theirs',  p.theirReq, 'KSAML2300');
+  // Their "TEAM MEMBERS" column is who booked it, not who flew. Filling the
+  // passenger with the booker's name would be worse than leaving it blank.
+  check('no passenger is invented',   p.passengerName, '');
+  check('it starts pending',          p.state, 'PENDING');
+  check('and it says what raised it', p.finding, 'NOT_IN_LEDGER');
+}
+
+/* ── 10. the same sheet, checked twice ────────────────────────────────── */
+console.log('\n10. Checking the same sheet twice asks the same question');
+{
+  const rows = sheet([
+    '065-5513373380,YS1111,Issued,700.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+    '065-5513373380,YS1111,Cancelled/Refunded,,700.00,09/09/2026 1:00pm,RTS,KSAML2218',
+  ]);
+  const a = build(compareTeamSheet(rows, []).findings);
+  const b = build(compareTeamSheet(rows, []).findings);
+  check('the ids differ',    a[0].id === b[0].id, false);
+  check('the key does not',  a.map(p => p.dedupe), b.map(p => p.dedupe));
+
+  // One document can raise two separate things to agree to, so the verdict
+  // is part of what the proposal is about. Collapsing them would lose one.
+  check('key is origin, document and finding',
+    dedupeKey('TEAM_SHEET', '5513373380', 'YS1111', 'NOT_IN_LEDGER'),
+    'TEAM_SHEET|5513373380|NOT_IN_LEDGER');
+  check('and a different finding is a different key',
+    dedupeKey('TEAM_SHEET', '5513373380', 'YS1111', 'NOT_IN_LEDGER')
+      === dedupeKey('TEAM_SHEET', '5513373380', 'YS1111', 'REFUND_NOT_IN_LEDGER'), false);
+
+  // A carrier that issues no IATA ticket has no serial; the reference in
+  // the PNR is what identifies it, and the key must not collapse to
+  // "TEAM_SHEET||NOT_IN_LEDGER" for every one of them.
+  check('the PNR stands in when there is no serial',
+    dedupeKey('TEAM_SHEET', '', 'RX12237ZB622D', 'NOT_IN_LEDGER'),
+    'TEAM_SHEET|RX12237ZB622D|NOT_IN_LEDGER');
+}
+
+/* ── 11. what stops a confirm, in order ───────────────────────────────── */
+console.log('\n11. A proposal is not a ticket until a person finishes it');
+{
+  const base: PendingTicket = {
+    id: 'x', userId: 'u1', ticketNo: '5513373390', source: 'RTS',
+    date: '2026-09-03', amount: 500, commission: 0, totalDoc: 500,
+    reqNum: 'KSAML2218', pnr: 'YS2222', currency: 'AED',
+    transactionType: 'ISSUE', origin: 'TEAM_SHEET', heldBack: false,
+    state: 'PENDING', dedupe: 'k',
+  };
+  check('complete is confirmable',   whyNotConfirmable(base), '');
+  check('no vendor',                 whyNotConfirmable({ ...base, source: '  ' }),
+    'Pick the vendor that billed it.');
+  check('no date',                   whyNotConfirmable({ ...base, date: '' }), 'Give it a date.');
+  check('no price',                  whyNotConfirmable({ ...base, amount: 0 }).startsWith('Enter what'), true);
+  check('nothing to identify it',
+    whyNotConfirmable({ ...base, ticketNo: '', pnr: '' }), 'No ticket number and no PNR.');
+  // A reference in the PNR is identity enough - that is how every LCC row
+  // in the ledger is held.
+  check('a PNR alone is enough',
+    whyNotConfirmable({ ...base, ticketNo: '', pnr: 'RX12237ZB622D' }), '');
+
+  // Confirming wrote a ticket. Offering it again would write a second.
+  check('a confirmed one is finished',
+    whyNotConfirmable({ ...base, state: 'CONFIRMED' }), 'Already confirmed.');
+  check('so is a rejected one',
+    whyNotConfirmable({ ...base, state: 'REJECTED' }), 'Already rejected.');
+}
+
+/* ── 12. nothing to propose ───────────────────────────────────────────── */
+console.log('\n12. A clean sheet proposes nothing');
+{
+  const rows = sheet([
+    '065-5513373400,YS3333,Issued,800.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+  ]);
+  const ledger: Ticket[] = [{
+    id: 't1', ticketNo: '5513373400', source: 'RTS', date: '2026-09-03',
+    amount: 790, commission: 0, totalDoc: 790, reqNum: 'KSAML2218',
+    pnr: 'YS3333', status: 'ISSUE', currency: 'AED', userId: 'u1',
+  }];
+  const r = compareTeamSheet(rows, ledger, ['KSAML2218']);
+  check('they agree', r.counts.OK, 1);
+  check('and nothing is proposed', build(r.findings).length, 0);
+
+  // A void is not a gap either: no supplier ever billed it.
+  const voided = compareTeamSheet(sheet([
+    '065-5513373401,YS4444,Issued,800.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+    '065-5513373401,YS4444,Void,,,04/09/2026 1:00pm,RTS,KSAML2218',
+  ]), []);
+  check('a void proposes nothing', build(voided.findings).length, 0);
+}
+
+/* ── 13. where they were bought, over a whole sheet ───────────────────── */
+console.log('\n13. The question the column was added to answer');
+{
+  const r = compareTeamSheet(sheet([
+    '065-5513373410,YA0001,Issued,100.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+    '065-5513373411,YA0002,Issued,100.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+    '065-5513373412,YA0003,Issued,100.00,,03/09/2026 1:00pm,IATA Portal (UAE),KSAML2218',
+    '065-5513373413,YA0004,Issued,100.00,,03/09/2026 1:00pm,AL Website,KSAML2218',
+    '065-5513373414,YA0005,Issued,100.00,,03/09/2026 1:00pm,Ibtkar RUH,KSAML2218',
+  ]), []);
+  const out = build(r.findings);
+  const spread = new Map<string, number>();
+  for (const p of out) spread.set(p.source, (spread.get(p.source) ?? 0) + 1);
+  check('by vendor', [...spread].sort(),
+    [['Airline Website', 1], ['IATA', 1], ['Ibtekar', 1], ['RTS', 2]]);
+  check('one of them is held', out.filter(p => p.heldBack).length, 1);
+  check('four can be worked on', out.filter(p => !p.heldBack).length, 4);
+
+  // And the finding itself carries it, which is what the report prints.
+  check('the finding says where too',
+    r.findings.filter(f => f.verdict === 'NOT_IN_LEDGER')
+      .every(f => !!f.issuedFrom), true);
+}
+
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

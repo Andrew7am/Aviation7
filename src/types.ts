@@ -62,7 +62,7 @@ export interface Ticket {
   channel?: string;
 }
 
-export type ViewState = 'dashboard' | 'tickets' | 'requests' | 'missing' | 'notclosed' | 'import' | 'teamsheet' | 'vendors' | 'statements' | 'reports' | 'history' | 'activity' | 'settings';
+export type ViewState = 'dashboard' | 'tickets' | 'requests' | 'missing' | 'notclosed' | 'import' | 'teamsheet' | 'review' | 'vendors' | 'statements' | 'reports' | 'history' | 'activity' | 'settings';
 
 /**
  * A vendor's own account of a period, as their statement prints it.
@@ -144,4 +144,64 @@ export interface AppAlert {
   vendorName?: string;
   dismissed: boolean;
   createdAt: string;
+}
+
+/**
+ * A ticket somebody has proposed and nobody has agreed to.
+ *
+ * The team-sheet check finds a couple of hundred tickets on their sheet and
+ * in nobody's books. Each one probably belongs in the ledger; none of them
+ * should go in on the say-so of a comparison. So they land here first — the
+ * ticket as it would be recorded, beside the evidence for it — and confirming
+ * one is what writes it. Nothing here touches a balance or a report.
+ */
+export interface PendingTicket {
+  id: string;
+  userId: string;
+
+  /* The ticket, as it would be recorded. */
+  ticketNo: string;
+  source: string;
+  date: string;
+  amount: number;
+  commission: number;
+  totalDoc: number;
+  reqNum: string;
+  pnr?: string;
+  passengerName?: string;
+  airlineCode?: string;
+  route?: string;
+  status?: string;
+  currency?: SupportedCurrency;
+  transactionType?: string;
+  vendorReference?: string;
+
+  /* Where it came from and what the check concluded. */
+  origin: string;
+  /** Their "Portal" column, their word for it. */
+  theirPortal?: string;
+  /** The request THEIR sheet files it under, kept apart from reqNum. */
+  theirReq?: string;
+  /** Their own figure, kept beside the proposal and never treated as ours:
+   *  their column carries their markup and their quoting currency. A
+   *  starting point for whoever prices the row, not a price. */
+  theirCost?: number;
+  /** The check's verdict — NOT_IN_LEDGER, REFUND_NOT_IN_LEDGER. */
+  finding?: string;
+  note?: string;
+  /** Kept off the confirm button: Ibtekar and NSA settle against a wallet
+   *  and their tickets arrive with their statement. */
+  heldBack: boolean;
+  heldBackWhy?: string;
+
+  /* Review. */
+  state: 'PENDING' | 'CONFIRMED' | 'REJECTED';
+  reviewNote?: string;
+  reviewedAt?: string;
+  /** The ticket it became. */
+  ticketId?: string;
+  /** What this proposal is ABOUT, so checking the same sheet twice updates
+   *  the row it already raised instead of raising it again. */
+  dedupe: string;
+  createdAt?: string;
 }

@@ -1243,5 +1243,68 @@ console.log('\n44. A held option is not a ticket; a blank number on a live one i
   check('and not counted as a hold',        heldDamage.onHold, 0);
 }
 
+console.log('\n45. A finding carries the row it is about, not the first one');
+{
+  // Their normal shape is two rows per refunded ticket: one Issued, one
+  // Cancelled/Refunded, and only the second states a figure. A finding
+  // built from the first row reports "no figure stated" on a refund their
+  // sheet states perfectly clearly - the same trap as the void branch.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount,Issued Date & Time',
+    '065-5513373340,YSLM80,Issued,KSAML2218,2890.00,,01/09/2026 1:00pm',
+    '065-5513373340,YSLM80,Cancelled/Refunded,KSAML2218,,2890.00,05/09/2026 1:00pm',
+  ].join('\n')).rows;
+
+  const r = compareTeamSheet(sheet, [tkt({
+    ticketNo: '5513373340', pnr: 'YSLM80', reqNum: 'KSAML2218', amount: 2664,
+  })]);
+  check('the refund is the finding', r.counts.REFUND_NOT_IN_LEDGER, 1);
+
+  const f = r.findings.find(x => x.verdict === 'REFUND_NOT_IN_LEDGER')!;
+  check('it carries the refund row',   f.sheet!.refund, 2890);
+  check('and says the figure',         f.note.includes('2,890.00'), true);
+  check('not that there is none',      f.note.includes('no refund against it'), false);
+
+  // Their sheet genuinely leaves the figure off sometimes - 14 of the real
+  // ones - and that is a different sentence, not a bug to paper over.
+  const silent = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount',
+    '065-5512759923,YSLM81,Cancelled/Refunded,KSAML2218,2330.00,',
+  ].join('\n')).rows, [tkt({
+    ticketNo: '5512759923', pnr: 'YSLM81', reqNum: 'KSAML2218', amount: 2300,
+  })]);
+  const q = silent.findings.find(x => x.verdict === 'REFUND_NOT_IN_LEDGER')!;
+  check('a silent sheet is said to be silent',
+    q.note, 'Their sheet says refunded and our books hold no refund against it.');
+}
+
+console.log('\n46. Every finding says where the ticket was bought');
+{
+  // Their "Portal" column, read as one of our vendors. A list of tickets
+  // missing from our books is only actionable if it says where to go and
+  // find them, and the column was being thrown away.
+  const r = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Portal',
+    '065-5513373410,YA0001,Issued,KSAML2218,100.00,Ibtkar RUH',
+    '065-5513373411,YA0002,Issued,KSAML2218,100.00,IATA Portal (UAE)',
+  ].join('\n')).rows, []);
+
+  const byTkt = (t: string) => r.findings.find(f => f.serial === t)!;
+  check('their word becomes ours',  byTkt('5513373411').issuedFrom, 'IATA');
+  check('and theirs is kept',       byTkt('5513373411').portal, 'IATA Portal (UAE)');
+  check('a wallet vendor is held',  byTkt('5513373410').heldBack, true);
+  check('an ordinary one is not',   byTkt('5513373411').heldBack, false);
+  check('and the hold says why',
+    byTkt('5513373410').heldBackWhy.includes('credit wallet'), true);
+
+  // A ticket only we hold has no portal of theirs. Our own books say who
+  // billed us, which is the same question answered from our end.
+  const ours = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num\n065-5513373412,YA0003,Issued,KSAML2218').rows,
+    [tkt({ ticketNo: '5513373499', pnr: 'YA0009', reqNum: 'KSAML2218', source: 'RTS' })]);
+  const mine = ours.findings.find(f => f.verdict === 'NOT_ON_SHEET')!;
+  check('our own source answers it', mine.issuedFrom, 'RTS');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

@@ -26,7 +26,11 @@ export interface AuditEntry {
     | 'UPDATE_CLOSED' | 'BULK_UPDATE_CLOSED'
     | 'EDIT_TICKET' | 'DELETE'
     | 'TOPUP' | 'ADD_VENDOR' | 'EDIT_VENDOR' | 'DELETE_VENDOR'
-    | 'SAVE_STATEMENT' | 'DELETE_STATEMENT';
+    | 'SAVE_STATEMENT' | 'DELETE_STATEMENT'
+    // The review queue. A proposal raised is not a change to the ledger, but
+    // it is how a couple of hundred tickets get queued for one, so it is
+    // logged beside the confirm that records each of them.
+    | 'PENDING_RAISED' | 'PENDING_CONFIRMED' | 'PENDING_REJECTED';
   entity:     string;   // ticketNo / vendorName / etc
   detail:     string;
   performedAt: string;

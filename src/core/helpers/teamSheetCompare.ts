@@ -1,6 +1,7 @@
 import { Ticket } from '../../types';
 import { ticketMatchKey } from './ticketIdentity';
 import { TeamSheetRow } from '../parsers/teamSheet';
+import { portalSource } from '../config/teamPortals';
 
 /**
  * Their sheet against our ledger, before a flight sheet is signed off.
@@ -386,6 +387,25 @@ export interface Finding {
   theirReq: string;
   /** One line saying what to do about it, in the reader's own terms. */
   note: string;
+  /**
+   * Where the ticket was bought, named as one of our vendors.
+   *
+   * Their "Portal" column read through `portalSource`, or, on a ticket only
+   * we hold, our own source. A list of tickets missing from our books is
+   * only actionable if it says where to go and find them, and that column
+   * was being thrown away.
+   */
+  issuedFrom: string;
+  /** Their own word for it, kept when it differs from ours. */
+  portal: string;
+  /**
+   * Kept off anything that writes a ticket. Ibtekar and NSA bill on a
+   * statement that settles against a credit wallet: keying one of their
+   * tickets by hand moves the balance twice. Still reported, never offered.
+   */
+  heldBack: boolean;
+  /** Why it was held back, in the reader's terms. '' when it was not. */
+  heldBackWhy: string;
 }
 
 /** One request, as each side holds it. The row a sheet is closed on. */
@@ -557,6 +577,10 @@ export function compareTeamSheet(
   for (const d of declared) addReq(d);
 
   const findings: Finding[] = [];
+  /** Filled by the one pass at the end, once every finding knows which of
+   *  their rows it ended up carrying. Spread in so the compiler keeps the
+   *  three construction sites honest about it. */
+  const UNSOURCED = { issuedFrom: '', portal: '', heldBack: false, heldBackWhy: '' };
   const theirSerials = new Set(theirBySerial.keys());
   /** Rows of ours already accounted for by a finding on their side, so the
    *  sweep below does not report the same tickets a second time as missing
@@ -587,7 +611,7 @@ export function compareTeamSheet(
       && atLatest.some(r => r.status === 'VOID');
     const base: Omit<Finding, 'verdict' | 'note'> = {
       serial, airlineCode: first.airlineCode, pnr: first.pnr, sheet: first, ours,
-      reqNum: ourReq, theirReq,
+      reqNum: ourReq, theirReq, ...UNSOURCED,
     };
 
     if (ours.length === 0) {
@@ -683,9 +707,18 @@ export function compareTeamSheet(
     const ourRefunds = ours.filter(isRefund);
 
     if (theySayRefunded && ourRefunds.length === 0) {
-      findings.push({ ...base, verdict: 'REFUND_NOT_IN_LEDGER',
-        note: first.refund != null
-          ? `Their sheet refunds ${money(first.refund)} ${first.currency || ''}`.trim()
+      /* Show the row that carries the figure. Their normal shape is two
+         rows per refunded ticket - one Issued, one Cancelled/Refunded -
+         and only the second states an amount, so `first` is the issue and
+         reading the refund off it would report "no figure stated" on a
+         refund their sheet states perfectly clearly. Same trap as the
+         void branch above, and the same answer: carry the row that is
+         actually about the thing being reported. */
+      const stated = rows.find(x => x.refund != null) ?? first;
+      const refundRow = { ...base, sheet: stated };
+      findings.push({ ...refundRow, verdict: 'REFUND_NOT_IN_LEDGER',
+        note: stated.refund != null
+          ? `Their sheet refunds ${money(stated.refund)} ${stated.currency || ''}`.trim()
             + ' and our books hold none. The credit has not reached us.'
           : 'Their sheet says refunded and our books hold no refund against it.' });
       continue;
@@ -781,6 +814,7 @@ export function compareTeamSheet(
     }
 
     findings.push({
+      ...UNSOURCED,
       verdict: r.unreadable ? 'UNREADABLE' : 'NO_TICKET_NUMBER',
       serial: identified.length ? ticketMatchKey(identified[0].ticketNo || '') : '',
       airlineCode: identified[0]?.airlineCode || '', pnr: r.pnr, sheet: r,
@@ -821,10 +855,29 @@ export function compareTeamSheet(
   }
   for (const [serial, ours] of ourExtra)
     findings.push({
+      ...UNSOURCED,
       verdict: 'NOT_ON_SHEET', serial, airlineCode: ours[0].airlineCode || '',
       pnr: ours[0].pnr || '', ours, reqNum: (ours[0].reqNum || '').trim(), theirReq: '',
       note: `In our books under ${(ours[0].reqNum || '').trim()} and not on their sheet at all.`,
     });
+
+  /* ── where each one was bought ────────────────────────────────────────
+     One pass over the finished list rather than a field set at fifteen
+     call sites: the void branch swaps `sheet` for the priced row after
+     building it, and a value copied before that swap would name the wrong
+     row's portal. Reading it here reads whichever row the finding ended
+     up carrying. */
+  for (const f of findings) {
+    const m = portalSource(f.sheet?.portal || '');
+    // A ticket only we hold has no portal of theirs; our own books say
+    // who billed us, which is the same question answered from our end.
+    const oursSource = (f.ours[0]?.source || '').trim();
+    f.portal = m.portal;
+    f.issuedFrom = m.source || (m.choices.length ? m.choices.join(' or ') : '')
+      || m.portal || oursSource;
+    f.heldBack = m.heldBack;
+    f.heldBackWhy = m.why;
+  }
 
   findings.sort((a, b) =>
     VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict]

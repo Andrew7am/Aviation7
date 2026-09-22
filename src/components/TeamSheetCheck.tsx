@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Ticket } from '../types';
 import {
   Upload, AlertTriangle, CheckCircle2, X, Loader2, FileSpreadsheet, Download,
-  ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen, Copy,
+  ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen, Copy, ClipboardCheck,
 } from 'lucide-react';
 import { readFileAsText } from '../core/ImportEngine';
 import { parseTeamSheet, TeamSheetRow } from '../core/parsers/teamSheet';
@@ -151,12 +151,13 @@ const Group: React.FC<{
         <>
           <p className="px-4 pb-2 text-[11px] text-slate-500 leading-relaxed">{WHY[verdict]}</p>
           <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[860px]">
+            <table className="w-full text-left min-w-[960px]">
               <thead>
                 <tr className="bg-slate-50 border-y border-slate-100 text-[9px] uppercase
                                tracking-wider text-slate-400">
                   <th className="px-3 py-1.5">Ticket</th>
                   <th className="px-3 py-1.5">PNR</th>
+                  <th className="px-3 py-1.5">Issued from</th>
                   <th className="px-3 py-1.5">Request</th>
                   <th className="px-3 py-1.5">Their sheet</th>
                   <th className="px-3 py-1.5 text-right">
@@ -205,6 +206,20 @@ const Group: React.FC<{
                           {f.pnr}
                         </button>
                       ) : '—'}
+                    </td>
+                    {/* Where it was bought. The first question anybody asks
+                        about a ticket that is missing from our books is where
+                        to go and find it, and their sheet has always known. */}
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      {f.issuedFrom ? (
+                        <span className={f.heldBack ? 'text-amber-700' : 'text-slate-600'}
+                              title={f.heldBackWhy || f.portal}>
+                          {f.issuedFrom}
+                          {f.heldBack && (
+                            <span className="text-[9px] font-sans text-amber-600"> · held</span>
+                          )}
+                        </span>
+                      ) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
                       {f.verdict === 'REQ_DIFFERS' || f.verdict === 'REQ_RELATED' ? (
@@ -288,7 +303,22 @@ const Group: React.FC<{
   );
 };
 
-export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
+interface Props {
+  tickets: Ticket[];
+  /**
+   * Send what the check found to the review queue.
+   *
+   * Absent for a reader, which is why the button is not always there: the
+   * screen itself still writes nothing, and this hands the findings to the
+   * one place that does. Returns what actually happened, because a second
+   * run of the same sheet mostly finds rows somebody has already decided
+   * about and saying "0 added" without saying why would look broken.
+   */
+  onSendToReview?: (findings: Finding[]) =>
+    Promise<{ added: number; refreshed: number; settled: number }>;
+}
+
+export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
@@ -350,6 +380,31 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
   };
 
   /** The findings as a sheet, worst first, same order as the screen. */
+  /* ── send the missing ones for review ──────────────────────────────────
+     Only the two verdicts that describe a ticket our books do not have.
+     Everything else the check finds is a disagreement to settle rather than
+     a ticket to add, and offering to "add" a misfiled ticket would create a
+     second copy of one we already hold. */
+  const proposable = useMemo(() => (report?.findings ?? []).filter(f =>
+    f.verdict === 'NOT_IN_LEDGER' || f.verdict === 'REFUND_NOT_IN_LEDGER'), [report]);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState('');
+
+  const sendToReview = async () => {
+    if (!onSendToReview || sending || !proposable.length) return;
+    setSending(true); setSent(''); setError('');
+    try {
+      const r = await onSendToReview(proposable);
+      setSent(
+        [r.added && `${r.added} sent for review`,
+         r.refreshed && `${r.refreshed} already waiting, updated`,
+         r.settled && `${r.settled} already decided, left alone`]
+          .filter(Boolean).join(' · ') || 'Nothing to send');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setSending(false); }
+  };
+
   const exportReport = async () => {
     if (!report) return;
     const XLSX = await xlsx();
@@ -357,6 +412,8 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
       'Verdict':      VERDICT_LABEL[f.verdict],
       'Ticket':       f.serial ? (f.airlineCode ? `${f.airlineCode}-${f.serial}` : f.serial) : '',
       'PNR':          f.pnr,
+      'Issued from':  f.issuedFrom,
+      'Their portal': f.portal,
       'Our request':   f.reqNum,
       'Their request': f.theirReq,
       'Their row':    f.sheet?.rowNo ?? '',
@@ -421,13 +478,38 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
           </p>
         </div>
         {report && (
-          <button onClick={exportReport}
-            className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
-                       px-3 py-1.5 rounded hover:bg-purple-700 shrink-0">
-            <Download className="w-3.5 h-3.5" /> Export
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {onSendToReview && proposable.length > 0 && (
+              <button onClick={sendToReview} disabled={sending}
+                title={`${proposable.length} ticket(s) on their sheet and in nobody's books`}
+                className="flex items-center gap-1.5 bg-emerald-600 text-white text-[11px]
+                           font-bold px-3 py-1.5 rounded hover:bg-emerald-700
+                           disabled:opacity-50">
+                {sending
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <ClipboardCheck className="w-3.5 h-3.5" />}
+                Send {proposable.length} for review
+              </button>
+            )}
+            <button onClick={exportReport}
+              className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
+                         px-3 py-1.5 rounded hover:bg-purple-700">
+              <Download className="w-3.5 h-3.5" /> Export
+            </button>
+          </div>
         )}
       </div>
+
+      {sent && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5
+                        text-[11px] text-emerald-800 flex items-start gap-2">
+          <CheckCircle2 className="w-3.5 h-3.5 mt-px shrink-0" />
+          <span>
+            {sent}. Nothing has been recorded yet — they are waiting on{' '}
+            <b>To review</b>, where each one is priced and confirmed one at a time.
+          </span>
+        </div>
+      )}
 
       {/* Before the drop zone, because it is meant to be filled in first. */}
       <div className="bg-white border border-slate-200 rounded-lg px-4 py-3">

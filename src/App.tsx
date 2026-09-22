@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { ViewState, Ticket, VendorBalance, BalanceTopUp, VendorStatement, AppAlert } from './types';
 import { logout } from './utils/supabase';
+import { v4 as uuidv4 } from 'uuid';
 import { AuthGuard } from './components/AuthGuard';
 import { AlertBanner } from './components/AlertBanner';
 import { Shell } from './components/Shell';
@@ -22,6 +23,7 @@ import { TicketTable } from './components/TicketTable';
 const Requests        = React.lazy(() => import('./components/Requests').then(m => ({ default: m.Requests })));
 const ImportData      = React.lazy(() => import('./components/ImportData').then(m => ({ default: m.ImportData })));
 const TeamSheetCheck  = React.lazy(() => import('./components/TeamSheetCheck').then(m => ({ default: m.TeamSheetCheck })));
+const PendingReview   = React.lazy(() => import('./components/PendingReview').then(m => ({ default: m.PendingReview })));
 const VendorBalances  = React.lazy(() => import('./components/VendorBalances').then(m => ({ default: m.VendorBalances })));
 const VendorStatements = React.lazy(() => import('./components/VendorStatements').then(m => ({ default: m.VendorStatements })));
 const Reports         = React.lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
@@ -44,11 +46,14 @@ import { summariseVendor } from './core/helpers/statementMath';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
 import { useStatements } from './hooks/useStatements';
+import { usePending } from './hooks/usePending';
+import { pendingFromFindings } from './core/helpers/pendingFromFindings';
+import type { Finding } from './core/helpers/teamSheetCompare';
 import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
-  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch } from 'lucide-react';
+  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
 const LOW_PCT = 0.2;
@@ -67,6 +72,10 @@ function MainApp({ user }: { user: User }) {
   const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, revertClosed, addManualTicket, applyImport } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
   const { statements, saveStatement, deleteStatement } = useStatements(user.id);
+  const {
+    pending, raisePending, patchPending, confirmPending,
+    rejectPending, reopenPending, deletePending,
+  } = usePending(user.id);
 
   const ticketSvc = new TicketService(user.id);
   const importSvc = new ImportService(user.id);
@@ -168,6 +177,31 @@ function MainApp({ user }: { user: User }) {
     deleteStatement(id);
     importSvc.audit('DELETE_STATEMENT', id, 'Statement deleted');
   };
+  /* ── the review queue ──────────────────────────────────────────────────
+     The team-sheet check finds tickets our books do not have; this is the
+     only route from that screen into the ledger, and it stops at a
+     proposal. Confirming one is what records it, one at a time, and every
+     step of that is logged: a couple of hundred rows going into the ledger
+     with nobody's name on them is exactly what this exists to prevent. */
+  const handleSendToReview = async (findings: Finding[]) => {
+    const batch = pendingFromFindings(findings, { newId: uuidv4, userId: user.id });
+    const r = await raisePending(batch);
+    importSvc.audit('PENDING_RAISED', 'TEAM_SHEET',
+      `${r.added} raised, ${r.refreshed} refreshed, ${r.settled} already decided`);
+    return r;
+  };
+  const handleConfirmPending = async (p: Parameters<typeof confirmPending>[0]) => {
+    const t = await confirmPending(p);
+    importSvc.audit('PENDING_CONFIRMED', t.ticketNo,
+      `Recorded from the team sheet — ${t.source} ${t.amount} ${t.currency}`
+      + `${t.reqNum ? ` (req ${t.reqNum})` : ''}`);
+    return t;
+  };
+  const handleRejectPending = async (id: string, why: string) => {
+    await rejectPending(id, why);
+    importSvc.audit('PENDING_REJECTED', id, why || 'No reason given');
+  };
+
   const handleAddManual = async (t: Ticket) => {
     await addManualTicket(t);
     importSvc.audit('MANUAL_ENTRY', t.ticketNo, `Manual ${t.transactionType} — ${t.source} ${t.amount} ${t.currency}${t.reqNum ? ` (req ${t.reqNum})` : ''}`);
@@ -255,6 +289,10 @@ function MainApp({ user }: { user: User }) {
     return [...by.values()].filter(g => g.closed > 0 && g.open > 0).length;
   }, [tickets]);
 
+  /** Waiting on somebody, so it belongs on the badge. A confirmed or
+   *  rejected proposal is finished work and is not counted. */
+  const pendingCount = pending.filter(p => p.state === 'PENDING').length;
+
   type NavItem = { id: ViewState; label: string; icon: React.ReactNode; badge?: number; badgeColor?: 'red' | 'amber' | 'slate' };
   const NAV: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard',       icon: <LayoutDashboard className="w-4 h-4" /> },
@@ -264,6 +302,8 @@ function MainApp({ user }: { user: User }) {
     { id: 'notclosed', label: 'Not Closed',      icon: <Circle className="w-4 h-4" />, badge: notClosedCount || undefined, badgeColor: 'amber' },
     ...(isAdmin ? [{ id: 'import' as ViewState, label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
     { id: 'teamsheet', label: 'Team Sheet Check', icon: <FileSearch className="w-4 h-4" /> },
+    { id: 'review',    label: 'To Review',        icon: <ClipboardCheck className="w-4 h-4" />,
+      badge: pendingCount || undefined, badgeColor: 'amber' },
     { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
     { id: 'vendors',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
     { id: 'statements', label: 'Vendor Statements', icon: <FileText className="w-4 h-4" />, badge: statementGapCount || undefined, badgeColor: 'red' },
@@ -308,7 +348,21 @@ function MainApp({ user }: { user: User }) {
       {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
       {/* Read-only, so everybody gets it: the person closing a flight sheet
           is not always the person who can write to the ledger. */}
-      {view === 'teamsheet' && <TeamSheetCheck tickets={tickets} />}
+      {view === 'teamsheet' && <TeamSheetCheck tickets={tickets}
+        {...(isAdmin ? { onSendToReview: handleSendToReview } : {})} />}
+      {view === 'review'    && (
+        <PendingReview
+          pending={pending}
+          vendorNames={vendorBalancesLive.map(v => v.vendorName)}
+          ledgerSources={[...new Set(tickets.map(t => t.source).filter(Boolean))]}
+          {...(isAdmin ? {
+            onPatch:   patchPending,
+            onConfirm: handleConfirmPending,
+            onReject:  handleRejectPending,
+            onReopen:  reopenPending,
+            onDelete:  deletePending,
+          } : {})} />
+      )}
       {view === 'history'   && <ImportHistory records={importHistory} getErrorsFor={(id, cb) => importSvc.subscribeErrors(id, cb)} />}
       {/* No h-full on the wrapper below. Pinning it to the viewport meant
           an expanded vendor's transactions were taller than the box that
