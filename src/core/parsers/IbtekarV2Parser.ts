@@ -1,5 +1,6 @@
 import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax, airlineCode, cleanTk, pnrClean } from './shared';
+import { airlineNumeric } from '../config/airlines';
 import { resolveReq, findExplicitReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 
@@ -98,6 +99,24 @@ export const IbtekarV2Parser: VendorParser = {
 
       const tkClean = cleanTk(rawTk);
       const ac = airlineCode(rawTk);
+
+      /**
+       * Their "VC" column holds the validating carrier as a two-letter
+       * designator - SV, MS, TK - and the ledger's airline column holds
+       * the three-digit numeric code. Those are two different alphabets
+       * for the same fact, and passing the letters straight through put
+       * "SV" in a column every screen reads as a number.
+       *
+       * So it is translated. A designator we have not been given
+       * translates to nothing rather than to a guess, and then the code
+       * read off the ticket number is used instead - which for their
+       * bare ten-digit documents is usually blank, and an honest blank
+       * beats a wrong carrier.
+       */
+      const vc = iVC !== -1 ? cell(row, iVC) : '';
+      const vcCode = airlineNumeric(vc);
+      if (vc && !vcCode && !ac)
+        warnings.push(`Ticket ${tkClean}: carrier "${vc.toUpperCase()}" is not a code we know`);
       const req = resolveReq(iExplicitReq !== -1 ? cell(row, iExplicitReq) : '');
       if (!req && !isVoid) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
 
@@ -105,7 +124,7 @@ export const IbtekarV2Parser: VendorParser = {
         ticketNo: tkClean,
         pnr: pnrClean(cell(row, iPNR)),
         passengerName: cleanPax(cell(row, iPax)),
-        airlineCode: iVC !== -1 && cell(row, iVC) ? cell(row, iVC).toUpperCase() : ac,
+        airlineCode: vcCode || ac,
         route: cell(row, iRoute),
         date,
         amount,

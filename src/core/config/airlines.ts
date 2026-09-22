@@ -102,3 +102,31 @@ export function airlineIata(code: string | undefined | null): string {
   if (!Number.isFinite(n) || n <= 0) return '';
   return AIRLINE_NAMES[n]?.iata ?? '';
 }
+
+/**
+ * The numeric code for a two-letter designator: SV -> 065.
+ *
+ * Some vendors print the designator where the code belongs. Ibtekar's
+ * export has a "VC" column - validating carrier - and writes SV in it,
+ * which went straight into the ledger's airline column and showed as "SV"
+ * where every other row shows a number.
+ *
+ * The ledger keeps ONE form: three digits, zero-padded, because that is
+ * what a ticket carries and what a BSP invoice prints. Anything else in
+ * that column breaks the A/L filter, the document number the screens
+ * rebuild, and the name lookup - all of which read the number.
+ *
+ * Built once from the same table the other direction uses, so the two can
+ * never drift apart. Returns '' for a designator we have not been given,
+ * because a guessed carrier code is worse than a blank one.
+ */
+const IATA_TO_NUMERIC: Record<string, string> = Object.fromEntries(
+  Object.entries(AIRLINE_NAMES)
+    .filter(([, v]) => v.iata)
+    .map(([code, v]) => [v.iata, String(code).padStart(3, '0')]));
+
+export function airlineNumeric(iata: string | undefined | null): string {
+  const s = String(iata ?? '').trim().toUpperCase();
+  if (/^\d{1,3}$/.test(s)) return s.padStart(3, '0');
+  return IATA_TO_NUMERIC[s] ?? '';
+}
