@@ -249,6 +249,27 @@ export class PendingTicketService {
   }
 
   /**
+   * Price several rows at once.
+   *
+   * Dividing a cell across the tickets that shared it is one decision, and
+   * one of those cells holds 45 tickets — 45 round trips for a single
+   * click. These go in one request each but are fired together, so the
+   * whole cell lands in about the time one of them would take.
+   */
+  async patchMany(updates: { id: string; amount: number }[]): Promise<void> {
+    if (!updates.length) return;
+    for (let i = 0; i < updates.length; i += 25) {
+      const slice = updates.slice(i, i + 25);
+      const results = await Promise.all(slice.map(u =>
+        supabase.from('pending_tickets')
+          .update({ amount: u.amount, total_doc: Math.abs(u.amount) })
+          .eq('id', u.id).eq('state', 'PENDING')));
+      const failed = results.find(r => r.error);
+      if (failed?.error) throw new Error(failed.error.message);
+    }
+  }
+
+  /**
    * Agree to one, and write the ticket.
    *
    * The ticket goes in first. If marking the proposal then fails, the ticket

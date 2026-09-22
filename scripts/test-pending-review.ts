@@ -14,6 +14,7 @@ import { portalSource, issuedFrom } from '../src/core/config/teamPortals';
 import { knownSources, BUILTIN_SOURCES } from '../src/core/config/sources';
 import {
   pendingFromFindings, whyNotConfirmable, canConfirm, dedupeKey, ticketFromPending,
+  cellKey, splitEvenly, cellShares, canSplit,
 } from '../src/core/helpers/pendingFromFindings';
 import type { PendingTicket, Ticket } from '../src/types';
 
@@ -579,6 +580,117 @@ console.log('\n20. Every portal maps to a name the ledger already uses');
   // source, and nothing may map to it.
   check('nothing maps to the bare wallet name',
     PORTALS.some(x => portalSource(x).source === 'IATA'), false);
+}
+
+/* -- 21. dividing a cell across the tickets that shared it -------------- */
+console.log('\n21. Their sheet prices the booking and never the tickets');
+{
+  // "2,960.00 AED covers 5 tickets" tells somebody the problem and
+  // nothing about what to type. The per-ticket fares are not in their
+  // sheet at all, so the only honest division is an even one — and what
+  // has to come out exactly right is the TOTAL, because that is what the
+  // request is costed on.
+  const sum = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
+
+  check('an even one',        splitEvenly(2960, 5), [592, 592, 592, 592, 592]);
+  check('it foots',           sum(splitEvenly(2960, 5)), 2960);
+  check('one ticket',         splitEvenly(890, 1), [890]);
+
+  // The remainder goes to the last one rather than being rounded away,
+  // so the parts always add back to the whole.
+  check('a remainder is kept', splitEvenly(100, 3), [33.33, 33.33, 33.34]);
+  check('and it still foots',  sum(splitEvenly(100, 3)), 100);
+  check('a third of a fils',   sum(splitEvenly(0.01, 3)), 0.01);
+
+  // Never a negative share, however the figure arrived.
+  check('a refund divides as a magnitude', splitEvenly(-110, 2), [55, 55]);
+
+  for (const [total, n] of [[8925, 2], [139500, 45], [61650, 6], [7.77, 7]] as [number, number][])
+    check(`${total} over ${n} foots`, sum(splitEvenly(total, n)), total);
+}
+
+console.log('\n22. Only a whole cell may be divided');
+{
+  const mk = (over: Partial<PendingTicket>): PendingTicket => ({
+    id: Math.random().toString(36).slice(2), userId: 'u1', ticketNo: '1',
+    source: 'RTS', date: '2026-06-24', amount: 0, commission: 0, totalDoc: 0,
+    reqNum: 'UAEVP420', currency: 'AED', transactionType: 'ISSUE',
+    origin: 'TEAM_SHEET', heldBack: false, state: 'PENDING', dedupe: 'k',
+    theirCell: '180-5512938088-92', theirCost: 2960, theirGroup: 5, ...over,
+  });
+
+  const five = [1, 2, 3, 4, 5].map(i => mk({ ticketNo: `551293808${i}` }));
+  check('a whole cell can be divided', canSplit(five, five[0]), '');
+
+  // Fewer than their cell named is the NORMAL case, not a blocker: the
+  // rest are already in our books with their own recorded cost. Their
+  // real cell "176-5512938117-18 180-5512938088 …" names five and two
+  // are waiting.
+  const two = five.slice(0, 2);
+  check('a part of one can too', canSplit(two, two[0]), '');
+
+  // And it divides by what their cell NAMED, never by how many are here.
+  // 2,960 over the two in front of us would be 1,480 each — two fifths
+  // of a booking priced as two halves, and the request out by 976.
+  check('each gets a fifth, not a half', cellShares(two, two[0]), [592, 592]);
+  check('all five present, it foots',
+    cellShares(five, five[0]).reduce((a, b) => a + b, 0), 2960);
+
+  const decided = [...five.slice(0, 4), mk({ ticketNo: '5', state: 'CONFIRMED' })];
+  check('nor one already decided', canSplit(decided, decided[0]), 'Some of them are already decided.');
+
+  check('a single ticket has nothing to divide',
+    canSplit([mk({ theirGroup: 1 })], mk({ theirGroup: 1 })), 'Their cell named only this ticket.');
+  check('nor has a cell with no figure',
+    canSplit(five, mk({ theirCost: 0 })), 'Their sheet states no figure for that cell.');
+}
+
+console.log('\n23. Which rows belong to one cell');
+{
+  const base: PendingTicket = {
+    id: 'a', userId: 'u1', ticketNo: '5511323214', source: 'RTS',
+    date: '2026-06-24', amount: 0, commission: 0, totalDoc: 0,
+    reqNum: 'UAEVP420', currency: 'AED', transactionType: 'ISSUE',
+    origin: 'TEAM_SHEET', heldBack: false, state: 'PENDING', dedupe: 'k',
+    theirCell: '157-5511323214-15', theirCost: 61650, theirGroup: 6,
+  };
+  check('the same cell is the same key',
+    cellKey(base) === cellKey({ ...base, id: 'b', ticketNo: '5511323215' }), true);
+
+  // The cell text alone is not enough. The same booking issued in June
+  // and reissued in August is written identically and is different money,
+  // and so is a refund of it.
+  check('a different date is a different cell',
+    cellKey(base) === cellKey({ ...base, date: '2026-08-01' }), false);
+  check('a different request too',
+    cellKey(base) === cellKey({ ...base, reqNum: 'UAEVP711' }), false);
+  check('a different currency too',
+    cellKey(base) === cellKey({ ...base, currency: 'SAR' }), false);
+  check('and a refund is not the issue',
+    cellKey(base) === cellKey({ ...base, transactionType: 'REFUND' }), false);
+}
+
+console.log('\n24. A divided cell is a confirmable cell');
+{
+  const r = compareTeamSheet(sheet([
+    '"065-5513373301/P1\n065-5513373302/P2\n065-5513373303/P3",YSLM99,Issued,'
+      + '7590.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+  ]), []);
+  const out = build(r.findings);
+  check('three arrive unpriced',  out.map(p => p.amount), [0, 0, 0]);
+  check('none can be confirmed',  out.map(canConfirm), [false, false, false]);
+  check('the cell can be divided', canSplit(out, out[0]), '');
+
+  const parts = cellShares(out, out[0]);
+  check('evenly',                 parts, [2530, 2530, 2530]);
+  const priced = out.map((p, i) => ({ ...p, amount: parts[i], totalDoc: parts[i] }));
+  check('and then all three go',  priced.map(canConfirm), [true, true, true]);
+
+  // What reaches the ledger sums to what their cell said.
+  const total = priced
+    .map((p, i) => ticketFromPending(p, `id${i}`, 'u1').amount)
+    .reduce((a, x) => a + x, 0);
+  check('and the ledger holds their figure', total, 7590);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

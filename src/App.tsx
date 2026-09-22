@@ -73,7 +73,7 @@ function MainApp({ user }: { user: User }) {
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
   const { statements, saveStatement, deleteStatement } = useStatements(user.id);
   const {
-    pending, raisePending, patchPending, confirmPending,
+    pending, raisePending, patchPending, patchManyPending, confirmPending,
     rejectPending, reopenPending, deletePending,
   } = usePending(user.id);
 
@@ -356,7 +356,8 @@ function MainApp({ user }: { user: User }) {
           vendorNames={vendorBalancesLive.map(v => v.vendorName)}
           ledgerSources={[...new Set(tickets.map(t => t.source).filter(Boolean))]}
           {...(isAdmin ? {
-            onPatch:   patchPending,
+            onPatch:     patchPending,
+            onPatchMany: patchManyPending,
             onConfirm: handleConfirmPending,
             onReject:  handleRejectPending,
             onReopen:  reopenPending,

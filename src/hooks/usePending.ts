@@ -16,6 +16,7 @@ export function usePending(userId: string) {
     loading,
     raisePending:   (batch: PendingTicket[]) => svc.raise(batch),
     patchPending:   (id: string, patch: Partial<PendingTicket>) => svc.patch(id, patch),
+    patchManyPending: (u: { id: string; amount: number }[]) => svc.patchMany(u),
     confirmPending: (p: PendingTicket) => svc.confirm(p, uuidv4()),
     rejectPending:  (id: string, why: string) => svc.reject(id, why),
     reopenPending:  (id: string) => svc.reopen(id),

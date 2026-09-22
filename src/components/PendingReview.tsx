@@ -2,11 +2,13 @@ import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { PendingTicket } from '../types';
 import { knownSources } from '../core/config/sources';
 import { CURRENCIES } from './ManualEntry';
-import { whyNotConfirmable } from '../core/helpers/pendingFromFindings';
+import {
+  whyNotConfirmable, cellKey, cellShares, canSplit,
+} from '../core/helpers/pendingFromFindings';
 import { writeClipboard } from '../utils/clipboard';
 import {
   CheckCircle2, X, Loader2, Copy, AlertTriangle, Lock, Undo2, Trash2, Inbox,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Scissors,
 } from 'lucide-react';
 
 /**
@@ -79,6 +81,10 @@ interface RowProps {
   canWrite: boolean;
   working: boolean;
   field: string;
+  /** Every proposal that came out of the same cell of their sheet, this
+   *  one included. One row long when the cell named one ticket. */
+  group: PendingTicket[];
+  onSplit: (p: PendingTicket, group: PendingTicket[]) => void;
   onCopy: (text: string) => void;
   onPatch: (p: PendingTicket, patch: Partial<PendingTicket>) => void;
   onConfirm: (p: PendingTicket) => void;
@@ -88,7 +94,7 @@ interface RowProps {
 }
 
 const Row = React.memo(function Row({
-  p, sources, canWrite, working, field,
+  p, sources, canWrite, working, field, group, onSplit,
   onCopy, onPatch, onConfirm, onReject, onReopen, onDelete,
 }: RowProps) {
   const blocked = whyNotConfirmable(p);
@@ -103,6 +109,17 @@ const Row = React.memo(function Row({
          them a cell of 45 against 139,500 — which is why nothing is
          divided automatically and nothing is prefilled. */
       const shared = (p.theirGroup ?? 1) > 1;
+      /* What this ticket would get if the cell were divided evenly. Shown
+         on the row rather than left as arithmetic: "2,960.00 covers 5"
+         tells somebody the problem and nothing about what to type. */
+      const blockedSplit = shared ? canSplit(group, p) : 'not shared';
+      const share = shared && !blockedSplit
+        ? cellShares(group, p)[Math.max(0, group.findIndex(x => x.id === p.id))]
+        : null;
+      /* Their cell named more than are waiting, because the rest are
+         already in our books. Worth saying: it is the difference between
+         "divide by five" and "divide by the two you can see". */
+      const partly = shared && group.length < (p.theirGroup ?? 1);
       return (
         <div key={p.id}
           className={`bg-white border rounded-lg overflow-hidden ${
@@ -165,6 +182,8 @@ const Row = React.memo(function Row({
                     not this ticket's, so it never reads as a price. */}
                 {shared
                   ? `${money(p.theirCost)} ${p.currency} covers ${p.theirGroup} tickets`
+                    + (share != null ? ` — ${money(share)} each` : '')
+                    + (partly ? `, ${group.length} of them still waiting` : '')
                   : untouched
                     ? `${money(p.theirCost)} ${p.currency} — their figure, not checked yet`
                     : `they said ${money(p.theirCost)} ${p.currency}`}
@@ -274,9 +293,40 @@ const Row = React.memo(function Row({
 
             {p.state === 'PENDING' && canWrite && (
               <div className="flex items-center gap-2 ml-auto">
+                {/* A cell nobody can price by hand without doing the
+                    arithmetic first. The figure is the booking's and the
+                    per-ticket fares are not in their sheet at all, so the
+                    only honest division is an even one — and it is one
+                    click rather than a sum on paper and five edits. */}
+                {shared && !priced && canWrite && p.state === 'PENDING' && (
+                  blockedSplit ? (
+                    <span className="flex items-center gap-1.5 text-[10px] text-slate-500
+                                     max-w-[260px] leading-snug">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                      {blockedSplit}
+                    </span>
+                  ) : (
+                    <button onClick={() => onSplit(p, group)} disabled={working}
+                      title={partly
+                        ? `Their cell named ${p.theirGroup} tickets and ${group.length} are`
+                          + ' waiting; the rest are already in our books. Each waiting one'
+                          + ` gets a ${p.theirGroup}th of ${money(p.theirCost ?? 0)}`
+                          + ` ${p.currency}.`
+                        : `Give each of the ${group.length} tickets that shared this cell an`
+                          + ` equal share. They add back to ${money(p.theirCost ?? 0)}`
+                          + ` ${p.currency} exactly.`}
+                      className="flex items-center gap-1.5 bg-sky-600 text-white text-[11px]
+                                 font-bold px-3 py-1.5 rounded hover:bg-sky-700
+                                 disabled:opacity-50">
+                      {working ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                               : <Scissors className="w-3.5 h-3.5" />}
+                      Split across {p.theirGroup}{partly && ` · ${group.length} here`}
+                    </button>
+                  )
+                )}
                 {blocked ? (
                   <span className="flex items-center gap-1.5 text-[10px] text-slate-500
-                                   max-w-[280px] leading-snug">
+                                   max-w-[240px] leading-snug">
                     {p.heldBack
                       ? <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                       : <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
@@ -353,6 +403,9 @@ interface Props {
   vendorNames?: string[];
   ledgerSources?: string[];
   onPatch?: (id: string, patch: Partial<PendingTicket>) => Promise<void>;
+  /** Price several rows at once — one cell of their sheet divided across
+   *  the tickets that shared it. */
+  onPatchMany?: (updates: { id: string; amount: number }[]) => Promise<void>;
   onConfirm?: (p: PendingTicket) => Promise<unknown>;
   onReject?: (id: string, why: string) => Promise<void>;
   onReopen?: (id: string) => Promise<void>;
@@ -363,7 +416,7 @@ type Tab = 'PENDING' | 'CONFIRMED' | 'REJECTED';
 
 export const PendingReview: React.FC<Props> = ({
   pending, vendorNames = [], ledgerSources = [],
-  onPatch, onConfirm, onReject, onReopen, onDelete,
+  onPatch, onPatchMany, onConfirm, onReject, onReopen, onDelete,
 }) => {
   const [tab, setTab] = useState<Tab>('PENDING');
   const [vendorFilter, setVendorFilter] = useState('');
@@ -432,6 +485,30 @@ export const PendingReview: React.FC<Props> = ({
 
   const ready = rows.filter(p => !whyNotConfirmable(p)).length;
 
+  /**
+   * Which proposals came out of one cell of their sheet.
+   *
+   * Built over the WHOLE queue rather than the page, because the five
+   * tickets that shared a cell will not all be on the same page and
+   * dividing four of them would be worse than dividing none.
+   */
+  const cells = useMemo(() => {
+    const m = new Map<string, PendingTicket[]>();
+    for (const p of pending) {
+      if ((p.theirGroup ?? 1) < 2 || p.state !== 'PENDING') continue;
+      const k = cellKey(p);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(p);
+    }
+    // Stable order, so "the last one takes the remainder" means the same
+    // ticket every time and the figures do not move between renders.
+    for (const g of m.values()) g.sort((a, x) => a.ticketNo.localeCompare(x.ticketNo));
+    return m;
+  }, [pending]);
+
+  const groupOf = useCallback(
+    (p: PendingTicket) => cells.get(cellKey(p)) ?? [p], [cells]);
+
   /* ── what is on screen ────────────────────────────────────────────────
      Only the drawing is paged. Every count above is over the whole list. */
   const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
@@ -488,6 +565,39 @@ export const PendingReview: React.FC<Props> = ({
   const remove = useCallback((p: PendingTicket) => {
     if (onDelete) run(p.id, 'Removing it', () => onDelete(p.id));
   }, [onDelete, run]);
+
+  /**
+   * Divide one cell across the tickets that shared it.
+   *
+   * Their sheet prices the booking and never the tickets, so the parts
+   * are approximate and the total is exact — which is the way round that
+   * costs nothing when the request is costed. Said out loud before it
+   * happens, because it is a claim about each passenger's fare that their
+   * sheet does not actually make.
+   */
+  const split = useCallback((p: PendingTicket, group: PendingTicket[]) => {
+    if (!onPatchMany) return;
+    const total = Math.abs(p.theirCost ?? 0);
+    const named = p.theirGroup ?? group.length;
+    const parts = cellShares(group, p);
+    const short = group.length < named;
+    const ok = window.confirm(
+      `${money(total)} ${p.currency} was charged for ${named} tickets on one line of`
+      + ` their sheet.\n\n`
+      + group.map((x, i) => `   ${x.ticketNo}   ${money(parts[i])}`).join('\n')
+      + '\n\n'
+      + (short
+        ? `${group.length} of the ${named} are waiting here; the rest are already in our`
+          + ` books with their own cost. Each of these gets a ${named}th, so the request`
+          + ' picks up exactly the part of the booking that was missing from it.'
+        : `They add back to ${money(total)} exactly.`)
+      + ' Their sheet prices the booking and never the tickets, so the total is'
+      + ' right and the split between passengers is even rather than known.'
+      + ' Change any of them afterwards.');
+    if (!ok) return;
+    run(p.id, 'Splitting that cell',
+      () => onPatchMany(group.map((x, i) => ({ id: x.id, amount: parts[i] }))));
+  }, [onPatchMany, run]);
 
   const reject = useCallback((p: PendingTicket) => {
     if (!onReject) return;
@@ -638,6 +748,7 @@ export const PendingReview: React.FC<Props> = ({
         {page.map(p => (
           <Row key={p.id} p={p} sources={sources} canWrite={canWrite}
             working={busy === p.id} field={field}
+            group={groupOf(p)} onSplit={split}
             onCopy={copy} onPatch={patch} onConfirm={confirm}
             onReject={reject} onReopen={reopen} onDelete={remove} />
         ))}

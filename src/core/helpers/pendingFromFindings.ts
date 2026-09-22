@@ -227,3 +227,91 @@ export function ticketFromPending(p: PendingTicket, id: string, userId: string):
     userId,
   };
 }
+
+/**
+ * Which proposals came out of one cell of their sheet.
+ *
+ * Their export puts a whole booking in one cell and prices it once, so
+ * five tickets arrive as five proposals carrying one figure between them.
+ * Pricing them means dividing that figure, and dividing it means first
+ * knowing which five.
+ *
+ * The cell text alone is not enough: "157-5511323214-15" appears twice on
+ * a sheet where the same booking was issued and later reissued, and those
+ * are different money. The request, the date and the currency are what
+ * separate them, and together with the cell they are what their sheet
+ * itself treats as one line.
+ */
+export function cellKey(p: PendingTicket): string {
+  return [p.theirCell || '', p.currency || '', p.reqNum || '', p.date || '',
+          p.transactionType || ''].join('|');
+}
+
+/**
+ * Divide a cell's figure across the tickets that shared it.
+ *
+ * Their sheet prices the booking and never the tickets, and the per-ticket
+ * fares are not recoverable from it. What IS exact is the total, and on a
+ * request the total is the figure that has to be right — so the division
+ * is even and the remainder goes to the last ticket. The tickets are then
+ * approximate and the total is exact, which is the way round that costs
+ * nothing on a reconciliation.
+ *
+ * Every figure is rounded to the fils before the remainder is worked out,
+ * so the parts always add back to the whole: 100 over 3 is 33.33, 33.33
+ * and 33.34, never three 33.33s and a penny lost.
+ */
+export function splitEvenly(total: number, n: number): number[] {
+  if (n < 1) return [];
+  const round = (x: number) => Math.round(x * 100) / 100;
+  const whole = Math.abs(round(total));
+  const each = round(whole / n);
+  const parts = Array.from({ length: n }, () => each);
+  parts[n - 1] = round(whole - each * (n - 1));
+  return parts;
+}
+
+/**
+ * What each ticket in front of us gets when a cell is divided.
+ *
+ * ALWAYS divided by the number their cell NAMED, never by how many of
+ * them happen to be in the queue. Their cell "176-5512938117-18
+ * 180-5512938088 …" names five tickets and only two are waiting, because
+ * the other three are already in our books with their own recorded cost.
+ * Dividing 2,960 by the two in front of us would give each of them 1,480
+ * — two fifths of a booking priced as two halves — and the request would
+ * come out over by nearly a thousand.
+ *
+ * So each present ticket gets one fifth, the three already recorded keep
+ * what we recorded, and the request picks up exactly the share of the
+ * booking that was missing from it.
+ *
+ * When every one of them IS here, the remainder goes to the last so the
+ * parts add back to the cell exactly. When some are not, there is no last
+ * to give it to — the fils belongs to a ticket we are not touching.
+ */
+export function cellShares(group: PendingTicket[], p: PendingTicket): number[] {
+  const named = p.theirGroup ?? 1;
+  const total = Math.abs(p.theirCost ?? 0);
+  if (named < 2 || !total) return [];
+  if (group.length === named) return splitEvenly(total, named);
+  const each = Math.round((total / named) * 100) / 100;
+  return group.map(() => each);
+}
+
+/**
+ * Whether a cell can be divided at all.
+ *
+ * Not whether all of it is here — see `cellShares`, which divides by what
+ * their cell named and is right either way. What stops it is a cell that
+ * named one ticket, a cell with no figure, and a row somebody has already
+ * decided about.
+ */
+export function canSplit(group: PendingTicket[], p: PendingTicket): string {
+  const want = p.theirGroup ?? 1;
+  if (want < 2) return 'Their cell named only this ticket.';
+  if (!p.theirCost) return 'Their sheet states no figure for that cell.';
+  if (group.some(x => x.state !== 'PENDING')) return 'Some of them are already decided.';
+  if (!group.length) return 'None of them are waiting.';
+  return '';
+}
