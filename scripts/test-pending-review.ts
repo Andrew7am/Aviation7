@@ -512,5 +512,22 @@ console.log('\n18. The refund is their own column, and it is taken as it stands'
   check('ready to record',                 canConfirm(p), true);
 }
 
+/* -- 19. a free reissue never reaches the queue ------------------------- */
+console.log('\n19. A reissue at no charge is not a ticket to record');
+{
+  const rows = parseTeamSheet([
+    'Ticket Number,PNR,Status,Net Cost,Issued Date & Time,Portal,REQ No (Auto) (MICE),Ticket Type',
+    '065-5512878158,AB1234,Reissue,0.00,01/08/2026 1:00pm,RTS,UAEVP420,REISSUE ATC',
+    '065-5512878170,AB1250,Issued,900.00,01/08/2026 1:00pm,RTS,UAEVP420,TKT',
+  ].join('\n')).rows;
+  const r = compareTeamSheet(rows, []);
+  check('the free reissue is set apart', r.counts.REISSUE_NO_CHARGE, 1);
+
+  const out = build(r.findings);
+  check('only the real one is proposed', out.length, 1);
+  check('and it is the charged one',     out[0].ticketNo, '5512878170');
+  check('priced at their figure',        out[0].amount, 900);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

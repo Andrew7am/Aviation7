@@ -209,6 +209,25 @@ import { portalSource } from '../config/teamPortals';
  * issued tickets whose number nobody wrote down, which is a real gap in
  * their record and the only reason the two lists were ever kept apart.
  *
+ * A REISSUE AT NO CHARGE IS NOT A GAP EITHER
+ *
+ * A reissue their sheet prices at nothing cost nothing: the fare was paid
+ * on the original ticket and this is the same journey re-documented, often
+ * an involuntary change the airline made. No supplier bills it, so its
+ * absence from our books is correct, and reporting it is reporting the
+ * system working. 34 of the first sheet's findings were this.
+ *
+ * Three conditions, all of them theirs, and all three needed:
+ *
+ *   - their sheet calls it a reissue, in the status or the ticket type;
+ *   - no row of theirs on that document states a cost;
+ *   - and none states a refund either.
+ *
+ * The last two are what keep it honest. A reissue WITH a charge is real
+ * money and stays in the report, and a document that was also refunded has
+ * a credit attached to it that somebody still has to account for. Only a
+ * reissue with nothing of either on it drops out.
+ *
  * A VOID IS NOT A GAP, BUT A VOID IS NOT ALWAYS A VOID
  *
  * A ticket issued and voided never reaches the supplier's invoice, so its
@@ -235,6 +254,7 @@ export type Verdict =
   | 'FILED_ELSEWHERE'
   | 'NOT_IN_LEDGER'
   | 'VOID_NOT_BILLED'
+  | 'REISSUE_NO_CHARGE'
   | 'VOID_AND_ISSUED'
   | 'REFUND_NOT_IN_LEDGER'
   | 'REFUND_NOT_ON_SHEET'
@@ -251,6 +271,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   FILED_ELSEWHERE:      'In both, in different columns',
   NOT_IN_LEDGER:        'Not in our ledger',
   VOID_NOT_BILLED:      'Void — never billed',
+  REISSUE_NO_CHARGE:    'Reissued at no charge',
   VOID_AND_ISSUED:      'Voided and issued the same day',
   REFUND_NOT_IN_LEDGER: 'Refund not in our ledger',
   REFUND_NOT_ON_SHEET:  'Refunded, their sheet does not say so',
@@ -289,6 +310,9 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   // void, because somebody has to look.
   VOID_AND_ISSUED: 3.5,
   VOID_NOT_BILLED: 8,
+  // Beside a void: a state of the world, not a disagreement. Nothing to
+  // do about either, and both are worth counting.
+  REISSUE_NO_CHARGE: 8.5,
   OK: 9,
 };
 
@@ -733,9 +757,21 @@ export function compareTeamSheet(
       }
       // Issued and voided before the supplier ever billed it. Their sheet
       // shows both events; ours shows nothing, and that is correct.
+      /* A reissue nobody charged for. See the note above: their word for
+         what it is, and no money of any kind on any row of it. */
+      const theySayReissue = rows.some(r =>
+        /reissue/i.test(r.rawStatus || '') || /reissue/i.test(r.ticketType || ''));
+      const nothingCharged = rows.every(r => !r.cost) && rows.every(r => !r.refund);
+
       if (theySayVoid) {
         findings.push({ ...base, verdict: 'VOID_NOT_BILLED',
           note: 'Voided on their side, so no supplier ever billed it. Nothing to record.' });
+      } else if (theySayReissue && nothingCharged) {
+        findings.push({ ...base, verdict: 'REISSUE_NO_CHARGE',
+          note: `Their sheet reissues this at no charge${
+            first.rawStatus ? ` (${first.rawStatus})` : ''} — the fare was paid on the`
+              + ' original ticket, so no supplier bills this one and our books are right'
+              + ' to be without it.' });
       } else if (voidAndIssued) {
         // Show the row that carries the money. `first` is whichever of
         // their rows came up the file, and on five of the six that is the
@@ -1064,6 +1100,7 @@ export function compareTeamSheet(
     // sheet that can be closed.
     clean: findings.every(f =>
       f.verdict === 'OK' || f.verdict === 'VOID_NOT_BILLED'
+      || f.verdict === 'REISSUE_NO_CHARGE'
       || f.verdict === 'REQ_RELATED'
       || f.verdict === 'FILED_ELSEWHERE'),
     // VOID_AND_ISSUED deliberately absent: it is a question, not a state.

@@ -45,6 +45,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   REQ_RELATED:          { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   FILED_ELSEWHERE:      { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   VOID_NOT_BILLED:      { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
+  REISSUE_NO_CHARGE:    { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   VOID_AND_ISSUED:      { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   OK:                   { chip: 'bg-emerald-100 text-emerald-700',band: 'border-emerald-200', money: false },
 };
@@ -102,6 +103,12 @@ const WHY: Record<Verdict, string> = {
     + ' last. A ticket voided and then issued again under the same number is live and we do'
     + ' not have it; one voided after issue is nothing at all. Four of them carry five'
     + ' figures, which is why they are asked about rather than assumed.',
+  REISSUE_NO_CHARGE:
+    'Their sheet reissues these and charges nothing for them — the fare was paid on the'
+    + ' original ticket and this is the same journey re-documented, usually a change the'
+    + ' airline made. No supplier bills them, so our books are right to be without them.'
+    + ' Shown in grey because there is nothing to do: a reissue that DOES carry a charge'
+    + ' is real money and stays in the list above.',
   VOID_NOT_BILLED:
     'Issued and voided on their side, so no supplier ever billed it. Its absence from our'
     + ' books is correct — listed so nobody goes looking for it.',

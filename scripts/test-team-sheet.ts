@@ -1525,5 +1525,68 @@ console.log('\n53. Their sheet prices every ticket twice, and one of them is a q
   check('and their spelling of received', ref[0].refundReceived, true);
 }
 
+console.log('\n54. A reissue nobody charged for is not a gap');
+{
+  // The fare was paid on the original ticket; this is the same journey
+  // re-documented, usually a change the airline made. No supplier bills
+  // it, so its absence from our books is correct and reporting it is
+  // reporting the system working. 26 of the first real sheet were this.
+  const sheet = (rows: string[]) => parseTeamSheet(
+    ['Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount,Ticket Type',
+     ...rows].join('\n')).rows;
+
+  const free = compareTeamSheet(sheet([
+    '065-5512878158,AB1234,Reissue,UAEVP420,0.00,,REISSUE ATC',
+  ]), []);
+  check('it is its own verdict',    free.counts.REISSUE_NO_CHARGE, 1);
+  check('and not a missing ticket', free.counts.NOT_IN_LEDGER, 0);
+  check('the note says why',
+    free.findings[0].note.includes('the fare was paid on the original ticket'), true);
+  // Nothing to do about it, so it cannot stop a sheet being closed.
+  check('the sheet still closes',   free.clean, true);
+
+  // Their word can be in either column.
+  check('in the ticket type alone', compareTeamSheet(sheet([
+    '065-5512878159,AB1235,Issued,UAEVP420,0.00,,REISSUE ATC',
+  ]), []).counts.REISSUE_NO_CHARGE, 1);
+  check('in the status alone', compareTeamSheet(sheet([
+    '065-5512878160,AB1236,Reissue,UAEVP420,0.00,,TKT',
+  ]), []).counts.REISSUE_NO_CHARGE, 1);
+
+  // THE THREE CONDITIONS. A reissue that cost something is real money and
+  // stays in the report - this is the line that decides whether a rule
+  // meant to clear 26 rows quietly swallows a charge.
+  const charged = compareTeamSheet(sheet([
+    '065-5512878161,AB1237,Reissue,UAEVP420,450.00,,REISSUE ATC',
+  ]), []);
+  check('a reissue WITH a charge is reported', charged.counts.NOT_IN_LEDGER, 1);
+  check('and is not swallowed',                charged.counts.REISSUE_NO_CHARGE, 0);
+
+  // And one that was also refunded has a credit on it that somebody has
+  // to account for. Eight of the real ones are in this state, which is
+  // why the rule asks about the refund as well as the cost.
+  const refunded = compareTeamSheet(sheet([
+    '065-5512938118,AB1238,Reissue,UAEVP420,0.00,,REISSUE ATC',
+    '065-5512938118,AB1238,Cancelled/Refunded,UAEVP420,,1200.00,FULL REFUND',
+  ]), []);
+  check('a refund keeps it in the report', refunded.counts.REISSUE_NO_CHARGE, 0);
+
+  // Not a reissue at all, just unpriced: a different thing, and not
+  // something this rule may clear out. 23 of the real zero-priced rows.
+  const unpriced = compareTeamSheet(sheet([
+    '065-5512845110,AB1239,Issued,UAEVP420,0.00,,TKT',
+  ]), []);
+  check('an unpriced issue is still missing', unpriced.counts.NOT_IN_LEDGER, 1);
+  check('and not called a reissue',           unpriced.counts.REISSUE_NO_CHARGE, 0);
+
+  // When we DO hold it, none of this applies: our books are the better
+  // witness and it is compared like anything else.
+  const held = compareTeamSheet(sheet([
+    '065-5512878162,AB1240,Reissue,UAEVP420,0.00,,REISSUE ATC',
+  ]), [tkt({ ticketNo: '5512878162', pnr: 'AB1240', reqNum: 'UAEVP420' })]);
+  check('one we hold is not swallowed', held.counts.REISSUE_NO_CHARGE, 0);
+  check('it is compared',               held.counts.OK, 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
