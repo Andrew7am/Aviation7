@@ -149,7 +149,7 @@ const Group: React.FC<{
                                tracking-wider text-slate-400">
                   <th className="px-3 py-1.5">Ticket</th>
                   <th className="px-3 py-1.5">PNR</th>
-                  <th className="px-3 py-1.5">Request <span className="normal-case">(ours → theirs)</span></th>
+                  <th className="px-3 py-1.5">Request</th>
                   <th className="px-3 py-1.5">Their sheet</th>
                   <th className="px-3 py-1.5 text-right">
                     {refundRow ? 'Their refund' : 'Their cost'}
@@ -210,9 +210,15 @@ const Group: React.FC<{
                             {f.theirReq}
                           </span>
                         </span>
-                      ) : (
-                        <span className="text-purple-700">{f.reqNum || '—'}</span>
-                      )}
+                      ) : f.reqNum ? (
+                        <span className="text-purple-700">{f.reqNum}</span>
+                      ) : f.theirReq ? (
+                        // Nothing of ours to file it under, so the only
+                        // request there is theirs — labelled as theirs.
+                        <span className="text-slate-500">
+                          {f.theirReq}<span className="text-slate-400"> (theirs)</span>
+                        </span>
+                      ) : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
                       {f.sheet

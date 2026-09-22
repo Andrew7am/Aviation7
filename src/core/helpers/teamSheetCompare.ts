@@ -342,7 +342,16 @@ export interface Finding {
   sheet?: TeamSheetRow;
   /** Our side: every ledger row on that ticket, issue and refund together. */
   ours: Ticket[];
-  /** Our request for this ticket, or theirs when we do not hold it. */
+  /**
+   * OUR request for this ticket. Empty when we hold no row for it, which
+   * is the honest answer: a ticket that is not in our books is not filed
+   * under anything of ours.
+   *
+   * This used to fall back to theirs when ours was missing, which put
+   * their request number in a column labelled "Our request" on all 206
+   * rows of the not-in-our-books list - the one list where by definition
+   * we have nothing to put there.
+   */
   reqNum: string;
   /** Their request, when their sheet states one. Kept beside ours rather
    *  than collapsed into it: on a misfiled ticket the two differ, and which
@@ -535,7 +544,7 @@ export function compareTeamSheet(
     const theySayVoid = rows.some(r => r.status === 'VOID');
     const base = {
       serial, airlineCode: first.airlineCode, pnr: first.pnr, sheet: first, ours,
-      reqNum: ourReq || theirReq, theirReq,
+      reqNum: ourReq, theirReq,
     };
 
     if (ours.length === 0) {
@@ -546,7 +555,7 @@ export function compareTeamSheet(
         for (const t of filedUnderPnr) claimed.add(ticketMatchKey(t.ticketNo || ''));
         findings.push({
           ...base, verdict: 'FILED_ELSEWHERE', ours: filedUnderPnr,
-          reqNum: (filedUnderPnr.find(t => (t.reqNum || '').trim())?.reqNum || '').trim() || theirReq,
+          reqNum: (filedUnderPnr.find(t => (t.reqNum || '').trim())?.reqNum || '').trim(),
           note: `Their ticket column holds ${serial}; ours holds it as the PNR, against`
               + ` ${filedUnderPnr.length} row(s). The same booking, filed differently.`,
         });
@@ -715,7 +724,7 @@ export function compareTeamSheet(
       serial: identified.length ? ticketMatchKey(identified[0].ticketNo || '') : '',
       airlineCode: identified[0]?.airlineCode || '', pnr: r.pnr, sheet: r,
       ours: identified,
-      reqNum: identified[0]?.reqNum?.trim() || r.reqNum, theirReq: r.reqNum,
+      reqNum: identified[0]?.reqNum?.trim() || '', theirReq: r.reqNum,
       note: r.unreadable
         // Excel stored a 13-digit number as a number and rounded it away.
         ? `Their cell reads "${r.rawTicket}" — the number was lost on the way out of`

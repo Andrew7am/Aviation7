@@ -1103,5 +1103,35 @@ console.log('\n41. Nothing of ours predates their system');
   check('and none counted as older',  undated.beforeTheirSystem, 0);
 }
 
+console.log('\n42. "Our request" means ours, and is empty when we have none');
+{
+  // A ticket that is not in our books is not filed under anything of
+  // ours. The field used to fall back to theirs, which put their request
+  // number in a column labelled "Our request" on every row of the one
+  // list where we have nothing to put there.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num',
+    '065-5599999999,ZZZZZZ,Issued,UAECO623',
+  ].join('\n')).rows;
+  const r = compareTeamSheet(sheet, [tkt({ ticketNo: '5513059078', pnr: 'YSLM73' })]);
+  const f = r.findings.find(x => x.verdict === 'NOT_IN_LEDGER')!;
+  check('ours is empty',        f.reqNum, '');
+  check('and theirs is theirs', f.theirReq, 'UAECO623');
+
+  // Where we DO hold the ticket, ours is ours.
+  const held = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num\n065-5513059078,YSLM73,Issued,KSAML2053').rows,
+    [tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' })]);
+  check('ours when we have it', held.findings[0].reqNum, 'KSAML2053');
+
+  // And on a misfiling the two stay apart, which is the whole finding.
+  const mis = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num\n065-5513059078,YSLM73,Issued,UAECO623').rows,
+    [tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML2053' })]);
+  const mf = mis.findings.find(x => x.verdict === 'REQ_DIFFERS')!;
+  check('ours on a misfiling',   mf.reqNum, 'KSAML2053');
+  check('theirs beside it',      mf.theirReq, 'UAECO623');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
