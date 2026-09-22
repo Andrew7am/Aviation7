@@ -1,7 +1,7 @@
 import { supabase, fetchAllRows } from '../utils/supabase';
 import { PendingTicket, Ticket } from '../types';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
-import { whyNotConfirmable } from '../core/helpers/pendingFromFindings';
+import { whyNotConfirmable, ticketFromPending } from '../core/helpers/pendingFromFindings';
 
 type Row = {
   id: string;
@@ -204,34 +204,7 @@ export class PendingTicketService {
     const blocked = whyNotConfirmable(p);
     if (blocked) throw new Error(`${p.ticketNo || p.pnr}: ${blocked}`);
 
-    const isRefund = (p.transactionType || '').toUpperCase() === 'REFUND';
-    const ticket: Ticket = {
-      id: ticketId,
-      ticketNo: (p.ticketNo || p.pnr || '').toUpperCase(),
-      pnr: (p.pnr || '').toUpperCase(),
-      passengerName: (p.passengerName || '').toUpperCase(),
-      airlineCode: p.airlineCode || '',
-      route: (p.route || '').toUpperCase(),
-      source: p.source,
-      date: p.date,
-      // Stored negative for a refund regardless of how it was typed, the
-      // same rule manual entry applies, so a credit can never be booked as
-      // a sale by a stray minus sign.
-      amount: isRefund ? -Math.abs(p.amount) : Math.abs(p.amount),
-      totalDoc: Math.abs(p.totalDoc || p.amount),
-      commission: p.commission ?? 0,
-      reqNum: (p.reqNum || '').toUpperCase(),
-      vendorReference: (p.vendorReference || '').toUpperCase(),
-      status: isRefund ? 'REFUND' : 'ISSUE',
-      transactionType: isRefund ? 'REFUND' : 'ISSUE',
-      currency: p.currency,
-      // Says where it came from without pretending a supplier reported it.
-      reportName: 'Team sheet — reviewed',
-      importTime: new Date().toISOString(),
-      isDuplicate: false,
-      closed: false,
-      userId: this.userId,
-    };
+    const ticket = ticketFromPending(p, ticketId, this.userId);
 
     const { error: tErr } = await supabase.from('tickets').insert({
       id: ticket.id,

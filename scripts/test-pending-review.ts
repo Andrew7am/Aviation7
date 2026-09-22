@@ -12,7 +12,7 @@ import { parseTeamSheet } from '../src/core/parsers/teamSheet';
 import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
 import { portalSource, issuedFrom } from '../src/core/config/teamPortals';
 import {
-  pendingFromFindings, whyNotConfirmable, canConfirm, dedupeKey,
+  pendingFromFindings, whyNotConfirmable, canConfirm, dedupeKey, ticketFromPending,
 } from '../src/core/helpers/pendingFromFindings';
 import type { PendingTicket, Ticket } from '../src/types';
 
@@ -327,6 +327,85 @@ console.log('\n13. The question the column was added to answer');
   check('the finding says where too',
     r.findings.filter(f => f.verdict === 'NOT_IN_LEDGER')
       .every(f => !!f.issuedFrom), true);
+}
+
+/* -- 14. what a Confirm actually writes --------------------------------- */
+console.log('\n14. The ticket a confirmed proposal becomes');
+{
+  const base: PendingTicket = {
+    id: 'x', userId: 'u1', ticketNo: '5513373390', source: 'RTS',
+    date: '2026-09-03', amount: 500, commission: 0, totalDoc: 500,
+    reqNum: 'ksaml2218', pnr: 'ys2222', passengerName: 'ahmed ali',
+    airlineCode: '065', currency: 'AED', transactionType: 'ISSUE',
+    origin: 'TEAM_SHEET', heldBack: false, state: 'PENDING', dedupe: 'k',
+  };
+
+  const t = ticketFromPending(base, 'new-id', 'u9');
+  check('the id given is the id used', t.id, 'new-id');
+  check('and the owner given',         t.userId, 'u9');
+  check('an issue is positive',        t.amount, 500);
+  check('status',                      t.status, 'ISSUE');
+  // The ledger matches on these, and "ys2222" is a booking nobody finds.
+  check('the request is uppercased',   t.reqNum, 'KSAML2218');
+  check('the PNR too',                 t.pnr, 'YS2222');
+  check('and the passenger',           t.passengerName, 'AHMED ALI');
+  check('it says where it came from',  t.reportName, 'Team sheet — reviewed');
+  check('and is not closed yet',       t.closed, false);
+  check('nor a duplicate',             t.isDuplicate, false);
+
+  // A refund is stored negative HOWEVER it was typed. Both directions,
+  // because the screen writes a positive and the builder writes a negative
+  // and a credit booked as a sale is the worst outcome this has.
+  const asNeg = ticketFromPending(
+    { ...base, transactionType: 'REFUND', amount: -800, totalDoc: 800 }, 'i', 'u1');
+  const asPos = ticketFromPending(
+    { ...base, transactionType: 'REFUND', amount: 800, totalDoc: 800 }, 'i', 'u1');
+  check('a refund typed negative',  asNeg.amount, -800);
+  check('a refund typed positive',  asPos.amount, -800);
+  check('both document positive',   [asNeg.totalDoc, asPos.totalDoc], [800, 800]);
+  check('and both are refunds',     [asNeg.status, asPos.status], ['REFUND', 'REFUND']);
+
+  // An issue typed negative cannot become a credit either.
+  check('an issue typed negative is still a sale',
+    ticketFromPending({ ...base, amount: -500 }, 'i', 'u1').amount, 500);
+
+  // A carrier with no IATA ticket: the reference is the document, and the
+  // ledger's ticket column is where every one of ours lives.
+  const ref = ticketFromPending(
+    { ...base, ticketNo: '', pnr: 'rx12237zb622d' }, 'i', 'u1');
+  check('the reference becomes the ticket', ref.ticketNo, 'RX12237ZB622D');
+  check('and stays the PNR as well',        ref.pnr, 'RX12237ZB622D');
+
+  // totalDoc falls back to the amount when nobody set it, so a row can
+  // never reach the ledger with a document value of zero against money.
+  check('the document falls back to the amount',
+    ticketFromPending({ ...base, totalDoc: 0 }, 'i', 'u1').totalDoc, 500);
+}
+
+/* -- 15. the round trip ------------------------------------------------- */
+console.log('\n15. From their row to our ledger, end to end');
+{
+  const r = compareTeamSheet(sheet([
+    '065-5513373420,ZM9QQ1,Issued,2530.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+  ]), []);
+  const [proposal] = build(r.findings);
+
+  // As raised it cannot be confirmed, because nobody has priced it.
+  check('as raised, not confirmable', canConfirm(proposal), false);
+
+  // Priced by a person, it becomes exactly the ticket we would have keyed.
+  const priced: PendingTicket = { ...proposal, amount: 2480, totalDoc: 2480 };
+  check('priced, it is confirmable', canConfirm(priced), true);
+
+  const t = ticketFromPending(priced, 'tid', 'u1');
+  check('the ledger row', [t.ticketNo, t.airlineCode, t.pnr, t.source, t.date,
+                           t.amount, t.currency, t.reqNum, t.status],
+    ['5513373420', '065', 'ZM9QQ1', 'RTS', '2026-09-03', 2480, 'AED',
+     'KSAML2218', 'ISSUE']);
+
+  // And their figure never reached it.
+  check('their 2,530 is nowhere in it', t.amount === proposal.theirCost, false);
+  check('but it is still on the proposal', priced.theirCost, 2530);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

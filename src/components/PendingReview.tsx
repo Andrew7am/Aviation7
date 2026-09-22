@@ -258,12 +258,27 @@ export const PendingReview: React.FC<Props> = ({
       {rows.length === 0 && (
         <div className="bg-white border border-slate-200 rounded-lg p-10 text-center">
           <Inbox className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-          <p className="text-xs text-slate-500">
-            {tab === 'PENDING'
-              ? 'Nothing waiting. Run the team sheet check and send what it finds here.'
-              : tab === 'CONFIRMED' ? 'Nothing recorded from here yet.'
-              : 'Nothing has been turned down.'}
-          </p>
+          {/* "Nothing matched what you typed" and "there is nothing here"
+              are opposite facts, and saying the second when the first is
+              true tells somebody their queue is empty when 237 are in it. */}
+          {counts[tab] > 0 ? (
+            <p className="text-xs text-slate-500">
+              None of the <b>{counts[tab]}</b> here match
+              {vendorFilter && <> <b className="font-mono">{vendorFilter}</b></>}
+              {vendorFilter && search.trim() && ' and'}
+              {search.trim() && <> “<b className="font-mono">{search.trim()}</b>”</>}.
+              {' '}
+              <button onClick={() => { setVendorFilter(''); setSearch(''); }}
+                className="text-emerald-700 font-bold hover:underline">Clear it</button>.
+            </p>
+          ) : (
+            <p className="text-xs text-slate-500">
+              {tab === 'PENDING'
+                ? 'Nothing waiting. Run the team sheet check and send what it finds here.'
+                : tab === 'CONFIRMED' ? 'Nothing recorded from here yet.'
+                : 'Nothing has been turned down.'}
+            </p>
+          )}
         </div>
       )}
 
@@ -287,7 +302,10 @@ export const PendingReview: React.FC<Props> = ({
                   <Copy className="w-3 h-3 text-slate-300 group-hover:text-slate-500" />
                   {p.airlineCode && p.ticketNo ? `${p.airlineCode}-${p.ticketNo}` : p.ticketNo || '—'}
                 </button>
-                {p.pnr && (
+                {/* For a carrier that issues no IATA ticket the booking
+                    reference IS the document, so both columns hold the same
+                    value and printing it twice is noise. */}
+                {p.pnr && p.pnr !== p.ticketNo && (
                   <button type="button" onClick={() => copy(p.pnr!)}
                     className="group flex items-center gap-1.5 font-mono text-[11px] text-slate-500
                                rounded px-1 -mx-1 hover:bg-slate-100">
@@ -307,7 +325,7 @@ export const PendingReview: React.FC<Props> = ({
                   </span>
                 )}
                 {/* Their figure, labelled every time it is shown. */}
-                {p.theirCost != null && (
+                {!!p.theirCost && (
                   <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
                     priced ? 'text-slate-400' : 'bg-amber-50 text-amber-700'}`}>
                     they say {money(p.theirCost)} {p.currency} — theirs, with their markup
@@ -411,7 +429,11 @@ export const PendingReview: React.FC<Props> = ({
                         {p.heldBack
                           ? <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                           : <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
-                        {blocked}
+                        {/* The reason for a hold is long and is already
+                            written across the bottom of the row, where it
+                            is readable. Saying it twice in half the width
+                            is saying it once, badly. */}
+                        {p.heldBack ? 'Held back' : blocked}
                       </span>
                     ) : (
                       <button onClick={() => onConfirm && run(p.id, () => onConfirm(p))}

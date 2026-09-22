@@ -1,5 +1,5 @@
 import { Finding } from './teamSheetCompare';
-import { PendingTicket } from '../../types';
+import { PendingTicket, Ticket } from '../../types';
 import { SupportedCurrency } from './resolveCurrency';
 import { portalSource } from '../config/teamPortals';
 
@@ -160,3 +160,43 @@ export function whyNotConfirmable(p: PendingTicket): string {
 }
 
 export const canConfirm = (p: PendingTicket) => whyNotConfirmable(p) === '';
+
+/**
+ * The ticket a confirmed proposal becomes.
+ *
+ * The most consequential line in the feature, so it is here rather than
+ * inside the service: this is what actually reaches the ledger, and it has
+ * to obey the same rules a ticket keyed by hand obeys.
+ *
+ * A refund is stored negative however it was typed, so a credit can never
+ * be booked as a sale by a stray minus sign. Identifiers are uppercased,
+ * because the ledger matches on them and "ysml73" would be a ticket nobody
+ * ever finds again. `reportName` says where it came from without pretending
+ * a supplier reported it.
+ */
+export function ticketFromPending(p: PendingTicket, id: string, userId: string): Ticket {
+  const isRefund = (p.transactionType || '').toUpperCase() === 'REFUND';
+  return {
+    id,
+    ticketNo: (p.ticketNo || p.pnr || '').toUpperCase(),
+    pnr: (p.pnr || '').toUpperCase(),
+    passengerName: (p.passengerName || '').toUpperCase(),
+    airlineCode: p.airlineCode || '',
+    route: (p.route || '').toUpperCase(),
+    source: p.source,
+    date: p.date,
+    amount: isRefund ? -Math.abs(p.amount) : Math.abs(p.amount),
+    totalDoc: Math.abs(p.totalDoc || p.amount),
+    commission: p.commission ?? 0,
+    reqNum: (p.reqNum || '').toUpperCase(),
+    vendorReference: (p.vendorReference || '').toUpperCase(),
+    status: isRefund ? 'REFUND' : 'ISSUE',
+    transactionType: isRefund ? 'REFUND' : 'ISSUE',
+    currency: p.currency,
+    reportName: 'Team sheet — reviewed',
+    importTime: new Date().toISOString(),
+    isDuplicate: false,
+    closed: false,
+    userId,
+  };
+}
