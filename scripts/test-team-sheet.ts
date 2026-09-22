@@ -138,7 +138,10 @@ console.log('\n6. The comparison, on the four things that can differ');
   check('the request is found from the matches', r.requests, ['KSAML2053']);
   check('agreeing tickets',    r.counts.OK, 2);
   check('their void is not a gap', r.counts.VOID_NOT_BILLED, 1);
-  check('their hold is not a gap',  r.counts.NOT_ISSUED_YET, 1);
+  // A held option is left out entirely now: nothing was issued, so
+  // nothing of ours can be missing.
+  check('their hold is not reported', r.counts.NO_TICKET_NUMBER, 0);
+  check('it is counted instead',      r.onHold, 1);
   check('ours they never list',     r.counts.NOT_ON_SHEET, 1);
   check('which one',
     r.findings.find(f => f.verdict === 'NOT_ON_SHEET')?.serial, '5513059999');
@@ -716,7 +719,7 @@ console.log('\n30. A ticket number their export damaged');
 
   const r = compareTeamSheet(p.rows, [], ['KSAML1198']);
   check('reported',   r.counts.UNREADABLE, 1);
-  check('separately from the hold', r.counts.NOT_ISSUED_YET, 1);
+  check('and the hold is only counted', [r.counts.NO_TICKET_NUMBER, r.onHold], [0, 1]);
   check('the note quotes their cell',
     r.findings.find(f => f.verdict === 'UNREADABLE')!.note.includes('6.55512E+11'), true);
 }
@@ -1185,6 +1188,47 @@ console.log('\n43. The last thing that happened decides whether it is void');
   ]), [tkt({ ticketNo: '5513373335', pnr: 'YSLM73', reqNum: 'KSAML2218' })]);
   check('a void we hold is not dropped', held.counts.VOID_NOT_BILLED, 0);
   check('it is compared',                held.counts.OK, 1);
+}
+
+console.log('\n44. A held option is not a ticket; a blank number on a live one is');
+{
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost',
+    '--,ZV2XCQ,On Hold,KSAML2053,4630',
+    '---,EDINGX,Issued,KSAML2053,112',
+    '0,YCNA3H,Cancelled/Refunded,KSAML2053,2470',
+  ].join('\n')).rows;
+  const r = compareTeamSheet(sheet, [], ['KSAML2053']);
+
+  // The hold: nothing issued, so nothing of ours can be missing.
+  check('the hold is not listed', r.counts.NO_TICKET_NUMBER, 2);
+  check('it is counted instead',  r.onHold, 1);
+
+  // The two live ones: their ticket exists and its number was never
+  // written down. That is their gap, and it stays on the report.
+  const left = r.findings.filter(f => f.verdict === 'NO_TICKET_NUMBER');
+  check('the issued one stays',   left.some(f => f.pnr === 'EDINGX'), true);
+  check('the refunded one too',   left.some(f => f.pnr === 'YCNA3H'), true);
+  check('and the held one does not', left.some(f => f.pnr === 'ZV2XCQ'), false);
+  check('the note names their status',
+    left.find(f => f.pnr === 'EDINGX')!.note.includes('Issued'), true);
+  // A gap in their record is not a settled state.
+  check('so the sheet is not clean', r.clean, false);
+
+  // A sheet of nothing but holds is a clean sheet.
+  const allHeld = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num\n--,ZV2XCQ,On Hold,KSAML2053').rows,
+    [], ['KSAML2053']);
+  check('nothing but holds is clean', allHeld.clean, true);
+  check('and all of it counted',      allHeld.onHold, 1);
+
+  // A damaged number on a held row is still damage - it is the cell that
+  // is wrong, not the booking, and only they can fix it.
+  const heldDamage = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num\n6.55512E+11,ZV2XCQ,On Hold,KSAML2053').rows,
+    [], ['KSAML2053']);
+  check('a damaged cell is still reported', heldDamage.counts.UNREADABLE, 1);
+  check('and not counted as a hold',        heldDamage.onHold, 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

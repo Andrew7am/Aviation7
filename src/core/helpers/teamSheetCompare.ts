@@ -156,6 +156,17 @@ import { TeamSheetRow } from '../parsers/teamSheet';
  * Read from their file, never configured. When they send a sheet covering
  * only last month, the floor moves to last month by itself.
  *
+ * A BOOKING ON HOLD IS NOT A TICKET
+ *
+ * 67 of their rows are held options with no ticket number: nothing has
+ * been issued, so there is nothing for our books to be missing. They are
+ * counted and left out of the report entirely.
+ *
+ * What stays is the 69 rows that carry no ticket number and are NOT on
+ * hold - 60 marked Issued, 8 Cancelled/Refunded, one Reissue. Those are
+ * issued tickets whose number nobody wrote down, which is a real gap in
+ * their record and the only reason the two lists were ever kept apart.
+ *
  * A VOID IS NOT A GAP, BUT A VOID IS NOT ALWAYS A VOID
  *
  * A ticket issued and voided never reaches the supplier's invoice, so its
@@ -187,7 +198,7 @@ export type Verdict =
   | 'REFUND_NOT_ON_SHEET'
   | 'REFUND_DIFFERS'
   | 'TWICE_ON_THEIR_SHEET'
-  | 'NOT_ISSUED_YET'
+  | 'NO_TICKET_NUMBER'
   | 'UNREADABLE'
   | 'NOT_ON_SHEET';
 
@@ -203,7 +214,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   REFUND_NOT_ON_SHEET:  'Refunded, their sheet does not say so',
   REFUND_DIFFERS:       'Refund differs',
   TWICE_ON_THEIR_SHEET: 'Their sheet refunds it twice',
-  NOT_ISSUED_YET:       'No ticket number yet',
+  NO_TICKET_NUMBER:     'Issued with no ticket number',
   UNREADABLE:           'Their ticket number is damaged',
   NOT_ON_SHEET:         'Not on their sheet',
 };
@@ -225,7 +236,7 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   // A row that cannot be checked at all. Above the states of the world,
   // because somebody has to go and ask for the number.
   UNREADABLE: 5.5,
-  NOT_ISSUED_YET: 6,
+  NO_TICKET_NUMBER: 6,
   // Two requests that belong together - a cash ticket beside the request it
   // was split from. Worth seeing, never worth chasing.
   REQ_RELATED: 7,
@@ -434,6 +445,9 @@ export interface TeamSheetReport {
    */
   sheetFrom: string;
   beforeTheirSystem: number;
+  /** Their held options, with no ticket issued. Counted, never listed:
+   *  there is nothing for our books to be missing. */
+  onHold: number;
   /** True when nothing needs anybody's attention. */
   clean: boolean;
 }
@@ -740,7 +754,12 @@ export function compareTeamSheet(
    * very thing the last fix removed.
    */
   const claimedByPnr = new Set<string>();
+  let onHold = 0;
   for (const r of noTicket) {
+    // A held option is not a ticket. Nothing was issued, so nothing of
+    // ours can be missing, and listing it is listing the system working.
+    if (r.status === 'ON_HOLD' && !r.unreadable) { onHold++; continue; }
+
     let identified: Ticket[] = [];
     if (r.unreadable && r.pnr) {
       const candidates = ledger.filter(t =>
@@ -756,7 +775,7 @@ export function compareTeamSheet(
     }
 
     findings.push({
-      verdict: r.unreadable ? 'UNREADABLE' : 'NOT_ISSUED_YET',
+      verdict: r.unreadable ? 'UNREADABLE' : 'NO_TICKET_NUMBER',
       serial: identified.length ? ticketMatchKey(identified[0].ticketNo || '') : '',
       airlineCode: identified[0]?.airlineCode || '', pnr: r.pnr, sheet: r,
       ours: identified,
@@ -769,9 +788,8 @@ export function compareTeamSheet(
             ? ` PNR ${r.pnr} identifies it as this ticket, which is in our books, so nothing`
               + ' is missing — but their record still needs the number put back.'
             : ' Ask for the export with the ticket column as text.')
-        : r.status === 'ON_HOLD'
-          ? 'Still on hold on their side — no ticket has been issued to compare.'
-          : 'Their row carries no ticket number, so there is nothing to match it on.',
+        : `Their sheet marks this ${r.rawStatus || 'issued'} and leaves the ticket number`
+          + ' blank, so there is nothing to match it on. Only they can fill it in.',
     });
   }
 
@@ -863,7 +881,7 @@ export function compareTeamSheet(
 
   return {
     findings, byRequest, sheetHasReq,
-    sheetFrom, beforeTheirSystem: tooOld.size,
+    sheetFrom, beforeTheirSystem: tooOld.size, onHold,
     reqSource: sheetHasReq ? 'sheet' : declared.length ? 'typed' : 'none',
     declared,
     requests: [...requests].sort(), counts,
@@ -878,7 +896,7 @@ export function compareTeamSheet(
     // sheet that can be closed.
     clean: findings.every(f =>
       f.verdict === 'OK' || f.verdict === 'VOID_NOT_BILLED'
-      || f.verdict === 'NOT_ISSUED_YET' || f.verdict === 'REQ_RELATED'
+      || f.verdict === 'REQ_RELATED'
       || f.verdict === 'FILED_ELSEWHERE'),
     // VOID_AND_ISSUED deliberately absent: it is a question, not a state.
   };

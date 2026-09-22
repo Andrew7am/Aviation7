@@ -40,7 +40,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   REFUND_NOT_ON_SHEET:  { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REFUND_DIFFERS:       { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   TWICE_ON_THEIR_SHEET: { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
-  NOT_ISSUED_YET:       { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
+  NO_TICKET_NUMBER:     { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   UNREADABLE:           { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REQ_RELATED:          { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   FILED_ELSEWHERE:      { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
@@ -92,9 +92,11 @@ const WHY: Record<Verdict, string> = {
     + ' booking and the document, and the two systems put it in different columns — theirs'
     + ' in the ticket column, ours in the PNR. Nothing is missing here; it is the same'
     + ' booking read from two sides.',
-  NOT_ISSUED_YET:
-    'Their rows with no ticket number — still on hold. Nothing to compare until a ticket'
-    + ' is issued.',
+  NO_TICKET_NUMBER:
+    'Their sheet marks these issued or refunded and leaves the ticket number blank, so'
+    + ' nothing can be matched on them. Their held options are not here — a booking on hold'
+    + ' has no ticket for our books to be missing, and those are counted at the top instead.'
+    + ' These are different: the ticket exists and its number was never written down.',
   VOID_AND_ISSUED:
     'Their sheet both issues and voids these, on the same date, so it cannot say which came'
     + ' last. A ticket voided and then issued again under the same number is live and we do'
@@ -555,11 +557,16 @@ export const TeamSheetCheck: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => 
           {/* Their sheet has a beginning, and our ledger is older than it.
               Said out loud, because the count is also the honest measure
               of how much of our books this check can speak to. */}
-          {report.beforeTheirSystem > 0 && (
+          {(report.beforeTheirSystem > 0 || report.onHold > 0) && (
             <div className="flex items-start gap-2 text-[11px] text-slate-500 bg-slate-50
                             border border-slate-200 rounded-lg px-3 py-2">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" />
               <span>
+                {report.onHold > 0 && (
+                  <><b>{report.onHold}</b> of their rows are options still on hold, with no
+                  ticket issued — nothing for our books to be missing, so they are left out.
+                  {' '}</>
+                )}
                 Their sheet begins <b className="font-mono text-slate-700">{report.sheetFrom}</b>.
                 {' '}<b>{report.beforeTheirSystem}</b> of our tickets under these requests were
                 issued before that, so they are outside this comparison rather than missing
