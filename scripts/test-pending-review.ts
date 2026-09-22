@@ -693,5 +693,30 @@ console.log('\n24. A divided cell is a confirmable cell');
   check('and the ledger holds their figure', total, 7590);
 }
 
+/* -- 25. a coupon we already hold is never offered for entry ------------ */
+console.log('\n25. The coupon whose fare is already in our books');
+{
+  // This is what the verdict is FOR. Before it, 44 of these arrived in
+  // the queue and each one offered to record half a fare we already had
+  // — the split button would have made it one click.
+  const rows = parseTeamSheet([
+    'Ticket Number,PNR,Status,Net Cost,Issued Date & Time,Portal,REQ No (Auto) (MICE)',
+    '065-5513058946-47,QQ1234,Issued,26090.00,01/08/2026 1:00pm,RTS,UAEVP566',
+  ].join('\n')).rows;
+  const ledger: Ticket[] = [{
+    id: 't1', ticketNo: '5513058946', source: 'RTS', date: '2026-08-01',
+    amount: 26090, commission: 0, totalDoc: 26090, reqNum: 'UAEVP566',
+    pnr: 'QQ1234', status: 'ISSUE', currency: 'AED', userId: 'u1',
+  }];
+  const r = compareTeamSheet(rows, ledger, ['UAEVP566']);
+  check('the coupon is set apart', r.counts.CONJUNCT_ALREADY_HELD, 1);
+  check('and nothing is proposed', build(r.findings).length, 0);
+
+  // Where we hold only half, it is still proposed — and that is right.
+  const half = compareTeamSheet(rows,
+    [{ ...ledger[0], amount: 13045, totalDoc: 13045 }], ['UAEVP566']);
+  check('half held, still proposed', build(half.findings).length, 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

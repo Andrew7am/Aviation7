@@ -44,6 +44,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   UNREADABLE:           { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REQ_RELATED:          { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   FILED_ELSEWHERE:      { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
+  CONJUNCT_ALREADY_HELD:{ chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   VOID_NOT_BILLED:      { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   REISSUE_NO_CHARGE:    { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   VOID_AND_ISSUED:      { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
@@ -109,6 +110,12 @@ const WHY: Record<Verdict, string> = {
     + ' airline made. No supplier bills them, so our books are right to be without them.'
     + ' Shown in grey because there is nothing to do: a reissue that DOES carry a charge'
     + ' is real money and stays in the list above.',
+  CONJUNCT_ALREADY_HELD:
+    'One passenger, one fare, two ticket numbers. Their sheet names both coupons; the'
+    + ' supplier bills the fare on one of them and the other carries nothing of its own,'
+    + ' so our books hold the booking under the sibling and not under this number.'
+    + ' Nothing is missing — comparing document numbers made it look that way, and each'
+    + ' of these rows was about to be offered for entry at half the fare a second time.',
   VOID_NOT_BILLED:
     'Issued and voided on their side, so no supplier ever billed it. Its absence from our'
     + ' books is correct — listed so nobody goes looking for it.',

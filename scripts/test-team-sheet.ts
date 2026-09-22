@@ -1657,5 +1657,84 @@ console.log('\n56. Which row a finding carries, in general');
   check('and carries its price',          revived.findings[0].sheet!.cost, 7700);
 }
 
+console.log('\n57. One fare, two documents, and we hold the other one');
+{
+  // A conjunction is ONE passenger and ONE fare written across two ticket
+  // numbers. The supplier bills the fare on the first and the second
+  // carries nothing of its own, so our ledger holds 26,090 on ...946 and
+  // has no ...947 at all. Their sheet names both.
+  //
+  // Comparing document numbers calls ...947 missing, which is true of the
+  // number and false of the money - and the review queue then offered to
+  // record half the fare a second time. 44 of 139 findings were this.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost',
+    '065-5513058946-47,QQ1234,Issued,UAEVP566,26090.00',
+  ].join('\n')).rows;
+  check('their cell names two', sheet.length, 2);
+
+  const ours = [tkt({
+    ticketNo: '5513058946', pnr: 'QQ1234', reqNum: 'UAEVP566', amount: 26090,
+  })];
+  const r = compareTeamSheet(sheet, ours, ['UAEVP566']);
+
+  check('nothing is missing',        r.counts.NOT_IN_LEDGER, 0);
+  check('the coupon is its own verdict', r.counts.CONJUNCT_ALREADY_HELD, 1);
+  check('the one we hold agrees',    r.counts.OK, 1);
+  // Nothing to do about it, so it cannot stop a sheet being closed.
+  check('and the sheet closes',      r.clean, true);
+
+  const f = r.findings.find(x => x.verdict === 'CONJUNCT_ALREADY_HELD')!;
+  check('it is the coupon we lack',  f.serial, '5513058947');
+  check('it points at the sibling',  f.ours.map(t => t.ticketNo), ['5513058946']);
+  check('and the note says where the money is',
+    f.note.includes('26,090.00') && f.note.includes('5513058946'), true);
+  // The sibling must not ALSO be reported as one of ours they never
+  // mention - it is on their sheet, in the same cell.
+  check('the sibling is not double-reported', r.counts.NOT_ON_SHEET, 0);
+
+  // COVERS, NOT EQUALS. Ours is net of commission and theirs sometimes
+  // carries a fee: 37,053 against our 37,043 is the same booking.
+  const near = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num,Net Cost\n176-4861731808-09,RR1,Issued,U1,37053.00').rows,
+    [tkt({ ticketNo: '4861731808', pnr: 'RR1', reqNum: 'U1', amount: 37043 })], ['U1']);
+  check('a commission apart is still it', near.counts.CONJUNCT_ALREADY_HELD, 1);
+}
+
+console.log('\n58. A booking we only hold part of is still a gap');
+{
+  // The line this rule must never cross. If our books hold one coupon's
+  // SHARE rather than the whole fare, the rest really is missing, and
+  // swallowing it would hide the thing the screen exists to find.
+  const sheet = parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost',
+    '065-5513058950-51,QQ9999,Issued,UAEVP566,20000.00',
+  ].join('\n')).rows;
+
+  const half = compareTeamSheet(sheet,
+    [tkt({ ticketNo: '5513058950', pnr: 'QQ9999', reqNum: 'UAEVP566', amount: 10000 })],
+    ['UAEVP566']);
+  check('half a fare is not the fare',  half.counts.CONJUNCT_ALREADY_HELD, 0);
+  check('so it is still missing',       half.counts.NOT_IN_LEDGER, 1);
+
+  // And nothing of theirs at all on the siblings.
+  const none = compareTeamSheet(sheet, [], ['UAEVP566']);
+  check('holding neither reports both', none.counts.NOT_IN_LEDGER, 2);
+  check('and claims no coupon',         none.counts.CONJUNCT_ALREADY_HELD, 0);
+
+  // A cell their sheet never priced cannot be judged this way: there is
+  // no figure for ours to cover.
+  const unpriced = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num,Net Cost\n065-5513058960-61,QQ8,Issued,U2,').rows,
+    [tkt({ ticketNo: '5513058960', pnr: 'QQ8', reqNum: 'U2', amount: 5000 })], ['U2']);
+  check('no figure, no judgement', unpriced.counts.CONJUNCT_ALREADY_HELD, 0);
+
+  // A ticket that shared no cell is never treated as a coupon.
+  const solo = compareTeamSheet(
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num,Net Cost\n065-5513058970,QQ7,Issued,U3,900.00').rows,
+    [tkt({ ticketNo: '5513058971', pnr: 'QQ7', reqNum: 'U3', amount: 900 })], ['U3']);
+  check('a lone ticket is not a coupon', solo.counts.CONJUNCT_ALREADY_HELD, 0);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

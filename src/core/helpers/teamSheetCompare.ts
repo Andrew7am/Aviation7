@@ -209,6 +209,33 @@ import { portalSource } from '../config/teamPortals';
  * issued tickets whose number nobody wrote down, which is a real gap in
  * their record and the only reason the two lists were ever kept apart.
  *
+ * ONE FARE, TWO DOCUMENTS, AND ONLY ONE OF THEM IN OUR BOOKS
+ *
+ * A conjunction is one passenger and one fare written across two ticket
+ * numbers: "065-5513058946-47" is a single booking. The supplier bills
+ * the fare on the first document and the second carries nothing of its
+ * own, so our ledger holds 26,090 against ...946 and has no ...947 at
+ * all. Their sheet names both.
+ *
+ * Comparing document numbers, ...947 is missing from our books - true of
+ * the NUMBER and false of the MONEY. 44 of 139 findings were this, about
+ * 134,788 of their figures, every bit of it already recorded under the
+ * sibling. Worse, each of those rows then offered to record half the fare
+ * a second time.
+ *
+ * So when a document their sheet groups with others is absent from our
+ * books, the siblings are looked for too, and what we hold against them
+ * is compared with what their cell was priced at. If our booking covers
+ * their booking, the money is accounted for and this is a filing
+ * difference rather than a gap - the same finding as a reference in the
+ * wrong column, read from the other end.
+ *
+ * COVERS, not equals. Their figure and ours differ by a commission or a
+ * fee: 37,053 against our 37,043, 3,580 against our 3,535.20. What is
+ * being asked is "does our booking look like their booking", and a fare
+ * short by more than a seventh does not - it is a booking we hold part
+ * of, which is a real gap and stays reported.
+ *
  * A REISSUE AT NO CHARGE IS NOT A GAP EITHER
  *
  * A reissue their sheet prices at nothing cost nothing: the fare was paid
@@ -252,6 +279,7 @@ export type Verdict =
   | 'REQ_DIFFERS'
   | 'REQ_RELATED'
   | 'FILED_ELSEWHERE'
+  | 'CONJUNCT_ALREADY_HELD'
   | 'NOT_IN_LEDGER'
   | 'VOID_NOT_BILLED'
   | 'REISSUE_NO_CHARGE'
@@ -269,6 +297,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   REQ_DIFFERS:          'Filed under a different request',
   REQ_RELATED:          'A related request',
   FILED_ELSEWHERE:      'In both, in different columns',
+  CONJUNCT_ALREADY_HELD: 'The other coupon holds the fare',
   NOT_IN_LEDGER:        'Not in our ledger',
   VOID_NOT_BILLED:      'Void — never billed',
   REISSUE_NO_CHARGE:    'Reissued at no charge',
@@ -306,6 +335,9 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   // The same reference, one side's ticket column against the other's PNR.
   // Nothing is missing; the filing differs.
   FILED_ELSEWHERE: 7.5,
+  // Beside it: one fare across two documents and we hold the other one.
+  // A filing difference, not money anybody is missing.
+  CONJUNCT_ALREADY_HELD: 7.6,
   // Their sheet says both and cannot say which came last. Above a plain
   // void, because somebody has to look.
   VOID_AND_ISSUED: 3.5,
@@ -566,6 +598,17 @@ export interface TeamSheetReport {
 export const REFUND_FLOOR = 50;
 
 /**
+ * How much less than their cell our booking may be and still be it.
+ *
+ * Their figure and ours are not the same number: ours is net of a
+ * commission, theirs sometimes carries a fee. 37,053 against our 37,043
+ * is the same booking; 3,580 against our 3,535.20 is too. A seventh is
+ * wide enough for every one of those and far too narrow to swallow a
+ * booking we only hold half of, which is what this must never do.
+ */
+export const CONJUNCT_COVERS = 0.85;
+
+/**
  * The stretch of time a sheet is for, as yyyy-MM-dd.
  *
  * Either end may be left out. With no `from`, the floor is their sheet's
@@ -755,6 +798,35 @@ export function compareTeamSheet(
         });
         continue;
       }
+      /* One fare across two documents, and we hold the other one. See
+         the note above: their sheet names both coupons, the supplier
+         bills the fare on one, and comparing numbers calls the other
+         missing while the money sits in our books already. */
+      /* The row that states what their cell was priced at. `first` is
+         whichever came up the file and on a refunded document that is
+         the refund, which states no cost - so the test silently did not
+         run and a 2,960 coupon we already held was offered for entry.
+         The fourth branch to need this; see the note on `first` above. */
+      const priced = rows.find(x =>
+        x.status !== 'REFUNDED' && x.status !== 'VOID' && x.cost != null) ?? first;
+      const sibs = priced.siblings.flatMap(x => ourBySerial.get(x) ?? [])
+        .filter(t => (t.amount || 0) > 0);
+      const theirCell = Math.abs(priced.cost ?? 0);
+      const weHold = sibs.reduce((sum, t) => sum + (t.amount || 0), 0);
+      if (sibs.length && theirCell && weHold >= theirCell * CONJUNCT_COVERS) {
+        for (const t of sibs) claimed.add(ticketMatchKey(t.ticketNo || ''));
+        findings.push({
+          ...base, verdict: 'CONJUNCT_ALREADY_HELD', ours: sibs,
+          reqNum: (sibs.find(t => (t.reqNum || '').trim())?.reqNum || '').trim(),
+          note: `Their cell ${priced.rawTicket} is one booking across`
+              + ` ${priced.groupSize} documents, priced at ${money(theirCell)}`
+              + ` ${priced.currency}. We hold ${money(weHold)} of it against`
+              + ` ${sibs.map(t => ticketMatchKey(t.ticketNo || '')).join(', ')}, so the fare`
+              + ' is in our books and this coupon carries none of its own.',
+        });
+        continue;
+      }
+
       // Issued and voided before the supplier ever billed it. Their sheet
       // shows both events; ours shows nothing, and that is correct.
       /* A reissue nobody charged for. See the note above: their word for
@@ -1112,7 +1184,8 @@ export function compareTeamSheet(
       f.verdict === 'OK' || f.verdict === 'VOID_NOT_BILLED'
       || f.verdict === 'REISSUE_NO_CHARGE'
       || f.verdict === 'REQ_RELATED'
-      || f.verdict === 'FILED_ELSEWHERE'),
+      || f.verdict === 'FILED_ELSEWHERE'
+      || f.verdict === 'CONJUNCT_ALREADY_HELD'),
     // VOID_AND_ISSUED deliberately absent: it is a question, not a state.
   };
 }
