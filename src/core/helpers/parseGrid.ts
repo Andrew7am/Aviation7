@@ -31,11 +31,62 @@ export interface ParsedGrid {
  *  because passenger names and routes contain them. */
 const COLUMNAR = /\S(?:[ \t]{2,}|\t)\S/;
 
+/**
+ * Put a row back together that the copy broke into pieces.
+ *
+ * A table copied out of a web page wraps: a long cell pushes the rest of
+ * the row onto the next line, and the clipboard keeps the break without
+ * quoting it. Ibtekar's report does this on every single ticket, in three
+ * pieces —
+ *
+ *     2026-09-21  7FYTSN  RUHS22420  RUHS2234T  JAMJOOM HYTHAM TALAL
+ *     065-4862141169
+ *     issd  Electron  BSP  SV  JED-RUH; RUH-JED  CASH  0  0.00 SAR  ...
+ *
+ * — and read as three rows it produces one ticket numbered 0, with the
+ * PNR reading "ELECTRON" and the route in the passenger's column. Which
+ * is exactly what the import preview showed.
+ *
+ * The repair leans on one fact: every real row has the same number of
+ * columns as the header. So a run of short rows whose widths add up to
+ * EXACTLY that number is one row, and anything else is left alone. That
+ * exactness is the whole safety of it - a genuinely short row, a totals
+ * line, a blank separator, will not add up, and nothing is joined on a
+ * guess.
+ */
+export function unwrapRows(rows: string[][]): string[][] {
+  if (rows.length < 2) return rows;
+
+  // The widest row is the whole one. Not the most common: when every
+  // ticket wraps into three pieces the pieces outnumber the whole rows
+  // two to one, and the commonest width is a fragment's.
+  const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
+  if (width < 2) return rows;
+  // Nothing short: nothing wrapped.
+  if (!rows.some(r => r.length < width)) return rows;
+
+  const out: string[][] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].length >= width) { out.push(rows[i]); continue; }
+
+    // Gather forward while the pieces could still add up.
+    let joined = rows[i].slice();
+    let j = i;
+    while (joined.length < width && j + 1 < rows.length && rows[j + 1].length < width) {
+      joined = joined.concat(rows[j + 1]);
+      j++;
+    }
+    if (joined.length === width) { out.push(joined); i = j; }
+    else out.push(rows[i]);   // did not add up - leave it exactly as it was
+  }
+  return out;
+}
+
 export function parseGrid(text: string): ParsedGrid {
   const clean = text.trim();
   if (!clean) return { rows: [], delimiter: 'none' };
 
-  const rows = Papa.parse(clean, { skipEmptyLines: true }).data as string[][];
+  const rows = unwrapRows(Papa.parse(clean, { skipEmptyLines: true }).data as string[][]);
   const widest = rows.reduce((w, r) => Math.max(w, r.length), 0);
   if (widest > 1) return { rows, delimiter: 'papa' };
 
@@ -44,7 +95,8 @@ export function parseGrid(text: string): ParsedGrid {
   const lines = clean.split(/\r?\n/).filter(l => l.trim());
   if (!lines.some(l => COLUMNAR.test(l))) return { rows, delimiter: 'none' };
 
-  const split = lines.map(l => l.trim().split(/[ \t]{2,}|\t/).map(c => c.trim()));
+  const split = unwrapRows(
+    lines.map(l => l.trim().split(/[ \t]{2,}|\t/).map(c => c.trim())));
   const splitWidest = split.reduce((w, r) => Math.max(w, r.length), 0);
   if (splitWidest > 1) return { rows: split, delimiter: 'whitespace' };
 
