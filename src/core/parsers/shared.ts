@@ -15,13 +15,34 @@ export function hj(headers: string[]): string {
   return h(headers).join('|');
 }
 
+/**
+ * Find a column by any of several names.
+ *
+ * EVERY signal is tried exactly before ANY of them is tried loosely. That
+ * ordering is the whole of it: the old version took each signal in turn
+ * and let it match exactly OR loosely before moving on, so a short early
+ * signal could win on a substring while a later signal matched a header
+ * outright.
+ *
+ * `col(headers, 'A/L', 'Airline key')` against BSP's invoice, whose
+ * columns are "Serial" and "Airline key", is the case that showed it:
+ * "A/L" normalises to "al", "serial" CONTAINS "al", and the airline was
+ * read out of the serial column — which then held "4413", not an airline,
+ * so every row from that export lost its carrier.
+ *
+ * A caller's order still decides between two exact matches, and between
+ * two loose ones. All that changed is that exactness now outranks
+ * position, which is what every caller already assumed.
+ */
 export function col(headers: string[], ...signals: string[]): number {
   const hh = h(headers);
-  for (const sig of signals) {
-    const s = sig.toLowerCase().replace(/[^a-z0-9.]/g, '');
-    let i = hh.findIndex(c => c === s);
+  const norm = signals.map(sig => sig.toLowerCase().replace(/[^a-z0-9.]/g, ''));
+  for (const s of norm) {
+    const i = hh.findIndex(c => c === s);
     if (i !== -1) return i;
-    i = hh.findIndex(c => c.includes(s));
+  }
+  for (const s of norm) {
+    const i = hh.findIndex(c => c.includes(s));
     if (i !== -1) return i;
   }
   return -1;

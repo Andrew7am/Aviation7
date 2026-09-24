@@ -2,11 +2,26 @@
  * resolveReq — single source of truth for req num extraction
  * Rules: accept any text in the column, return empty ONLY if empty or "Need Req"
  */
+/**
+ * Words that are a note about the document, never a request.
+ *
+ * BSP's invoice sometimes carries the cancellation in the request column
+ * instead of its own: two of our ledger rows are filed under a request
+ * called "VOID" and one under "CANXX". Those are not requests, nothing
+ * can ever be closed against them, and they hid three cancelled tickets
+ * that were still sitting in the books as sales.
+ */
+const NOT_A_REQUEST = new Set([
+  'NEEDREQ', 'NEEDREQ.', 'N/A', 'NA', '-', '--', 'NONE', '0', 'NIL',
+  'VOID', 'CANX', 'CANXX', 'CANN', 'CNX', 'CANCEL', 'CANCELLED',
+  'CANCELLATION', 'RFNX', 'REFUND', 'RFND',
+]);
+
 export function resolveReq(raw: unknown): string {
   if (raw === null || raw === undefined) return '';
   const s = String(raw).trim().replace(/\s+/g, '').toUpperCase();
   if (!s) return '';
-  if (s === 'NEEDREQ' || s === 'NEED REQ' || s === 'N/A' || s === '-' || s === '--' || s === 'NONE' || s === '0') return '';
+  if (NOT_A_REQUEST.has(s)) return '';
   return s;
 }
 

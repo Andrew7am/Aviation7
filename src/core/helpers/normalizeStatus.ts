@@ -24,6 +24,10 @@ export function normalizeStatus(raw: unknown): NormalizedStatus {
     // rows, no balance effect. Kept separate from REFUND on purpose.
     VOID: 'VOID', CANN: 'VOID', CANX: 'VOID', CANCEL: 'VOID',
     CANCELLED: 'VOID', RFNX: 'VOID',
+    // BSP's own hand-typed variants. Five real rows read "canxx" and one
+    // "canx"; the doubled X was not in this map, so those five came back
+    // UNKNOWN and were read as sales by the amount.
+    CANXX: 'VOID', CNX: 'VOID', CNCL: 'VOID', CANCELLATION: 'VOID',
     // FUND
     FUND: 'FUND', TOPUP: 'FUND', 'TOP-UP': 'FUND', DEPOSIT: 'FUND',
     OPENING: 'FUND',

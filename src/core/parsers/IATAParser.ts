@@ -56,7 +56,18 @@ export const IATAParser: VendorParser = {
     const iTotal  = col(headers, 'total', 'TOTAL DOC', 'TOTALDOC');
     const iNet    = col(headers, 'NET', 'net');
     const iComm   = col(headers, 'COMM', 'comm', 'commission');
-    const iStatus = col(headers, 'TRNC', 'status', 'Status');
+    /**
+     * What each document IS, in whichever column this BSP export names it.
+     *
+     * The TJQ report calls it TRNC. The invoice export calls it SERVICE, and
+     * that one was never read — so every row from it arrived with no
+     * transaction type and fell through to "negative means a refund,
+     * positive means a sale". Refunds survived that, because BSP prints
+     * them negative. CANCELLATIONS DID NOT: a cancelled ticket keeps its
+     * full positive value on the invoice and became a live sale in the
+     * ledger. Three of them are sitting there now, worth 10,740.
+     */
+    const iStatus = col(headers, 'TRNC', 'status', 'Status', 'Service');
     const iAL     = col(headers, 'A/L', 'Airline key', 'AIRLINE');
     const iSerial = col(headers, 'Serial', 'SEQ NO', 'Seq No', 'SEQNO', 'SEQ', 'Serial Number');
     const iReq    = pickReqColumn(headers, col(headers, 'Req Number', 'REQ NUMBER', 'REQ NUM', 'Request Number'));
