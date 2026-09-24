@@ -20,6 +20,8 @@
  * "Service ", "Req Number ".
  */
 import { IATAParser } from '../src/core/parsers/IATAParser';
+import { BSPInvoiceParser } from '../src/core/parsers/BSPInvoiceParser';
+import { readFileSync } from 'node:fs';
 import { normalizeStatus } from '../src/core/helpers/normalizeStatus';
 import { resolveReq } from '../src/core/helpers/resolveReq';
 
@@ -106,6 +108,47 @@ console.log('\n4. The invoice row that started this, end to end');
   check('no request',        r.reqNum, '');
   check('the ticket is kept', r.ticketNo, '5512129252');
   check('and the airline',   r.airlineCode, '065');
+}
+
+console.log('\n5. An even exchange on the invoice is not a ticket');
+{
+  /* Real rows out of the 09 April 2026 invoice, kept as a fixture because
+     the parser reads a table by where the numbers SIT on the page: the
+     second field of each row carries the x position of every run, and a
+     line retyped as plain text parses to nothing at all.
+
+       157 TKTT 5512369347 09APR26 FFFF I 0.00 0.00 ... 0.00
+       +RTDN: 5512369256 1234 0.00
+       EX
+
+     A ticket reissued against an existing one with no money changing
+     hands. The fare is on the original; this document exists so the
+     airline has a number for the new coupon, and the invoice states no
+     fare, no commission and nothing payable — and no passenger and no
+     PNR either.
+
+     25 of these went into the ledger carrying nothing at all: no money,
+     no name, no booking reference, a permanent "Missing REQ" and a "Not
+     Closed" nobody could ever close. */
+  const rows = JSON.parse(readFileSync(
+    new URL('./fixtures/bsp-even-exchange.json', import.meta.url), 'utf8'));
+  const out = BSPInvoiceParser.parse(rows, [], 'AED');
+
+  const kept = out.rows.map(r => r.ticketNo);
+  check('the sale beside them is kept',   kept.includes('5512369346'), true);
+  check('and it carries its fare',
+    out.rows.find(r => r.ticketNo === '5512369346')?.amount, 3540);
+  check('the empty exchange is not',      kept.includes('5512369347'), false);
+  check('nor the second',                 kept.includes('5512369348'), false);
+  check('nor the third',                  kept.includes('5512369349'), false);
+  check('one row out of four documents',  out.rows.length, 1);
+
+  // Dropped loudly. A document that disappears without a word is how
+  // money goes missing.
+  check('the file says what it dropped',
+    out.warnings.some(w => /even exchange/i.test(w)), true);
+  check('and how many',
+    out.warnings.some(w => /3 even exchange/.test(w)), true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

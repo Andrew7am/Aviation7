@@ -190,6 +190,7 @@ export const BSPInvoiceParser: VendorParser = {
   },
 
   parse: (rows, _headers, defaultCurrency): ParserResult => {
+    let evenExchanges = 0;
     const errors: string[] = [];
     const warnings: string[] = [];
     const result: ParsedRow[] = [];
@@ -334,6 +335,36 @@ export const BSPInvoiceParser: VendorParser = {
         continue;
       }
 
+      /**
+       * An even exchange is not a sale.
+       *
+       *   157 TKTT 5512369347 09APR26 FFFF I 0.00 0.00 0.00 0.00 0.00 0.00
+       *   +RTDN: 5512369256 1234 0.00
+       *   EX
+       *
+       * A ticket reissued against an existing one with no money changing
+       * hands. The fare sits on the original document; this one exists so
+       * the airline has a number for the new coupon, and the invoice
+       * states no fare, no commission, no payable — and no passenger and
+       * no PNR either, because it has nothing to say about them.
+       *
+       * Imported as tickets, 25 of these landed in the ledger carrying
+       * nothing at all: no money, no name, no booking reference, a
+       * permanent "Missing REQ" and a "Not Closed" nobody can ever close.
+       * That is the same argument the codebase already makes for voids,
+       * which it discards rather than stores.
+       *
+       * A memo is deliberately exempt. A real ADMA on this account reads
+       * "0.00 ... -104.36 ... 104.36" — no transaction amount and a
+       * commission recall — and it is a genuine debit of 104.36 that must
+       * not be dropped with the empty exchanges.
+       */
+      if (!isVoid && !hasFare && Math.abs(finalPayable) < 0.005
+          && Math.abs(commission) < 0.005) {
+        evenExchanges++;
+        continue;
+      }
+
       result.push({
         ticketNo: cleanTk(docNo, airline),
         pnr: '',
@@ -355,6 +386,13 @@ export const BSPInvoiceParser: VendorParser = {
         channel,
         rawType: trnc,
       });
+    }
+
+    if (evenExchanges) {
+      warnings.push(
+        `${evenExchanges} even exchange(s) dropped: reissued against an existing ticket `
+        + 'with no fare, no commission and nothing payable. The money is on the original '
+        + 'document, and a row carrying none of it could never be closed.');
     }
 
     if (seenTxn === 0) {
