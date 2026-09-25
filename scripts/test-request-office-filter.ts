@@ -16,7 +16,7 @@
  */
 import {
   matchOffice, matchState, matchSearch, selectRequests, stateCounts, officeTabCounts,
-  type Facet,
+  sheetName, type Facet,
 } from '../src/components/Requests';
 import { classifyOffice } from '../src/core/helpers/reqOffice';
 
@@ -118,6 +118,68 @@ console.log('\n5. Each row of tabs counts what the others left');
       check(`${office}/${only}: the tab's number is the list's length`,
         stateCounts(LIST, office, '')[only],
         selectRequests(LIST, only, office, '').length);
+}
+
+console.log('\nA request number as an Excel tab name');
+{
+  // Excel refuses : \ / ? * [ ] in a sheet name, caps it at 31
+  // characters, and CORRUPTS a workbook that names two sheets the same —
+  // silently, so the first anyone knows is a file that will not open.
+  const fresh = () => new Set<string>();
+
+  check('an ordinary one is itself', sheetName('KSAML2218', fresh()), 'KSAML2218');
+  // A combined request is the normal shape here and must survive whole.
+  check('a combined one survives',   sheetName('KSAML43-SA1157', fresh()), 'KSAML43-SA1157');
+
+  for (const [raw, want] of [
+    ['UAEVP420/SA1168', 'UAEVP420-SA1168'],
+    ['REQ:2218',        'REQ-2218'],
+    ['REQ*2218',        'REQ-2218'],
+    ['REQ[2218]',       'REQ-2218-'],
+    ['A\\B',             'A-B'],
+    ['REQ?2218',        'REQ-2218'],
+  ] as [string, string][])
+    check(`"${raw}" is safe`, sheetName(raw, fresh()), want);
+
+  // 31 characters, and not one more.
+  const long = 'KSAML' + '1234567890'.repeat(4);
+  check('a long one is cut to 31', sheetName(long, fresh()).length, 31);
+
+  // TWO requests that differ only past the 31st character would collide,
+  // and a collision loses a whole request's tickets.
+  {
+    const taken = fresh();
+    const a = sheetName(long + 'AAA', taken);
+    const b = sheetName(long + 'BBB', taken);
+    check('the first is cut',        a.length, 31);
+    check('the second differs',      a === b, false);
+    check('and still fits',          b.length <= 31, true);
+  }
+
+  // The same request twice in one workbook — which the summary tab
+  // already occupies, so the very first name can collide too.
+  {
+    const taken = new Set<string>(['SUMMARY']);
+    check('Summary is not reused', sheetName('Summary', taken) === 'Summary', false);
+  }
+  {
+    const taken = fresh();
+    check('first',  sheetName('KSAML1', taken), 'KSAML1');
+    check('second', sheetName('KSAML1', taken), 'KSAML1~2');
+    check('third',  sheetName('KSAML1', taken), 'KSAML1~3');
+  }
+
+  // Case is not identity in Excel either: two tabs named ksaml1 and
+  // KSAML1 are the same tab.
+  {
+    const taken = fresh();
+    sheetName('KSAML1', taken);
+    check('case does not make it new', sheetName('ksaml1', taken), 'ksaml1~2');
+  }
+
+  // Nothing at all still has to produce a usable name.
+  check('an empty request', sheetName('', fresh()), 'REQUEST');
+  check('and blanks',       sheetName('   ', fresh()), 'REQUEST');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

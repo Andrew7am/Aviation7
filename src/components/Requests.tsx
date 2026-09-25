@@ -47,6 +47,11 @@ const show = (m: Money) => {
 
 /** The three states a request can be in, in the order they need attention. */
 type State = 'PART' | 'OPEN' | 'DONE';
+/** What each tab is called, for the tab itself and for the file name. */
+export const TAB_LABEL: Record<'ALL' | State, string> = {
+  ALL: 'All', PART: 'Part closed', OPEN: 'Not closed', DONE: 'Closed',
+};
+
 const RANK: Record<State, number> = { PART: 0, OPEN: 1, DONE: 2 };
 
 const STATE_STYLE: Record<State, { chip: string; row: string; label: string }> = {
@@ -116,6 +121,29 @@ export const matchSearch = (r: Facet, q: string) => {
     || r.sources.some(x => (x || '').toUpperCase().includes(s));
 };
 
+/**
+ * A request number as an Excel tab name.
+ *
+ * Excel refuses : \ / ? * [ ] in a sheet name, caps it at 31 characters,
+ * and silently corrupts a workbook that names two sheets the same. A
+ * combined request — "KSAML43-SA1157" — is fine, but "UAEVP420/SA1168"
+ * is not, and two requests differing only past the 31st character would
+ * collide.
+ *
+ * `taken` carries the names already used, so a collision gets a suffix
+ * rather than losing a request's tickets.
+ */
+export function sheetName(reqNum: string, taken: Set<string>): string {
+  const clean = (reqNum || 'REQUEST').replace(/[:\\/?*[\]]/g, '-').trim() || 'REQUEST';
+  let name = clean.slice(0, 31);
+  for (let n = 2; taken.has(name.toUpperCase()); n++) {
+    const tag = `~${n}`;
+    name = clean.slice(0, 31 - tag.length) + tag;
+  }
+  taken.add(name.toUpperCase());
+  return name;
+}
+
 export function selectRequests<T extends Facet>(
   list: T[], only: 'ALL' | State, office: OfficeSel, search: string,
 ): T[] {
@@ -172,6 +200,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
    * where it already was, and the footer says both.
    */
   const [copied, setCopied] = useState('');
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!copied) return;
     const t = setTimeout(() => setCopied(''), 1400);
@@ -185,7 +214,10 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
     if (await writeClipboard(reqNum)) setCopied(reqNum);
   };
 
-  const all = useMemo<Summary[]>(() => {
+  /** Every ticket, under the request it is filed against. Lifted out of
+   *  the summary because the per-request export needs the same grouping
+   *  and two groupings that drift apart is a bug waiting to happen. */
+  const byRequest = useMemo(() => {
     const by = new Map<string, Ticket[]>();
     for (const t of tickets) {
       const k = (t.reqNum || '').trim();
@@ -196,6 +228,11 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
       if (!by.has(key)) by.set(key, []);
       by.get(key)!.push(t);
     }
+    return by;
+  }, [tickets]);
+
+  const all = useMemo<Summary[]>(() => {
+    const by = byRequest;
 
     return [...by.entries()].map(([key, rows]) => {
       const closed = rows.filter(t => t.closed).length;
@@ -225,7 +262,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
       || b.open - a.open
       || b.lastDate.localeCompare(a.lastDate)
       || a.reqNum.localeCompare(b.reqNum));
-  }, [tickets]);
+  }, [byRequest]);
 
   const shown = useMemo(
     () => selectRequests(all, only, office, search),
@@ -257,12 +294,79 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
     })));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Requests');
-    XLSX.writeFile(wb, 'Requests.xlsx');
+    XLSX.writeFile(wb, `${fileStem()}.xlsx`);
   };
 
-  const TABS: ['ALL' | State, string][] = [
-    ['ALL', 'All'], ['PART', 'Part closed'], ['OPEN', 'Not closed'], ['DONE', 'Closed'],
-  ];
+  /** What the file is called, so a folder of them stays legible: the
+   *  filter that produced it, not "Requests (3).xlsx". */
+  const fileStem = () => {
+    const state = only === 'ALL' ? '' : ` - ${TAB_LABEL[only].toLowerCase()}`;
+    const where = office === 'ALL' ? '' : office === 'NONE' ? ' - unfiled'
+      : ` - ${OFFICE_LABEL[office as Exclude<Office, ''>]}`;
+    return `Requests${state}${where}`;
+  };
+
+  /**
+   * The same list, but each request's TICKETS on a tab of its own.
+   *
+   * What operations is sent is not a summary — it is "here are the
+   * fourteen tickets still open on KSAML2218". One workbook rather than
+   * fourteen files, because a tab is what a person opens and a folder of
+   * attachments is what they lose.
+   *
+   * The first tab is the summary, so the file opens on what it covers.
+   */
+  const exportTickets = async () => {
+    if (!shown.length) return;
+    setBusy(true);
+    try {
+      const XLSX = await xlsx();
+      const wb = XLSX.utils.book_new();
+
+      const summary = XLSX.utils.json_to_sheet(shown.map(r => ({
+        'Request': r.reqNum,
+        'State': STATE_STYLE[r.state].label,
+        'Office': r.office ? OFFICE_LABEL[r.office as Exclude<Office, ''>] : '',
+        'Tickets': r.rows,
+        'Not closed': r.open,
+        'Outstanding': show(r.openValue),
+        'Suppliers': r.sources.join(', '),
+        'Last activity': r.lastDate,
+      })));
+      XLSX.utils.book_append_sheet(wb, summary, 'Summary');
+
+      const taken = new Set<string>(['SUMMARY']);
+      for (const r of shown) {
+        const rows = byRequest.get(r.reqNum.toUpperCase()) ?? [];
+        // Open rows first: this is sent to close them, and a tab that
+        // opens on eighty settled tickets buries the four that are not.
+        const ordered = [...rows].sort((a, x) =>
+          Number(a.closed) - Number(x.closed)
+          || (a.date || '').localeCompare(x.date || '')
+          || (a.ticketNo || '').localeCompare(x.ticketNo || ''));
+
+        const ws = XLSX.utils.json_to_sheet(ordered.map(t => ({
+          'Ticket': t.airlineCode && t.ticketNo
+            ? `${t.airlineCode}-${t.ticketNo}` : t.ticketNo || '',
+          'PNR': t.pnr || '',
+          'Passenger': t.passengerName || '',
+          'Route': t.route || '',
+          'Date': t.date || '',
+          'Type': t.transactionType || t.status || '',
+          'Supplier': t.source || '',
+          'Amount': t.amount ?? 0,
+          'Currency': t.currency || '',
+          'Closed': t.closed ? 'Closed' : 'Not closed',
+        })));
+        XLSX.utils.book_append_sheet(wb, ws, sheetName(r.reqNum, taken));
+      }
+
+      XLSX.writeFile(wb, `${fileStem()} - tickets.xlsx`);
+    } finally { setBusy(false); }
+  };
+
+  // One list of labels, so the tab and the file name can never disagree.
+  const TABS = Object.entries(TAB_LABEL) as ['ALL' | State, string][];
 
   return (
     <div className="flex flex-col h-full bg-slate-100">
@@ -287,11 +391,20 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
           <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">
             Requests
           </h2>
-          <button onClick={exportList}
-            className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
-                       px-3 py-1.5 rounded hover:bg-purple-700">
-            <Download className="w-3.5 h-3.5" /> Export list
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={exportList}
+              className="flex items-center gap-1.5 bg-white text-slate-600 text-[11px] font-bold
+                         px-3 py-1.5 rounded border border-slate-200 hover:bg-slate-50">
+              <Download className="w-3.5 h-3.5" /> Export list
+            </button>
+            <button onClick={exportTickets} disabled={busy || !shown.length}
+              title={`One tab per request, with its tickets — ${shown.length} of them`}
+              className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
+                         px-3 py-1.5 rounded hover:bg-purple-700 disabled:opacity-50">
+              <Download className="w-3.5 h-3.5" />
+              {busy ? 'Building…' : `Export ${shown.length} with tickets`}
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
