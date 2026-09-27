@@ -10,6 +10,7 @@ import {
   compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK,
 } from '../core/helpers/teamSheetCompare';
 import { writeClipboard } from '../utils/clipboard';
+import { addabilityByKey, findingKey } from '../core/helpers/addFromSheet';
 
 const xlsx = () => import('xlsx');
 
@@ -122,6 +123,11 @@ const WHY: Record<Verdict, string> = {
   OK: 'The ticket is in both, and the refunds agree.',
 };
 
+/** The two verdicts that describe a ticket to add rather than a
+ *  disagreement to settle. Everything else the check finds is already in the
+ *  books somewhere, and "adding" it would make a second copy. */
+const PROPOSABLE_VERDICTS = new Set<Verdict>(['NOT_IN_LEDGER', 'REFUND_NOT_IN_LEDGER']);
+
 const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
   ({ label, value, tone }) => (
   <div className="bg-white border border-slate-200 rounded-lg px-3 py-2.5">
@@ -130,9 +136,59 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
   </div>
 );
 
+/**
+ * One row's own button.
+ *
+ * Most of these cannot be recorded unread, and the reason is known before
+ * anybody clicks — so the row says it instead of offering a button that
+ * would refuse. A button pressed and then explained is a wasted click, and
+ * on two hundred rows it is two hundred of them.
+ */
+const RowAdd: React.FC<{
+  f: Finding;
+  onAdd: (f: Finding) => Promise<void>;
+  why?: string;
+  state?: 'adding' | 'added' | 'queued';
+}> = ({ f, onAdd, why, state }) => {
+  if (state === 'adding')
+    return <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 inline" />;
+  if (state === 'added')
+    return (
+      <span className="text-[10px] font-bold text-emerald-700 inline-flex items-center gap-1">
+        <CheckCircle2 className="w-3 h-3" /> Added
+      </span>
+    );
+  if (state === 'queued')
+    return <span className="text-[10px] font-bold text-amber-700">To Review</span>;
+
+  // Known in advance: say so rather than offering a button that refuses.
+  if (why)
+    return (
+      <span title={why}
+        className="text-[10px] text-slate-400 italic cursor-help">
+        needs a look
+      </span>
+    );
+
+  return (
+    <button type="button" onClick={() => void onAdd(f)}
+      title="Record this one in the ledger now"
+      className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200
+                 text-[10px] font-bold px-2 py-0.5 rounded hover:bg-blue-100">
+      <Plus className="w-3 h-3" /> Add
+    </button>
+  );
+};
+
 const Group: React.FC<{
   verdict: Verdict; rows: Finding[]; onCopy: (text: string) => void;
-}> = ({ verdict, rows, onCopy }) => {
+  /** Present only on the two verdicts that describe a ticket to add. */
+  onAddOne?: (f: Finding) => Promise<void>;
+  /** Why each row can or cannot go in, worked out before anybody clicks. */
+  why?: Map<string, string>;
+  /** What became of the ones already pressed, by the same key. */
+  done?: Map<string, 'adding' | 'added' | 'queued'>;
+}> = ({ verdict, rows, onCopy, onAddOne, why, done }) => {
   const tone = TONE[verdict];
   const [open, setOpen] = useState(verdict !== 'OK');
   if (!rows.length) return null;
@@ -182,6 +238,7 @@ const Group: React.FC<{
                     {refundRow ? 'Our refund' : 'Our net'}
                   </th>
                   <th className="px-3 py-1.5">What it means</th>
+                  {onAddOne && <th className="px-3 py-1.5 text-right">Add</th>}
                 </tr>
               </thead>
               <tbody className="font-mono text-[11px]">
@@ -318,6 +375,13 @@ const Group: React.FC<{
                     <td className="px-3 py-1.5 text-slate-500 font-sans max-w-[320px]">
                       {f.note}
                     </td>
+                    {onAddOne && (
+                      <td className="px-3 py-1.5 text-right whitespace-nowrap font-sans">
+                        <RowAdd f={f} onAdd={onAddOne}
+                          why={why?.get(findingKey(f))}
+                          state={done?.get(findingKey(f))} />
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -428,38 +492,15 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAdd
     }
   };
 
-  /** The findings as a sheet, worst first, same order as the screen. */
-  /* ── send the missing ones for review ──────────────────────────────────
+  /* ── the missing ones ──────────────────────────────────────────────────
      Only the two verdicts that describe a ticket our books do not have.
      Everything else the check finds is a disagreement to settle rather than
      a ticket to add, and offering to "add" a misfiled ticket would create a
      second copy of one we already hold. */
   const proposable = useMemo(() => (report?.findings ?? []).filter(f =>
-    f.verdict === 'NOT_IN_LEDGER' || f.verdict === 'REFUND_NOT_IN_LEDGER'), [report]);
+    PROPOSABLE_VERDICTS.has(f.verdict)), [report]);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [addedNote, setAddedNote] = useState<string[]>([]);
-
-  const addToLedger = async () => {
-    if (!onAddToLedger || adding || !proposable.length) return;
-    setAdding(true); setSent(''); setAddedNote([]); setError('');
-    try {
-      const r = await onAddToLedger(proposable);
-      const lines = [
-        r.added
-          ? `${r.added} recorded in the ledger.`
-          : 'Nothing could be recorded without a look first.',
-        r.alreadyHeld && `${r.alreadyHeld} were already in the books.`,
-        r.queued && `${r.queued} are waiting on To Review:`,
-        // Named, because "9 need review" with no reason reads as a refusal.
-        ...r.reasons.map(x => `   · ${x.count} — ${x.why}`),
-      ].filter(Boolean) as string[];
-      setAddedNote(lines);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally { setAdding(false); }
-  };
 
   const sendToReview = async () => {
     if (!onSendToReview || sending || !proposable.length) return;
@@ -476,6 +517,34 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAdd
     } finally { setSending(false); }
   };
 
+  /* Why each of them can or cannot go in, worked out from the findings the
+     moment they exist rather than when a button is pressed. Same helper the
+     handler uses, so a row that says "needs a look" is exactly a row the
+     handler would queue. */
+  const addability = useMemo(
+    () => addabilityByKey(proposable, { newId: () => '', userId: '', tickets }),
+    [proposable, tickets]);
+
+  const [rowState, setRowState] =
+    useState<Map<string, 'adding' | 'added' | 'queued'>>(new Map());
+
+  const addOne = async (f: Finding) => {
+    if (!onAddToLedger) return;
+    const k = findingKey(f);
+    const mark = (v: 'adding' | 'added' | 'queued') =>
+      setRowState(m => new Map(m).set(k, v));
+    mark('adding');
+    setError('');
+    try {
+      const r = await onAddToLedger([f]);
+      mark(r.added ? 'added' : 'queued');
+    } catch (e) {
+      setRowState(m => { const n = new Map(m); n.delete(k); return n; });
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  /** The findings as a sheet, worst first, same order as the screen. */
   const exportReport = async () => {
     if (!report) return;
     const XLSX = await xlsx();
@@ -550,20 +619,8 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAdd
         </div>
         {report && (
           <div className="flex items-center gap-2 shrink-0">
-            {onAddToLedger && proposable.length > 0 && (
-              <button onClick={addToLedger} disabled={adding || sending}
-                title={`Record the ones that can go in unread; queue the rest`}
-                className="flex items-center gap-1.5 bg-blue-600 text-white text-[11px]
-                           font-bold px-3 py-1.5 rounded hover:bg-blue-700
-                           disabled:opacity-50">
-                {adding
-                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  : <Plus className="w-3.5 h-3.5" />}
-                Add {proposable.length} to the ledger
-              </button>
-            )}
             {onSendToReview && proposable.length > 0 && (
-              <button onClick={sendToReview} disabled={sending || adding}
+              <button onClick={sendToReview} disabled={sending}
                 title={`${proposable.length} ticket(s) on their sheet and in nobody's books`}
                 className="flex items-center gap-1.5 bg-emerald-600 text-white text-[11px]
                            font-bold px-3 py-1.5 rounded hover:bg-emerald-700
@@ -582,20 +639,6 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAdd
           </div>
         )}
       </div>
-
-      {addedNote.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5
-                        text-[11px] text-blue-900 flex items-start gap-2">
-          <CheckCircle2 className="w-3.5 h-3.5 mt-px shrink-0" />
-          <div className="space-y-0.5">
-            {addedNote.map((line, i) => (
-              <div key={i} className={line.startsWith('   ·') ? 'font-mono text-[10px]' : ''}>
-                {line}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {sent && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5
@@ -901,7 +944,10 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAdd
           <div className="space-y-2">
             {order.map(v => (
               <Group key={v} verdict={v} onCopy={copy}
-                rows={report.findings.filter(f => f.verdict === v)} />
+                rows={report.findings.filter(f => f.verdict === v)}
+                {...(onAddToLedger && PROPOSABLE_VERDICTS.has(v)
+                  ? { onAddOne: addOne, why: addability, done: rowState }
+                  : {})} />
             ))}
           </div>
         </>

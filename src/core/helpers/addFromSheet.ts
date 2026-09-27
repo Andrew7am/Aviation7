@@ -91,3 +91,29 @@ export function waitingReasons(plan: SheetAddPlan): { why: string; count: number
   return [...by].map(([why, count]) => ({ why, count }))
     .sort((a, b) => b.count - a.count || a.why.localeCompare(b.why));
 }
+
+/**
+ * Why each finding can or cannot be recorded, keyed by its document.
+ *
+ * The same plan, arranged for a screen that shows one row at a time. A row
+ * that cannot go in should say so BEFORE anybody presses anything — a button
+ * that is pressed and then explains itself is a button that wasted a click,
+ * and on a list of two hundred that is two hundred wasted clicks.
+ *
+ * '' means ready. A key missing altogether means the finding proposes
+ * nothing at all.
+ */
+export function addabilityByKey(
+  findings: Finding[], opts: PlanOptions,
+): Map<string, string> {
+  const plan = planSheetAdd(findings, opts);
+  const out = new Map<string, string>();
+  for (const p of plan.ready) out.set(keyOf(p), '');
+  for (const w of plan.waiting) out.set(keyOf(w.proposal), w.why);
+  for (const p of plan.alreadyHeld) out.set(keyOf(p), 'Already in the books.');
+  return out;
+}
+
+/** The key a finding is listed under, so a row can look itself up. */
+export const findingKey = (f: { serial?: string; pnr?: string }) =>
+  keyOf({ ticketNo: f.serial, pnr: f.pnr });
