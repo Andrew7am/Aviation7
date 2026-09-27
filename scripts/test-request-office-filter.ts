@@ -76,7 +76,9 @@ console.log('\n3. Office and state narrow together, not instead of each other');
   const names = (only: Parameters<typeof matchState>[1], office: Parameters<typeof matchOffice>[1]) =>
     selectRequests(LIST, only, office, '').map(r => r.reqNum);
   check('Saudi + part closed',  names('PART', 'SAUDI'), ['KSAML1452']);
-  check('Dubai + not closed',   names('OPEN', 'DUBAI'), ['UAECO228', 'DXB4410']);
+  // Not closed means "still has an open row", so a part-closed Dubai
+  // request belongs in it too — it is not finished.
+  check('Dubai + not closed',   names('OPEN', 'DUBAI'), ['UAEVP205', 'UAECO228', 'DXB4410']);
   check('Egypt + closed is empty', names('DONE', 'EGYPT'), []);
   check('all + all is the list', names('ALL', 'ALL').length, LIST.length);
 }
@@ -96,11 +98,11 @@ console.log('\n5. Each row of tabs counts what the others left');
 {
   // The whole ledger.
   check('states across every office',
-    stateCounts(LIST, 'ALL', ''), { ALL: 10, PART: 2, OPEN: 5, DONE: 3 });
+    stateCounts(LIST, 'ALL', ''), { ALL: 10, PART: 2, OPEN: 7, DONE: 3 });
   // Narrowed to Saudi: the state tabs must drop to Saudi's own figures, or
   // they promise rows the list below will not show.
   check('states within Saudi',
-    stateCounts(LIST, 'SAUDI', ''), { ALL: 3, PART: 1, OPEN: 1, DONE: 1 });
+    stateCounts(LIST, 'SAUDI', ''), { ALL: 3, PART: 1, OPEN: 2, DONE: 1 });
   check('states within the unfiled group',
     stateCounts(LIST, 'NONE', ''), { ALL: 2, PART: 0, OPEN: 1, DONE: 1 });
 
@@ -109,7 +111,7 @@ console.log('\n5. Each row of tabs counts what the others left');
     { ALL: 10, DUBAI: 4, SAUDI: 3, EGYPT: 1, NONE: 2 });
   check('offices within not closed',
     officeTabCounts(LIST, 'OPEN', ''),
-    { ALL: 5, DUBAI: 2, SAUDI: 1, EGYPT: 1, NONE: 1 });
+    { ALL: 7, DUBAI: 3, SAUDI: 2, EGYPT: 1, NONE: 1 });
 
   // The invariant that makes the numbers trustworthy: whatever a tab says,
   // clicking it produces exactly that many rows.
@@ -180,6 +182,38 @@ console.log('\nA request number as an Excel tab name');
   // Nothing at all still has to produce a usable name.
   check('an empty request', sheetName('', fresh()), 'REQUEST');
   check('and blanks',       sheetName('   ', fresh()), 'REQUEST');
+}
+
+console.log('\nNot closed means anything still open');
+{
+  /* "Not closed" used to mean only requests with NOTHING closed. A request
+     with three of five settled landed under Part closed and nowhere else —
+     so exporting Not closed to send to operations quietly left out
+     fourteen requests holding thirty-one still-open tickets, and nothing on
+     screen said so.
+
+     Everywhere else in the app not-closed counts open TICKETS, which
+     includes the ones sitting inside a part-closed request. The tab now
+     agrees with that. Part closed stays as the narrower view of the same
+     thing, so the two overlap on purpose. */
+  const open = selectRequests(LIST, 'OPEN', 'ALL', '').map(r => r.reqNum);
+  const part = selectRequests(LIST, 'PART', 'ALL', '').map(r => r.reqNum);
+  const done = selectRequests(LIST, 'DONE', 'ALL', '').map(r => r.reqNum);
+
+  check('every part-closed request is also not closed',
+        part.every(r => open.includes(r)), true);
+  check('nothing finished is',
+        done.some(r => open.includes(r)), false);
+  check('not closed and closed still cover the whole list',
+        new Set([...open, ...done]).size, LIST.length);
+  check('and they do not overlap',
+        open.filter(r => done.includes(r)), []);
+
+  // The rule the tabs live by: a badge must equal the list it opens.
+  for (const only of ['ALL', 'PART', 'OPEN', 'DONE'] as const)
+    check(`the ${only} badge equals its list`,
+          stateCounts(LIST, 'ALL', '')[only],
+          selectRequests(LIST, only, 'ALL', '').length);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

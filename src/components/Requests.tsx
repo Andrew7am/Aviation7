@@ -114,7 +114,26 @@ export type Facet = Pick<Summary, 'state' | 'office' | 'reqNum' | 'sources'>;
 export const matchOffice = (r: Facet, sel: OfficeSel) =>
   sel === 'ALL' || (sel === 'NONE' ? !r.office : r.office === sel);
 
-export const matchState = (r: Facet, sel: 'ALL' | State) => sel === 'ALL' || r.state === sel;
+/**
+ * Which requests a tab shows.
+ *
+ * "Not closed" used to mean only requests with NOTHING closed, so a request
+ * with three of five settled appeared under Part closed and nowhere else.
+ * That is not what not-closed means anywhere else in the app — the sidebar
+ * counts open TICKETS, and thirty-one of those live inside part-closed
+ * requests — and it is not what it means to a person either: a request with
+ * two tickets still open is not finished.
+ *
+ * It cost more than a label. The export follows the tab, so exporting "Not
+ * closed" to send to operations quietly left out fourteen requests holding
+ * thirty-one open tickets, and nothing on screen said so.
+ *
+ * So Not closed now means "still has an open row", and Part closed stays as
+ * the narrower view of the same thing: the ones that are half done, which no
+ * other screen shows at all. The two overlap on purpose.
+ */
+export const matchState = (r: Facet, sel: 'ALL' | State) =>
+  sel === 'ALL' || (sel === 'OPEN' ? r.state !== 'DONE' : r.state === sel);
 
 export const matchSearch = (r: Facet, q: string) => {
   const s = q.trim().toUpperCase();
@@ -164,9 +183,12 @@ export function stateCounts(list: Facet[], office: OfficeSel, search: string) {
   const base = list.filter(r => matchOffice(r, office) && matchSearch(r, search));
   return {
     ALL: base.length,
-    PART: base.filter(r => r.state === 'PART').length,
-    OPEN: base.filter(r => r.state === 'OPEN').length,
-    DONE: base.filter(r => r.state === 'DONE').length,
+    PART: base.filter(r => matchState(r, 'PART')).length,
+    // Counted through matchState, not by comparing the state, so the badge
+    // and the list it opens can never mean two different things — Not closed
+    // now covers part-closed requests as well.
+    OPEN: base.filter(r => matchState(r, 'OPEN')).length,
+    DONE: base.filter(r => matchState(r, 'DONE')).length,
   } as Record<'ALL' | State, number>;
 }
 
