@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { writeClipboard } from '../utils/clipboard';
 import { classifyOffice, OFFICE_LABEL, Office } from '../core/helpers/reqOffice';
+import { requestFileName } from '../core/helpers/requestFileName';
 import { RequestProfile } from './RequestProfile';
 
 /**
@@ -307,23 +308,32 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
   };
 
   /**
-   * The same list, but each request's TICKETS on a tab of its own.
+   * A zip: one workbook per request, each holding that request's tickets.
    *
-   * What operations is sent is not a summary — it is "here are the
-   * fourteen tickets still open on KSAML2218". One workbook rather than
-   * fourteen files, because a tab is what a person opens and a folder of
-   * attachments is what they lose.
+   * This used to be a single workbook with a tab per request, and a tab is
+   * the better thing to READ. But this file is not read here — it is taken
+   * apart and sent on, one request to whoever is chasing it, and you cannot
+   * send somebody a tab. Handing operations a twenty-tab workbook to close
+   * four tickets means every one of them receives the other nineteen
+   * requests' figures as well.
    *
-   * The first tab is the summary, so the file opens on what it covers.
+   * So the unit of the export is the unit of the errand. A summary stays at
+   * the top level of the zip, for whoever opens the zip rather than the
+   * files inside it.
    */
   const exportTickets = async () => {
     if (!shown.length) return;
     setBusy(true);
     try {
-      const XLSX = await xlsx();
-      const wb = XLSX.utils.book_new();
+      const [XLSX, { zipSync }] = await Promise.all([xlsx(), import('fflate')]);
+      const files: Record<string, Uint8Array> = {};
+      const book = (ws: unknown, tab: string) => {
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, tab);
+        return new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
+      };
 
-      const summary = XLSX.utils.json_to_sheet(shown.map(r => ({
+      files['_Summary.xlsx'] = book(XLSX.utils.json_to_sheet(shown.map(r => ({
         'Request': r.reqNum,
         'State': STATE_STYLE[r.state].label,
         'Office': r.office ? OFFICE_LABEL[r.office as Exclude<Office, ''>] : '',
@@ -332,13 +342,12 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
         'Outstanding': show(r.openValue),
         'Suppliers': r.sources.join(', '),
         'Last activity': r.lastDate,
-      })));
-      XLSX.utils.book_append_sheet(wb, summary, 'Summary');
+      }))), 'Summary');
 
-      const taken = new Set<string>(['SUMMARY']);
+      const taken = new Set<string>(['_SUMMARY.XLSX']);
       for (const r of shown) {
         const rows = byRequest.get(r.reqNum.toUpperCase()) ?? [];
-        // Open rows first: this is sent to close them, and a tab that
+        // Open rows first: this is sent to close them, and a sheet that
         // opens on eighty settled tickets buries the four that are not.
         const ordered = [...rows].sort((a, x) =>
           Number(a.closed) - Number(x.closed)
@@ -358,10 +367,24 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
           'Currency': t.currency || '',
           'Closed': t.closed ? 'Closed' : 'Not closed',
         })));
-        XLSX.utils.book_append_sheet(wb, ws, sheetName(r.reqNum, taken));
+        // The tab inside each file is still named for the request, so a
+        // file that gets renamed on the way still says what it is.
+        files[requestFileName(r.reqNum, taken)] =
+          book(ws, sheetName(r.reqNum, new Set()));
       }
 
-      XLSX.writeFile(wb, `${fileStem()} - tickets.xlsx`);
+      // An .xlsx is a zip already, so its bytes do not compress again.
+      // Storing them keeps the build instant on a hundred requests.
+      const zipped = zipSync(files, { level: 0 });
+      const url = URL.createObjectURL(
+        new Blob([zipped as BlobPart], { type: 'application/zip' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileStem()} - tickets.zip`;
+      a.click();
+      // Revoked on the next tick: Safari has not started the download yet
+      // when click() returns, and a revoked URL downloads nothing at all.
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } finally { setBusy(false); }
   };
 
@@ -398,7 +421,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
               <Download className="w-3.5 h-3.5" /> Export list
             </button>
             <button onClick={exportTickets} disabled={busy || !shown.length}
-              title={`One tab per request, with its tickets — ${shown.length} of them`}
+              title={`A zip holding one file per request, with its tickets — ${shown.length} of them`}
               className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
                          px-3 py-1.5 rounded hover:bg-purple-700 disabled:opacity-50">
               <Download className="w-3.5 h-3.5" />
