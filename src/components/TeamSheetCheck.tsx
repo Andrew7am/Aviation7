@@ -188,7 +188,9 @@ const Group: React.FC<{
   why?: Map<string, string>;
   /** What became of the ones already pressed, by the same key. */
   done?: Map<string, 'adding' | 'added' | 'queued'>;
-}> = ({ verdict, rows, onCopy, onAddOne, why, done }) => {
+  /** Documents we know were cancelled, by ten-digit serial. */
+  voided?: Map<string, { date: string; period?: string }>;
+}> = ({ verdict, rows, onCopy, onAddOne, why, done, voided }) => {
   const tone = TONE[verdict];
   const [open, setOpen] = useState(verdict !== 'OK');
   if (!rows.length) return null;
@@ -391,7 +393,25 @@ const Group: React.FC<{
                       })() : <span className="text-slate-300">—</span>}
                     </td>
                     <td className="px-3 py-1.5 text-slate-500 font-sans max-w-[320px]">
-                      {f.note}
+                      {(() => {
+                        /* A ticket missing from our books usually means a
+                           supplier who has not billed yet. When we already
+                           know the document was cancelled, it means their
+                           sheet was never updated — a different job, for a
+                           different person, and the row should not read as
+                           money to chase. */
+                        const v = voided?.get((f.serial || '').replace(/\D/g, '').slice(-10));
+                        if (!v) return f.note;
+                        return (
+                          <span>
+                            <span className="font-bold text-slate-700">
+                              This document was voided{v.period ? ` in period ${v.period}` : ''}.
+                            </span>{' '}
+                            It is on their sheet as live, so their sheet was never updated.
+                            Nothing to add to our books.
+                          </span>
+                        );
+                      })()}
                     </td>
                     {onAddOne && (
                       <td className="px-3 py-1.5 text-right whitespace-nowrap font-sans">
@@ -436,9 +456,21 @@ interface Props {
     added: number; queued: number; alreadyHeld: number;
     reasons: { why: string; count: number }[];
   }>;
+  /**
+   * The cancelled documents.
+   *
+   * A ticket on their sheet and in nobody's books is normally a supplier
+   * who has not billed yet or an import that missed it. Sometimes it is
+   * neither: the document was voided and their sheet was never updated.
+   * Those look identical on this screen, and only one of them is worth
+   * chasing.
+   */
+  voids?: { ticketNo: string; date: string; source: string; period?: string }[];
 }
 
-export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAddToLedger }) => {
+export const TeamSheetCheck: React.FC<Props> = ({
+  tickets, onSendToReview, onAddToLedger, voids = [],
+}) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
@@ -534,6 +566,17 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAdd
       setError(e instanceof Error ? e.message : String(e));
     } finally { setSending(false); }
   };
+
+  /* The voided documents, by serial, so a row missing from our books can
+     say WHY it is missing when the answer is already known. */
+  const voidedSerials = useMemo(() => {
+    const m = new Map<string, { date: string; period?: string }>();
+    for (const v of voids) {
+      const k = (v.ticketNo || '').replace(/\D/g, '').slice(-10);
+      if (k && !m.has(k)) m.set(k, { date: v.date, period: v.period });
+    }
+    return m;
+  }, [voids]);
 
   /* Why each of them can or cannot go in, worked out from the findings the
      moment they exist rather than when a button is pressed. Same helper the
@@ -964,6 +1007,7 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAdd
             {order.map(v => (
               <Group key={v} verdict={v} onCopy={copy}
                 rows={report.findings.filter(f => f.verdict === v)}
+                voided={voidedSerials}
                 {...(onAddToLedger && PROPOSABLE_VERDICTS.has(v)
                   ? { onAddOne: addOne, why: addability, done: rowState }
                   : {})} />

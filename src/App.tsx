@@ -28,6 +28,7 @@ const VendorBalances  = React.lazy(() => import('./components/VendorBalances').t
 const VendorStatements = React.lazy(() => import('./components/VendorStatements').then(m => ({ default: m.VendorStatements })));
 const Reports         = React.lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
 const TaxInvoices     = React.lazy(() => import('./components/TaxInvoices').then(m => ({ default: m.TaxInvoices })));
+const Voids           = React.lazy(() => import('./components/Voids').then(m => ({ default: m.Voids })));
 const ImportHistory   = React.lazy(() => import('./components/ImportHistory').then(m => ({ default: m.ImportHistory })));
 const ActivityLog     = React.lazy(() => import('./components/ActivityLog').then(m => ({ default: m.ActivityLog })));
 const Settings        = React.lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
@@ -49,6 +50,7 @@ import { useWallet } from './hooks/useWallet';
 import { useStatements } from './hooks/useStatements';
 import { usePending } from './hooks/usePending';
 import { useTaxInvoices } from './hooks/useTaxInvoices';
+import { useVoids } from './hooks/useVoids';
 import { coverageReport } from './core/helpers/taxInvoiceCoverage';
 import { pendingFromFindings, ticketFromPending } from './core/helpers/pendingFromFindings';
 import { planSheetAdd, waitingReasons } from './core/helpers/addFromSheet';
@@ -57,7 +59,7 @@ import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
-  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck, Receipt } from 'lucide-react';
+  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck, Receipt, Ban } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
 const LOW_PCT = 0.2;
@@ -83,6 +85,7 @@ function MainApp({ user }: { user: User }) {
   const {
     invoices: taxInvoices, upload: uploadTaxInvoices, remove: removeTaxInvoice,
   } = useTaxInvoices(user.id);
+  const { voids } = useVoids(user.id);
 
   const ticketSvc = new TicketService(user.id);
   const importSvc = new ImportService(user.id);
@@ -360,6 +363,7 @@ function MainApp({ user }: { user: User }) {
     { id: 'vendors',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
     { id: 'statements', label: 'Vendor Statements', icon: <FileText className="w-4 h-4" />, badge: statementGapCount || undefined, badgeColor: 'red' },
     { id: 'taxinvoices', label: 'Tax Invoices', icon: <Receipt className="w-4 h-4" />, badge: noTaxInvoiceCount || undefined, badgeColor: 'red' },
+    { id: 'voids',     label: 'Voids',           icon: <Ban className="w-4 h-4" />, badge: voids.length || undefined, badgeColor: 'slate' },
     { id: 'reports',   label: 'Reports',         icon: <BarChart2 className="w-4 h-4" /> },
     ...(isAdmin ? [{ id: 'activity' as ViewState, label: 'Activity Log', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
     ...(isAdmin ? [{ id: 'settings' as ViewState, label: 'Settings', icon: <SettingsIcon className="w-4 h-4" /> }] : []),
@@ -393,7 +397,7 @@ function MainApp({ user }: { user: User }) {
       )}
 
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
-      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} {...(isAdmin ? writeHandlers : {})} />}
+      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} {...(isAdmin ? writeHandlers : {})} />}
       {view === 'requests'  && <Requests tickets={tickets}
         {...(isAdmin ? { onUpdateClosed: handleUpdateClosed } : {})} />}
       {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}
@@ -402,6 +406,7 @@ function MainApp({ user }: { user: User }) {
       {/* Read-only, so everybody gets it: the person closing a flight sheet
           is not always the person who can write to the ledger. */}
       {view === 'teamsheet' && <TeamSheetCheck tickets={tickets}
+        voids={voids}
         {...(isAdmin ? { onSendToReview: handleSendToReview,
                          onAddToLedger: handleAddFromSheet } : {})} />}
       {view === 'review'    && (
@@ -442,6 +447,7 @@ function MainApp({ user }: { user: User }) {
         <TaxInvoices tickets={tickets} invoices={taxInvoices}
           {...(isAdmin ? { onUpload: uploadTaxInvoices, onDelete: removeTaxInvoice } : {})} />
       )}
+      {view === 'voids'     && <Voids voids={voids} tickets={tickets} />}
       {view === 'reports'   && <Reports tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
       {view === 'activity'  && (isAdmin
         ? <ActivityLog currentUserId={user.id} onUndo={handleUndoAction} />

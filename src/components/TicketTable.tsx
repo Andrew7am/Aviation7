@@ -21,6 +21,7 @@ import { extractRoute } from '../core/helpers/extractRoute';
 import { missingDate, displayDate } from '../core/helpers/missingDate';
 import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { classifyOffice, OFFICE_LABEL, type Office } from '../core/helpers/reqOffice';
+import { Ban } from 'lucide-react';
 import { airlineName } from '../core/config/airlines';
 import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers/period';
 
@@ -31,6 +32,17 @@ interface TicketTableProps {
   /** Opens the table already narrowed to a closure state, so a view can be
    *  "the outstanding list" without the user having to find the dropdown. */
   defaultClosed?: 'ALL' | 'CLOSED' | 'NOT_CLOSED';
+  /**
+   * The cancelled documents, for search only.
+   *
+   * They are deliberately not rows in this table — a void is in no balance
+   * and no request, and mixing one in would put a document worth nothing
+   * into every total on screen. But a search that finds nothing when the
+   * document exists is worse than useless: it says the ticket was never
+   * ours, when in fact it was issued and cancelled. So the search says so,
+   * without the row joining the list.
+   */
+  voids?: { ticketNo: string; pnr?: string; passengerName?: string; date: string; period?: string }[];
   onDelete?: (id: string) => void;
   onUpdateReqNum?: (id: string, reqNum: string) => void;
   onUpdateTicket?: (id: string, patch: Partial<Ticket>) => void;
@@ -308,7 +320,7 @@ const CabinBadge: React.FC<{ cabin?: string; raw?: string }> = ({ cabin, raw }) 
 };
 
 export const TicketTable: React.FC<TicketTableProps> = ({
-  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
+  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const [filterMode, setFilterMode] =
@@ -448,6 +460,17 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     }
     return rows;
   }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+
+  /* Only while something is being searched for. A standing list of every
+     void under the ledger would be a second table nobody asked for. */
+  const voidHits = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (q.length < 3) return [];
+    return voids.filter(v =>
+      v.ticketNo.toLowerCase().includes(q)
+      || (v.pnr || '').toLowerCase().includes(q)
+      || (v.passengerName || '').toLowerCase().includes(q));
+  }, [voids, searchTerm]);
 
   useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
@@ -997,6 +1020,21 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       {/* Says what landed on the clipboard, not just that something did — a
           click near a cell edge could otherwise copy the neighbour without
           anyone noticing. */}
+      {voidHits.length > 0 && (
+        <div className="mx-4 mt-3 bg-slate-100 border border-slate-300 rounded-lg px-3 py-2
+                        text-[11px] text-slate-700 flex items-start gap-2">
+          <Ban className="w-3.5 h-3.5 mt-px shrink-0 text-slate-500" />
+          <span>
+            {voidHits.length} cancelled document{voidHits.length === 1 ? '' : 's'} also
+            match{voidHits.length === 1 ? 'es' : ''} this search. Voids are not in the ledger —
+            they are on the Voids screen.{' '}
+            <span className="font-mono text-slate-600">
+              {voidHits.slice(0, 6).map(v => v.ticketNo).join(', ')}
+              {voidHits.length > 6 && ` and ${voidHits.length - 6} more`}
+            </span>
+          </span>
+        </div>
+      )}
       {copied && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
                         bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg
