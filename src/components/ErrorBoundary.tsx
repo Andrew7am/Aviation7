@@ -22,6 +22,27 @@ import { AlertTriangle, RefreshCw, Copy } from 'lucide-react';
 interface Props { children: ReactNode }
 interface State { error: Error | null; info: string }
 
+/**
+ * The failure that is not a bug: a tab open across a deploy.
+ *
+ * Every screen here is fetched when it is opened, and the built file names
+ * carry a content hash — PendingReview-CEPxcGi4.js. Deploy again and those
+ * names change, so a tab that has been open since before the deploy is
+ * holding a list of files the server no longer has. The first screen the
+ * person opens after that asks for one and gets a 404.
+ *
+ * Nothing is wrong with the app or the data; the tab is simply out of date.
+ * The cure is to load the page again, which fetches the new list.
+ */
+const STALE_BUILD =
+  /Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed|ChunkLoadError|Loading chunk \S+ failed/i;
+
+/** When the tab last reloaded itself for this. Stops a genuine 404 — a file
+ *  missing from the deploy rather than renamed by it — turning into a page
+ *  that reloads for ever. */
+const RELOAD_KEY = 'aviation:reloaded-for-update';
+const RELOAD_GAP_MS = 60_000;
+
 export class ErrorBoundary extends Component<Props, State> {
   state: State = { error: null, info: '' };
 
@@ -34,6 +55,17 @@ export class ErrorBoundary extends Component<Props, State> {
     // browser's own stack is better than the one React hands us.
     console.error('screen crashed', error, info.componentStack);
     this.setState({ info: info.componentStack ?? '' });
+
+    if (!STALE_BUILD.test(error.message ?? '')) return;
+    /* Reload once, quietly. Showing somebody an error and asking them to
+       press Reload, when the only possible answer is to press Reload, is
+       making them do the work. Guarded by the clock so a file that is
+       genuinely missing cannot put the tab in a loop. */
+    let last = 0;
+    try { last = Number(sessionStorage.getItem(RELOAD_KEY) ?? 0); } catch { /* private mode */ }
+    if (Date.now() - last < RELOAD_GAP_MS) return;
+    try { sessionStorage.setItem(RELOAD_KEY, String(Date.now())); } catch { /* ignore */ }
+    location.reload();
   }
 
   private report() {
@@ -53,6 +85,29 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (!this.state.error) return this.props.children;
+
+    /* Said plainly, because it is not a fault and the person reading it did
+       nothing wrong. Only reached when the reload above was declined by the
+       clock — otherwise the page is already on its way back. */
+    if (STALE_BUILD.test(this.state.error.message ?? '')) {
+      return (
+        <div className="min-h-screen flex items-start justify-center bg-slate-50 p-6">
+          <div className="max-w-lg w-full mt-16 bg-white border border-slate-200 rounded-xl
+                          px-5 py-4">
+            <h1 className="font-bold text-slate-800">A new version was released</h1>
+            <p className="text-[12px] text-slate-600 mt-1">
+              This tab has been open since before the update, so it asked for a file that
+              has been replaced. Nothing is wrong with your data. Load the page again.
+            </p>
+            <button onClick={() => location.reload()}
+              className="mt-3 flex items-center gap-1.5 bg-slate-800 text-white text-[11px]
+                         font-bold px-3 py-1.5 rounded hover:bg-slate-700">
+              <RefreshCw className="w-3.5 h-3.5" /> Reload
+            </button>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="min-h-screen flex items-start justify-center bg-slate-50 p-6">

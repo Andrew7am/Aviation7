@@ -6,9 +6,10 @@ import {
   whyNotConfirmable, cellKey, cellShares, canSplit,
 } from '../core/helpers/pendingFromFindings';
 import { writeClipboard } from '../utils/clipboard';
+import { voidIndex, voidFor, voidsInQueue, VoidedDoc } from '../core/helpers/pendingVoids';
 import {
   CheckCircle2, X, Loader2, Copy, AlertTriangle, Lock, Undo2, Trash2, Inbox,
-  ChevronLeft, ChevronRight, Scissors,
+  ChevronLeft, ChevronRight, Scissors, Ban,
 } from 'lucide-react';
 
 /**
@@ -84,6 +85,11 @@ interface RowProps {
   /** Every proposal that came out of the same cell of their sheet, this
    *  one included. One row long when the cell named one ticket. */
   group: PendingTicket[];
+  /** Set when the register says this document was cancelled. Their sheet
+   *  lists a ticket as live until somebody updates it, and nobody always
+   *  does — so a row can look like a supplier who has not billed yet when
+   *  the document was voided months ago and nobody ever will. */
+  voided?: { period?: string; source: string };
   onSplit: (p: PendingTicket, group: PendingTicket[]) => void;
   onCopy: (text: string) => void;
   onPatch: (p: PendingTicket, patch: Partial<PendingTicket>) => void;
@@ -94,7 +100,7 @@ interface RowProps {
 }
 
 const Row = React.memo(function Row({
-  p, sources, canWrite, working, field, group, onSplit,
+  p, sources, canWrite, working, field, group, voided, onSplit,
   onCopy, onPatch, onConfirm, onReject, onReopen, onDelete,
 }: RowProps) {
   const blocked = whyNotConfirmable(p);
@@ -324,7 +330,19 @@ const Row = React.memo(function Row({
                     </button>
                   )
                 )}
-                {blocked ? (
+                {voided ? (
+                  /* Confirming this writes a ticket into the ledger for a
+                     document that does not exist: money against nothing, in
+                     a request's cost and a vendor's balance. The button is
+                     closed rather than merely warned against. */
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-red-700
+                                   bg-red-50 border border-red-200 rounded px-2 py-1
+                                   max-w-[260px] leading-snug">
+                    <Ban className="w-3.5 h-3.5 shrink-0" />
+                    Cancelled{voided.period ? ` in ${voided.period}` : ''} — their sheet was
+                    never updated. Reject it.
+                  </span>
+                ) : blocked ? (
                   <span className="flex items-center gap-1.5 text-[10px] text-slate-500
                                    max-w-[240px] leading-snug">
                     {p.heldBack
@@ -400,6 +418,9 @@ const Row = React.memo(function Row({
 
 interface Props {
   pending: PendingTicket[];
+  /** The cancelled documents, so a proposal for one can be stopped before
+   *  somebody confirms money against a document that does not exist. */
+  voids?: VoidedDoc[];
   vendorNames?: string[];
   ledgerSources?: string[];
   onPatch?: (id: string, patch: Partial<PendingTicket>) => Promise<void>;
@@ -415,7 +436,7 @@ interface Props {
 type Tab = 'PENDING' | 'CONFIRMED' | 'REJECTED';
 
 export const PendingReview: React.FC<Props> = ({
-  pending, vendorNames = [], ledgerSources = [],
+  pending, voids = [], vendorNames = [], ledgerSources = [],
   onPatch, onPatchMany, onConfirm, onReject, onReopen, onDelete,
 }) => {
   const [tab, setTab] = useState<Tab>('PENDING');
@@ -484,6 +505,13 @@ export const PendingReview: React.FC<Props> = ({
   }, [rows]);
 
   const ready = rows.filter(p => !whyNotConfirmable(p)).length;
+
+  /* Cancelled documents, indexed once over the whole register rather than
+     per row: the list is in the hundreds and the queue in the hundreds, and
+     a scan inside a render is the difference between a screen that opens
+     and one that stutters. */
+  const voidIdx = useMemo(() => voidIndex(voids), [voids]);
+  const queueVoids = useMemo(() => voidsInQueue(pending, voids), [pending, voids]);
 
   /**
    * Which proposals came out of one cell of their sheet.
@@ -687,6 +715,22 @@ export const PendingReview: React.FC<Props> = ({
         </div>
       )}
 
+      {tab === 'PENDING' && queueVoids.matched.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-[11px]
+                        text-red-800 flex items-start gap-2">
+          <Ban className="w-3.5 h-3.5 mt-px shrink-0" />
+          <span>
+            <b>{queueVoids.matched.length} of these were cancelled.</b>{' '}
+            Their sheet still lists them as live because nobody updated it. Confirming
+            them would write{' '}
+            {queueVoids.value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {queueVoids.currencies.length === 1 ? ` ${queueVoids.currencies[0]}` : ''} into the
+            books against documents that do not exist, so the button is closed on them —
+            reject them instead.
+          </span>
+        </div>
+      )}
+
       {tab === 'PENDING' && rows.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex flex-wrap
                         items-center gap-x-8 gap-y-2 text-[11px]">
@@ -748,7 +792,7 @@ export const PendingReview: React.FC<Props> = ({
         {page.map(p => (
           <Row key={p.id} p={p} sources={sources} canWrite={canWrite}
             working={busy === p.id} field={field}
-            group={groupOf(p)} onSplit={split}
+            group={groupOf(p)} voided={voidFor(p, voidIdx)} onSplit={split}
             onCopy={copy} onPatch={patch} onConfirm={confirm}
             onReject={reject} onReopen={reopen} onDelete={remove} />
         ))}

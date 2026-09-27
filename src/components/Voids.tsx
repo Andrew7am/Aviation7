@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Ban, Search, Download, AlertTriangle } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Ban, Search, Download, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Ticket } from '../types';
 import type { VoidTicket } from '../services/VoidTicketService';
 import { voidReport, RatioRow } from '../core/helpers/voidRatio';
@@ -21,6 +21,9 @@ const xlsx = () => import('xlsx');
  */
 
 const pct = (n: number) => `${n.toFixed(2)}%`;
+
+/** Enough to scan, few enough to draw instantly. */
+const PER_PAGE = 50;
 
 /** Where a ratio stops being ordinary. IATA's own threshold varies by
  *  market, so this only colours the number — it never says "over limit",
@@ -95,6 +98,16 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
     pnr: rows.some(v => !!v.pnr),
     pax: rows.some(v => !!v.passengerName),
   }), [rows]);
+
+  const [page, setPage] = useState(0);
+  // Any narrowing puts you back at the top: page 4 of a list that is now two
+  // pages long is an empty screen that looks like no results.
+  useEffect(() => setPage(0), [search, source]);
+
+  const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+  const shown = useMemo(
+    () => rows.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE),
+    [rows, page]);
 
   const exportAll = async () => {
     const XLSX = await xlsx();
@@ -179,7 +192,7 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
         <div className="relative">
           <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="ticket number, period"
+            placeholder="ticket, PNR, passenger, period"
             className="text-[11px] border border-slate-200 rounded pl-6 pr-2 py-1.5 w-64 text-slate-700" />
         </div>
         {sources.length > 1 && (
@@ -205,7 +218,7 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
             </tr>
           </thead>
           <tbody className="font-mono text-[11px]">
-            {rows.slice(0, 500).map(v => (
+            {shown.map(v => (
               <tr key={v.id} className="border-b border-slate-50 hover:bg-slate-50/60">
                 <td className="px-3 py-1.5 font-bold text-slate-700">
                   {v.airlineCode ? `${v.airlineCode}-${v.ticketNo}` : v.ticketNo}
@@ -229,9 +242,27 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
             )}
           </tbody>
         </table>
-        {rows.length > 500 && (
-          <div className="px-3 py-2 text-[10px] text-slate-400 border-t border-slate-100">
-            showing the first 500 of {rows.length} — narrow it with the search
+        {rows.length > PER_PAGE && (
+          <div className="px-3 py-2 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[10px] text-slate-400">
+              {page * PER_PAGE + 1}–{Math.min(rows.length, (page + 1) * PER_PAGE)} of {rows.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                className="p-1 rounded border border-slate-200 text-slate-500 disabled:opacity-30
+                           hover:bg-slate-50">
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[10px] font-mono text-slate-500 px-1">
+                {page + 1} / {pages}
+              </span>
+              <button onClick={() => setPage(p => Math.min(pages - 1, p + 1))}
+                disabled={page >= pages - 1}
+                className="p-1 rounded border border-slate-200 text-slate-500 disabled:opacity-30
+                           hover:bg-slate-50">
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </div>

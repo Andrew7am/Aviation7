@@ -433,6 +433,7 @@ function MainApp({ user }: { user: User }) {
       {view === 'review'    && (
         <PendingReview
           pending={pending}
+          voids={voids}
           vendorNames={vendorBalancesLive.map(v => v.vendorName)}
           ledgerSources={[...new Set(tickets.map(t => t.source).filter(Boolean))]}
           {...(isAdmin ? {
