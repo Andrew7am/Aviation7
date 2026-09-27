@@ -30,6 +30,8 @@ type TicketRow = {
   channel: string | null;
   cabin_class: string | null;
   cabin_raw: string | null;
+  adjustment: number | string | null;
+  adjustment_note: string | null;
 };
 
 function rowToTicket(r: TicketRow): Ticket {
@@ -62,6 +64,8 @@ function rowToTicket(r: TicketRow): Ticket {
     channel: r.channel ?? undefined,
     cabinClass: r.cabin_class ?? undefined,
     cabinRaw: r.cabin_raw ?? undefined,
+    adjustment: r.adjustment == null ? undefined : Number(r.adjustment),
+    adjustmentNote: r.adjustment_note ?? undefined,
   };
 }
 
@@ -93,6 +97,8 @@ function ticketToRow(t: Ticket, userId: string) {
     channel: t.channel ?? null,
     cabin_class: t.cabinClass ?? null,
     cabin_raw: t.cabinRaw ?? null,
+    adjustment: t.adjustment ?? null,
+    adjustment_note: t.adjustmentNote ?? null,
   };
 }
 
@@ -387,6 +393,8 @@ export class TicketService {
       channel:         'channel',
       cabinClass:      'cabin_class',
       cabinRaw:        'cabin_raw',
+      adjustment:      'adjustment',
+      adjustmentNote:  'adjustment_note',
     };
     const row: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(patch)) {

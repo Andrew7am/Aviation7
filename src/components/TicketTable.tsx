@@ -18,6 +18,7 @@ const xlsx = () => import('xlsx');
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import { extractRoute } from '../core/helpers/extractRoute';
+import { missingDate, displayDate } from '../core/helpers/missingDate';
 import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { classifyOffice, OFFICE_LABEL, type Office } from '../core/helpers/reqOffice';
 import { airlineName } from '../core/config/airlines';
@@ -26,7 +27,7 @@ import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers
 interface TicketTableProps {
   tickets: Ticket[];
   title: string;
-  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE';
+  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE';
   /** Opens the table already narrowed to a closure state, so a view can be
    *  "the outstanding list" without the user having to find the dropdown. */
   defaultClosed?: 'ALL' | 'CLOSED' | 'NOT_CLOSED';
@@ -38,7 +39,8 @@ interface TicketTableProps {
   onBulkUpdateClosed?: (ids: string[], closed: boolean) => Promise<void>;
 }
 
-type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr' | 'route' | 'cabinClass' | 'date';
+type EditableField = 'reqNum' | 'passengerName' | 'amount' | 'pnr' | 'route' | 'cabinClass' | 'date'
+  | 'adjustment';
 
 /**
  * A document the vendor issued, by its own numbering.
@@ -82,6 +84,7 @@ type SortKey =
   | 'serial' | 'airlineCode' | 'ticketNo' | 'source' | 'status' | 'date'
   | 'route' | 'travel' | 'cabin' | 'totalDoc' | 'commission' | 'amount'
   | 'currency' | 'pnr' | 'passengerName' | 'reqNum' | 'vendorReference' | 'closed'
+  | 'adjustment'
   | null;
 
 /** Cabins sort by where they sit on the aircraft, not alphabetically — First
@@ -116,6 +119,10 @@ function sortValue(t: Ticket, key: Exclude<SortKey, null>): number | string | nu
     case 'totalDoc':      return t.totalDoc ?? null;
     case 'commission':    return t.commission ?? null;
     case 'amount':        return t.amount ?? null;
+    // Null, not 0: a row with no adjustment has not been found to have none,
+    // it has not been looked at. It sorts to the end rather than among the
+    // settled ones.
+    case 'adjustment':    return t.adjustment ?? null;
     case 'currency':      return sourceToCurrency(t.source || '') || null;
     case 'pnr':           return t.pnr || null;
     case 'passengerName': return t.passengerName || null;
@@ -304,7 +311,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
-  const [filterMode, setFilterMode]     = useState<'ALL' | 'NEED_REQ' | 'DUPLICATE'>(defaultFilter);
+  const [filterMode, setFilterMode] =
+    useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE'>(defaultFilter);
   // Vendors are multi-select: comparing NSA against IATA, or a handful of
   // portals at once, is the normal reconciliation question. Empty = every
   // vendor, so the filter starts out of the way.
@@ -372,6 +380,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     const rows = tickets.filter(t => {
       if (filterMode === 'NEED_REQ' && (t.reqNum || t.status === 'FUND')) return false;
       if (filterMode === 'DUPLICATE' && !t.isDuplicate) return false;
+      if (filterMode === 'ADJUSTED' && t.adjustment == null) return false;
+      if (filterMode === 'NO_DATE' && !missingDate(t.date)) return false;
       // No vendor ticked means every vendor, not none.
       if (sourceSel.length > 0 && !sourceSel.includes(t.source)) return false;
       // Dates are YYYY-MM-DD, so these compare as strings. A row with no date
@@ -553,6 +563,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (closedFilter !== 'ALL') parts.push(closedFilter === 'CLOSED' ? 'Closed' : 'NotClosed');
       if (filterMode === 'NEED_REQ') parts.push('MissingREQ');
       else if (filterMode === 'DUPLICATE') parts.push('Duplicates');
+      else if (filterMode === 'ADJUSTED') parts.push('Adjusted');
+      else if (filterMode === 'NO_DATE') parts.push('NoDate');
     }
     if (parts.length === 0) parts.push(sanitize(title));
     return parts.join('-');
@@ -581,6 +593,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       comm:   filtered.some(t => !!t.commission),
       cabin:  filtered.some(t => !!t.cabinClass || !!t.cabinRaw),
       office: filtered.some(t => !!classifyOffice(t.reqNum)),
+      // Only worth a column when something in the sheet actually carries one.
+      adj:    filtered.some(t => t.adjustment != null),
       // Total Doc only earns a column when it differs from the net somewhere.
       total:  filtered.some(t => Math.abs((t.totalDoc ?? 0) - Math.abs(t.amount)) > 0.005),
       closed: filtered.length > 0,
@@ -606,6 +620,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       ...(has.pax   ? [{ key: 'Passenger',   get: (t: Ticket) => t.passengerName || '', w: 26 }] : []),
       ...(has.total ? [{ key: 'Fare',        get: (t: Ticket) => t.totalDoc ?? 0, w: 12, money: true }] : []),
       ...(has.comm  ? [{ key: 'Commission',  get: (t: Ticket) => t.commission ?? 0, w: 12, money: true }] : []),
+      // Money in the row the vendor's own document does not bill. Blank, not
+      // zero, where there is none: zero would read as "checked, nothing found".
+      ...(has.adj   ? [{ key: 'Adjustment',  get: (t: Ticket) => t.adjustment ?? '', w: 12, money: true }] : []),
       { key: 'Balance Payable', get: (t: Ticket) => t.amount ?? 0,           w: 13, money: true },
       { key: 'Cur',         get: (t: Ticket) => sourceToCurrency(t.source || ''), w: 6 },
       { key: 'Req Num',     get: (t: Ticket) => t.reqNum || '',          w: 14 },
@@ -681,6 +698,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     'Status':     t.status || '',
     'Date':       t.date,
     'Balance Payable': t.amount,
+    'Adjustment': t.adjustment ?? '',
     'Currency':   sourceToCurrency(t.source || ''),
     'PNR':        t.pnr || '',
     'Passenger':  t.passengerName || '',
@@ -842,11 +860,16 @@ export const TicketTable: React.FC<TicketTableProps> = ({
    * to foot. Thirteen rows are in that state. Letting those be filled in
    * costs nothing and removes them from the ledger's blind spot.
    *
-   * So: editable only while empty. A date already recorded is set through an
-   * import, from the document that states it, with the audit trail that
-   * comes with that.
+   * And an empty date does not always arrive empty. Three Ibtekar rows hold
+   * 1970-01-01, which is what a blank becomes after a trip through a number.
+   * It is missing in every way that matters and missing in none that show,
+   * so missingDate() decides this rather than a test for an empty string.
+   *
+   * So: editable only while the row does not say when. A date that states
+   * something is set through an import, from the document that states it,
+   * with the audit trail that comes with that.
    */
-  const canSetDate = (t: Ticket) => canEdit && !(t.date || '').trim();
+  const canSetDate = (t: Ticket) => canEdit && missingDate(t.date);
 
   const startEdit = (ticket: Ticket, field: EditableField) => {
     if (!canEdit) return;
@@ -857,7 +880,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       : field === 'pnr'           ? (ticket.pnr || '')
       : field === 'route'         ? (ticket.route || '')
       : field === 'cabinClass'    ? (ticket.cabinClass || '')
-      : field === 'date'          ? (ticket.date || '')
+      : field === 'date'          ? displayDate(ticket.date)
+      : field === 'adjustment'    ? (ticket.adjustment == null ? '' : String(ticket.adjustment))
       : String(ticket.amount ?? '');
     setEditingCell({ id: ticket.id, field });
     setEditValue(current);
@@ -884,6 +908,15 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     } else if (field === 'date') {
       const iso = validDateEntry(raw);
       if (iso) onUpdateTicket?.(id, { date: iso });
+    } else if (field === 'adjustment') {
+      /* Cleared is null, not zero. Zero would say somebody checked this row
+         and found nothing added; empty says nobody has looked, which is true
+         of almost every row in the table. */
+      if (!raw) { onUpdateTicket?.(id, { adjustment: undefined, adjustmentNote: undefined }); }
+      else {
+        const n = Number(raw.replace(/[^0-9.-]/g, ''));
+        if (!Number.isNaN(n)) onUpdateTicket?.(id, { adjustment: n });
+      }
     } else if (field === 'cabinClass') {
       // Both columns move together. cabin_raw is what the source called it,
       // and for a cabin chosen from this list the source IS this list — so
@@ -1106,12 +1139,16 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
               filterMode === 'NEED_REQ' ? 'bg-red-50 text-red-600 border-red-200'
               : filterMode === 'DUPLICATE' ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : filterMode === 'ADJUSTED' ? 'bg-amber-50 text-amber-700 border-amber-200'
+              : filterMode === 'NO_DATE' ? 'bg-red-50 text-red-600 border-red-200'
               : 'bg-white text-slate-500 border-slate-200'
             }`}
           >
             <option value="ALL">All</option>
             <option value="NEED_REQ">Missing REQ</option>
             <option value="DUPLICATE">Duplicates</option>
+            <option value="ADJUSTED">Adjusted</option>
+            <option value="NO_DATE">No date</option>
           </select>
 
           {/* Domestic / International — read off the itinerary, so a ticket
@@ -1414,6 +1451,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                 ['Fare',       'totalDoc'],
                 ['Commission', 'commission'],
                 ['Balance Payable', 'amount'],
+                // Money in the row the vendor's own document does not bill.
+                ['Adj.',       'adjustment'],
                 ['Curr',       'currency'],
                 ['PNR',        'pnr'],
                 ['Passenger',  'passengerName'],
@@ -1495,15 +1534,19 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                       recorded is plain text, exactly as it has always been. */}
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
                     {isEditing(ticket.id, 'date') ? editorDate
-                      : ticket.date ? ticket.date
+                      : !missingDate(ticket.date) ? ticket.date
                       : canSetDate(ticket) ? (
                         <span
                           data-editable
                           onClick={() => startEdit(ticket, 'date')}
-                          title="This row has no date, so it sits in no period. Click to set one."
+                          title={ticket.date
+                            ? `This row says ${ticket.date}, which is what an empty date becomes`
+                              + ` when something converts it to a number and back. It sits in no`
+                              + ` real period. Click to set the date it actually happened.`
+                            : 'This row has no date, so it sits in no period. Click to set one.'}
                           className="text-red-500 italic font-bold cursor-pointer
                                      hover:bg-red-50 px-1 py-0.5 rounded"
-                        >[+ DATE]</span>
+                        >{ticket.date ? `[${ticket.date}]` : '[+ DATE]'}</span>
                       ) : <span className="text-red-400 italic">no date</span>}
                   </td>
                   <td className="px-3 py-2 text-[10px] text-slate-400">
@@ -1551,6 +1594,28 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                         title={canEdit ? 'Click to edit amount' : undefined}
                       >
                         {ticket.amount < 0 ? '-' : ''}{fmt(Math.abs(ticket.amount))}
+                      </span>
+                    )}
+                  </td>
+                  {/* Money in the row the vendor's own document does not
+                      bill. Editable so it can be cleared the moment it is
+                      settled with the client, which is the only way the
+                      column ever empties. */}
+                  <td className="px-3 py-2">
+                    {isEditing(ticket.id, 'adjustment') ? editorInput : (
+                      <span
+                        className={`${canEdit ? 'cursor-pointer px-1 py-0.5 rounded' : ''} ${
+                          ticket.adjustment == null
+                            ? 'text-slate-300'
+                            : 'font-bold text-amber-700 bg-amber-50 hover:bg-amber-100'}`}
+                        data-editable
+                        onClick={() => startEdit(ticket, 'adjustment')}
+                        title={ticket.adjustmentNote
+                          || (canEdit ? 'Click to set what this row carries that the vendor did not bill'
+                                      : undefined)}
+                      >
+                        {ticket.adjustment == null ? '—'
+                          : `${ticket.adjustment > 0 ? '+' : ''}${fmt(ticket.adjustment)}`}
                       </span>
                     )}
                   </td>
