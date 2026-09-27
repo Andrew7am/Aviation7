@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { supabase, fetchAllRows } from '../utils/supabase';
 import type { HeldInvoice } from '../core/helpers/taxInvoiceCoverage';
-import type { ReadInvoice } from '../core/parsers/ibtekarInvoiceRead';
+import { preferReading, type ReadInvoice } from '../core/parsers/ibtekarInvoiceRead';
 
 /**
  * The tax invoices we hold, kept rather than looked at once.
@@ -70,7 +70,19 @@ export interface SaveOutcome {
   saved: StoredInvoice[];
   /** Invoice numbers already on file, left exactly as they were. */
   alreadyHeld: string[];
+  /** Already on file, and replaced because this reading is a better document. */
+  upgraded: string[];
 }
+
+/** How good a reading is, for choosing between two of the same invoice. */
+const rank = (
+  isTax: boolean, total: number | null, lines: number, net: number | null, vat: number | null,
+) => [isTax ? 1 : 0, total !== null ? 1 : 0, lines, net !== null && vat !== null ? 1 : 0];
+
+const beats = (a: number[], b: number[]) => {
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return false;
+};
 
 const nullDate = (d: string) => (d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : null);
 
@@ -139,24 +151,58 @@ export class TaxInvoiceService {
     read: ReadInvoice[], vendor: string, sourceFile: string,
     currency = 'SAR', replace = false,
   ): Promise<SaveOutcome> {
-    const wanted = read.filter(r => r.invoice.invoice);
-    if (!wanted.length) return { saved: [], alreadyHeld: [] };
+    // The same number can appear twice inside one bundle, and the same
+    // invoice can arrive on both templates. Keep the better reading of each.
+    const best = new Map<string, ReadInvoice>();
+    for (const r of read.filter(r => r.invoice.invoice)) {
+      const seen = best.get(r.invoice.invoice);
+      best.set(r.invoice.invoice, seen ? preferReading(seen, r) : r);
+    }
+    const wanted = [...best.values()];
+    if (!wanted.length) return { saved: [], alreadyHeld: [], upgraded: [] };
 
     const { data: existing } = await supabase
-      .from('tax_invoices').select('id, invoice_no')
+      .from('tax_invoices')
+      .select('id, invoice_no, is_tax_invoice, total, net, vat')
       .eq('vendor', vendor).in('invoice_no', wanted.map(r => r.invoice.invoice));
-    const held = new Map((existing ?? []).map(e => [e.invoice_no, e.id]));
+    const held = new Map((existing ?? []).map(e => [e.invoice_no, e]));
+
+    // How many tickets each one on file already names. Without this the
+    // comparison below would rate every stored invoice as naming none, and
+    // so re-import the whole folder on every upload.
+    const heldLines = new Map<string, number>();
+    if (held.size) {
+      const { data: ls } = await supabase.from('tax_invoice_lines')
+        .select('invoice_id').in('invoice_id', [...held.values()].map(e => e.id));
+      for (const l of ls ?? [])
+        heldLines.set(l.invoice_id, (heldLines.get(l.invoice_id) ?? 0) + 1);
+    }
 
     const alreadyHeld: string[] = [];
+    const upgraded: string[] = [];
     const toWrite: ReadInvoice[] = [];
     for (const r of wanted) {
-      if (!held.has(r.invoice.invoice)) { toWrite.push(r); continue; }
-      if (!replace) { alreadyHeld.push(r.invoice.invoice); continue; }
+      const have = held.get(r.invoice.invoice);
+      if (!have) { toWrite.push(r); continue; }
+
+      /* What is on file is not automatically what to keep. A bundle read
+         first can hold the same invoice with no totals and no TAX INVOICE
+         heading, and the proper copy of it turn up in the next folder. A
+         document that calls itself a tax invoice supersedes one that does
+         not — that is the whole distinction being tracked. */
+      const mine = rank(r.invoice.taxInvoice, r.invoice.total, r.invoice.lines.length,
+                        r.invoice.subTotal, r.invoice.vat);
+      const theirs = rank(have.is_tax_invoice, have.total == null ? null : Number(have.total),
+                          heldLines.get(have.id) ?? 0,
+                          have.net == null ? null : Number(have.net),
+                          have.vat == null ? null : Number(have.vat));
+      if (!replace && !beats(mine, theirs)) { alreadyHeld.push(r.invoice.invoice); continue; }
       // The lines go with it: `on delete cascade`.
-      await supabase.from('tax_invoices').delete().eq('id', held.get(r.invoice.invoice)!);
+      await supabase.from('tax_invoices').delete().eq('id', have.id);
+      if (!replace) upgraded.push(r.invoice.invoice);
       toWrite.push(r);
     }
-    if (!toWrite.length) return { saved: [], alreadyHeld };
+    if (!toWrite.length) return { saved: [], alreadyHeld, upgraded };
 
     const invoiceRows = toWrite.map(r => ({
       id: uuidv4(),
@@ -205,7 +251,7 @@ export class TaxInvoiceService {
       }
     }
 
-    return { saved: await this.byIds(invoiceRows.map(r => r.id)), alreadyHeld };
+    return { saved: await this.byIds(invoiceRows.map(r => r.id)), alreadyHeld, upgraded };
   }
 
   async remove(id: string): Promise<void> {

@@ -7,6 +7,8 @@ export interface FileOutcome {
   file: string;
   saved: string[];
   alreadyHeld: string[];
+  /** Already on file, replaced because this copy is the better document. */
+  upgraded: string[];
   problems: string[];
   failed?: string;
 }
@@ -40,7 +42,7 @@ export function useTaxInvoices(userId: string, vendor = 'Ibtekar') {
         const words = await pdfToWords(await file.arrayBuffer());
         const read = readIbtekarInvoices(words, file.name);
         if (!read.invoices.length) {
-          out.push({ file: file.name, saved: [], alreadyHeld: [], problems: read.problems });
+          out.push({ file: file.name, saved: [], alreadyHeld: [], upgraded: [], problems: read.problems });
           continue;
         }
         const res = await svc.save(read.invoices, vendor, file.name);
@@ -48,11 +50,12 @@ export function useTaxInvoices(userId: string, vendor = 'Ibtekar') {
           file: file.name,
           saved: res.saved.map(i => i.invoiceNo),
           alreadyHeld: res.alreadyHeld,
+          upgraded: res.upgraded,
           problems: read.problems,
         });
       } catch (e) {
         out.push({
-          file: file.name, saved: [], alreadyHeld: [], problems: [],
+          file: file.name, saved: [], alreadyHeld: [], upgraded: [], problems: [],
           failed: e instanceof Error ? e.message : 'the file could not be read',
         });
       }

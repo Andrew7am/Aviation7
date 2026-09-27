@@ -249,12 +249,17 @@ export const TaxInvoices: React.FC<{
           {outcomes.map(o => (
             <div key={o.file} className="px-4 py-2 text-[11px]">
               <div className="flex items-center gap-2">
-                {o.failed || (!o.saved.length && !o.alreadyHeld.length)
+                {o.failed || (!o.saved.length && !o.alreadyHeld.length && !o.upgraded.length)
                   ? <FileWarning className="w-3.5 h-3.5 text-red-500 shrink-0" />
                   : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
                 <span className="font-mono text-slate-700">{o.file}</span>
                 {o.saved.length > 0 && (
                   <span className="text-emerald-700">recorded {o.saved.join(', ')}</span>
+                )}
+                {o.upgraded.length > 0 && (
+                  <span className="text-emerald-700">
+                    replaced a poorer copy of {o.upgraded.join(', ')}
+                  </span>
                 )}
                 {o.alreadyHeld.length > 0 && (
                   <span className="text-slate-500">already on file: {o.alreadyHeld.join(', ')}</span>

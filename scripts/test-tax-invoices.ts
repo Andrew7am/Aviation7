@@ -26,7 +26,9 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import type { PdfWord } from '../src/core/parsers/ibtekarInvoicePdf';
 import { parseIbtekarZatcaPdf, isZatcaInvoice, zatcaSerial } from '../src/core/parsers/ibtekarZatcaPdf';
-import { readIbtekarInvoices } from '../src/core/parsers/ibtekarInvoiceRead';
+import {
+  readIbtekarInvoices, preferReading, type ReadInvoice,
+} from '../src/core/parsers/ibtekarInvoiceRead';
 import {
   coverageReport, invoiceable, serialOf, HeldInvoice,
 } from '../src/core/helpers/taxInvoiceCoverage';
@@ -252,6 +254,102 @@ console.log('\n10. Nothing uploaded is not the same as nothing owed');
   check('every ticket is uncovered', r.uncovered.length, 1);
   check('no invoice claims anything', r.invoices, []);
   check('and nothing is billed-not-held', r.billedNotHeld, []);
+}
+
+console.log('\n11. A net and a VAT that do not make the total are not this invoice\'s');
+{
+  /* Ibtekar send bundles, and in a bundle one invoice's totals block gets
+     picked up by the next one along. INV261827 read back with a subtotal of
+     733.62 against a printed total of 12,645.00 — and its own 17 lines come
+     to 10,995.64, which grossed at 15% is 12,645.00 exactly. The lines and
+     the total agree; the two rows between them came from another document.
+     Keeping them would put someone else's VAT in the tracker. */
+  const bundle = words([
+    ['INVOICE'],
+    ['TAX INVOICE'],
+    ['Inv.', 'No:', 'INV261827'],
+    ['#', 'Name', 'Sector', 'Ticket', 'Amount'],
+    ['1', 'ALPHA/ONE', 'JED/RUH', '065-4861506110', '10,995.64'],
+    ['Sub', 'Total', '', '', '733.62'],
+    ['Total', 'VAT', '', '', '110.04'],
+    ['Total', '', '', '', '12,645.00'],
+  ]);
+  const r = readIbtekarInvoices(bundle, 'bundle.pdf');
+  const i = r.invoices[0].invoice;
+  check('the total is kept', i.total, 12645);
+  check('the borrowed net is dropped', i.subTotal, null);
+  check('the borrowed VAT is dropped', i.vat, null);
+  check('and it is said out loud',
+        r.problems.some(p => p.includes('do not make its total')), true);
+
+  const ok = words([
+    ['TAX INVOICE'],
+    ['Inv.', 'No:', 'INV261658'],
+    ['#', 'Name', 'Sector', 'Ticket', 'Amount'],
+    ['1', 'ALPHA/ONE', 'JED/RUH', '065-4861506110', '2,948.65'],
+    ['Sub', 'Total', '', '', '2,948.65'],
+    ['Total', 'VAT', '', '', '442.30'],
+    ['Total', '', '', '', '3,390.95'],
+  ]);
+  const good = readIbtekarInvoices(ok, 'ok.pdf');
+  check('an invoice that foots keeps its net', good.invoices[0].invoice.subTotal, 2948.65);
+  check('  ...and its VAT', good.invoices[0].invoice.vat, 442.30);
+  check('  ...with nothing said', good.problems, []);
+}
+
+console.log('\n12. The same invoice twice: which copy is the document');
+{
+  /* INV263549 is real. It reads out of a bundle with no totals and no TAX
+     INVOICE heading, and again from its own ZATCA file, complete — the same
+     two tickets both times. Keeping whichever was read first would make the
+     answer depend on the order the folders were typed. */
+  const fromBundle: ReadInvoice = {
+    layout: 'CLASSIC', theirSerial: '',
+    invoice: {
+      invoice: 'INV263549', invoiceDate: '2026-08-25', taxInvoice: false,
+      subTotal: null, vat: null, total: null,
+      lines: [
+        { airline: '065', ticketNo: '4861506110', passenger: '', sector: '', carrier: '',
+          pnr: '', cabin: '', amount: 1614, travelDate: '', issueDate: '' },
+        { airline: '065', ticketNo: '4861588756', passenger: '', sector: '', carrier: '',
+          pnr: '', cabin: '', amount: 732, travelDate: '', issueDate: '' },
+      ],
+    },
+  };
+  const ownFile: ReadInvoice = {
+    layout: 'ZATCA', theirSerial: '1585',
+    invoice: {
+      invoice: 'INV263549', invoiceDate: '2026-09-20', taxInvoice: true,
+      subTotal: 2040, vat: 306, total: 2346,
+      lines: fromBundle.invoice.lines.map(l => ({ ...l, amount: null })),
+    },
+  };
+
+  check('the tax invoice wins, whichever came first',
+        preferReading(fromBundle, ownFile).layout, 'ZATCA');
+  check('  ...and the other way round too',
+        preferReading(ownFile, fromBundle).layout, 'ZATCA');
+  check('  ...even though the bundle copy has per-ticket amounts and this one has none',
+        ownFile.invoice.lines.every(l => l.amount === null), true);
+
+  // Between two that both call themselves one, the fuller reading wins.
+  const thin: ReadInvoice = {
+    ...ownFile,
+    invoice: { ...ownFile.invoice, total: null, subTotal: null, vat: null },
+  };
+  check('a reading with a total beats one without',
+        preferReading(thin, ownFile).invoice.total, 2346);
+
+  const twoTickets = ownFile;
+  const oneTicket: ReadInvoice = {
+    ...ownFile, invoice: { ...ownFile.invoice, lines: [ownFile.invoice.lines[0]] },
+  };
+  check('and the one naming more tickets beats the one naming fewer',
+        preferReading(oneTicket, twoTickets).invoice.lines.length, 2);
+
+  // Identical readings: neither is better, so nothing churns.
+  check('two identical readings leave the first alone',
+        preferReading(ownFile, { ...ownFile }), ownFile);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
