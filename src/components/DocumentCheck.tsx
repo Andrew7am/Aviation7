@@ -411,6 +411,8 @@ export const DocumentCheck: React.FC<{
           <p className="text-[11px] text-slate-500 mt-0.5">
             Drop in a tax invoice and it says where it and the ledger disagree. Drop in a
             statement of account and it reads the period and the balances, ready to save.
+            Nothing here is kept — to record an invoice so it can be answered for later,
+            use Tax Invoices.
           </p>
         </div>
         {(results || statement) && (

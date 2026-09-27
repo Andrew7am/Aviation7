@@ -62,7 +62,7 @@ export interface Ticket {
   channel?: string;
 }
 
-export type ViewState = 'dashboard' | 'tickets' | 'requests' | 'missing' | 'notclosed' | 'import' | 'teamsheet' | 'review' | 'vendors' | 'statements' | 'reports' | 'history' | 'activity' | 'settings';
+export type ViewState = 'dashboard' | 'tickets' | 'requests' | 'missing' | 'notclosed' | 'import' | 'teamsheet' | 'review' | 'vendors' | 'statements' | 'taxinvoices' | 'reports' | 'history' | 'activity' | 'settings';
 
 /**
  * A vendor's own account of a period, as their statement prints it.

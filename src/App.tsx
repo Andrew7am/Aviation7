@@ -27,6 +27,7 @@ const PendingReview   = React.lazy(() => import('./components/PendingReview').th
 const VendorBalances  = React.lazy(() => import('./components/VendorBalances').then(m => ({ default: m.VendorBalances })));
 const VendorStatements = React.lazy(() => import('./components/VendorStatements').then(m => ({ default: m.VendorStatements })));
 const Reports         = React.lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
+const TaxInvoices     = React.lazy(() => import('./components/TaxInvoices').then(m => ({ default: m.TaxInvoices })));
 const ImportHistory   = React.lazy(() => import('./components/ImportHistory').then(m => ({ default: m.ImportHistory })));
 const ActivityLog     = React.lazy(() => import('./components/ActivityLog').then(m => ({ default: m.ActivityLog })));
 const Settings        = React.lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
@@ -47,13 +48,15 @@ import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
 import { useStatements } from './hooks/useStatements';
 import { usePending } from './hooks/usePending';
+import { useTaxInvoices } from './hooks/useTaxInvoices';
+import { coverageReport } from './core/helpers/taxInvoiceCoverage';
 import { pendingFromFindings } from './core/helpers/pendingFromFindings';
 import type { Finding } from './core/helpers/teamSheetCompare';
 import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
-  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck } from 'lucide-react';
+  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck, Receipt } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
 const LOW_PCT = 0.2;
@@ -76,6 +79,9 @@ function MainApp({ user }: { user: User }) {
     pending, raisePending, patchPending, patchManyPending, confirmPending,
     rejectPending, reopenPending, deletePending,
   } = usePending(user.id);
+  const {
+    invoices: taxInvoices, upload: uploadTaxInvoices, remove: removeTaxInvoice,
+  } = useTaxInvoices(user.id);
 
   const ticketSvc = new TicketService(user.id);
   const importSvc = new ImportService(user.id);
@@ -293,6 +299,18 @@ function MainApp({ user }: { user: User }) {
    *  rejected proposal is finished work and is not counted. */
   const pendingCount = pending.filter(p => p.state === 'PENDING').length;
 
+  /** Tickets we could not produce a tax invoice for.
+   *
+   *  Counted only once an invoice has been uploaded. Before that every ticket
+   *  is uncovered and the badge would read 294 in red — which is true and
+   *  useless: it would be reporting that nobody has started, not that
+   *  anything is wrong. */
+  const noTaxInvoiceCount = React.useMemo(() => {
+    if (!taxInvoices.length) return 0;
+    return coverageReport(taxInvoices, tickets.filter(t => t.source === 'Ibtekar'))
+      .uncovered.length;
+  }, [taxInvoices, tickets]);
+
   type NavItem = { id: ViewState; label: string; icon: React.ReactNode; badge?: number; badgeColor?: 'red' | 'amber' | 'slate' };
   const NAV: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard',       icon: <LayoutDashboard className="w-4 h-4" /> },
@@ -307,6 +325,7 @@ function MainApp({ user }: { user: User }) {
     { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
     { id: 'vendors',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
     { id: 'statements', label: 'Vendor Statements', icon: <FileText className="w-4 h-4" />, badge: statementGapCount || undefined, badgeColor: 'red' },
+    { id: 'taxinvoices', label: 'Tax Invoices', icon: <Receipt className="w-4 h-4" />, badge: noTaxInvoiceCount || undefined, badgeColor: 'red' },
     { id: 'reports',   label: 'Reports',         icon: <BarChart2 className="w-4 h-4" /> },
     ...(isAdmin ? [{ id: 'activity' as ViewState, label: 'Activity Log', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
     ...(isAdmin ? [{ id: 'settings' as ViewState, label: 'Settings', icon: <SettingsIcon className="w-4 h-4" /> }] : []),
@@ -383,6 +402,10 @@ function MainApp({ user }: { user: User }) {
         <VendorStatements statements={statements} tickets={tickets} canEdit={isAdmin}
           topUps={topUps} wallets={vendorBalancesLive}
           onSave={handleSaveStatement} onDelete={handleDeleteStatement} />
+      )}
+      {view === 'taxinvoices' && (
+        <TaxInvoices tickets={tickets} invoices={taxInvoices}
+          {...(isAdmin ? { onUpload: uploadTaxInvoices, onDelete: removeTaxInvoice } : {})} />
       )}
       {view === 'reports'   && <Reports tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
       {view === 'activity'  && (isAdmin
