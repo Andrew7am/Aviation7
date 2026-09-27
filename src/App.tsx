@@ -51,6 +51,8 @@ import { useStatements } from './hooks/useStatements';
 import { usePending } from './hooks/usePending';
 import { useTaxInvoices } from './hooks/useTaxInvoices';
 import { useVoids } from './hooks/useVoids';
+import { VoidTicketService } from './services/VoidTicketService';
+import { voidsFromImport } from './core/helpers/voidFromImport';
 import { coverageReport } from './core/helpers/taxInvoiceCoverage';
 import { pendingFromFindings, ticketFromPending } from './core/helpers/pendingFromFindings';
 import { planSheetAdd, waitingReasons } from './core/helpers/addFromSheet';
@@ -85,7 +87,7 @@ function MainApp({ user }: { user: User }) {
   const {
     invoices: taxInvoices, upload: uploadTaxInvoices, remove: removeTaxInvoice,
   } = useTaxInvoices(user.id);
-  const { voids } = useVoids(user.id);
+  const { voids, refresh: refreshVoids } = useVoids(user.id);
 
   const ticketSvc = new TicketService(user.id);
   const importSvc = new ImportService(user.id);
@@ -105,6 +107,7 @@ function MainApp({ user }: { user: User }) {
     updateTickets: Ticket[],
     topUpTickets: Ticket[],
     settlementTickets: Ticket[],
+    voidedTickets: Ticket[],
     meta?: { parserName: string; confidence: number; totalRows: number; warnings: number; errors: { row: number; raw: string; error: string }[]; vendor: string; reportName: string }
   ) => {
     const startTime = Date.now();
@@ -125,6 +128,23 @@ function MainApp({ user }: { user: User }) {
       const { saved, updated, topups, settled } = await ticketSvc.saveImport(
         ticketsWithBalance, updateTickets, topUpTickets, vendorBalancesLive, settlementTickets
       );
+
+      /* Cancelled documents are still discarded from the ledger — they move
+         no money and belong in no balance — but they are no longer thrown
+         away. IATA caps how much of a year's issuance may be voided, and
+         that ratio cannot be counted from documents nobody kept. */
+      let voidsKept = 0;
+      if (voidedTickets?.length) {
+        try {
+          voidsKept = await new VoidTicketService(user.id)
+            .record(voidsFromImport(voidedTickets, meta?.reportName ?? ''));
+          await refreshVoids();
+        } catch (e) {
+          // Never fail an import over the register: the tickets are saved
+          // and the voids can be re-read from the same file.
+          console.error('voids not recorded', e);
+        }
+      }
 
       // Put the rows on screen now. The realtime refetch that follows would
       // eventually surface them, but only after a per-row event burst, the
@@ -157,7 +177,8 @@ function MainApp({ user }: { user: User }) {
 
         // Audit log
         await importSvc.audit('IMPORT', meta.vendor,
-          `${saved} tickets, ${updated} updates, ${settled} settled from invoice, ${topups} top-ups`);
+          `${saved} tickets, ${updated} updates, ${settled} settled from invoice, ${topups} top-ups`
+          + (voidsKept ? `, ${voidsKept} cancelled documents recorded` : ''));
       }
 
       const parts = [
