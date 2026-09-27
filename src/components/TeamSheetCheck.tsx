@@ -221,12 +221,13 @@ const Group: React.FC<{
         <>
           <p className="px-4 pb-2 text-[11px] text-slate-500 leading-relaxed">{WHY[verdict]}</p>
           <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[960px]">
+            <table className="w-full text-left min-w-[1040px]">
               <thead>
                 <tr className="bg-slate-50 border-y border-slate-100 text-[9px] uppercase
                                tracking-wider text-slate-400">
                   <th className="px-3 py-1.5">Ticket</th>
                   <th className="px-3 py-1.5">PNR</th>
+                  <th className="px-3 py-1.5">Issued</th>
                   <th className="px-3 py-1.5">Issued from</th>
                   <th className="px-3 py-1.5">Request</th>
                   <th className="px-3 py-1.5">Their sheet</th>
@@ -277,6 +278,23 @@ const Group: React.FC<{
                           {f.pnr}
                         </button>
                       ) : '—'}
+                    </td>
+                    {/* When their sheet says a ticket was issued. It is what
+                        anybody looks for first — a list of two hundred is
+                        scanned by date, not by document number — and it was
+                        the one column the screen had but never showed.
+                        Theirs, because on a ticket missing from our books
+                        theirs is the only date there is; ours stands in
+                        where their export left it blank, marked so the two
+                        are never mistaken for each other. */}
+                    <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
+                      {f.sheet?.issued
+                        ? f.sheet.issued
+                        : f.ours[0]?.date
+                          ? <span title="Their sheet states no date — this is ours"
+                                  className="text-slate-400">{f.ours[0].date}<span
+                                  className="font-sans text-[9px]"> · ours</span></span>
+                          : <span className="text-slate-300">—</span>}
                     </td>
                     {/* Where it was bought. The first question anybody asks
                         about a ticket that is missing from our books is where
@@ -552,6 +570,7 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAdd
       'Verdict':      VERDICT_LABEL[f.verdict],
       'Ticket':       f.serial ? (f.airlineCode ? `${f.airlineCode}-${f.serial}` : f.serial) : '',
       'PNR':          f.pnr,
+      'Issued':       f.sheet?.issued || f.ours[0]?.date || '',
       'Issued from':  f.issuedFrom,
       'Their portal': f.portal,
       'Our request':   f.reqNum,
