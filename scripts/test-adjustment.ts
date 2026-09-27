@@ -58,31 +58,45 @@ console.log('\n3. What the screen shows for one');
 
 /* ── the ten riyals ──────────────────────────────────────────────────── */
 
-/** The ledger figure, given what the vendor's sheet bills: plus ten, rounded
- *  to the whole riyal. This is the rule the fourteen rows follow exactly. */
-const withFee = (sheet: number) => Math.round(sheet + 10);
-
-console.log('\n4. The rule behind the fourteen is exact, not "about ten"');
+console.log('\n4. The adjustment is what the row carries above its own fare');
 {
-  // Every pair below is a real row: the sheet's debit and what the ledger holds.
-  const real: [number, number][] = [
-    [1288.00, 1298.00], [1607.70, 1618.00], [1607.70, 1618.00], [947.60, 958.00],
-    [711.85,  722.00],  [1037.30, 1047.00], [1697.40, 1707.00], [6118.00, 6128.00],
-    [6118.00, 6128.00], [711.85,  722.00],  [786.60,  797.00],  [715.30,  725.00],
-    [1183.35, 1193.00], [1869.90, 1880.00],
-  ];
-  check('fourteen of them', real.length, 14);
-  const off = real.filter(([sheet, ledger]) => withFee(sheet) !== ledger);
-  check('every one is the sheet plus ten, rounded', off, []);
+  /* The question is inside the row: Balance Payable against Fare. Twenty-one
+     Ibtekar rows sit about ten riyals apart, and no other vendor does it.
 
-  // The gaps range 9.60 to 10.40 — which is why "about ten" looked like the
-  // rule and is not one. The rounding is what makes them differ.
-  const gaps = real.map(([s, l]) => Math.round((l - s) * 100) / 100);
-  check('the gaps are not all ten', new Set(gaps).size > 1, true);
-  check('  ...they run from', Math.min(...gaps), 9.6);
-  check('  ...to', Math.max(...gaps), 10.4);
-  check('and together they come to',
-        Math.round(gaps.reduce((n, g) => n + g, 0) * 100) / 100, 140.45);
+     An earlier version of this asked the ledger against Ibtekar's movement
+     sheet instead, and found a different fourteen. The tax invoices then
+     showed the ledger agreeing with the invoice to the fil on every one of
+     them - so the SHEET was the short document and there was nothing to
+     settle. Eleven of those fourteen also showed the same number in both
+     columns on screen, which is how the wrong question announced itself. */
+  const gap = (fare: number, payable: number) => Math.round((payable - fare) * 100) / 100;
+
+  // Real rows: fare, payable.
+  const real: [number, number][] = [
+    [711.85,  722.00],  [786.60,  797.00],  [772.80,  783.00],  [1846.90, 1857.00],
+    [1791.70, 1803.00], [897.00,  906.00],  [761.30,  770.99],  [458.85,  469.00],
+    [5618.90, 5629.00], [848.70,  859.00],  [1604.25, 1614.00], [722.20,  732.00],
+    [1728.45, 1739.00], [672.75,  683.00],  [1000.50, 1011.00], [596.85,  607.00],
+    [400.20,  410.00],  [940.70,  951.00],  [878.60,  889.00],  [825.70,  836.00],
+    [1982.60, 1993.00],
+  ];
+  check('twenty-one of them', real.length, 21);
+
+  const gaps = real.map(([f, p]) => gap(f, p));
+  check('every one is above its fare', gaps.every(g => g > 0), true);
+  check('and every one is about ten', gaps.every(g => g >= 9 && g <= 11.5), true);
+  check('they run from', Math.min(...gaps), 9);
+  check('  ...to', Math.max(...gaps), 11.3);
+  check('and come to', Math.round(gaps.reduce((n, g) => n + g, 0) * 100) / 100, 213.59);
+
+  // Not a flat ten, so a flat ten must not be what gets stored.
+  check('they are not all the same figure', new Set(gaps).size > gaps.length / 2, true);
+
+  // A row whose two columns agree carries nothing, whatever some other
+  // document says about it.
+  check('equal fare and payable is not an adjustment', gap(1707, 1707), 0);
+  check('  ...and a payable BELOW the fare is a different question',
+        gap(1000, 999) < 0, true);
 }
 
 console.log('\n5. An untouched row is not a checked row');

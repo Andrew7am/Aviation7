@@ -1611,7 +1611,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                         data-editable
                         onClick={() => startEdit(ticket, 'adjustment')}
                         title={ticket.adjustmentNote
-                          || (canEdit ? 'Click to set what this row carries that the vendor did not bill'
+                          || (canEdit ? 'Click to set what this row carries above its own fare'
                                       : undefined)}
                       >
                         {ticket.adjustment == null ? '—'

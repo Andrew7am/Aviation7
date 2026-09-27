@@ -60,10 +60,11 @@ export interface Ticket {
    *  matching keys on, so putting a channel there would move the row to a
    *  different (or non-existent) wallet. NULL for single-channel vendors. */
   channel?: string;
-  /** Money in this row that the vendor's own document does not bill — the ten
-   *  riyals on fourteen Ibtekar tickets, say. The row stays in the ledger and
-   *  in every total it is part of; this only says how much of it is the
-   *  addition, so it can be found and settled with the client it belongs to.
+  /** What this row's Balance Payable carries above its own Fare. Twenty-one
+   *  Ibtekar rows do it, by about ten riyals each, and no other vendor does it
+   *  at all. The row stays in the ledger and in every total it is part of;
+   *  this only says how much of it sits above the fare, so it can be found
+   *  and taken up one at a time.
    *  Undefined means nothing was added, NOT that somebody checked. */
   adjustment?: number;
   /** Why the adjustment is there, in the words of whoever established it. */
