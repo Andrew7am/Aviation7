@@ -156,6 +156,16 @@ export const ImportData: React.FC<ImportDataProps> = ({
       ]
     : [];
 
+  /* Which columns the updates will fill in, and how many of each. The
+     count alone tells you something is about to be written and nothing
+     about what, which is the part worth knowing before pressing Confirm. */
+  const updateFields = useMemo(() => {
+    const by = new Map<string, number>();
+    for (const u of preview?.updates ?? [])
+      for (const ch of (u.changes ?? [])) by.set(ch.field, (by.get(ch.field) ?? 0) + 1);
+    return [...by].sort((a, b) => b[1] - a[1]);
+  }, [preview]);
+
   const totalNet = rows
     .filter((t: any) => !t.isDuplicate && t.status !== 'FUND')
     .reduce((s, t) => s + t.amount, 0);
@@ -259,12 +269,21 @@ export const ImportData: React.FC<ImportDataProps> = ({
               {preview!.updates.length > 0 && (
                 <button
                   onClick={() => setSlice(slice === 'updates' ? 'all' : 'updates')}
-                  title="Show only the rows this import will overwrite"
+                  /* It used to say REQ UPDATES, and an update is not a req
+                     update. An RTS sales report carries no request column at
+                     all, and its 266 updates fill in Route and Passenger —
+                     not one request number among them. The badge now names
+                     what the batch will actually change. */
+                  title={'These rows already exist here. The import fills in what is EMPTY'
+                    + ' on them and overwrites nothing:\n'
+                    + updateFields.map(([f, n]) => `  ${n} × ${f}`).join('\n')
+                    + '\n\nClick to show only these rows.'}
                   className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition
                     ${slice === 'updates'
                       ? 'bg-blue-600 text-white ring-2 ring-blue-300'
                       : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>
-                  {preview!.updates.length} REQ UPDATES
+                  {preview!.updates.length} FILL IN
+                  {updateFields.length ? ` ${updateFields.map(([f]) => f).join(' + ')}` : ''}
                 </button>
               )}
               {preview!.voided.length > 0 && <span title="Voided / cancelled documents (VOID, CANN, CANX, RFNX). They settle at zero, so they are kept out of the ledger — but recorded on the Voids screen, because IATA caps what share of a year's issuance may be voided." className="bg-slate-200 text-slate-600 text-[9px] font-bold px-1.5 py-0.5 rounded">{preview!.voided.length} VOID → VOIDS</span>}
