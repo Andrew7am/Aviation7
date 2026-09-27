@@ -23,12 +23,18 @@ export const RTSParser: VendorParser = {
     // no itinerary — and no way to tell a domestic trip from an international
     // one, which is decided from exactly this field.
     const iRoute = col(headers,'Route');
-    // An explicit user-added Req column wins first. Otherwise RTS's req column
-    // has no recognizable header text in the source export — findReqColumn()
-    // returns -1, so we fall back to the one known position (col 4).
+    // An explicit user-added Req column wins first, then the broad heuristic.
+    // Neither one matching used to fall back to position 4, on the strength
+    // of one export that happened to carry the request there. But RTS's own
+    // export has no Req column at all, and position 4 in it is SignInBooking
+    // — the agent's sign-in code. Every ticket then came in filed under
+    // "1132SA": a request number nobody raised, indistinguishable in the
+    // ledger from a real one, and silent, because a filled column raises no
+    // warning. A file that does not say which request a ticket belongs to is
+    // a file that does not say. That is what the warning below is for, and a
+    // guessed column is not an answer to it.
     let iReq = findExplicitReqColumn(headers);
     if (iReq === -1) iReq = findReqColumn(headers);
-    if (iReq === -1) iReq = 4;
     rows.forEach((row,idx) => {
       const rawTk = cell(row,iNo);
       if (!rawTk||!rawTk.includes('-')) return;

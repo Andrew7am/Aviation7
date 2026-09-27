@@ -94,5 +94,37 @@ console.log('\n6. The rest of the row is unchanged');
   eq('no errors', r.errors, []);
 }
 
+console.log('\n7. A file with no Req column says so, instead of inventing one');
+{
+  /* The agent's own export carries "req num" as its second column. The raw
+     export out of RTS's portal does not carry it at all — and the parser
+     used to fall back to column 4, which in that file is SignInBooking: the
+     agent's sign-in code. Every ticket then arrived filed under "2511ND",
+     a request nobody raised, and nothing warned, because the column was
+     full. Missing has to read as missing. */
+  const drop = (csv: string) => csv.split(',').filter((_, i) => i !== 1).join(',');
+  const bare = drop(HEADER), bareRow = drop(ROW);
+  const g = Papa.parse<string[]>([bare, bareRow].join('\n'), { skipEmptyLines: true }).data;
+  const r = RTSParser.parse(g.slice(1), g[0], 'AED');
+
+  eq('still recognised as RTS', RTSParser.detect(g[0]), true);
+  eq('column 4 of that file is the sign-in code', g[0][4], 'SignInBooking');
+  eq('  ...and it is not empty, which is why it was believed', g[1][4], '2511ND');
+  eq('the req is left empty', r.rows[0].reqNum, '');
+  eq('  ...not the sign-in code', r.rows[0].reqNum !== '2511ND', true);
+  eq('the sign-in code is not kept as a reference either',
+     r.rows[0].vendorReference, '');
+  eq('and the import says it is missing',
+     r.warnings.includes('Ticket 5513376674: Missing Req Num'), true);
+  eq('the rest of the row still reads', r.rows[0].amount, 220);
+}
+
+console.log('\n8. An explicit Req column is still read where it exists');
+{
+  const r = parse([ROW]);
+  eq('from the header, not from a position', r.rows[0].reqNum, 'KSAML1922');
+  eq('no missing-req warning', r.warnings.filter(w => w.includes('Missing Req')), []);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
