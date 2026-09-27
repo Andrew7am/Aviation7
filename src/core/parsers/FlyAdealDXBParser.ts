@@ -2,6 +2,7 @@ import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax, rowContentId } from './shared';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
+import { normalizeStatus } from '../helpers/normalizeStatus';
 import { SupportedCurrency, resolveCurrency } from '../helpers/resolveCurrency';
 
 export const FlyAdealDXBParser: VendorParser = {
@@ -17,7 +18,14 @@ export const FlyAdealDXBParser: VendorParser = {
     const iAmt = col(headers,'accountAmount','accountamount','bookingAmount','bookingamount');
     const iCurr = col(headers,'accountCurrency','accountcurrency'); // used for SAR-skip only
     const iReq = pickReqColumn(headers, col(headers,'Req number','Req Number','REQ NUMBER','req'));
+    /* Their export carries a status column and nothing ever read it, so a
+       cancelled booking arrived as an ordinary sale. It is read only to
+       CANCEL: the money still decides issue against refund, as it always
+       has, and a word like "Default" that normalises to nothing must not be
+       allowed to turn a real sale into a guess. */
+    const iStatus = col(headers, 'status', 'Status', 'PNR Status', 'Booking Status');
     rows.forEach((row,idx) => {
+      const voided = normalizeStatus(cell(row, iStatus)) === 'VOID';
       // SAR rows = internal FlyAdeal transfers, not AED-billed ticket charges — skip
       const acctCurr = (row[iCurr]||'').trim().toUpperCase();
       if (acctCurr==='SAR') return;
@@ -36,7 +44,7 @@ export const FlyAdealDXBParser: VendorParser = {
       // No "today" fallback here — a blank date must stay deterministically
       // blank, or duplicate detection (which keys on date) silently breaks
       // for this row on every future re-import.
-      result.push({ticketNo:ticketId,pnr:hasPnr?pnr:'',passengerName:cleanPax(cell(row,iPax)),date:(cell(row,iDate)||'').split('T')[0],amount:amt<0?amt:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:amt<0?'REFUND':'ISSUE',currency});
+      result.push({ticketNo:ticketId,pnr:hasPnr?pnr:'',passengerName:cleanPax(cell(row,iPax)),date:(cell(row,iDate)||'').split('T')[0],amount:amt<0?amt:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:voided?'VOID':(amt<0?'REFUND':'ISSUE'),currency});
     });
     return {rows:result,errors,warnings};
   },

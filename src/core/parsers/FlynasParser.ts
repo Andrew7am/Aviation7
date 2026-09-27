@@ -2,6 +2,7 @@ import { VendorParser, ParserResult } from './types';
 import { col, cell, cleanPax, rowContentId, isValidPNR } from './shared';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
+import { normalizeStatus } from '../helpers/normalizeStatus';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 
 export const FlynasParser: VendorParser = {
@@ -15,8 +16,15 @@ export const FlynasParser: VendorParser = {
     const iPNR = col(headers,'PNR2'); const iPax = col(headers,'pax');
     const iDate = col(headers,'Date'); const iAmt = col(headers,'AMOUNT');
     const iReq = pickReqColumn(headers, col(headers,'REQ. NUMBER','REQ NUMBER','Req Number'));
+    /* Their export carries a status column and nothing ever read it, so a
+       cancelled booking arrived as an ordinary sale. It is read only to
+       CANCEL: the money still decides issue against refund, as it always
+       has, and a word like "Default" that normalises to nothing must not be
+       allowed to turn a real sale into a guess. */
+    const iStatus = col(headers, 'status', 'Status', 'PNR Status', 'Booking Status');
     const iRoute = col(headers,'Column6','Route');
     rows.forEach((row,idx) => {
+      const voided = normalizeStatus(cell(row, iStatus)) === 'VOID';
       const pnr = cell(row,iPNR).replace(/\s+/g,'').toUpperCase();
       const pax = cell(row,iPax);
       if (/beg\.?\s*balance/i.test(pnr)) return;
@@ -36,7 +44,7 @@ export const FlynasParser: VendorParser = {
       const finalAmt = amt<0?amt:amt;
       const req = resolveReq(cell(row,iReq));
       if (!req) warnings.push(`PNR ${pnr}: Missing Req Num`);
-      result.push({ticketNo:pnr,pnr,passengerName:cleanPax(pax),route:cell(row,iRoute).toLowerCase().trim(),date:parseDate(cell(row,iDate)),amount:finalAmt,totalDoc:Math.abs(finalAmt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:amt<0?'REFUND':'ISSUE',currency:defaultCurrency});
+      result.push({ticketNo:pnr,pnr,passengerName:cleanPax(pax),route:cell(row,iRoute).toLowerCase().trim(),date:parseDate(cell(row,iDate)),amount:finalAmt,totalDoc:Math.abs(finalAmt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:voided?'VOID':(amt<0?'REFUND':'ISSUE'),currency:defaultCurrency});
     });
     return {rows:result,errors,warnings};
   },

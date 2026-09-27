@@ -2,6 +2,7 @@ import { VendorParser, ParserResult } from './types';
 import { col, cell, num, cleanPax, rowContentId } from './shared';
 import { resolveReq, pickReqColumn } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
+import { normalizeStatus } from '../helpers/normalizeStatus';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 
 export const FlyDubaiParser: VendorParser = {
@@ -16,7 +17,14 @@ export const FlyDubaiParser: VendorParser = {
     const iPax = col(headers,'Passenger name','passenger name');
     const iDate = col(headers,'Payment date','Booked date','payment date');
     const iAmt = col(headers,'Amount'); const iReq = pickReqColumn(headers, col(headers,'REQ Number','REQ NUMBER','Req Number'));
+    /* Their export carries a status column and nothing ever read it, so a
+       cancelled booking arrived as an ordinary sale. It is read only to
+       CANCEL: the money still decides issue against refund, as it always
+       has, and a word like "Default" that normalises to nothing must not be
+       allowed to turn a real sale into a guess. */
+    const iStatus = col(headers, 'status', 'Status', 'PNR Status', 'Booking Status');
     rows.forEach((row,idx) => {
+      const voided = normalizeStatus(cell(row, iStatus)) === 'VOID';
       const rawPnr = cell(row,iPNR).replace(/\s+/g,'').toUpperCase();
       const amt = num(cell(row,iAmt)); if(amt===0) return;
       // "NA" is FlyDubai's literal placeholder for a booking reference on
@@ -27,7 +35,7 @@ export const FlyDubaiParser: VendorParser = {
       const ticketId = hasPnr ? rawPnr : `FLYDUBAI_NOREF_${rowContentId(row)}`;
       const req = resolveReq(cell(row,iReq));
       if (!req) warnings.push(`PNR ${ticketId}: Missing Req Num`);
-      result.push({ticketNo:ticketId,pnr:hasPnr?rawPnr:'',passengerName:cleanPax(cell(row,iPax)),date:parseDate(cell(row,iDate)),amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:amt<0?'REFUND':'ISSUE',currency:defaultCurrency});
+      result.push({ticketNo:ticketId,pnr:hasPnr?rawPnr:'',passengerName:cleanPax(cell(row,iPax)),date:parseDate(cell(row,iDate)),amount:amt,totalDoc:Math.abs(amt),commission:0,reqNum:req,vendorReference:cell(row,iReq),status:voided?'VOID':(amt<0?'REFUND':'ISSUE'),currency:defaultCurrency});
     });
     return {rows:result,errors,warnings};
   },
