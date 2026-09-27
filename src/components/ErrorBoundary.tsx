@@ -23,13 +23,6 @@ interface Props { children: ReactNode }
 interface State { error: Error | null; info: string }
 
 export class ErrorBoundary extends Component<Props, State> {
-  /* @types/react is not installed in this project, so React's own members
-     are not typed and the compiler cannot see them on a subclass. Declared
-     here rather than left as errors; `declare` emits nothing, so React still
-     supplies them at run time. */
-  declare props: Props;
-  declare setState: (s: Partial<State>) => void;
-
   state: State = { error: null, info: '' };
 
   static getDerivedStateFromError(error: Error): Partial<State> {

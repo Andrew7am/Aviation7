@@ -66,6 +66,21 @@ const PORTALS: { match: RegExp; source: string; choices?: string[] }[] = [
 /** The two that bill on a statement and settle against a wallet. */
 const ON_STATEMENT = new Set(['Ibtekar', 'NSA']);
 
+/**
+ * Does this vendor settle against a credit wallet?
+ *
+ * Exported so the one path that writes to the ledger without a person
+ * reading the row first can check the VENDOR rather than trust a flag
+ * carried along on the finding. A flag can be lost in transit; the vendor
+ * name is on the row itself, and keying one of these by hand moves the
+ * wallet twice.
+ */
+export const settlesOnStatement = (source: string) =>
+  ON_STATEMENT.has((source || '').trim());
+
+/** Why one of them cannot be keyed in by hand. */
+export const STATEMENT_WHY = () => WHY;
+
 const WHY = 'Billed on their statement and settled against a credit wallet —'
   + ' recording it by hand would move the balance twice. It arrives when the'
   + ' statement is imported.';

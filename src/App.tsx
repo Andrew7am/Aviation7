@@ -50,7 +50,8 @@ import { useStatements } from './hooks/useStatements';
 import { usePending } from './hooks/usePending';
 import { useTaxInvoices } from './hooks/useTaxInvoices';
 import { coverageReport } from './core/helpers/taxInvoiceCoverage';
-import { pendingFromFindings } from './core/helpers/pendingFromFindings';
+import { pendingFromFindings, ticketFromPending } from './core/helpers/pendingFromFindings';
+import { planSheetAdd, waitingReasons } from './core/helpers/addFromSheet';
 import type { Finding } from './core/helpers/teamSheetCompare';
 import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
@@ -196,6 +197,39 @@ function MainApp({ user }: { user: User }) {
       `${r.added} raised, ${r.refreshed} refreshed, ${r.settled} already decided`);
     return r;
   };
+  /**
+   * Record the sheet's missing tickets that can be recorded, and queue the rest.
+   *
+   * "Ready" is decided by whyNotConfirmable — the same function behind the
+   * confirm button in the review queue — so a row cannot get in through this
+   * door that could not get in through that one. Everything else is raised
+   * for review with the reason it is waiting, which is where it would have
+   * gone anyway.
+   */
+  const handleAddFromSheet = async (findings: Finding[]) => {
+    const plan = planSheetAdd(findings, { newId: uuidv4, userId: user.id, tickets });
+    for (const p of plan.ready) {
+      const t = ticketFromPending(p, uuidv4(), user.id);
+      await addManualTicket(t);
+      importSvc.audit('MANUAL_ENTRY', t.ticketNo,
+        `Recorded from the team sheet — ${t.source} ${t.amount} ${t.currency}`
+        + `${t.reqNum ? ` (req ${t.reqNum})` : ''}`);
+    }
+    // The rest go where they were always going.
+    const queued = plan.waiting.length
+      ? await raisePending(plan.waiting.map(w => w.proposal))
+      : { added: 0, refreshed: 0, settled: 0 };
+    importSvc.audit('PENDING_RAISED', 'TEAM_SHEET',
+      `${plan.ready.length} recorded straight away, ${queued.added} raised for review,`
+      + ` ${plan.alreadyHeld.length} already in the books`);
+    return {
+      added: plan.ready.length,
+      queued: queued.added + queued.refreshed,
+      alreadyHeld: plan.alreadyHeld.length,
+      reasons: waitingReasons(plan),
+    };
+  };
+
   const handleConfirmPending = async (p: Parameters<typeof confirmPending>[0]) => {
     const t = await confirmPending(p);
     importSvc.audit('PENDING_CONFIRMED', t.ticketNo,
@@ -368,7 +402,8 @@ function MainApp({ user }: { user: User }) {
       {/* Read-only, so everybody gets it: the person closing a flight sheet
           is not always the person who can write to the ledger. */}
       {view === 'teamsheet' && <TeamSheetCheck tickets={tickets}
-        {...(isAdmin ? { onSendToReview: handleSendToReview } : {})} />}
+        {...(isAdmin ? { onSendToReview: handleSendToReview,
+                         onAddToLedger: handleAddFromSheet } : {})} />}
       {view === 'review'    && (
         <PendingReview
           pending={pending}

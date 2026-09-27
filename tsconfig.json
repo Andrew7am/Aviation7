@@ -22,5 +22,7 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "//": "scratch/ holds throwaway one-off investigations. They are not part of the app and their errors would hide the app's own.",
+  "exclude": ["scratch", "node_modules", "dist"]
 }

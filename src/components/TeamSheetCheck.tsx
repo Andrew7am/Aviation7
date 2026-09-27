@@ -2,7 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Ticket } from '../types';
 import {
   Upload, AlertTriangle, CheckCircle2, X, Loader2, FileSpreadsheet, Download,
-  ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen, Copy, ClipboardCheck,
+  ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen, Copy, ClipboardCheck, Plus,
 } from 'lucide-react';
 import { readFileAsText } from '../core/ImportEngine';
 import { parseTeamSheet, TeamSheetRow } from '../core/parsers/teamSheet';
@@ -342,9 +342,21 @@ interface Props {
    */
   onSendToReview?: (findings: Finding[]) =>
     Promise<{ added: number; refreshed: number; settled: number }>;
+  /**
+   * Record the ones that can be recorded, right now.
+   *
+   * Most of these cannot go in unread — a shared cell prices a whole
+   * booking and arrives at zero, a wallet vendor's row would move its
+   * balance twice — so this puts in only what already passes every test
+   * the confirm button applies, and queues the rest with the reason.
+   */
+  onAddToLedger?: (findings: Finding[]) => Promise<{
+    added: number; queued: number; alreadyHeld: number;
+    reasons: { why: string; count: number }[];
+  }>;
 }
 
-export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => {
+export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview, onAddToLedger }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
@@ -426,6 +438,28 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => 
     f.verdict === 'NOT_IN_LEDGER' || f.verdict === 'REFUND_NOT_IN_LEDGER'), [report]);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addedNote, setAddedNote] = useState<string[]>([]);
+
+  const addToLedger = async () => {
+    if (!onAddToLedger || adding || !proposable.length) return;
+    setAdding(true); setSent(''); setAddedNote([]); setError('');
+    try {
+      const r = await onAddToLedger(proposable);
+      const lines = [
+        r.added
+          ? `${r.added} recorded in the ledger.`
+          : 'Nothing could be recorded without a look first.',
+        r.alreadyHeld && `${r.alreadyHeld} were already in the books.`,
+        r.queued && `${r.queued} are waiting on To Review:`,
+        // Named, because "9 need review" with no reason reads as a refusal.
+        ...r.reasons.map(x => `   · ${x.count} — ${x.why}`),
+      ].filter(Boolean) as string[];
+      setAddedNote(lines);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setAdding(false); }
+  };
 
   const sendToReview = async () => {
     if (!onSendToReview || sending || !proposable.length) return;
@@ -516,8 +550,20 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => 
         </div>
         {report && (
           <div className="flex items-center gap-2 shrink-0">
+            {onAddToLedger && proposable.length > 0 && (
+              <button onClick={addToLedger} disabled={adding || sending}
+                title={`Record the ones that can go in unread; queue the rest`}
+                className="flex items-center gap-1.5 bg-blue-600 text-white text-[11px]
+                           font-bold px-3 py-1.5 rounded hover:bg-blue-700
+                           disabled:opacity-50">
+                {adding
+                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  : <Plus className="w-3.5 h-3.5" />}
+                Add {proposable.length} to the ledger
+              </button>
+            )}
             {onSendToReview && proposable.length > 0 && (
-              <button onClick={sendToReview} disabled={sending}
+              <button onClick={sendToReview} disabled={sending || adding}
                 title={`${proposable.length} ticket(s) on their sheet and in nobody's books`}
                 className="flex items-center gap-1.5 bg-emerald-600 text-white text-[11px]
                            font-bold px-3 py-1.5 rounded hover:bg-emerald-700
@@ -536,6 +582,20 @@ export const TeamSheetCheck: React.FC<Props> = ({ tickets, onSendToReview }) => 
           </div>
         )}
       </div>
+
+      {addedNote.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5
+                        text-[11px] text-blue-900 flex items-start gap-2">
+          <CheckCircle2 className="w-3.5 h-3.5 mt-px shrink-0" />
+          <div className="space-y-0.5">
+            {addedNote.map((line, i) => (
+              <div key={i} className={line.startsWith('   ·') ? 'font-mono text-[10px]' : ''}>
+                {line}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {sent && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5

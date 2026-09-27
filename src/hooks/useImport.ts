@@ -73,6 +73,10 @@ export function useImport(userId: string) {
         fresh: [], updates: [], duplicates: [], topUps: [], settlements: [], voided: [],
         errors: [{ row: 0, raw: '', error: 'Please enter some data.' }],
         warnings: [], parserName: '', confidence: 0, totalRows: 0, routedVendor: '',
+        // Every other preview carries this, and the screen maps over it
+        // without asking. Left out here, an empty submit made the next
+        // render read a property of undefined and take the page with it.
+        classified: [],
       });
       return;
     }
