@@ -61,6 +61,35 @@ export class AuditService {
     }));
   }
 
+  /**
+   * Just what "money changed after closing" needs: every close and reopen,
+   * and every edit that touched a money field.
+   *
+   * Not the whole log — that is tens of thousands of rows, most of them a
+   * route or a passenger name filled in, and the ledger screen would be
+   * waiting on all of them to draw one badge. Admin-only like the rest of
+   * the log: RLS returns nothing to anyone else, and the badge simply never
+   * appears for them.
+   */
+  static async closeAndMoneyEvents(): Promise<
+    { action: string; entity: string; detail: string; performedAt: string; actorEmail?: string }[]
+  > {
+    const pick = 'action, entity, detail, performed_at, actor_email';
+    const [closes, money] = await Promise.all([
+      fetchAllRows<any>((from, to) => supabase.from('audit_log').select(pick)
+        .in('action', ['UPDATE_CLOSED', 'BULK_UPDATE_CLOSED'])
+        .order('performed_at', { ascending: true }).range(from, to)),
+      fetchAllRows<any>((from, to) => supabase.from('audit_log').select(pick)
+        .eq('action', 'EDIT_TICKET')
+        .or('detail.ilike.%amount%,detail.ilike.%commission%,detail.ilike.%total_doc%')
+        .order('performed_at', { ascending: true }).range(from, to)),
+    ]);
+    return [...closes, ...money].map(r => ({
+      action: r.action, entity: r.entity ?? '', detail: r.detail ?? '',
+      performedAt: r.performed_at, actorEmail: r.actor_email ?? undefined,
+    }));
+  }
+
   /** Admin-only in practice — RLS returns nothing for non-admins rather than
    *  erroring, so the caller just sees an empty log. */
   static async listAudit(limit = 500): Promise<AuditRecord[]> {

@@ -53,6 +53,7 @@ import { useTaxInvoices } from './hooks/useTaxInvoices';
 import { useVoids } from './hooks/useVoids';
 import { VoidTicketService } from './services/VoidTicketService';
 import { voidsFromImport } from './core/helpers/voidFromImport';
+import { changedAfterClose, AuditEvent } from './core/helpers/changedAfterClose';
 import { coverageReport } from './core/helpers/taxInvoiceCoverage';
 import { pendingFromFindings, ticketFromPending } from './core/helpers/pendingFromFindings';
 import { planSheetAdd, waitingReasons } from './core/helpers/addFromSheet';
@@ -88,6 +89,26 @@ function MainApp({ user }: { user: User }) {
     invoices: taxInvoices, upload: uploadTaxInvoices, remove: removeTaxInvoice,
   } = useTaxInvoices(user.id);
   const { voids, refresh: refreshVoids } = useVoids(user.id);
+
+  /* Money changed after a ticket was closed. Read from the audit log, which
+     only an admin can see — so for anyone else this stays empty and the
+     badge never appears. Refetched when the ledger changes, because an edit
+     is exactly what moves it. */
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  React.useEffect(() => {
+    if (!isAdmin) return;
+    let live = true;
+    /* The ledger changes in bursts — a bulk close moves forty rows and fires
+       forty updates. Waiting for it to settle turns forty fetches into one. */
+    const t = setTimeout(() => {
+      AuditService.closeAndMoneyEvents()
+        .then(e => { if (live) setAuditEvents(e); })
+        .catch(err => console.error('audit events', err));
+    }, 800);
+    return () => { live = false; clearTimeout(t); };
+  }, [isAdmin, tickets]);
+  const afterClose = React.useMemo(
+    () => changedAfterClose(auditEvents, tickets), [auditEvents, tickets]);
 
   const ticketSvc = new TicketService(user.id);
   const importSvc = new ImportService(user.id);
@@ -418,7 +439,7 @@ function MainApp({ user }: { user: User }) {
       )}
 
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
-      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} {...(isAdmin ? writeHandlers : {})} />}
+      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} afterClose={afterClose} {...(isAdmin ? writeHandlers : {})} />}
       {view === 'requests'  && <Requests tickets={tickets}
         {...(isAdmin ? { onUpdateClosed: handleUpdateClosed } : {})} />}
       {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}

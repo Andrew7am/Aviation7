@@ -28,7 +28,7 @@ import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers
 interface TicketTableProps {
   tickets: Ticket[];
   title: string;
-  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE';
+  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED';
   /** Opens the table already narrowed to a closure state, so a view can be
    *  "the outstanding list" without the user having to find the dropdown. */
   defaultClosed?: 'ALL' | 'CLOSED' | 'NOT_CLOSED';
@@ -43,6 +43,15 @@ interface TicketTableProps {
    * without the row joining the list.
    */
   voids?: { ticketNo: string; pnr?: string; passengerName?: string; date: string; period?: string }[];
+  /**
+   * Tickets whose money moved after they were closed, keyed by ticket id.
+   *
+   * Closing means the figure was settled with the client, so a change
+   * afterwards is one the client has not seen. Sometimes it is right —
+   * the supplier's statement bills ten riyals the ledger lacked — but it
+   * should never happen without anybody noticing, and it has been.
+   */
+  afterClose?: Map<string, { closedAt: string; changes: { at: string; detail: string; by: string }[] }>;
   onDelete?: (id: string) => void;
   onUpdateReqNum?: (id: string, reqNum: string) => void;
   onUpdateTicket?: (id: string, patch: Partial<Ticket>) => void;
@@ -320,11 +329,11 @@ const CabinBadge: React.FC<{ cabin?: string; raw?: string }> = ({ cabin, raw }) 
 };
 
 export const TicketTable: React.FC<TicketTableProps> = ({
-  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
+  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const [filterMode, setFilterMode] =
-    useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE'>(defaultFilter);
+    useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED'>(defaultFilter);
   // Vendors are multi-select: comparing NSA against IATA, or a handful of
   // portals at once, is the normal reconciliation question. Empty = every
   // vendor, so the filter starts out of the way.
@@ -394,6 +403,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterMode === 'DUPLICATE' && !t.isDuplicate) return false;
       if (filterMode === 'ADJUSTED' && t.adjustment == null) return false;
       if (filterMode === 'NO_DATE' && !missingDate(t.date)) return false;
+      if (filterMode === 'CHANGED' && !afterClose?.has(t.id)) return false;
       // No vendor ticked means every vendor, not none.
       if (sourceSel.length > 0 && !sourceSel.includes(t.source)) return false;
       // Dates are YYYY-MM-DD, so these compare as strings. A row with no date
@@ -588,6 +598,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       else if (filterMode === 'DUPLICATE') parts.push('Duplicates');
       else if (filterMode === 'ADJUSTED') parts.push('Adjusted');
       else if (filterMode === 'NO_DATE') parts.push('NoDate');
+      else if (filterMode === 'CHANGED') parts.push('ChangedAfterClose');
     }
     if (parts.length === 0) parts.push(sanitize(title));
     return parts.join('-');
@@ -1179,6 +1190,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               : filterMode === 'DUPLICATE' ? 'bg-amber-50 text-amber-700 border-amber-200'
               : filterMode === 'ADJUSTED' ? 'bg-amber-50 text-amber-700 border-amber-200'
               : filterMode === 'NO_DATE' ? 'bg-red-50 text-red-600 border-red-200'
+              : filterMode === 'CHANGED' ? 'bg-orange-50 text-orange-700 border-orange-200'
               : 'bg-white text-slate-500 border-slate-200'
             }`}
           >
@@ -1187,6 +1199,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             <option value="DUPLICATE">Duplicates</option>
             <option value="ADJUSTED">Adjusted</option>
             <option value="NO_DATE">No date</option>
+            {afterClose && afterClose.size > 0 && (
+              <option value="CHANGED">Changed after close ({afterClose.size})</option>
+            )}
           </select>
 
           {/* Domestic / International — read off the itinerary, so a ticket
@@ -1634,6 +1649,26 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                         {ticket.amount < 0 ? '-' : ''}{fmt(Math.abs(ticket.amount))}
                       </span>
                     )}
+                    {(() => {
+                      /* The figure moved after it was settled with the client.
+                         Said on the figure itself, because that is where
+                         anybody looks when a request stops adding up — and the
+                         whole history is in the tooltip, so the answer to
+                         "what was it before?" is one hover away. */
+                      const ch = afterClose?.get(ticket.id);
+                      if (!ch) return null;
+                      const when = (s: string) => s.slice(0, 16).replace('T', ' ');
+                      return (
+                        <span
+                          title={`Closed ${when(ch.closedAt)}, then changed:\n`
+                            + ch.changes.map(c => `  ${when(c.at)}  ${c.detail}  — ${c.by}`).join('\n')}
+                          className="ml-1 inline-block bg-orange-100 text-orange-700 border
+                                     border-orange-300 text-[8px] font-bold px-1 rounded
+                                     cursor-help align-middle">
+                          CHANGED{ch.changes.length > 1 ? ` ${ch.changes.length}` : ''}
+                        </span>
+                      );
+                    })()}
                   </td>
                   {/* Money in the row the vendor's own document does not
                       bill. Editable so it can be cleared the moment it is
