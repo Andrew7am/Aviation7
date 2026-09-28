@@ -52,6 +52,8 @@ import { usePending } from './hooks/usePending';
 import { useTaxInvoices } from './hooks/useTaxInvoices';
 import { useVoids } from './hooks/useVoids';
 import { VoidTicketService } from './services/VoidTicketService';
+import { ExchangeService } from './services/ExchangeService';
+import type { ExchangeEdge } from './core/parsers/types';
 import { voidsFromImport } from './core/helpers/voidFromImport';
 import { changedAfterClose, AuditEvent } from './core/helpers/changedAfterClose';
 import { coverageReport } from './core/helpers/taxInvoiceCoverage';
@@ -89,6 +91,10 @@ function MainApp({ user }: { user: User }) {
     invoices: taxInvoices, upload: uploadTaxInvoices, remove: removeTaxInvoice,
   } = useTaxInvoices(user.id);
   const { voids, refresh: refreshVoids } = useVoids(user.id);
+  const [exchanges, setExchanges] = useState<{ ticketNo: string; replacedTicket: string; fee?: number | null }[]>([]);
+  React.useEffect(() => {
+    new ExchangeService().list().then(setExchanges).catch(e => console.error('exchanges', e));
+  }, []);
 
   /* Money changed after a ticket was closed. Read from the audit log, which
      only an admin can see — so for anyone else this stays empty and the
@@ -129,6 +135,7 @@ function MainApp({ user }: { user: User }) {
     topUpTickets: Ticket[],
     settlementTickets: Ticket[],
     voidedTickets: Ticket[],
+    exchanges: ExchangeEdge[],
     meta?: { parserName: string; confidence: number; totalRows: number; warnings: number; errors: { row: number; raw: string; error: string }[]; vendor: string; reportName: string }
   ) => {
     const startTime = Date.now();
@@ -154,6 +161,17 @@ function MainApp({ user }: { user: User }) {
          no money and belong in no balance — but they are no longer thrown
          away. IATA caps how much of a year's issuance may be voided, and
          that ratio cannot be counted from documents nobody kept. */
+      /* Reissues, money or none. The zero-value ones never became ledger
+         rows, and their link is the only thing tying a later refund of them
+         back to the original that holds the money. */
+      let exchangesKept = 0;
+      if (exchanges?.length) {
+        try {
+          exchangesKept = await new ExchangeService()
+            .record(exchanges, 'IATA BSP', meta?.reportName ?? '');
+        } catch (e) { console.error('exchanges not recorded', e); }
+      }
+
       let voidsKept = 0;
       if (voidedTickets?.length) {
         try {
@@ -199,7 +217,8 @@ function MainApp({ user }: { user: User }) {
         // Audit log
         await importSvc.audit('IMPORT', meta.vendor,
           `${saved} tickets, ${updated} updates, ${settled} settled from invoice, ${topups} top-ups`
-          + (voidsKept ? `, ${voidsKept} cancelled documents recorded` : ''));
+          + (voidsKept ? `, ${voidsKept} cancelled documents recorded` : '')
+          + (exchangesKept ? `, ${exchangesKept} reissue links recorded` : ''));
       }
 
       const parts = [
@@ -451,7 +470,7 @@ function MainApp({ user }: { user: User }) {
       )}
 
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
-      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} afterClose={afterClose} {...(isAdmin ? writeHandlers : {})} />}
+      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} {...(isAdmin ? writeHandlers : {})} />}
       {view === 'requests'  && <Requests tickets={tickets}
         {...(isAdmin ? { onUpdateClosed: handleUpdateClosed } : {})} />}
       {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}

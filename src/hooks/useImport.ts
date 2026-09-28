@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react';
 import Papa from 'papaparse';
 import { Ticket } from '../types';
 import { runParser } from '../core/parsers';
+import type { ExchangeEdge } from '../core/parsers/types';
 import { detectDuplicates, detectDuplicatesAgainstExisting, classifyAgainstExisting, ClassifiedRow, readFileAsText } from '../core/ImportEngine';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
 import { isVoidRow } from '../core/helpers/normalizeStatus';
@@ -22,6 +23,9 @@ export interface ImportPreview {
   settlements: Ticket[];
   /** Voided documents found in the file and discarded — never saved. */
   voided:      Ticket[];
+  /** Reissues the file records — kept in their own register, not the
+   *  ledger, because the zero-value ones never become ledger rows. */
+  exchanges:   ExchangeEdge[];
   errors:      ImportErrorEntry[];
   warnings:    string[];
   parserName:  string;
@@ -70,7 +74,7 @@ export function useImport(userId: string) {
   ) => {
     if (!text.trim()) {
       setPreview({
-        fresh: [], updates: [], duplicates: [], topUps: [], settlements: [], voided: [],
+        fresh: [], updates: [], duplicates: [], topUps: [], settlements: [], voided: [], exchanges: [],
         errors: [{ row: 0, raw: '', error: 'Please enter some data.' }],
         warnings: [], parserName: '', confidence: 0, totalRows: 0, routedVendor: '',
         // Every other preview carries this, and the screen maps over it
@@ -91,7 +95,7 @@ export function useImport(userId: string) {
       const problem = gridProblem(grid);
       if (problem) {
         setPreview({
-          fresh: [], updates: [], duplicates: [], topUps: [], settlements: [], voided: [],
+          fresh: [], updates: [], duplicates: [], topUps: [], settlements: [], voided: [], exchanges: [],
           errors: [{ row: 0, raw: text.split('\n')[0]?.slice(0, 120) ?? '', error: problem }],
           warnings: [], parserName: '', confidence: 0, totalRows: 0, routedVendor: '',
           classified: [],
@@ -100,7 +104,7 @@ export function useImport(userId: string) {
         return;
       }
       const allRows = grid.rows;
-      const { rows, errors, warnings, parserName, confidence } = runParser(
+      const { rows, errors, warnings, parserName, confidence, exchanges = [] } = runParser(
         allRows, defaultSource, defaultCurrency, reportName, learnedProfiles
       );
 
@@ -190,7 +194,7 @@ export function useImport(userId: string) {
         : [];
 
       setPreview({
-        fresh, updates, duplicates, topUps, settlements, voided,
+        fresh, updates, duplicates, topUps, settlements, voided, exchanges,
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
         warnings: [...dateWarnings, ...warnings], parserName, confidence, routedVendor,

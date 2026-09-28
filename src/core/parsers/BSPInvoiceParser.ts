@@ -1,4 +1,4 @@
-import { VendorParser, ParserResult, ParsedRow } from './types';
+import { VendorParser, ParserResult, ExchangeEdge, ParsedRow } from './types';
 import { cleanTk, airlineCode } from './shared';
 import { SupportedCurrency } from '../helpers/resolveCurrency';
 import { decodeRuns, type PdfRun } from '../helpers/pdfText';
@@ -85,6 +85,26 @@ const MONEY_RE = /-?\d{1,3}(?:,\d{3})*\.\d{2}|-?\d+\.\d{2}/g;
  * "Related Ticket Document Number". Returns the ten-digit serial, or '' when
  * the document names none before the next document line starts.
  */
+/**
+ * The ticket a reissue replaces: its +RTDN, but only when marked EX.
+ *
+ * "EX" sits on the RTDN line or on the line straight after it. An RTDN
+ * without it is not an exchange — a refund, or a conjunction — and must not
+ * be read as one.
+ */
+export function exchangeAfter(lines: string[], from: number): string {
+  for (let k = from + 1; k < lines.length; k++) {
+    const line = lines[k].trim();
+    if (TXN_RE.test(line)) return '';
+    const hit = /\+RTDN:\s*(\d{10})(.*)$/.exec(line);
+    if (hit) {
+      const marked = /\bEX\b/.test(hit[2]) || /^EX\b/.test((lines[k + 1] ?? '').trim());
+      return marked ? hit[1] : '';
+    }
+  }
+  return '';
+}
+
 export function rtdnAfter(lines: string[], from: number): string {
   for (let k = from + 1; k < lines.length; k++) {
     const line = lines[k].trim();
@@ -242,6 +262,7 @@ export const BSPInvoiceParser: VendorParser = {
     let channel = 'BSP';
     let seenTxn = 0;
     const unknownTypes = new Map<string, number>();
+    const exchanges: ExchangeEdge[] = [];
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       const line = lines[lineIdx];
@@ -375,6 +396,18 @@ export const BSPInvoiceParser: VendorParser = {
        * commission recall — and it is a genuine debit of 104.36 that must
        * not be dropped with the empty exchanges.
        */
+      /* A reissue names the ticket it replaces on the same +RTDN line a
+         refund uses, marked EX. Recorded for every reissue — including the
+         even exchange about to be dropped, whose link is the only thing
+         connecting a later refund of it to the original that holds the
+         money. */
+      const replaced = !isRefund && !isVoid ? exchangeAfter(lines, lineIdx) : '';
+      if (replaced && replaced !== docNo.replace(/\D/g, '').slice(-10))
+        exchanges.push({
+          ticketNo: cleanTk(docNo, airline), replacedTicket: replaced,
+          airlineCode: airline, date: bspDate(dateRaw), fee: Math.abs(finalFare),
+        });
+
       if (!isVoid && !hasFare && Math.abs(finalPayable) < 0.005
           && Math.abs(commission) < 0.005) {
         evenExchanges++;
@@ -438,6 +471,6 @@ export const BSPInvoiceParser: VendorParser = {
       warnings.push(`${withComm} transaction(s) carry commission on this invoice.`);
     }
 
-    return { rows: result, errors, warnings };
+    return { rows: result, errors, warnings, exchanges };
   },
 };

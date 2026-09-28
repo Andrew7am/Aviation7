@@ -1,5 +1,6 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import Papa from 'papaparse';
+import type { ExchangeEdge } from '../core/parsers/types';
 import { Ticket, FieldChange } from '../types';
 import { useImport, ImportMeta } from '../hooks/useImport';
 import { ClassifiedRow, ReconClass, RECON_LABEL } from '../core/ImportEngine';
@@ -15,7 +16,7 @@ const aiProfileSvc = new AIProfileService();
 
 interface ImportDataProps {
   userId: string;
-  onImport: (newTickets: Ticket[], updateTickets: Ticket[], topUpTickets: Ticket[], settlementTickets: Ticket[], voidedTickets: Ticket[], meta: ImportMeta) => void;
+  onImport: (newTickets: Ticket[], updateTickets: Ticket[], topUpTickets: Ticket[], settlementTickets: Ticket[], voidedTickets: Ticket[], exchanges: ExchangeEdge[], meta: ImportMeta) => void;
   vendorNames?: string[];
 }
 
@@ -112,7 +113,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
     if (!preview) return;
     const meta = buildMeta(defaultSource);
     if (!meta) return;
-    onImport(preview.fresh, preview.updates, preview.topUps, preview.settlements, preview.voided, meta);
+    onImport(preview.fresh, preview.updates, preview.topUps, preview.settlements, preview.voided, preview.exchanges, meta);
     clear();
     setDefaultSource('Auto-detect');
   };

@@ -19,6 +19,7 @@ import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import { extractRoute } from '../core/helpers/extractRoute';
 import { missingDate, displayDate } from '../core/helpers/missingDate';
+import { chainIndex, chainOf } from '../core/helpers/ticketChain';
 import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { classifyOffice, OFFICE_LABEL, type Office } from '../core/helpers/reqOffice';
 import { Ban } from 'lucide-react';
@@ -52,6 +53,9 @@ interface TicketTableProps {
    * should never happen without anybody noticing, and it has been.
    */
   afterClose?: Map<string, { closedAt: string; changes: { at: string; detail: string; by: string }[] }>;
+  /** Reissues — which document replaced which — so a refund of a reissue
+   *  can say what the original was. */
+  exchanges?: { ticketNo: string; replacedTicket: string; fee?: number | null }[];
   onDelete?: (id: string) => void;
   onUpdateReqNum?: (id: string, reqNum: string) => void;
   onUpdateTicket?: (id: string, patch: Partial<Ticket>) => void;
@@ -372,9 +376,10 @@ const CabinBadge: React.FC<{ cabin?: string; raw?: string }> = ({ cabin, raw }) 
 };
 
 export const TicketTable: React.FC<TicketTableProps> = ({
-  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
+  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, exchanges = [], onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
+  const chainIdx = useMemo(() => chainIndex(exchanges), [exchanges]);
   const [filterMode, setFilterMode] =
     useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED'>(defaultFilter);
   // Vendors are multi-select: comparing NSA against IATA, or a handful of
@@ -1648,13 +1653,26 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                         only when the two differ: a refund filed under the
                         ticket's own number already says it. Search finds it
                         by either number. */}
-                    {ticket.relatedTicket
-                      && ticket.relatedTicket !== (ticket.ticketNo || '').replace(/\D/g, '').slice(-10) && (
-                      <span className="block text-[9px] font-normal text-violet-600 select-none"
-                        title={`Refund application ${ticket.ticketNo} refunds ticket ${ticket.relatedTicket}`}>
-                        ↩ refunds {ticket.relatedTicket}
-                      </span>
-                    )}
+                    {(() => {
+                      /* What a refund is paying back. The document it names
+                         is often a reissue whose own value is the change fee —
+                         20.00 against a refund of 48,890 — so the line also
+                         names the original the money sits on. */
+                      if ((ticket.amount ?? 0) >= 0) return null;
+                      const own = (ticket.ticketNo || '').replace(/\D/g, '').slice(-10);
+                      const named = ticket.relatedTicket || own;
+                      const chain = chainOf(named, chainIdx);
+                      const viaReissue = chain.original !== named;
+                      if (named === own && !viaReissue) return null;
+                      return (
+                        <span className="block text-[9px] font-normal text-violet-600 select-none"
+                          title={`Refunds ${named}`
+                            + (viaReissue ? `, a reissue. The chain: ${chain.documents.join(' → ')}` : '')}>
+                          ↩ refunds {named}
+                          {viaReissue && <span className="text-violet-400"> · reissue of {chain.original}</span>}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-3 py-2 cursor-copy" data-copy-row={ticket.id}
                       title="Copy the ticket — airline, number, passenger, PNR">

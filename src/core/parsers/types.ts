@@ -42,10 +42,23 @@ export interface ParsedRow {
   rawError?:       string;   // parser error message for this row
 }
 
+/** One document replacing another — a reissue. */
+export interface ExchangeEdge {
+  ticketNo:       string;
+  replacedTicket: string;
+  airlineCode?:   string;
+  date?:          string;
+  /** What the reissue collected; 0 for an even exchange. */
+  fee:            number;
+}
+
 export interface ParserResult {
   rows:     ParsedRow[];
   errors:   string[];
   warnings: string[];
+  /** Reissues the file records, including the zero-value ones that never
+   *  become ledger rows — the link is real even when the money is nil. */
+  exchanges?: ExchangeEdge[];
 }
 
 export interface VendorParser {
