@@ -136,6 +136,7 @@ export function useImport(userId: string) {
         channel:         r.channel,
         cabinClass:      r.cabinClass,
         cabinRaw:        r.cabinRaw,
+        relatedTicket:   r.relatedTicket,
         reportName:      reportName || defaultSource || routedVendor || parserName,
         importTime:      new Date().toISOString(),
         isDuplicate:     false,

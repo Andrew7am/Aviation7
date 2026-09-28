@@ -69,6 +69,10 @@ export interface Ticket {
   adjustment?: number;
   /** Why the adjustment is there, in the words of whoever established it. */
   adjustmentNote?: string;
+  /** For a refund: the ticket it refunds, as BSP's +RTDN line names it. The
+   *  refund keeps its own document number — often a refund application of
+   *  its own — in ticketNo; this is the link back to what it pays back. */
+  relatedTicket?: string;
 }
 
 export type ViewState = 'dashboard' | 'tickets' | 'requests' | 'missing' | 'notclosed' | 'import' | 'teamsheet' | 'review' | 'vendors' | 'statements' | 'taxinvoices' | 'voids' | 'reports' | 'history' | 'activity' | 'settings';

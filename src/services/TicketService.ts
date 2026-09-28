@@ -32,6 +32,7 @@ type TicketRow = {
   cabin_raw: string | null;
   adjustment: number | string | null;
   adjustment_note: string | null;
+  related_ticket: string | null;
 };
 
 function rowToTicket(r: TicketRow): Ticket {
@@ -66,6 +67,7 @@ function rowToTicket(r: TicketRow): Ticket {
     cabinRaw: r.cabin_raw ?? undefined,
     adjustment: r.adjustment == null ? undefined : Number(r.adjustment),
     adjustmentNote: r.adjustment_note ?? undefined,
+    relatedTicket: r.related_ticket ?? undefined,
   };
 }
 
@@ -99,6 +101,7 @@ function ticketToRow(t: Ticket, userId: string) {
     cabin_raw: t.cabinRaw ?? null,
     adjustment: t.adjustment ?? null,
     adjustment_note: t.adjustmentNote ?? null,
+    related_ticket: t.relatedTicket ?? null,
   };
 }
 
@@ -395,6 +398,7 @@ export class TicketService {
       cabinRaw:        'cabin_raw',
       adjustment:      'adjustment',
       adjustmentNote:  'adjustment_note',
+      relatedTicket:   'related_ticket',
     };
     const row: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(patch)) {

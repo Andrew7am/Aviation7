@@ -79,6 +79,22 @@ const TXN_RE = new RegExp(`^(\\d{3})\\s+(${TRNC})\\s+([0-9]{8,})\\s+(\\d{2}[A-Z]
 /** Money token: keeps the sign and the cents. */
 const MONEY_RE = /-?\d{1,3}(?:,\d{3})*\.\d{2}|-?\d+\.\d{2}/g;
 
+/**
+ * The ticket named by the +RTDN line after a document, before the next one.
+ *
+ * "Related Ticket Document Number". Returns the ten-digit serial, or '' when
+ * the document names none before the next document line starts.
+ */
+export function rtdnAfter(lines: string[], from: number): string {
+  for (let k = from + 1; k < lines.length; k++) {
+    const line = lines[k].trim();
+    if (TXN_RE.test(line)) return '';
+    const hit = /\+RTDN:\s*(\d{10})/.exec(line);
+    if (hit) return hit[1];
+  }
+  return '';
+}
+
 const MONTHS: Record<string, string> = {
   JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06',
   JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12',
@@ -365,6 +381,14 @@ export const BSPInvoiceParser: VendorParser = {
         continue;
       }
 
+      /* A refund names the ticket it refunds on the +RTDN line beneath it,
+         after however many lines of tax breakdown the document carries —
+         seven on one refund of 9,530. So the search runs to the next
+         document line, not a fixed number of lines. Read only for refunds:
+         on an exchange the same line names the ticket being exchanged,
+         which is a different relationship and is not what this records. */
+      const relatedTicket = isRefund ? rtdnAfter(lines, lineIdx) : '';
+
       result.push({
         ticketNo: cleanTk(docNo, airline),
         pnr: '',
@@ -385,6 +409,7 @@ export const BSPInvoiceParser: VendorParser = {
         source: IATA_VENDOR,
         channel,
         rawType: trnc,
+        ...(relatedTicket ? { relatedTicket } : {}),
       });
     }
 

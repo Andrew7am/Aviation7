@@ -31,6 +31,8 @@ export interface ParsedRow {
   /** The vendor's own document-type code, kept verbatim even when it maps to
    *  no known status, so an unrecognised type stays visible rather than lost. */
   rawType?:        string;
+  /** For a refund, the ticket it refunds — BSP's +RTDN line. */
+  relatedTicket?:  string;
   /** Cabin sold, read from whatever the report called it. Both are set
    *  together: the reading, and the text it was read from. */
   cabinClass?:     string;

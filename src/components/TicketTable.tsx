@@ -493,8 +493,12 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
-        const haystack = `${t.ticketNo} ${t.reqNum} ${vendorRef(t)} ${t.pnr} ${t.source} ${t.passengerName}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
+        // A refund is found by the ticket it refunds as well as by its own
+        // number: searching the original should turn up what paid it back.
+        const haystack = `${t.ticketNo} ${t.reqNum} ${vendorRef(t)} ${t.pnr} ${t.source} ${t.passengerName}`
+          + ` ${t.relatedTicket ?? ''}`;
+        const hay = haystack.toLowerCase();
+        if (!hay.includes(q)) return false;
       }
       return true;
     });
@@ -1638,6 +1642,18 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     {ticket.ticketNo}
                     {ticket.isDuplicate && (
                       <span className="ml-1.5 bg-amber-400 text-black px-1 py-0.5 rounded text-[8px] font-bold">DUP</span>
+                    )}
+                    {/* A refund filed under a number of its own — a refund
+                        application — says which ticket it pays back. Shown
+                        only when the two differ: a refund filed under the
+                        ticket's own number already says it. Search finds it
+                        by either number. */}
+                    {ticket.relatedTicket
+                      && ticket.relatedTicket !== (ticket.ticketNo || '').replace(/\D/g, '').slice(-10) && (
+                      <span className="block text-[9px] font-normal text-violet-600 select-none"
+                        title={`Refund application ${ticket.ticketNo} refunds ticket ${ticket.relatedTicket}`}>
+                        ↩ refunds {ticket.relatedTicket}
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-2 cursor-copy" data-copy-row={ticket.id}
