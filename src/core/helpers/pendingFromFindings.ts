@@ -2,6 +2,7 @@ import { Finding } from './teamSheetCompare';
 import { PendingTicket, Ticket } from '../../types';
 import { SupportedCurrency } from './resolveCurrency';
 import { portalSource } from '../config/teamPortals';
+import { conjunctionFirst, secondCouponsIn } from './conjunction';
 
 /**
  * Turn what the check found into tickets somebody can agree to.
@@ -175,12 +176,15 @@ export function whyNotConfirmable(p: PendingTicket): string {
   if (!p.source.trim()) return 'Pick the vendor that billed it.';
   if (!p.ticketNo.trim() && !(p.pnr || '').trim()) return 'No ticket number and no PNR.';
   if (!p.date.trim()) return 'Give it a date.';
+  const first = conjunctionFirst(p.ticketNo, p.theirCell || '');
+  if (first)
+    return `Second coupon of ${first} — same passenger, same fare. Not a ticket of its own.`;
   if (!p.amount) {
     // Two different reasons a row arrives unpriced, and telling somebody
     // their cell priced a whole booking when it in fact priced nothing
     // sends them looking for a division that does not exist.
-    return (p.theirGroup ?? 1) > 1
-      ? `Enter what it cost — their figure covers all ${p.theirGroup} tickets in that cell.`
+    return passengersNamed(p) > 1
+      ? `Enter what it cost — their figure covers all ${passengersNamed(p)} tickets in that cell.`
       : 'Enter what it cost — their sheet states no figure for it.';
   }
   return '';
@@ -272,6 +276,20 @@ export function splitEvenly(total: number, n: number): number[] {
 }
 
 /**
+ * How many fares their cell covers: every number it names, less the second
+ * coupons of conjunctions. "157-5511323226-27 , 157-5511323228-29" names
+ * four documents and two passengers, and 8,020 over four is 2,005 for each
+ * of two documents that carry no fare.
+ */
+export function passengersNamed(p: PendingTicket): number {
+  const named = p.theirGroup ?? 1;
+  return Math.max(1, named - secondCouponsIn(p.theirCell || '').size);
+}
+
+/** A row that takes a share when its cell is divided — not a second coupon. */
+export const takesShare = (p: PendingTicket) => !conjunctionFirst(p.ticketNo, p.theirCell || '');
+
+/**
  * What each ticket in front of us gets when a cell is divided.
  *
  * ALWAYS divided by the number their cell NAMED, never by how many of
@@ -291,7 +309,7 @@ export function splitEvenly(total: number, n: number): number[] {
  * to give it to — the fils belongs to a ticket we are not touching.
  */
 export function cellShares(group: PendingTicket[], p: PendingTicket): number[] {
-  const named = p.theirGroup ?? 1;
+  const named = passengersNamed(p);
   const total = Math.abs(p.theirCost ?? 0);
   if (named < 2 || !total) return [];
   if (group.length === named) return splitEvenly(total, named);
@@ -308,7 +326,7 @@ export function cellShares(group: PendingTicket[], p: PendingTicket): number[] {
  * decided about.
  */
 export function canSplit(group: PendingTicket[], p: PendingTicket): string {
-  const want = p.theirGroup ?? 1;
+  const want = passengersNamed(p);
   if (want < 2) return 'Their cell named only this ticket.';
   if (!p.theirCost) return 'Their sheet states no figure for that cell.';
   if (group.some(x => x.state !== 'PENDING')) return 'Some of them are already decided.';

@@ -314,6 +314,9 @@ export class PendingTicketService {
       state: 'CONFIRMED',
       reviewed_at: new Date().toISOString(),
       ticket_id: ticket.id,
+      // the cost confirmed may be one typed a moment ago and not yet saved
+      amount: p.amount,
+      total_doc: p.totalDoc,
     }).eq('id', p.id);
     if (error) throw new Error(error.message);
     return ticket;

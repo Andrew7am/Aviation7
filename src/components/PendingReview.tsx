@@ -3,10 +3,11 @@ import { PendingTicket } from '../types';
 import { knownSources } from '../core/config/sources';
 import { CURRENCIES } from './ManualEntry';
 import {
-  whyNotConfirmable, cellKey, cellShares, canSplit,
+  whyNotConfirmable, cellKey, cellShares, canSplit, passengersNamed, takesShare,
 } from '../core/helpers/pendingFromFindings';
 import { writeClipboard } from '../utils/clipboard';
 import { voidIndex, voidFor, voidsInQueue, VoidedDoc } from '../core/helpers/pendingVoids';
+import { conjunctionFirst } from '../core/helpers/conjunction';
 import {
   CheckCircle2, X, Loader2, Copy, AlertTriangle, Lock, Undo2, Trash2, Inbox,
   ChevronLeft, ChevronRight, Scissors, Ban,
@@ -103,8 +104,27 @@ const Row = React.memo(function Row({
   p, sources, canWrite, working, field, group, voided, onSplit,
   onCopy, onPatch, onConfirm, onReject, onReopen, onDelete,
 }: RowProps) {
-  const blocked = whyNotConfirmable(p);
-  const priced = !!p.amount;
+  /* What is in the cost box right now, not what the server last saved.
+     The box used to save on blur and the row decided "ready" from the saved
+     figure, so typing a cost into an unpriced row left "Enter what it cost"
+     on screen and no Confirm button until the save came back — and typing a
+     new cost and pressing Confirm straight away recorded the OLD one, because
+     the click arrived before the save did. */
+  const [draft, setDraft] = React.useState(p.amount ? String(Math.abs(p.amount)) : '');
+  React.useEffect(() => { setDraft(p.amount ? String(Math.abs(p.amount)) : ''); }, [p.amount]);
+  const draftAmount = (() => {
+    const v = Number(draft.replace(/[^0-9.-]/g, ''));
+    return draft.trim() && Number.isFinite(v) ? Math.abs(v) : 0;
+  })();
+  const sign = (p.amount || 0) < 0 ? -1 : 1;
+  const asTyped: PendingTicket = draftAmount === Math.abs(p.amount || 0)
+    ? p : { ...p, amount: sign * draftAmount, totalDoc: draftAmount };
+  const blocked = whyNotConfirmable(asTyped);
+  const priced = !!draftAmount;
+  /* The second coupon of a conjunction — "157-5511323226-27" — is not a
+     ticket. One passenger, one fare, two document numbers, and the fare is
+     on the first. */
+  const conjOf = conjunctionFirst(p.ticketNo || '', p.theirCell || '');
       /* Their Net Cost, copied in and not yet looked at. Worth saying
          out loud on the row: it is right about two times in three, and
          the third time is the reason this screen exists. */
@@ -114,7 +134,7 @@ const Row = React.memo(function Row({
          is the booking's. 123 of the first 206 are like this, one of
          them a cell of 45 against 139,500 — which is why nothing is
          divided automatically and nothing is prefilled. */
-      const shared = (p.theirGroup ?? 1) > 1;
+      const shared = passengersNamed(p) > 1 && !conjOf;
       /* What this ticket would get if the cell were divided evenly. Shown
          on the row rather than left as arithmetic: "2,960.00 covers 5"
          tells somebody the problem and nothing about what to type. */
@@ -125,7 +145,7 @@ const Row = React.memo(function Row({
       /* Their cell named more than are waiting, because the rest are
          already in our books. Worth saying: it is the difference between
          "divide by five" and "divide by the two you can see". */
-      const partly = shared && group.length < (p.theirGroup ?? 1);
+      const partly = shared && group.length < passengersNamed(p);
       return (
         <div key={p.id}
           className={`bg-white border rounded-lg overflow-hidden ${
@@ -187,7 +207,7 @@ const Row = React.memo(function Row({
                 {/* A shared cell is the one case where their figure is
                     not this ticket's, so it never reads as a price. */}
                 {shared
-                  ? `${money(p.theirCost)} ${p.currency} covers ${p.theirGroup} tickets`
+                  ? `${money(p.theirCost)} ${p.currency} covers ${passengersNamed(p)} tickets`
                     + (share != null ? ` — ${money(share)} each` : '')
                     + (partly ? `, ${group.length} of them still waiting` : '')
                   : untouched
@@ -240,18 +260,17 @@ const Row = React.memo(function Row({
               <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
                 What it cost{' '}
                 {shared
-                  ? <span className="text-sky-500">· 1 of {p.theirGroup}</span>
+                  ? <span className="text-sky-500">· 1 of {passengersNamed(p)}</span>
                   : untouched && <span className="text-amber-500">· theirs</span>}
               </span>
               <input
-                type="number" step="0.01" defaultValue={p.amount ? Math.abs(p.amount) : ''}
-                disabled={!canWrite || p.state !== 'PENDING' || p.heldBack}
+                type="number" step="0.01" value={draft}
+                disabled={!canWrite || p.state !== 'PENDING' || p.heldBack || !!conjOf}
                 placeholder="0.00"
-                onBlur={e => {
-                  const v = Number(e.target.value.replace(/[^0-9.-]/g, ''));
-                  const next = Number.isNaN(v) ? 0 : Math.abs(v);
-                  if (next === Math.abs(p.amount)) return;
-                  onPatch(p, { amount: next, totalDoc: next });
+                onChange={e => setDraft(e.target.value)}
+                onBlur={() => {
+                  if (draftAmount === Math.abs(p.amount || 0)) return;
+                  onPatch(p, { amount: sign * draftAmount, totalDoc: draftAmount });
                 }}
                 className={`${field} w-32 text-right ${
                   priced ? (untouched ? 'border-amber-200' : '')
@@ -314,9 +333,9 @@ const Row = React.memo(function Row({
                   ) : (
                     <button onClick={() => onSplit(p, group)} disabled={working}
                       title={partly
-                        ? `Their cell named ${p.theirGroup} tickets and ${group.length} are`
+                        ? `Their cell named ${passengersNamed(p)} tickets and ${group.length} are`
                           + ' waiting; the rest are already in our books. Each waiting one'
-                          + ` gets a ${p.theirGroup}th of ${money(p.theirCost ?? 0)}`
+                          + ` gets a ${passengersNamed(p)}th of ${money(p.theirCost ?? 0)}`
                           + ` ${p.currency}.`
                         : `Give each of the ${group.length} tickets that shared this cell an`
                           + ` equal share. They add back to ${money(p.theirCost ?? 0)}`
@@ -326,11 +345,19 @@ const Row = React.memo(function Row({
                                  disabled:opacity-50">
                       {working ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                : <Scissors className="w-3.5 h-3.5" />}
-                      Split across {p.theirGroup}{partly && ` · ${group.length} here`}
+                      Split across {passengersNamed(p)}{partly && ` · ${group.length} here`}
                     </button>
                   )
                 )}
-                {voided ? (
+                {conjOf ? (
+                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-red-700
+                                   bg-red-50 border border-red-200 rounded px-2 py-1
+                                   max-w-[260px] leading-snug">
+                    <Ban className="w-3.5 h-3.5 shrink-0" />
+                    Second coupon of {conjOf} — same passenger, same fare. Not a ticket
+                    of its own. Reject it.
+                  </span>
+                ) : voided ? (
                   /* Confirming this writes a ticket into the ledger for a
                      document that does not exist: money against nothing, in
                      a request's cost and a vendor's balance. The button is
@@ -355,7 +382,13 @@ const Row = React.memo(function Row({
                     {p.heldBack ? 'Held back' : blocked}
                   </span>
                 ) : (
-                  <button onClick={() => onConfirm(p)}
+                  /* mouse-down would blur the cost box first, the blur would
+                     start a save, the save would grey this button, and the
+                     click would land on a disabled button and do nothing.
+                     Keeping focus in the box lets the click through; Confirm
+                     carries the typed cost itself. */
+                  <button onMouseDown={e => e.preventDefault()}
+                    onClick={() => onConfirm(asTyped)}
                     disabled={working}
                     className="flex items-center gap-1.5 bg-emerald-600 text-white text-[11px]
                                font-bold px-3 py-1.5 rounded hover:bg-emerald-700
@@ -535,7 +568,7 @@ export const PendingReview: React.FC<Props> = ({
   }, [pending]);
 
   const groupOf = useCallback(
-    (p: PendingTicket) => cells.get(cellKey(p)) ?? [p], [cells]);
+    (p: PendingTicket) => (cells.get(cellKey(p)) ?? [p]).filter(takesShare), [cells]);
 
   /* ── what is on screen ────────────────────────────────────────────────
      Only the drawing is paged. Every count above is over the whole list. */
@@ -606,7 +639,7 @@ export const PendingReview: React.FC<Props> = ({
   const split = useCallback((p: PendingTicket, group: PendingTicket[]) => {
     if (!onPatchMany) return;
     const total = Math.abs(p.theirCost ?? 0);
-    const named = p.theirGroup ?? group.length;
+    const named = passengersNamed(p);
     const parts = cellShares(group, p);
     const short = group.length < named;
     const ok = window.confirm(
