@@ -1,9 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Ticket, VendorStatement, VendorBalance, BalanceTopUp } from '../types';
 import {
-  CalendarRange, ArrowRight, TrendingDown, TrendingUp, Wallet, Info, AlertTriangle,
+  CalendarRange, ArrowRight, TrendingDown, TrendingUp, Wallet, Info, AlertTriangle, Download,
 } from 'lucide-react';
 import { balanceOverRange, Payment } from '../core/helpers/statementMath';
+import { runningStatement } from '../core/helpers/runningStatement';
+
+const xlsx = () => import('xlsx');
 
 /**
  * The account between two dates the user picks, rather than the ones the
@@ -119,6 +122,58 @@ export const BalanceRange: React.FC<Props> = ({
 
   const bad = from > to;
 
+  /**
+   * The account as a statement: every line in date order, the balance after
+   * each. Built from the figures already on screen — same opening, same
+   * rows — so the last balance it prints is the closing figure above it,
+   * and when it is not, the file says so on its first page rather than
+   * handing over a statement that disagrees with the screen it came from.
+   */
+  const exportStatement = async () => {
+    if (bad) return;
+    const rs = runningStatement(r.openingBalance ?? 0, r.issues, r.refunds, r.payments,
+                                r.closingBalance);
+    const XLSX = await xlsx();
+    const cur = r.currency;
+    const label = (n: number) => `${fmt(n)} ${n < 0 ? 'Dr' : 'Cr'}`;
+    const TYPE = { OPENING: 'Opening balance', ISSUE: 'Issue', REFUND: 'Refund', PAYMENT: 'Payment' };
+
+    const head: (string | number)[][] = [
+      [`${vendor} — statement of account`],
+      [`${from} to ${to}`, '', '', '', '', '', '', '', cur],
+      [],
+      ['Opening balance', '', '', '', '', '', '', '', r.openingBalance === null ? '—' : label(r.openingBalance)],
+      ['Issued', '', '', '', '', '', '', '', -r.issued],
+      ['Refunded', '', '', '', '', '', '', '', r.refunded],
+      ['Paid', '', '', '', '', '', '', '', r.paid],
+      ['Closing balance', '', '', '', '', '', '', '', label(rs.closing)],
+      [],
+      [r.openingBalance === null
+        ? 'No balance is recorded for this supplier, so this is the movement only, starting from zero.'
+        : rs.foots === false
+          ? `WARNING: these lines close at ${label(rs.closing)}, the screen at `
+            + `${label(r.closingBalance ?? 0)} — ${fmt(rs.gap)} apart.`
+          : `The last balance below is the closing balance on the screen, to the piastre.`],
+      [r.anchorLabel],
+      [],
+      ['Date', 'Type', 'Ticket / reference', 'Passenger', 'Req', 'Invoice',
+       'Debit', 'Credit', 'Balance', 'Dr/Cr'],
+    ];
+    const body = rs.lines.map(l => [
+      l.date, TYPE[l.kind], l.reference, l.passenger, l.reqNum, l.invoice,
+      // Debit lowers what we hold with them, credit raises it — the columns a
+      // statement is read by, rather than one signed figure to be decoded.
+      l.effect < 0 ? Math.abs(l.effect) : '',
+      l.effect > 0 ? l.effect : '',
+      Math.abs(l.balance), l.balance < 0 ? 'Dr' : 'Cr',
+    ]);
+    const ws = XLSX.utils.aoa_to_sheet([...head, ...body]);
+    ws['!cols'] = [12, 16, 20, 30, 12, 14, 12, 12, 14, 6].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Statement');
+    XLSX.writeFile(wb, `${vendor} statement ${from} to ${to}.xlsx`);
+  };
+
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap">
@@ -135,6 +190,12 @@ export const BalanceRange: React.FC<Props> = ({
         <ArrowRight className="w-3 h-3 text-slate-300" />
         <input type="date" value={to} onChange={e => setTo(e.target.value)}
           className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs font-mono" />
+        <button onClick={exportStatement} disabled={bad}
+          title="Every line in date order with the balance after each — issues lower it, refunds and payments raise it"
+          className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
+                     px-3 py-1.5 rounded hover:bg-purple-700 disabled:opacity-40">
+          <Download className="w-3.5 h-3.5" /> Statement
+        </button>
       </div>
 
       <div className="p-5 space-y-4">
