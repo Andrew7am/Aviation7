@@ -298,8 +298,20 @@ function MainApp({ user }: { user: User }) {
     importSvc.audit('BULK_UPDATE_REQ', ids.join(','), `Find: ${findVal} → Replace: ${replaceVal} (${ids.length} tickets)`);
   };
   const handleUpdateTicket = (id: string, patch: Partial<Ticket>) => {
-    updateTicket(id, patch);
-    const summary = Object.entries(patch).map(([k, v]) => `${k}=${v}`).join(', ');
+    /* Only what actually differs. A patch that repeats the current value is
+       no edit at all — and on a closed ticket, logged as one, it reads as
+       money changed after the client settled. The table guards this too;
+       this is the second lock, for any caller that does not. */
+    const current = tickets.find(t => t.id === id) as unknown as Record<string, unknown> | undefined;
+    const same = (a: unknown, b: unknown) =>
+      typeof a === 'number' || typeof b === 'number'
+        ? Math.abs(Number(a ?? 0) - Number(b ?? 0)) < 0.005 && (a == null) === (b == null)
+        : String(a ?? '') === String(b ?? '');
+    const real = Object.fromEntries(
+      Object.entries(patch).filter(([k, v]) => !current || !same(v, current[k])));
+    if (!Object.keys(real).length) return;
+    updateTicket(id, real as Partial<Ticket>);
+    const summary = Object.entries(real).map(([k, v]) => `${k}=${v}`).join(', ');
     importSvc.audit('EDIT_TICKET', id, `Edited: ${summary}`);
   };
   const handleUpdateClosed     = (id: string, closed: boolean) => { updateClosed(id, closed); importSvc.audit('UPDATE_CLOSED', id, closed ? 'Closed' : 'Not Closed'); };

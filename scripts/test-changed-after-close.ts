@@ -225,5 +225,34 @@ console.log('\n12. The sign says which of two rows an edit was for');
   check('no figure named, both checked', [r3.has('id-c'), r3.has('id-c-rfd')], [true, true]);
 }
 
+console.log('\n13. Opening a cell and leaving it is not a change');
+{
+  /* The app wrote "Edited: amount=2872" every time a cell was opened and
+     closed, changed or not — thirty-five of its sixty-two amount lines moved
+     nothing, and one closed ticket read CHANGED 3 for three glances. Only a
+     line that says what the figure WAS, and differs from what it became,
+     counts. The database trigger writes those, and only on a real move. */
+  const r = changedAfterClose([
+    close('id-a', '2026-09-10T10:00:00Z'),
+    edit('4861679579', 'Edited: amount=2872', '2026-09-14T10:00:00Z'),
+    edit('4861679579', 'Edited: amount=2872', '2026-09-14T11:00:00Z'),
+    edit('4861679579', 'Edited: amount=2872', '2026-09-14T12:00:00Z'),
+  ], T);
+  check('three glances are nothing', r.has('id-a'), false);
+
+  const r2 = changedAfterClose([
+    close('id-a', '2026-09-10T10:00:00Z'),
+    edit('4861679579', 'amount: 2872 -> 2872', '2026-09-14T10:00:00Z'),
+    edit('4861679579', 'amount: 2872 -> 2872.00', '2026-09-14T11:00:00Z'),
+  ], T);
+  check('a before equal to the after is nothing', r2.has('id-a'), false);
+
+  const r3 = changedAfterClose([
+    close('id-a', '2026-09-10T10:00:00Z'),
+    edit('4861679579', 'amount: 2872 -> 2882', '2026-09-14T10:00:00Z'),
+  ], T);
+  check('a real move still is', r3.has('id-a'), true);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

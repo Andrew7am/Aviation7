@@ -101,6 +101,15 @@ export function changedAfterClose(
     }
 
     if (e.action !== 'EDIT_TICKET' || !MONEY.test(e.detail || '')) continue;
+    /* Only a change that says what the figure WAS as well as what it became.
+       The database's own trigger writes those, and writes them only when a
+       value actually moves — not once in the log does its "before" equal
+       its "after". The app's "Edited: amount=2872" line is written every
+       time a cell is opened and closed, changed or not: thirty-five of its
+       sixty-two amount lines moved nothing, and one ticket read CHANGED 3
+       for three glances at a figure nobody altered. Every real change has a
+       trigger line beside it, so leaving the app's lines out loses nothing. */
+    if (!movedFrom(e.detail)) continue;
     /* An edit is logged by document number, and one number can name two
        rows — an issue and the refund against it. The sign of the figure the
        edit left behind says which: an issue is positive, a refund negative,
@@ -146,6 +155,16 @@ function sameMoment(a: string, b: string): boolean {
   const ta = Date.parse(a), tb = Date.parse(b);
   if (Number.isNaN(ta) || Number.isNaN(tb)) return a === b;
   return Math.abs(ta - tb) <= 5_000;
+}
+
+/** A "before -> after" whose two sides differ: a change, not a glance. */
+function movedFrom(detail: string): boolean {
+  const pairs = [...(detail || '').matchAll(/:\s*(-?[\d.,]*)\s*->\s*(-?[\d.,]*)/g)];
+  if (!pairs.length) return false;
+  return pairs.some(([, a, b]) => {
+    const x = Number(a.replace(/,/g, '')), y = Number(b.replace(/,/g, ''));
+    return a.trim() !== b.trim() && !(Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) < 0.005);
+  });
 }
 
 /** "amount: 1000.5 -> 1011" says what it was; "Edited: amount=1011" does not. */

@@ -101,6 +101,49 @@ export function vendorRef(t: { vendorReference?: string }): string {
   return VENDOR_DOC.test(v) || ZATCA_DOC.test(v) ? v : '';
 }
 
+/**
+ * The figure moved after it was settled with the client.
+ *
+ * A button, not a span. A span inside the amount cell took the click with
+ * it: into the cell's copy handler, so the figure went to the clipboard, or
+ * into the amount editor beside it, so pressing the badge to read it opened
+ * the price for editing instead. A button is skipped by both, and it is the
+ * right element for "press to see what happened".
+ */
+const ChangedBadge: React.FC<{
+  history: { closedAt: string; changes: { at: string; detail: string; by: string }[] };
+}> = ({ history }) => {
+  const [open, setOpen] = useState(false);
+  const when = (s: string) => s.slice(0, 16).replace('T', ' ');
+  return (
+    <span className="relative inline-block align-middle">
+      <button type="button"
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        onBlur={() => setOpen(false)}
+        title="Changed after it was closed — press to see what changed"
+        className="ml-1 bg-orange-100 text-orange-700 border border-orange-300 text-[8px]
+                   font-bold px-1 rounded hover:bg-orange-200">
+        CHANGED{history.changes.length > 1 ? ` ${history.changes.length}` : ''}
+      </button>
+      {open && (
+        <span className="absolute right-0 top-full mt-1 z-30 w-80 bg-white border border-slate-200
+                         rounded-lg shadow-lg p-3 text-left font-sans block">
+          <span className="block text-[10px] font-bold text-slate-700">
+            Closed {when(history.closedAt)}, then changed:
+          </span>
+          {history.changes.map((c, i) => (
+            <span key={i} className="block mt-1.5 text-[10px] leading-snug">
+              <span className="font-mono text-slate-500">{when(c.at)}</span>
+              <span className="block font-mono text-slate-800">{c.detail}</span>
+              <span className="block text-slate-400">{c.by}</span>
+            </span>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+};
+
 type SortKey =
   | 'serial' | 'airlineCode' | 'ticketNo' | 'source' | 'status' | 'date'
   | 'route' | 'travel' | 'cabin' | 'totalDoc' | 'commission' | 'amount'
@@ -919,12 +962,38 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       : String(ticket.amount ?? '');
     setEditingCell({ id: ticket.id, field });
     setEditValue(current);
+    editStart.current = current;
+  };
+
+  /** What the cell held when it was opened, to compare against on the way out. */
+  const editStart = useRef('');
+
+  /**
+   * Did anything actually change?
+   *
+   * Leaving a cell used to write whatever was in it, changed or not. Opening
+   * an amount to look at it and clicking away logged an edit of 2,872 to
+   * 2,872 — thirty-five of the sixty-two amount edits in the log moved
+   * nothing — and on a closed ticket each one then read as money changed
+   * after the client had settled. Numbers are compared as numbers, so
+   * "1000.50" left as "1000.5" is no change; text as the field stores it.
+   */
+  const unchanged = (field: EditableField, raw: string): boolean => {
+    const was = editStart.current.trim();
+    if (field === 'amount' || field === 'adjustment') {
+      if (!raw && !was) return true;
+      const a = Number(raw.replace(/[^0-9.-]/g, '')), b = Number(was.replace(/[^0-9.-]/g, ''));
+      return raw !== '' && was !== '' && Math.abs(a - b) < 0.005;
+    }
+    const upper = field === 'reqNum' || field === 'passengerName' || field === 'pnr' || field === 'route';
+    return (upper ? raw.toUpperCase() : raw) === (upper ? was.toUpperCase() : was);
   };
 
   const commitEdit = () => {
     if (!editingCell) return;
     const { id, field } = editingCell;
     const raw = editValue.trim();
+    if (unchanged(field, raw)) { setEditingCell(null); return; }
     if (field === 'reqNum') {
       onUpdateReqNum?.(id, raw.toUpperCase());
     } else if (field === 'amount') {
@@ -1649,26 +1718,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                         {ticket.amount < 0 ? '-' : ''}{fmt(Math.abs(ticket.amount))}
                       </span>
                     )}
-                    {(() => {
-                      /* The figure moved after it was settled with the client.
-                         Said on the figure itself, because that is where
-                         anybody looks when a request stops adding up — and the
-                         whole history is in the tooltip, so the answer to
-                         "what was it before?" is one hover away. */
-                      const ch = afterClose?.get(ticket.id);
-                      if (!ch) return null;
-                      const when = (s: string) => s.slice(0, 16).replace('T', ' ');
-                      return (
-                        <span
-                          title={`Closed ${when(ch.closedAt)}, then changed:\n`
-                            + ch.changes.map(c => `  ${when(c.at)}  ${c.detail}  — ${c.by}`).join('\n')}
-                          className="ml-1 inline-block bg-orange-100 text-orange-700 border
-                                     border-orange-300 text-[8px] font-bold px-1 rounded
-                                     cursor-help align-middle">
-                          CHANGED{ch.changes.length > 1 ? ` ${ch.changes.length}` : ''}
-                        </span>
-                      );
-                    })()}
+                    {afterClose?.get(ticket.id) && (
+                      <ChangedBadge history={afterClose.get(ticket.id)!} />
+                    )}
                   </td>
                   {/* Money in the row the vendor's own document does not
                       bill. Editable so it can be cleared the moment it is
