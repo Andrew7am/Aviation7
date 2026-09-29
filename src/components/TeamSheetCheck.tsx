@@ -402,13 +402,17 @@ const Group: React.FC<{
                            money to chase. */
                         const v = voided?.get((f.serial || '').replace(/\D/g, '').slice(-10));
                         if (!v) return f.note;
+                        // Their sheet may already say void. Telling them it
+                        // was "never updated" then is simply untrue.
+                        const theyKnow = f.sheet?.status === 'VOID';
                         return (
                           <span>
                             <span className="font-bold text-slate-700">
                               This document was voided{v.period ? ` in period ${v.period}` : ''}.
                             </span>{' '}
-                            It is on their sheet as live, so their sheet was never updated.
-                            Nothing to add to our books.
+                            {theyKnow
+                              ? 'Their sheet says void too — both sides agree. Nothing to add to our books.'
+                              : 'It is on their sheet as live, so their sheet was never updated. Nothing to add to our books.'}
                           </span>
                         );
                       })()}
@@ -525,8 +529,9 @@ export const TeamSheetCheck: React.FC<Props> = ({
   /* Recomputed rather than re-read: changing the request after the file is
      in must not mean finding the file again. */
   const report = useMemo<TeamSheetReport | null>(
-    () => (rows ? compareTeamSheet(rows, tickets, declared, { from: fromDate, to: toDate }) : null),
-    [rows, tickets, declared, fromDate, toDate]);
+    () => (rows ? compareTeamSheet(rows, tickets, declared, { from: fromDate, to: toDate },
+      { voided: voids.map(v => v.ticketNo) }) : null),
+    [rows, tickets, declared, fromDate, toDate, voids]);
 
   const run = async (file: File) => {
     setBusy(true); setError(''); setRows(null); setFileName(file.name);

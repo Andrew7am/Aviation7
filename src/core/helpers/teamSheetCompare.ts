@@ -644,7 +644,12 @@ const isTicket = (t: Ticket) => (t.status || '').toUpperCase() !== 'FUND';
 export function compareTeamSheet(
   sheet: TeamSheetRow[], ledger: Ticket[], declaredRaw: string[] = [],
   periodRaw: Period = {},
+  /** Documents the supplier cancelled — the Voids register. A ticket their
+   *  sheet still shows as live is then a void they never updated, not a
+   *  ticket missing from our books. */
+  opts: { voided?: Iterable<string> } = {},
 ): TeamSheetReport {
+  const voidedSet = new Set([...(opts.voided ?? [])].map(v => ticketMatchKey(v || '')).filter(Boolean));
   /* What somebody typed before dropping the file. Cleaned the same way a
      request read from a file is, so "ksaml 2053" and "KSAML2053" are one
      thing here too. */
@@ -838,6 +843,15 @@ export function compareTeamSheet(
       if (theySayVoid) {
         findings.push({ ...base, verdict: 'VOID_NOT_BILLED',
           note: 'Voided on their side, so no supplier ever billed it. Nothing to record.' });
+      } else if (voidedSet.has(serial)) {
+        /* The supplier cancelled it — it is in our Voids — and their sheet
+           still carries it as issued. Nothing is missing from our books;
+           their record is one update behind. Settled for us, so it does not
+           hold a request open. */
+        const issued = rows.find(x => x.status !== 'REFUNDED' && x.cost != null) ?? first;
+        findings.push({ ...base, sheet: issued, verdict: 'VOID_NOT_BILLED',
+          note: 'Cancelled with the supplier — it is in our Voids. Their sheet still shows it'
+              + ' as issued, so their record needs marking void. Nothing to add to our books.' });
       } else if (theySayReissue && nothingCharged) {
         findings.push({ ...base, verdict: 'REISSUE_NO_CHARGE',
           note: `Their sheet reissues this at no charge${
@@ -1054,6 +1068,54 @@ export function compareTeamSheet(
     });
   }
 
+  /* ── an EMD their sheet folds into the ticket it paid for ─────────────
+     A reissue with a penalty is billed as two documents: the reissue for
+     its change fee and an EMD for the penalty. Their sheet writes it as one
+     row, the reissue, at the total:
+
+        theirs   5513059108  ZOIU62  25 Aug  Reissue   420.00
+        ours     5513059108  ZOIU62  25 Aug  ISSUE      20.00
+                 1949933369  ZOIU62  25 Aug  EMDS      400.00
+
+     So the EMD is on their sheet, inside that row, and reporting it as
+     missing from it sends somebody looking for a record that exists. It is
+     counted as theirs only when the arithmetic says so: same PNR, same day,
+     and their figure is our ticket plus the EMDs to the dirham. */
+  const isEmd = (t: Ticket) => /^EMD/i.test(t.status || '');
+  const theirByPnrDay = new Map<string, TeamSheetRow[]>();
+  for (const r of sheet) {
+    const p = pnrKey(r.pnr);
+    if (!p || !r.serial || !r.issued || r.cost == null) continue;
+    // "Cancelled/Refunded" is kept: it is one row for two events, and its
+    // cost is still what the issue cost — 1,530 on 5513373310, which is our
+    // 1,130 reissue and a 400 EMD, refunded a week later.
+    if (r.status === 'VOID') continue;
+    const k = `${p}|${r.issued}`;
+    if (!theirByPnrDay.has(k)) theirByPnrDay.set(k, []);
+    theirByPnrDay.get(k)!.push(r);
+  }
+  const emdsByPnrDay = new Map<string, Ticket[]>();
+  for (const t of ledger) {
+    if (!isTicket(t) || !isEmd(t) || (t.amount || 0) <= 0) continue;
+    const k = ticketMatchKey(t.ticketNo || '');
+    if (!k || theirSerials.has(k)) continue;
+    const pk = `${pnrKey(t.pnr)}|${String(t.date || '').slice(0, 10)}`;
+    if (!pnrKey(t.pnr)) continue;
+    if (!emdsByPnrDay.has(pk)) emdsByPnrDay.set(pk, []);
+    emdsByPnrDay.get(pk)!.push(t);
+  }
+  for (const [pk, emds] of emdsByPnrDay) {
+    const day = pk.split('|')[1];
+    const emdTotal = emds.reduce((n, t) => n + (t.amount || 0), 0);
+    const covers = (theirByPnrDay.get(pk) ?? []).some(r => {
+      const ticket = (ourBySerial.get(r.serial) ?? [])
+        .filter(t => !isEmd(t) && (t.amount || 0) > 0 && String(t.date || '').slice(0, 10) === day)
+        .reduce((n, t) => n + (t.amount || 0), 0);
+      return ticket > 0 && Math.abs(Math.abs(r.cost ?? 0) - (ticket + emdTotal)) < 1;
+    });
+    if (covers) for (const t of emds) claimed.add(ticketMatchKey(t.ticketNo || ''));
+  }
+
   /* ── our side: anything under those requests they never mention ───────── */
   const ourExtra = new Map<string, Ticket[]>();
   const tooOld = new Set<string>();
@@ -1126,6 +1188,11 @@ export function compareTeamSheet(
     }
   }
 
+  const settledTheirs = new Set(findings
+    .filter(f => f.verdict === 'VOID_NOT_BILLED' || f.verdict === 'REISSUE_NO_CHARGE'
+      || f.verdict === 'CONJUNCT_ALREADY_HELD')
+    .map(f => f.serial).filter(Boolean));
+
   const byRequest: RequestLine[] = [...requests].sort().map(req => {
     const key = reqKey(req);
     const ourSet = ourSerialsByReq.get(key) ?? new Set<string>();
@@ -1148,7 +1215,10 @@ export function compareTeamSheet(
       reqParts(f.reqNum).includes(key) || reqParts(f.theirReq).includes(key);
     const misfiled = findings.filter(f => f.verdict === 'REQ_DIFFERS' && touches(f)).length;
     const related = [...(relations.get(key) ?? [])].filter(x => x !== key).sort();
-    const onlyTheirs = [...theirSet].filter(x => !ourSet.has(x)).length;
+    /* A void, a no-charge reissue and a second coupon are on their sheet and
+       rightly absent from our books. Counting them as "only theirs" held a
+       request open for tickets nobody ever has to find. */
+    const onlyTheirs = [...theirSet].filter(x => !ourSet.has(x) && !settledTheirs.has(x)).length;
     const onlyOurs = [...ourSet].filter(x => !theirSet.has(x)).length;
     return {
       reqNum: req, theirTickets: theirSet.size, ourTickets: ourSet.size,
