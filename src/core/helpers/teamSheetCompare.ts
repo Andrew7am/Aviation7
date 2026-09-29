@@ -1035,7 +1035,10 @@ export function compareTeamSheet(
     if (r.status === 'ON_HOLD' && !r.unreadable) { onHold++; continue; }
 
     let identified: Ticket[] = [];
-    if (r.unreadable && r.pnr) {
+    /* A row with no number at all is identified the same way as one whose
+       number was damaged: "---", Cancelled/Refunded, PNR ZDY2WX, and the
+       one ticket of ours on ZDY2WX their sheet has no other row for. */
+    if (r.pnr) {
       const candidates = ledger.filter(t =>
         isTicket(t)
         && (t.pnr || '').replace(/\s+/g, '').toUpperCase() === r.pnr
@@ -1063,8 +1066,12 @@ export function compareTeamSheet(
             ? ` PNR ${r.pnr} identifies it as this ticket, which is in our books, so nothing`
               + ' is missing — but their record still needs the number put back.'
             : ' Ask for the export with the ticket column as text.')
-        : `Their sheet marks this ${r.rawStatus || 'issued'} and leaves the ticket number`
-          + ' blank, so there is nothing to match it on. Only they can fill it in.',
+        : identified.length
+          ? `Their sheet marks this ${r.rawStatus || 'issued'} and leaves the ticket number`
+            + ` blank. PNR ${r.pnr} identifies it as this ticket, which is in our books, so`
+            + ' nothing is missing — but their record needs the number filled in.'
+          : `Their sheet marks this ${r.rawStatus || 'issued'} and leaves the ticket number`
+            + ' blank, so there is nothing to match it on. Only they can fill it in.',
     });
   }
 
@@ -1115,6 +1122,10 @@ export function compareTeamSheet(
     });
     if (covers) for (const t of emds) claimed.add(ticketMatchKey(t.ticketNo || ''));
   }
+
+  /* Their "EMD Number" column: an EMD named there is on their sheet, on
+     the row that paid for it. */
+  for (const r of sheet) for (const e of r.emds ?? []) claimed.add(e);
 
   /* ── our side: anything under those requests they never mention ───────── */
   const ourExtra = new Map<string, Ticket[]>();

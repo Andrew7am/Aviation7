@@ -103,5 +103,56 @@ console.log('\n3. A void only we know about');
   check('and the request agrees', withV.byRequest[0].agrees, true);
 }
 
+console.log('\n4. Their "EMD Number" column');
+{
+  // Their real rows: the luggage bought on two tickets, EMDs written beside them.
+  const H = 'Ticket Number,PNR,Status,Net Cost,Issued Date & Time,EMD Number,REQ No (Auto) (Trip) (from Aviation Quotations)';
+  const s = parseTeamSheet([H,
+    '065-5513058997,Y7ZS3D,Reissue,1280.00,5/8/2026 11:57pm,"065-1930576275 , 065-1930576277",UAEVP608',
+    '065-5513058998,Y7ZS3D,Reissue,1280.00,5/8/2026 11:59pm,"065-1930576276 ,  065-1930576278",UAEVP608',
+  ].join('\n')).rows;
+  check('the EMDs are read off the row', s[0].emds, ['1930576275', '1930576277']);
+  check('with the odd spacing too', s[1].emds, ['1930576276', '1930576278']);
+  check('an EMD cell is not a ticket of their own', s.map(r => r.serial), ['5513058997', '5513058998']);
+  const o = [
+    tkt({ ticketNo: '5513058997', pnr: 'Y7ZS3D', date: '2026-08-01', amount: 20, reqNum: 'UAEVP608' }),
+    tkt({ ticketNo: '5513058998', pnr: 'Y7ZS3D', date: '2026-08-01', amount: 20, reqNum: 'UAEVP608' }),
+    ...['1930576275', '1930576276', '1930576277', '1930576278'].map(n =>
+      tkt({ ticketNo: n, pnr: 'Y7ZS3D', date: '2026-08-05', amount: 640, status: 'EMDS', reqNum: 'UAEVP608' })),
+  ];
+  const r = compareTeamSheet(s, o);
+  check('none of the four is missing from their sheet',
+        r.findings.filter(f => f.verdict === 'NOT_ON_SHEET').map(f => f.serial), []);
+  check('and the request agrees', r.byRequest.find(x => x.reqNum === 'UAEVP608')?.agrees, true);
+  const without = parseTeamSheet([H.replace(',EMD Number', ''),
+    '065-5513058997,Y7ZS3D,Reissue,1280.00,5/8/2026 11:57pm,UAEVP608',
+    '065-5513058998,Y7ZS3D,Reissue,1280.00,5/8/2026 11:59pm,UAEVP608'].join('\n')).rows;
+  check('a sheet without the column still reports them',
+        compareTeamSheet(without, o).findings.filter(f => f.verdict === 'NOT_ON_SHEET').length, 4);
+}
+
+console.log('\n5. A row with no ticket number, identified by its PNR');
+{
+  const s = sheet([
+    '---,ZDY2WX,Cancelled/Refunded,3712.94,,9/3/2026 1:00pm,IATA Portal (UAE),KSAML1276',
+    '065-5512129300,ABCDEF,Issued,1000.00,,9/3/2026 1:00pm,IATA Portal (UAE),KSAML1276',
+  ]);
+  const one = [
+    tkt({ ticketNo: '5512129276', pnr: 'ZDY2WX', date: '2026-03-09', amount: 3585.2, reqNum: 'KSAML1276' }),
+    tkt({ ticketNo: '5512129300', pnr: 'ABCDEF', date: '2026-03-09', amount: 1000, reqNum: 'KSAML1276' }),
+  ];
+  const r = compareTeamSheet(s, one);
+  check('the one ticket on that PNR is not reported missing',
+        r.findings.filter(f => f.verdict === 'NOT_ON_SHEET').map(f => f.serial), []);
+  const nt = r.findings.find(f => f.verdict === 'NO_TICKET_NUMBER');
+  check('the blank row names it', nt?.serial, '5512129276');
+  check('and still asks them to fill the number in', /needs the number filled in/.test(nt?.note ?? ''), true);
+  // Two of ours on that PNR: the blank row cannot say which.
+  const two = [...one, tkt({ ticketNo: '5512129277', pnr: 'ZDY2WX', date: '2026-03-09', amount: 3585.2, reqNum: 'KSAML1276' })];
+  check('two candidates — neither is claimed',
+        compareTeamSheet(s, two).findings.filter(f => f.verdict === 'NOT_ON_SHEET').map(f => f.serial).sort(),
+        ['5512129276', '5512129277']);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

@@ -78,6 +78,15 @@ export interface TeamSheetRow {
   /** Present only when their export carries the request number. */
   reqNum: string;
   ticketType: string;
+  /**
+   * The EMDs their row carries, from their "EMD Number" column.
+   *
+   * A bag or a seat bought on a ticket is a document of its own to the
+   * supplier and one row to them: "Reissue · ADD LUGGAGE · 1,280.00" with
+   * "065-1930576275 , 065-1930576277" beside it. Not read, every one of
+   * those EMDs looked absent from their sheet while it sat in this column.
+   */
+  emds?: string[];
 }
 
 export interface ParsedTeamSheet {
@@ -417,6 +426,7 @@ export function parseTeamSheet(text: string): ParsedTeamSheet {
     airline: pick(headers, ['airline', 'carrier']),
     portal:  pick(headers, ['portal', 'supplier', 'source']),
     type:    pick(headers, ['ticket type']),
+    emd:     pick(headers, ['emd number', 'emd numbers', 'emd no', 'emd'], false),
     // Never loosely: "MICE Account (from Aviation Requests)" contains it.
     req:     pick(headers, ['req num', 'reqnum', 'req no', 'req', 'request number',
                             'request no', 'request'], false),
@@ -469,6 +479,7 @@ export function parseTeamSheet(text: string): ParsedTeamSheet {
       // Whichever of their request columns this row filled in.
       reqNum: (reqCols.map(i => at(r, i)).find(Boolean) ?? '').toUpperCase(),
       ticketType: at(r, col.type),
+      emds: teamSerials(at(r, col.emd)).map(d => d.serial).filter(x => /^\d{10}$/.test(x)),
     });
   }
 
