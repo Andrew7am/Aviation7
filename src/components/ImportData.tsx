@@ -68,11 +68,37 @@ export const ImportData: React.FC<ImportDataProps> = ({
     return ['Auto-detect', ...knownSources(vendorNames)];
   }, [vendorNames]);
 
+  const loadFile = async (file: File) => {
+    try { setInputText(await readFileAsText(file)); } catch { /* surfaced via validation errors */ }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    try { setInputText(await readFileAsText(file)); } catch { /* surfaced via validation errors */ }
+    await loadFile(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  /* A file dropped anywhere on the input card is read exactly as one picked
+     with Upload File. Without this the browser takes the drop itself and
+     opens the file in the tab, and the page is gone. */
+  const [dragging, setDragging] = useState(false);
+  const dropProps = {
+    onDragOver: (e: React.DragEvent) => {
+      if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+      e.preventDefault();
+      setDragging(true);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      const file = e.dataTransfer.files?.[0];
+      if (!file) return;
+      e.preventDefault();
+      setDragging(false);
+      loadFile(file);
+    },
   };
 
   const handlePreview = (profiles: LearnedProfile[] = aiProfiles) => {
@@ -193,7 +219,9 @@ export const ImportData: React.FC<ImportDataProps> = ({
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm shrink-0">
+      <div {...dropProps}
+        className={`bg-white border rounded-lg p-4 shadow-sm shrink-0 transition-colors ${
+          dragging ? 'border-blue-400 ring-2 ring-blue-500/20 bg-blue-50/40' : 'border-slate-200'}`}>
         <div className="flex items-center justify-between mb-2">
           <label className="text-[10px] font-bold uppercase text-slate-500">Data Input</label>
           <div className="flex space-x-2">
@@ -206,7 +234,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
         </div>
         <textarea rows={6} value={inputText} onChange={e => setInputText(e.target.value)}
           className="w-full bg-slate-50 border border-slate-200 rounded p-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none shadow-inner"
-          placeholder="Paste CSV / Excel data here, or upload a file..." />
+          placeholder={dragging ? 'Drop it here' : 'Paste CSV / Excel data here, drop a file here, or upload one...'} />
         <div className="flex justify-end space-x-2 mt-3">
           <button onClick={clear}
             className="px-3 py-1.5 border border-slate-200 rounded text-[10px] font-bold uppercase text-slate-500 hover:bg-slate-50">Clear</button>
