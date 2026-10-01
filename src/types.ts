@@ -73,6 +73,11 @@ export interface Ticket {
    *  refund keeps its own document number — often a refund application of
    *  its own — in ticketNo; this is the link back to what it pays back. */
   relatedTicket?: string;
+  /** Bought in another currency and converted on the way in — USD at 3.67.
+   *  What the receipt and their sheet say; `amount` is the dirhams. */
+  originalCurrency?: string;
+  originalAmount?: number;
+  fxRate?: number;
 }
 
 export type ViewState = 'dashboard' | 'tickets' | 'requests' | 'missing' | 'notclosed' | 'import' | 'teamsheet' | 'review' | 'vendors' | 'statements' | 'taxinvoices' | 'voids' | 'reports' | 'history' | 'activity' | 'settings';

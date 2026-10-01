@@ -713,6 +713,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       ...(has.adj   ? [{ key: 'Adjustment',  get: (t: Ticket) => t.adjustment ?? '', w: 12, money: true }] : []),
       { key: 'Balance Payable', get: (t: Ticket) => t.amount ?? 0,           w: 13, money: true },
       { key: 'Cur',         get: (t: Ticket) => ticketCurrency(t), w: 6 },
+      { key: 'Bought in',   get: (t: Ticket) => t.originalCurrency ? `${t.originalCurrency} ${t.originalAmount ?? ''}` : '', w: 12 },
       { key: 'Req Num',     get: (t: Ticket) => t.reqNum || '',          w: 14 },
       { key: 'Vendor Ref',  get: (t: Ticket) => vendorRef(t),            w: 18 },
       ...(has.office ? [{ key: 'Office',
@@ -789,6 +790,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     'Balance Payable': t.amount,
     'Adjustment': t.adjustment ?? '',
     'Currency':   ticketCurrency(t),
+    'Bought in':  t.originalCurrency ? `${t.originalCurrency} ${t.originalAmount ?? ''}` : '',
     'PNR':        t.pnr || '',
     'Passenger':  t.passengerName || '',
   });
@@ -1784,7 +1786,18 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-[9px] font-bold text-slate-400">{rowCurrency}</td>
+                  <td className="px-3 py-2 text-[9px] font-bold text-slate-400 whitespace-nowrap">
+                    {rowCurrency}
+                    {/* Bought in dollars and kept in dirhams. Said on the row,
+                        because their sheet and the receipt still say dollars. */}
+                    {ticket.originalCurrency && (
+                      <span className="block font-normal text-amber-600"
+                        title={`Bought in ${ticket.originalCurrency}: ${fmt(ticket.originalAmount ?? 0)}`
+                          + ` ${ticket.originalCurrency} × ${ticket.fxRate ?? ''} = ${fmt(ticket.amount)} ${rowCurrency}`}>
+                        was {ticket.originalCurrency} {fmt(ticket.originalAmount ?? 0)}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-slate-600">
                     {isEditing(ticket.id, 'pnr') ? editorInput : (
                       <span

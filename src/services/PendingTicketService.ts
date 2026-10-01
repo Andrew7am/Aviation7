@@ -307,6 +307,9 @@ export class PendingTicketService {
       vendor_reference: ticket.vendorReference,
       import_time: ticket.importTime,
       closed: false,
+      original_currency: ticket.originalCurrency ?? null,
+      original_amount: ticket.originalAmount ?? null,
+      fx_rate: ticket.fxRate ?? null,
     });
     if (tErr) throw new Error(tErr.message);
 

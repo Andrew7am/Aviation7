@@ -32,6 +32,9 @@ type TicketRow = {
   cabin_raw: string | null;
   adjustment: number | string | null;
   adjustment_note: string | null;
+  original_currency?: string | null;
+  original_amount?: number | string | null;
+  fx_rate?: number | string | null;
   related_ticket: string | null;
 };
 
@@ -68,6 +71,9 @@ function rowToTicket(r: TicketRow): Ticket {
     adjustment: r.adjustment == null ? undefined : Number(r.adjustment),
     adjustmentNote: r.adjustment_note ?? undefined,
     relatedTicket: r.related_ticket ?? undefined,
+    originalCurrency: r.original_currency ?? undefined,
+    originalAmount: r.original_amount == null ? undefined : Number(r.original_amount),
+    fxRate: r.fx_rate == null ? undefined : Number(r.fx_rate),
   };
 }
 
@@ -102,6 +108,9 @@ function ticketToRow(t: Ticket, userId: string) {
     adjustment: t.adjustment ?? null,
     adjustment_note: t.adjustmentNote ?? null,
     related_ticket: t.relatedTicket ?? null,
+    original_currency: t.originalCurrency ?? null,
+    original_amount: t.originalAmount ?? null,
+    fx_rate: t.fxRate ?? null,
   };
 }
 
@@ -399,6 +408,9 @@ export class TicketService {
       adjustment:      'adjustment',
       adjustmentNote:  'adjustment_note',
       relatedTicket:   'related_ticket',
+      originalCurrency: 'original_currency',
+      originalAmount:  'original_amount',
+      fxRate:          'fx_rate',
     };
     const row: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(patch)) {

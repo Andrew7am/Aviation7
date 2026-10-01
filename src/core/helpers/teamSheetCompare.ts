@@ -986,8 +986,12 @@ export function compareTeamSheet(
       const theirs = rows.reduce((s, r) => s + Math.abs(r.refund ?? 0), 0);
       // Both of ours: what reached us, and what the airline refunded before
       // our own commission came back off it. Their sheet records either.
-      const ourNet = ourRefunds.reduce((s, t) => s + Math.abs(t.amount || 0), 0);
-      const ourGross = ourRefunds.reduce((s, t) => s + Math.abs(t.totalDoc || t.amount || 0), 0);
+      // A refund we converted from dollars is compared in the dollars their
+      // sheet writes it in, not the dirhams we keep it in.
+      const asBought = (t: Ticket, v: number) =>
+        t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
+      const ourNet = ourRefunds.reduce((s, t) => s + asBought(t, t.amount || 0), 0);
+      const ourGross = ourRefunds.reduce((s, t) => s + asBought(t, t.totalDoc || t.amount || 0), 0);
       // A figure written once for a cell naming three tickets is the
       // booking's, not this ticket's. Comparing it against one ticket's
       // refund would report a difference on all three every time.

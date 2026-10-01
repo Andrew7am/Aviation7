@@ -3,6 +3,7 @@ import { PendingTicket, Ticket } from '../../types';
 import { SupportedCurrency } from './resolveCurrency';
 import { portalSource } from '../config/teamPortals';
 import { conjunctionFirst, secondCouponsIn } from './conjunction';
+import { toDirhams } from './toDirhams';
 
 /**
  * Turn what the check found into tickets somebody can agree to.
@@ -207,7 +208,8 @@ export const canConfirm = (p: PendingTicket) => whyNotConfirmable(p) === '';
  */
 export function ticketFromPending(p: PendingTicket, id: string, userId: string): Ticket {
   const isRefund = (p.transactionType || '').toUpperCase() === 'REFUND';
-  return {
+  // Bought in dollars — an airline's own website — and kept in dirhams.
+  return toDirhams<Ticket>({
     id,
     ticketNo: (p.ticketNo || p.pnr || '').toUpperCase(),
     pnr: (p.pnr || '').toUpperCase(),
@@ -229,7 +231,7 @@ export function ticketFromPending(p: PendingTicket, id: string, userId: string):
     isDuplicate: false,
     closed: false,
     userId,
-  };
+  });
 }
 
 /**
