@@ -133,6 +133,8 @@ const WHY: Record<Verdict, string> = {
  *  disagreement to settle. Everything else the check finds is already in the
  *  books somewhere, and "adding" it would make a second copy. */
 const PROPOSABLE_VERDICTS = new Set<Verdict>(['NOT_IN_LEDGER', 'REFUND_NOT_IN_LEDGER']);
+/** Stable, so a screen given no reissue links does not recompare on every render. */
+const NO_EXCHANGES: { ticketNo: string; replacedTicket: string }[] = [];
 
 const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
   ({ label, value, tone }) => (
@@ -476,10 +478,12 @@ interface Props {
    * chasing.
    */
   voids?: { ticketNo: string; date: string; source: string; period?: string }[];
+  /** Reissue links, so a reissue their sheet does not carry can say whose it is. */
+  exchanges?: { ticketNo: string; replacedTicket: string; fee?: number | null }[];
 }
 
 export const TeamSheetCheck: React.FC<Props> = ({
-  tickets, onSendToReview, onAddToLedger, voids = [],
+  tickets, onSendToReview, onAddToLedger, voids = [], exchanges = NO_EXCHANGES,
 }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -536,8 +540,8 @@ export const TeamSheetCheck: React.FC<Props> = ({
      in must not mean finding the file again. */
   const report = useMemo<TeamSheetReport | null>(
     () => (rows ? compareTeamSheet(rows, tickets, declared, { from: fromDate, to: toDate },
-      { voided: voids.map(v => v.ticketNo) }) : null),
-    [rows, tickets, declared, fromDate, toDate, voids]);
+      { voided: voids.map(v => v.ticketNo), chains: exchanges }) : null),
+    [rows, tickets, declared, fromDate, toDate, voids, exchanges]);
 
   const run = async (file: File) => {
     setBusy(true); setError(''); setRows(null); setFileName(file.name);

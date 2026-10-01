@@ -2,6 +2,7 @@ import { Ticket } from '../../types';
 import { ticketMatchKey } from './ticketIdentity';
 import { TeamSheetRow } from '../parsers/teamSheet';
 import { portalSource } from '../config/teamPortals';
+import { chainIndex, chainOf, type Edge } from './ticketChain';
 
 /**
  * Their sheet against our ledger, before a flight sheet is signed off.
@@ -611,6 +612,32 @@ export const REFUND_FLOOR = 50;
  *  is a different price. */
 export const PRICE_FLOOR = 15;
 
+/**
+ * Why two requests differ, when it can be told from the two names alone.
+ *
+ * Of 96 misfiled tickets on a full export: nine are UAEVP711 with us and
+ * UAEVP771 with them, one digit apart; three are the same number under
+ * another prefix (UAEC125 / UAECO125, KSAMI1643 / KSAML1643); twelve of ours
+ * are under a label that is not a request at all - COMPANY EXPENSE, DXB,
+ * the old REQ numbers. Each of those says where to look. Empty when the two
+ * are simply different requests.
+ */
+export function reqDiffHint(ours: string, theirs: string): string {
+  const a = (ours || '').toUpperCase().replace(/\s+/g, '');
+  const b = (theirs || '').toUpperCase().replace(/\s+/g, '');
+  const digits = (x: string) => x.replace(/\D/g, '');
+  const letters = (x: string) => x.replace(/[^A-Z]/g, '');
+  if (!/^(KSA|UAE|EGY)/.test(a))
+    return `Ours is ${ours}, which is a label rather than a client's request - theirs names the request.`;
+  if (digits(a) && digits(a) === digits(b) && letters(a) !== letters(b))
+    return 'The same number under another prefix - most likely one request written two ways.';
+  const da = digits(a), db = digits(b);
+  if (letters(a) === letters(b) && da.length === db.length && da.length > 1
+      && [...da].filter((ch, i) => ch !== db[i]).length === 1)
+    return 'One digit apart - most likely a typo on one of the two sides.';
+  return '';
+}
+
 /** A PNR cell can name several - "GDYW8U|YHCELI", "YUCDOO|YPESA3|YXGU6B". */
 export const pnrParts = (pnr?: string | null): string[] =>
   String(pnr || '').toUpperCase().split(/[|/,;\s]+/).map(x => x.trim()).filter(Boolean);
@@ -665,8 +692,9 @@ export function compareTeamSheet(
   /** Documents the supplier cancelled — the Voids register. A ticket their
    *  sheet still shows as live is then a void they never updated, not a
    *  ticket missing from our books. */
-  opts: { voided?: Iterable<string> } = {},
+  opts: { voided?: Iterable<string>; chains?: Edge[] } = {},
 ): TeamSheetReport {
+  const chains = chainIndex(opts.chains ?? []);
   const voidedSet = new Set([...(opts.voided ?? [])].map(v => ticketMatchKey(v || '')).filter(Boolean));
   /* What somebody typed before dropping the file. Cleaned the same way a
      request read from a file is, so "ksaml 2053" and "KSAML2053" are one
@@ -781,6 +809,21 @@ export function compareTeamSheet(
   const claimed = new Set<string>();
   let matched = 0;
 
+  /* Refunds filed under a refund application's own number. BSP prints
+     "065 RFND 0079546093 ... +RTDN: 2199622033": the refund has a document
+     of its own and names the ticket it pays back. Their sheet writes the
+     refund on that ticket's row. Read by the ticket they refund, they are
+     that ticket's refund - not a document missing from their sheet. */
+  const refundsFor = new Map<string, Ticket[]>();
+  for (const t of ledger) {
+    if (!isTicket(t) || (t.amount || 0) >= 0 || !t.relatedTicket) continue;
+    const own = ticketMatchKey(t.ticketNo || '');
+    const rel = ticketMatchKey(t.relatedTicket);
+    if (!rel || rel === own || !theirSerials.has(rel)) continue;
+    if (!refundsFor.has(rel)) refundsFor.set(rel, []);
+    refundsFor.get(rel)!.push(t);
+  }
+
   /* Our EMDs by day and PNR, once, for the price check's folded EMDs. */
   const emdIndex = new Map<string, Ticket[]>();
   for (const t of ledger) {
@@ -796,7 +839,9 @@ export function compareTeamSheet(
 
   /* ── walk their side ──────────────────────────────────────────────────── */
   for (const [serial, rows] of theirBySerial) {
-    const ours = ourBySerial.get(serial) ?? [];
+    const applications = refundsFor.get(serial) ?? [];
+    for (const t of applications) claimed.add(ticketMatchKey(t.ticketNo || ''));
+    const ours = [...(ourBySerial.get(serial) ?? []), ...applications];
     const first = rows[0];
     const theirReq = (rows.find(r => reqKey(r.reqNum))?.reqNum || '').trim();
     const ourReq = (ours.find(t => reqKey(t.reqNum || ''))?.reqNum || '').trim();
@@ -948,9 +993,10 @@ export function compareTeamSheet(
         continue;
       }
       if (how === 'DIFFERENT') {
+        const hint = reqDiffHint(ourReq, theirReq);
         findings.push({ ...base, verdict: 'REQ_DIFFERS',
           note: `We file it under ${ourReq}; their sheet files it under ${theirReq}.`
-              + ' One of the two requests is carrying a ticket that is not its own.' });
+              + (hint ? ` ${hint}` : ' One of the two requests is carrying a ticket that is not its own.') });
         continue;
       }
       // SAME: either the very same request, or one field naming both.
@@ -1060,7 +1106,14 @@ export function compareTeamSheet(
     {
       const priced = rows.filter(r => r.status !== 'VOID' && (r.cost ?? 0) > 0);
       const issuedOurs = ours.filter(t => (t.amount || 0) > 0);
-      if (priced.length === 1 && priced[0].groupSize <= 1 && issuedOurs.length) {
+      /* Not on a refunded ticket: on a "Cancelled/Refunded" row their Net
+         Cost is as often what is left after the refund as the fare, and
+         5512129159 at 420.00 against our 2,180.00 is the one, not a price.
+         Not where we hold the document twice on different days - an issue
+         and its reissue - against their one row. */
+      const oneEvent = new Set(issuedOurs.map(t => String(t.date || '').slice(0, 10))).size === 1;
+      const refunded = rows.some(r => r.status === 'REFUNDED') || ours.some(t => (t.amount || 0) < 0);
+      if (priced.length === 1 && priced[0].groupSize <= 1 && issuedOurs.length && oneEvent && !refunded) {
         const cur = (priced[0].currency || '').toUpperCase();
         const asBought = (t: Ticket, v: number) =>
           t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
@@ -1289,12 +1342,33 @@ export function compareTeamSheet(
     if (!ourExtra.has(k)) ourExtra.set(k, []);
     ourExtra.get(k)!.push(t);
   }
+  /* Why it is not there, where our own books can say. A reissue whose
+     original their sheet carries, an EMD on a booking they carry, another
+     passenger on a PNR they carry - each is a different conversation with
+     the team from "this booking is not on your sheet at all". */
+  const theirPnrParts = new Set(sheet.flatMap(r => pnrParts(r.pnr)));
+  const whyMissing = (serial: string, ours: Ticket[]): string => {
+    const req = (ours[0].reqNum || '').trim();
+    const other = chainOf(serial, chains).documents.find(d => d !== serial && theirSerials.has(d));
+    const money1 = ours.filter(t => (t.amount || 0) > 0).reduce((n, t) => n + (t.amount || 0), 0);
+    if (other)
+      return `In our books under ${req}: a document in the same exchange chain as ${other}, which`
+        + ` their sheet carries - but not this one${money1 ? `, or the ${money(money1)} it cost` : ''}.`;
+    const onTheirs = pnrParts(ours[0].pnr).some(x => theirPnrParts.has(x));
+    if (onTheirs && /^EMD/i.test(ours[0].status || ''))
+      return `In our books under ${req}: an EMD on ${ours[0].pnr}, a booking their sheet carries,`
+        + ' but its number is not in their EMD Number column.';
+    if (onTheirs)
+      return `In our books under ${req}: PNR ${ours[0].pnr} is on their sheet, but not this ticket`
+        + ' - another passenger or another trip on the same booking.';
+    return `In our books under ${req} and not on their sheet at all.`;
+  };
   for (const [serial, ours] of ourExtra)
     findings.push({
       ...UNSOURCED,
       verdict: 'NOT_ON_SHEET', serial, airlineCode: ours[0].airlineCode || '',
       pnr: ours[0].pnr || '', ours, reqNum: (ours[0].reqNum || '').trim(), theirReq: '',
-      note: `In our books under ${(ours[0].reqNum || '').trim()} and not on their sheet at all.`,
+      note: whyMissing(serial, ours),
     });
 
   /* ── where each one was bought ────────────────────────────────────────
@@ -1313,6 +1387,18 @@ export function compareTeamSheet(
       || m.portal || oursSource;
     f.heldBack = m.heldBack;
     f.heldBackWhy = m.why;
+  }
+
+  /* A misfiling is rarely one ticket. 24 tickets sit under UAEVP504 with us
+     and UAEVP522 with them; saying so on each row turns 24 questions into
+     one, and lets the screen sort them together. */
+  const pairCount = new Map<string, number>();
+  const pairOf = (f: Finding) => `${f.reqNum}\u0000${f.theirReq}`;
+  for (const f of findings) if (f.verdict === 'REQ_DIFFERS' && f.reqNum && f.theirReq)
+    pairCount.set(pairOf(f), (pairCount.get(pairOf(f)) ?? 0) + 1);
+  for (const f of findings) {
+    const n = f.verdict === 'REQ_DIFFERS' ? pairCount.get(pairOf(f)) ?? 0 : 0;
+    if (n > 1) f.note += ` ${n} tickets are filed this way - ${f.reqNum} with us, ${f.theirReq} with them.`;
   }
 
   findings.sort((a, b) =>

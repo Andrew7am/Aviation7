@@ -12,7 +12,7 @@
  * request is wrong, and the screen said otherwise. Asserted on those rows.
  */
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
-import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
+import { compareTeamSheet, reqDiffHint } from '../src/core/helpers/teamSheetCompare';
 import type { Ticket } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -230,6 +230,42 @@ console.log('\n8. The price');
         compareTeamSheet(sar, [tkt({ ticketNo: '5513427771', pnr: 'ZZWSI5', date: '2026-09-21', amount: 1080, reqNum: 'UAEVP711' })])
           .findings[0]?.verdict, 'OK');
 }
+
+console.log('\n9. A refund filed under its refund application\'s number');
+{
+  // BSP: "065 RFND 0079546093 ... +RTDN: 2199622033". Their sheet refunds 2199622033.
+  const s = sheet(['065-2199622033,XTNP8T,Cancelled/Refunded,400.00,1760.00,19/6/2026 3:34pm,AL Website,KSAML1145']);
+  const ours = [
+    tkt({ ticketNo: '2199622033', pnr: 'XTNP8T', date: '2026-06-19', amount: 400, reqNum: 'KSAML1145' }),
+    tkt({ ticketNo: '0079546093', pnr: '', date: '2026-08-12', amount: -1760, totalDoc: 1760, status: 'REFUND',
+          relatedTicket: '2199622033', reqNum: 'KSAML1145' }),
+  ];
+  const r = compareTeamSheet(s, ours);
+  check('the application is not "not on their sheet"', r.findings.some(f => f.verdict === 'NOT_ON_SHEET'), false);
+  check('and the ticket\'s refund is not "not in our ledger"', r.findings.some(f => f.verdict === 'REFUND_NOT_IN_LEDGER'), false);
+  check('the request agrees', r.byRequest[0].agrees, true);
+}
+
+console.log('\n10. Why a ticket of ours is not on their sheet');
+{
+  const s = sheet(['065-5512760080,ZEO9MB,Reissue,20.00,,15/6/2026 1:00pm,IATA Portal (UAE),KSAML1145']);
+  const ours = [
+    tkt({ ticketNo: '5512760080', pnr: 'ZEO9MB', date: '2026-06-15', amount: 20, reqNum: 'KSAML1145' }),
+    tkt({ ticketNo: '5512759973', pnr: 'ZEO9MB', date: '2026-06-01', amount: 2540, reqNum: 'KSAML1145' }),
+    tkt({ ticketNo: '5512759999', pnr: 'ZEO9MB', date: '2026-06-01', amount: 2540, reqNum: 'KSAML1145' }),
+  ];
+  const r = compareTeamSheet(s, ours, [], { from: '2026-01-01' },
+    { chains: [{ ticketNo: '5512760080', replacedTicket: '5512759973' }] });
+  const note = (n: string) => r.findings.find(f => f.serial === n)?.note ?? '';
+  check('the original of a reissue they carry says so', /same exchange chain as 5512760080/.test(note('5512759973')), true);
+  check('another passenger on their PNR says so', /PNR ZEO9MB is on their sheet, but not this ticket/.test(note('5512759999')), true);
+}
+
+console.log('\n11. Why two requests differ');
+check('one digit apart', reqDiffHint('UAEVP711', 'UAEVP771'), 'One digit apart - most likely a typo on one of the two sides.');
+check('another prefix', /same number under another prefix/.test(reqDiffHint('UAEC125', 'UAECO125')), true);
+check('a label, not a request', /label rather than/.test(reqDiffHint('COMPANY EXPENSE', 'UAECO623')), true);
+check('two plain requests say nothing', reqDiffHint('UAEVP504', 'UAEVP522'), '');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

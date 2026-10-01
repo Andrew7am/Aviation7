@@ -118,14 +118,15 @@ export function pendingFromFindings(
       date: s.issued || '',
       // Their net, which is a net. Zero when their cell named several
       // tickets: that figure is the booking's and would treble the cost.
-      // See the note above.
+      // See the note above. A cell naming none - a website purchase with
+      // only a PNR - is one purchase, and its figure is its own.
       amount: isRefund
         ? (s.refund != null ? refundAmount(s.refund) : 0)
-        : (s.groupSize === 1 && s.cost != null ? Math.abs(s.cost) : 0),
+        : (s.groupSize <= 1 && s.cost != null ? Math.abs(s.cost) : 0),
       commission: 0,
       totalDoc: isRefund
         ? (s.refund != null ? Math.abs(s.refund) : 0)
-        : (s.groupSize === 1 && s.cost != null ? Math.abs(s.cost) : 0),
+        : (s.groupSize <= 1 && s.cost != null ? Math.abs(s.cost) : 0),
       // We hold no row for it, so their request is the only one there is.
       // Kept in both places: this is what it would be filed under, and
       // `theirReq` is the record of where that came from.
