@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
-import { sourceToCurrency } from '../core/helpers/sourceCurrency';
+import { sourceToCurrency, ticketCurrency } from '../core/helpers/sourceCurrency';
 import { TrendingDown, TrendingUp, AlertCircle, CheckCircle2, Wallet, FileText } from 'lucide-react';
 
 interface DashboardProps {
@@ -23,12 +23,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
     return v.currentBalance < v.initialBalance * 0.2;
   });
 
-  const sarNet = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'SAR').reduce((s, t) => s + t.amount, 0), [tickets]);
-  const aedNet = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'AED').reduce((s, t) => s + t.amount, 0), [tickets]);
-  const sarIssued = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'SAR' && t.amount > 0).reduce((s, t) => s + t.amount, 0), [tickets]);
-  const aedIssued = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'AED' && t.amount > 0).reduce((s, t) => s + t.amount, 0), [tickets]);
-  const sarRefundsAmt = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'SAR' && t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0), [tickets]);
-  const aedRefundsAmt = useMemo(() => tickets.filter(t => sourceToCurrency(t.source || '') === 'AED' && t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0), [tickets]);
+  const sarNet = useMemo(() => tickets.filter(t => ticketCurrency(t) === 'SAR').reduce((s, t) => s + t.amount, 0), [tickets]);
+  const aedNet = useMemo(() => tickets.filter(t => ticketCurrency(t) === 'AED').reduce((s, t) => s + t.amount, 0), [tickets]);
+  const sarIssued = useMemo(() => tickets.filter(t => ticketCurrency(t) === 'SAR' && t.amount > 0).reduce((s, t) => s + t.amount, 0), [tickets]);
+  const aedIssued = useMemo(() => tickets.filter(t => ticketCurrency(t) === 'AED' && t.amount > 0).reduce((s, t) => s + t.amount, 0), [tickets]);
+  const sarRefundsAmt = useMemo(() => tickets.filter(t => ticketCurrency(t) === 'SAR' && t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0), [tickets]);
+  const aedRefundsAmt = useMemo(() => tickets.filter(t => ticketCurrency(t) === 'AED' && t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0), [tickets]);
 
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 

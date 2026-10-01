@@ -3,7 +3,7 @@ import { Ticket } from '../types';
 import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown, FolderOpen, Copy } from 'lucide-react';
 import { writeClipboard } from '../utils/clipboard';
 import { ticketLine, ticketLines, copyableTickets } from '../core/helpers/ticketClipboard';
-import { sourceToCurrency } from '../core/helpers/sourceCurrency';
+import { ticketCurrency, byCurrencyOrder } from '../core/helpers/sourceCurrency';
 import { RequestProfile } from './RequestProfile';
 
 /**
@@ -191,7 +191,7 @@ function sortValue(t: Ticket, key: Exclude<SortKey, null>): number | string | nu
     // it has not been looked at. It sorts to the end rather than among the
     // settled ones.
     case 'adjustment':    return t.adjustment ?? null;
-    case 'currency':      return sourceToCurrency(t.source || '') || null;
+    case 'currency':      return ticketCurrency(t) || null;
     case 'pnr':           return t.pnr || null;
     case 'passengerName': return t.passengerName || null;
     case 'reqNum':        return t.reqNum || null;
@@ -614,11 +614,13 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     return gaps;
   }, [filtered, sortKey, sortDir]);
 
-  // Per-currency net totals
-  const sarTotal = useMemo(() => filtered.filter(t => sourceToCurrency(t.source || '') === 'SAR').reduce((s, t) => s + t.amount, 0), [filtered]);
-  const aedTotal = useMemo(() => filtered.filter(t => sourceToCurrency(t.source || '') === 'AED').reduce((s, t) => s + t.amount, 0), [filtered]);
-  const hasSAR = filtered.some(t => sourceToCurrency(t.source || '') === 'SAR');
-  const hasAED = filtered.some(t => sourceToCurrency(t.source || '') === 'AED');
+  // Per-currency net totals, in each ticket's own currency. Dollars are
+  // never added to riyals: every currency present gets a total of its own.
+  const netByCurrency = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of filtered) { const c = ticketCurrency(t); m.set(c, (m.get(c) ?? 0) + t.amount); }
+    return [...m].sort((a, b) => byCurrencyOrder(a[0], b[0]));
+  }, [filtered]);
 
   /** Build a filename that reflects what the user filtered by, so an export
    *  saved off a search for "REQ12345" lands as "REQ12345_Export.xlsx" not a
@@ -710,7 +712,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       // zero, where there is none: zero would read as "checked, nothing found".
       ...(has.adj   ? [{ key: 'Adjustment',  get: (t: Ticket) => t.adjustment ?? '', w: 12, money: true }] : []),
       { key: 'Balance Payable', get: (t: Ticket) => t.amount ?? 0,           w: 13, money: true },
-      { key: 'Cur',         get: (t: Ticket) => sourceToCurrency(t.source || ''), w: 6 },
+      { key: 'Cur',         get: (t: Ticket) => ticketCurrency(t), w: 6 },
       { key: 'Req Num',     get: (t: Ticket) => t.reqNum || '',          w: 14 },
       { key: 'Vendor Ref',  get: (t: Ticket) => vendorRef(t),            w: 18 },
       ...(has.office ? [{ key: 'Office',
@@ -743,8 +745,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     // number — so each currency is totalled on its own line, with issued and
     // refunds shown separately so the net is auditable rather than just
     // asserted. Only currencies actually present are listed.
-    const byCurrency = (cur: 'SAR' | 'AED') => {
-      const rows = filtered.filter(t => sourceToCurrency(t.source || '') === cur);
+    const byCurrency = (cur: string) => {
+      const rows = filtered.filter(t => ticketCurrency(t) === cur);
       return {
         cur,
         count:   rows.length,
@@ -753,7 +755,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         net:     rows.reduce((s, t) => s + t.amount, 0),
       };
     };
-    const totals = (['SAR', 'AED'] as const).map(byCurrency).filter(t => t.count > 0);
+    const totals = [...new Set(filtered.map(t => ticketCurrency(t)))].sort(byCurrencyOrder)
+      .map(byCurrency).filter(t => t.count > 0);
 
     const block: (string | number)[][] = [[], ['TOTALS BY CURRENCY']];
     block.push(['Currency', 'Tickets', 'Issued', 'Refunds', 'Net']);
@@ -785,7 +788,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     'Date':       t.date,
     'Balance Payable': t.amount,
     'Adjustment': t.adjustment ?? '',
-    'Currency':   sourceToCurrency(t.source || ''),
+    'Currency':   ticketCurrency(t),
     'PNR':        t.pnr || '',
     'Passenger':  t.passengerName || '',
   });
@@ -1544,9 +1547,12 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-[10px] font-mono text-slate-500">
         <span>{filtered.length} tickets</span>
         <span className="text-slate-300 hidden sm:inline">|</span>
-        {hasSAR && <CopyableAmount label="Net SAR" value={sarTotal} fmt={fmt} />}
-        {hasSAR && hasAED && <span className="text-slate-300">·</span>}
-        {hasAED && <CopyableAmount label="Net AED" value={aedTotal} fmt={fmt} />}
+        {netByCurrency.map(([cur, total], i) => (
+          <React.Fragment key={cur}>
+            {i > 0 && <span className="text-slate-300">·</span>}
+            <CopyableAmount label={`Net ${cur}`} value={total} fmt={fmt} />
+          </React.Fragment>
+        ))}
         <span className="text-slate-300 hidden sm:inline">|</span>
         <span className="text-red-500">{filtered.filter(t => !t.reqNum).length} missing req</span>
         <span className="text-slate-300 hidden sm:inline">|</span>
@@ -1621,7 +1627,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               eighteen near-identical handlers. */}
           <tbody className="text-xs font-mono" onClick={handleCellClick}>
             {paged.map(ticket => {
-              const ticketCurrency = sourceToCurrency(ticket.source || '');
+              const rowCurrency = ticketCurrency(ticket);
               return (
                 <tr key={ticket.id} className={`border-b border-slate-100 hover:bg-slate-50 ${!ticket.reqNum ? 'bg-red-50/20' : ''}`}>
                   <td className="px-3 py-2 whitespace-nowrap">
@@ -1778,7 +1784,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-[9px] font-bold text-slate-400">{ticketCurrency}</td>
+                  <td className="px-3 py-2 text-[9px] font-bold text-slate-400">{rowCurrency}</td>
                   <td className="px-3 py-2 text-slate-600">
                     {isEditing(ticket.id, 'pnr') ? editorInput : (
                       <span

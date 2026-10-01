@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
-import { sourceToCurrency } from '../core/helpers/sourceCurrency';
+import { sourceToCurrency, ticketCurrency } from '../core/helpers/sourceCurrency';
 import { Download, FileText, TrendingDown, Wallet, Database, BarChart3, Calendar, X } from 'lucide-react';
 import { airlineName } from '../core/config/airlines';
 import { computeAnalytics, SAR_TO_AED_RATE, type ShareRow } from '../core/helpers/analytics';
@@ -542,7 +542,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
     'Fare':         t.totalDoc ?? 0,
     'Commission':   t.commission ?? 0,
     'Balance Payable': t.amount ?? 0,
-    'Currency':     sourceToCurrency(t.source || ''),
+    'Currency':     ticketCurrency(t),
     'Req Num':      t.reqNum || '',
     'Closed':       t.closed ? 'Closed' : 'Not Closed',
     // The reading and the text it came from, so a re-import can restore both
@@ -666,7 +666,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
       'Total Doc': t.totalDoc || '',
       'Commission': t.commission || '',
       'Balance Payable': t.amount,
-      'Currency':   sourceToCurrency(t.source || ''),
+      'Currency':   ticketCurrency(t),
       'PNR':        t.pnr || '',
       'Passenger': t.passengerName || '',
       'Req Num': t.reqNum || '',

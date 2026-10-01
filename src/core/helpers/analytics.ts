@@ -1,5 +1,5 @@
 import { Ticket } from '../../types';
-import { sourceToCurrency } from './sourceCurrency';
+import { ticketCurrency } from './sourceCurrency';
 import { CABIN_LABEL, type Cabin } from './cabinClass';
 
 /**
@@ -181,10 +181,11 @@ const blank = (key: string): ShareRow => ({
   sarIssued: 0, sarRefunded: 0, aedIssued: 0, aedRefunded: 0,
 });
 
-/** Add one ticket's money to a row, under its VENDOR's currency — the rule the
- *  ticket table, the summary bar and every export already use. */
+/** Add one ticket's money to a row, under the ticket's OWN currency — the rule
+ *  the ticket table, the summary bar and every export use. Dollars and euros
+ *  go to `other`, never into the riyal or dirham totals. */
 function addMoney(row: ShareRow, t: Ticket) {
-  const cur = sourceToCurrency(t.source || '');
+  const cur = ticketCurrency(t);
   if (cur === 'SAR') {
     row.sar += t.amount;
     if (t.amount < 0) row.sarRefunded += t.amount; else row.sarIssued += t.amount;
@@ -273,7 +274,7 @@ export function computeAnalytics(tickets: Ticket[]): Analytics {
     const p = monthMap.get(m) ?? { month: m, tickets: 0, refunds: 0, sar: 0, aed: 0 };
     if (countsAsTicket(t)) p.tickets++;
     else if (isRefund(t)) p.refunds++;
-    const cur = sourceToCurrency(t.source || '');
+    const cur = ticketCurrency(t);
     if (cur === 'SAR') p.sar += t.amount;
     else if (cur === 'AED') p.aed += t.amount;
     monthMap.set(m, p);
