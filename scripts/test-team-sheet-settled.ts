@@ -154,5 +154,82 @@ console.log('\n5. A row with no ticket number, identified by its PNR');
         ['5512129276', '5512129277']);
 }
 
+console.log('\n6. UAEVP711: bought on the airline\'s website, no ticket number');
+{
+  const s = sheet([
+    '--,IBVCUY,Issued,194.98,,16/9/2026 1:00pm,AL Website,UAEVP711',
+    '"NICOLETTE LEE NOBLE",VENTNS,Issued,265.98,,14/9/2026 1:00pm,AL Website,UAEVP711',
+    '"JOSE BASTOS PADILHA NETO",VENTNS,Issued,265.98,,14/9/2026 1:00pm,AL Website,UAEVP711',
+    '065-5513427771,ZZWSI5,Issued,1800.00,,21/9/2026 12:39pm,IATA Portal (UAE),UAEVP711',
+  ]).map(r => ({ ...r, currency: r.serial ? 'AED' : 'USD' }));
+  const ours = [tkt({ ticketNo: '5513427771', pnr: 'ZZWSI5', date: '2026-09-21', amount: 1800, reqNum: 'UAEVP711' })];
+  const r = compareTeamSheet(s, ours);
+  const missing = r.findings.filter(f => f.verdict === 'NOT_IN_LEDGER');
+  check('all three are missing from our books', missing.map(f => f.serial), ['IBVCUY', 'VENTNS-1', 'VENTNS-2']);
+  check('and say they go in as dirhams', /in dirhams at 3\.67/.test(missing[0].note), true);
+  check('they hold the request open', r.byRequest[0].onlyTheirs, 3);
+  // Once recorded — one of the two VENTNS — only the other is still missing.
+  const held = [...ours, tkt({ ticketNo: 'VENTNS-1', pnr: 'VENTNS', date: '2026-09-14', amount: 976.15,
+    currency: 'AED', originalCurrency: 'USD', originalAmount: 265.98, fxRate: 3.67, source: 'Airline Website', reqNum: 'UAEVP711' })];
+  const after = compareTeamSheet(s, held).findings.filter(f => f.verdict === 'NOT_IN_LEDGER').map(f => f.serial);
+  check('recorded ones are not raised again', after, ['IBVCUY', 'VENTNS-2']);
+  check('and ours is not "not on their sheet"',
+        compareTeamSheet(s, held).findings.filter(f => f.verdict === 'NOT_ON_SHEET').length, 0);
+  // A PNR written as two on one side and the other way round on ours.
+  const two = sheet(['--,GDYW8U|YHCELI,Issued,129.00,,27/8/2026 1:00pm,AL Website,UAECO593']);
+  const mine = [tkt({ ticketNo: '4136627236', pnr: 'YHCELI|GDYW8U', date: '2026-08-27', amount: 473.39, reqNum: 'UAECO593', source: 'Airline Website' })];
+  check('two PNRs in either order are the same booking',
+        compareTeamSheet(two, mine).findings.filter(f => f.verdict === 'NOT_IN_LEDGER').length, 0);
+}
+
+console.log('\n7. A bag on a PNR is not the tickets on that PNR');
+{
+  const s = sheet([
+    'ZWHPO5,ZWHPO5,Issued,660.00,,15/9/2026 10:09am,AL Website,UAEVP711',
+    '125-5513427717,ZWHPO5,Issued,11220.00,,15/9/2026 10:36am,IATA Portal (UAE),UAEVP711',
+    '125-5513427718,ZWHPO5,Issued,11220.00,,15/9/2026 10:37am,IATA Portal (UAE),UAEVP711',
+  ]);
+  const ours = ['5513427717', '5513427718'].map(n =>
+    tkt({ ticketNo: n, pnr: 'ZWHPO5', date: '2026-09-15', amount: 11220, reqNum: 'UAEVP711' }));
+  const r = compareTeamSheet(s, ours);
+  check('the 660 bag is missing from our books', r.findings.find(f => f.serial === 'ZWHPO5')?.verdict, 'NOT_IN_LEDGER');
+  check('not "the same booking, filed differently"', r.findings.some(f => f.verdict === 'FILED_ELSEWHERE'), false);
+}
+
+console.log('\n8. The price');
+{
+  const s = sheet([
+    '065-5513427772,ZZWSI5,Issued,1800.00,,21/9/2026 12:41pm,IATA Portal (UAE),UAEVP711',
+    '065-5513408003,ABCDEF,Issued,1990.00,,10/9/2026 1:00pm,RTS,UAEVP711',
+    '065 5513059108,ZOIU62,Reissue,420.00,,25/8/2026 4:30pm,IATA Portal (UAE),KSAML1198',
+  ]).map(r => ({ ...r, currency: 'AED' }));
+  const ours = [
+    tkt({ ticketNo: '5513427772', pnr: 'ZZWSI5', date: '2026-09-21', amount: 1080, reqNum: 'UAEVP711' }),
+    tkt({ ticketNo: '5513408003', pnr: 'ABCDEF', date: '2026-09-10', amount: 1980, reqNum: 'UAEVP711', source: 'RTS' }),
+    tkt({ ticketNo: '5513059108', pnr: 'ZOIU62', date: '2026-08-25', amount: 20 }),
+    tkt({ ticketNo: '1949933369', pnr: 'ZOIU62', date: '2026-08-25', amount: 400, status: 'EMDS' }),
+  ];
+  const r = compareTeamSheet(s, ours);
+  const pd = r.findings.filter(f => f.verdict === 'PRICE_DIFFERS');
+  check('1,800 on theirs against 1,080 in ours is a different price', pd.map(f => f.serial), ['5513427772']);
+  check('saying by how much', /720\.00 more on theirs/.test(pd[0]?.note ?? ''), true);
+  check('the ten dirhams their sheet adds on RTS is not', r.findings.find(f => f.serial === '5513408003')?.verdict, 'OK');
+  check('a reissue with its EMD folded in is not', r.findings.find(f => f.serial === '5513059108')?.verdict, 'OK');
+  check('and the request does not agree', r.byRequest.find(x => x.reqNum === 'UAEVP711')?.priceDiffers, 1);
+  // A dollar ticket, compared in its dollars.
+  const usd = sheet(['2792120971148,GSXEUH,Issued,1323.40,,13/9/2026 10:57am,AL Website,UAEVP711'])
+    .map(r => ({ ...r, currency: 'USD' }));
+  const conv = [tkt({ ticketNo: '2120971148', pnr: 'GSXEUH', date: '2026-09-13', amount: 4856.88, totalDoc: 4856.88,
+    currency: 'AED', originalCurrency: 'USD', originalAmount: 1323.4, fxRate: 3.67, source: 'Airline Website', reqNum: 'UAEVP711' })];
+  check('1,323.40 USD against 4,856.88 AED bought as 1,323.40 USD agrees',
+        compareTeamSheet(usd, conv).findings[0]?.verdict, 'OK');
+  // Riyals against dirhams: never compared.
+  const sar = sheet(['065-5513427771,ZZWSI5,Issued,1800.00,,21/9/2026 12:39pm,IATA Portal (UAE),UAEVP711'])
+    .map(r => ({ ...r, currency: 'SAR' }));
+  check('a riyal price against a dirham one is not compared',
+        compareTeamSheet(sar, [tkt({ ticketNo: '5513427771', pnr: 'ZZWSI5', date: '2026-09-21', amount: 1080, reqNum: 'UAEVP711' })])
+          .findings[0]?.verdict, 'OK');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

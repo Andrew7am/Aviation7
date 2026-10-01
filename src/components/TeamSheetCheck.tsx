@@ -40,6 +40,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   NOT_ON_SHEET:         { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REFUND_NOT_ON_SHEET:  { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REFUND_DIFFERS:       { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
+  PRICE_DIFFERS:        { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   TWICE_ON_THEIR_SHEET: { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   NO_TICKET_NUMBER:     { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   UNREADABLE:           { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
@@ -77,6 +78,11 @@ const WHY: Record<Verdict, string> = {
     + ' explain. Their refund carries the same uplift their cost does — measured across a'
     + ' full export it runs under three per cent — so only the gaps wider than that are'
     + ' listed here. Something on one of the two sides is wrong.',
+  PRICE_DIFFERS:
+    'Both sides hold the ticket, in the same currency, at different prices — their net'
+    + ' against our payable and our fare, and neither agrees. A dollar ticket is compared in'
+    + ' the dollars it was bought in. Tickets priced in different currencies on the two sides'
+    + ' are never compared, because BSP bills in dirhams what their sheet prices in riyals.',
   TWICE_ON_THEIR_SHEET:
     'Their sheet states a refund for one ticket on more than one row. Their normal shape is'
     + ' two rows — one Issued, one Cancelled/Refunded — with only the second carrying a'
@@ -959,6 +965,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
                       <th className="px-3 py-1.5 text-right">Only theirs</th>
                       <th className="px-3 py-1.5 text-right">Only ours</th>
                       <th className="px-3 py-1.5 text-right">Misfiled</th>
+                      <th className="px-3 py-1.5 text-right">Price differs</th>
                       <th className="px-3 py-1.5"></th>
                     </tr>
                   </thead>
@@ -994,6 +1001,10 @@ export const TeamSheetCheck: React.FC<Props> = ({
                         <td className={`px-3 py-1.5 text-right font-bold
                           ${r.misfiled ? 'text-red-600' : 'text-slate-300'}`}>
                           {r.misfiled || '—'}
+                        </td>
+                        <td className={`px-3 py-1.5 text-right font-bold
+                          ${r.priceDiffers ? 'text-amber-600' : 'text-slate-300'}`}>
+                          {r.priceDiffers || '—'}
                         </td>
                         <td className="px-3 py-1.5 text-right">
                           {r.agrees

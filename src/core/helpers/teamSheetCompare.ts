@@ -287,6 +287,7 @@ export type Verdict =
   | 'REFUND_NOT_IN_LEDGER'
   | 'REFUND_NOT_ON_SHEET'
   | 'REFUND_DIFFERS'
+  | 'PRICE_DIFFERS'
   | 'TWICE_ON_THEIR_SHEET'
   | 'NO_TICKET_NUMBER'
   | 'UNREADABLE'
@@ -305,6 +306,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   REFUND_NOT_IN_LEDGER: 'Refund not in our ledger',
   REFUND_NOT_ON_SHEET:  'Refunded, their sheet does not say so',
   REFUND_DIFFERS:       'Refund differs',
+  PRICE_DIFFERS:        'Price differs',
   TWICE_ON_THEIR_SHEET: 'Their sheet refunds it twice',
   NO_TICKET_NUMBER:     'Issued with no ticket number',
   UNREADABLE:           'Their ticket number is damaged',
@@ -322,6 +324,9 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   NOT_ON_SHEET: 3,
   REFUND_NOT_ON_SHEET: 4,
   REFUND_DIFFERS: 5,
+  // Both hold the ticket, in the same currency, at different prices. What
+  // a file is closed on, so worth seeing before anything cosmetic.
+  PRICE_DIFFERS: 5.1,
   // Their own record disagrees with itself, so nothing can be compared
   // against it until they settle on one figure.
   TWICE_ON_THEIR_SHEET: 5.2,
@@ -515,6 +520,8 @@ export interface RequestLine {
   onlyOurs: number;
   /** Tickets both sides hold, filed under different requests. */
   misfiled: number;
+  /** Tickets both sides hold at different prices, in the same currency. */
+  priceDiffers: number;
   /** Requests this one belongs with, as the ledger has recorded them - a
    *  cash-paid split, usually. Shown so a count that looks short is read
    *  beside the request the rest of it is under. */
@@ -596,6 +603,17 @@ export interface TeamSheetReport {
  * report that lists them is a report that gets skimmed.
  */
 export const REFUND_FLOOR = 50;
+
+/** A price gap smaller than this is not reported. Measured on a full
+ *  export, 134 of 216 gaps were under it and every one was a fixed habit
+ *  rather than a wrong price: the ten dirhams their sheet adds to RTS
+ *  tickets, the ten riyals on Ibtekar's, NSA's 2.25. What is left above it
+ *  is a different price. */
+export const PRICE_FLOOR = 15;
+
+/** A PNR cell can name several - "GDYW8U|YHCELI", "YUCDOO|YPESA3|YXGU6B". */
+export const pnrParts = (pnr?: string | null): string[] =>
+  String(pnr || '').toUpperCase().split(/[|/,;\s]+/).map(x => x.trim()).filter(Boolean);
 
 /**
  * How much less than their cell our booking may be and still be it.
@@ -763,6 +781,19 @@ export function compareTeamSheet(
   const claimed = new Set<string>();
   let matched = 0;
 
+  /* Our EMDs by day and PNR, once, for the price check's folded EMDs. */
+  const emdIndex = new Map<string, Ticket[]>();
+  for (const t of ledger) {
+    if (!isTicket(t) || !/^EMD/i.test(t.status || '') || (t.amount || 0) <= 0) continue;
+    if (theirSerials.has(ticketMatchKey(t.ticketNo || ''))) continue;
+    const day = String(t.date || '').slice(0, 10);
+    for (const part of pnrParts(t.pnr)) {
+      const k = `${day}|${part}`;
+      if (!emdIndex.has(k)) emdIndex.set(k, []);
+      emdIndex.get(k)!.push(t);
+    }
+  }
+
   /* ── walk their side ──────────────────────────────────────────────────── */
   for (const [serial, rows] of theirBySerial) {
     const ours = ourBySerial.get(serial) ?? [];
@@ -792,7 +823,14 @@ export function compareTeamSheet(
     if (ours.length === 0) {
       // A carrier reference we file under the PNR instead. Nothing is
       // missing; the two systems chose different columns for one value.
-      const filedUnderPnr = isReference(serial) ? (ourByPnr.get(serial) ?? []) : [];
+      /* Only rows of ours their sheet does not carry under a number of their
+         own. ZWHPO5 is a 660.00 bag bought on British Airways' site; the two
+         BSP tickets on ZWHPO5 are on their sheet as 5513427717 and 718, so
+         they are not what this row is - and calling it "the same booking,
+         filed differently" hid a purchase missing from our books. */
+      const filedUnderPnr = isReference(serial)
+        ? (ourByPnr.get(serial) ?? []).filter(t => !theirSerials.has(ticketMatchKey(t.ticketNo || '')))
+        : [];
       if (filedUnderPnr.length) {
         for (const t of filedUnderPnr) claimed.add(ticketMatchKey(t.ticketNo || ''));
         findings.push({
@@ -1013,6 +1051,48 @@ export function compareTeamSheet(
       }
     }
 
+    /* The price. Compared only where it can mean something: one priced row
+       of theirs for this document, a cell naming only it, and both sides in
+       the same currency - a dollar ticket compared in the dollars it was
+       bought in. Their net agreeing with either our payable or our fare is
+       agreement. Across currencies nothing is said: BSP bills in dirhams
+       what their sheet prices in riyals, and that is not a finding. */
+    {
+      const priced = rows.filter(r => r.status !== 'VOID' && (r.cost ?? 0) > 0);
+      const issuedOurs = ours.filter(t => (t.amount || 0) > 0);
+      if (priced.length === 1 && priced[0].groupSize <= 1 && issuedOurs.length) {
+        const cur = (priced[0].currency || '').toUpperCase();
+        const asBought = (t: Ticket, v: number) =>
+          t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
+        const sameCur = issuedOurs.every(t =>
+          String(t.originalCurrency || t.currency || '').toUpperCase() === cur);
+        if (cur && sameCur) {
+          const theirs = Math.abs(priced[0].cost ?? 0);
+          const payable = issuedOurs.reduce((n, t) => n + asBought(t, t.amount || 0), 0);
+          const fare = issuedOurs.reduce((n, t) => n + asBought(t, t.totalDoc || t.amount || 0), 0);
+          // What a known addition on our side takes off: Ibtekar's ten riyals.
+          const adjusted = payable - issuedOurs.reduce((n, t) => n + (Number(t.adjustment) || 0), 0);
+          /* An EMD their row folds in: a reissue at 420.00 on theirs is our
+             20.00 reissue and the 400.00 EMD bought with it, same PNR, same
+             day. See the EMD note further down. */
+          const folded = new Map<string, Ticket>();
+          for (const day of new Set(issuedOurs.map(t => String(t.date || '').slice(0, 10))))
+            for (const part of pnrParts(priced[0].pnr))
+              for (const t of emdIndex.get(`${day}|${part}`) ?? []) folded.set(t.id, t);
+          const emds = [...folded.values()].reduce((n, t) => n + asBought(t, t.amount || 0), 0);
+          const gap = [payable, fare, adjusted, payable + emds]
+            .map(v => theirs - v).sort((a, b) => Math.abs(a) - Math.abs(b))[0];
+          if (Math.abs(gap) >= PRICE_FLOOR) {
+            findings.push({ ...base, sheet: priced[0], verdict: 'PRICE_DIFFERS',
+              note: `Their sheet prices it at ${money(theirs)} ${cur}; we hold ${money(payable)}`
+                  + (Math.abs(fare - payable) >= 0.01 ? ` (fare ${money(fare)})` : '')
+                  + ` ${cur} - ${money(Math.abs(gap))} ${gap > 0 ? 'more on theirs' : 'more in ours'}.` });
+            continue;
+          }
+        }
+      }
+    }
+
     findings.push({ ...base, verdict: 'OK', note: '' });
   }
 
@@ -1032,11 +1112,67 @@ export function compareTeamSheet(
    * very thing the last fix removed.
    */
   const claimedByPnr = new Set<string>();
+
+  /* Bought on the airline's own website. Their sheet writes these with a
+     PNR and no ticket number - a bag, a seat, a Frontier fare - and they are
+     exactly the purchases no supplier report will ever show us, so "only
+     they can fill the number in" left them unrecorded for good. Here each
+     one is matched against what we hold on that PNR, row for row; the rows
+     we hold nothing for are missing from our books and can be added, under
+     the PNR. */
+  const isOnline = (r: TeamSheetRow) => portalSource(r.portal || '').source === 'Airline Website';
+  const onlineByPnr = new Map<string, TeamSheetRow[]>();
+  for (const r of noTicket)
+    if (r.pnr && isOnline(r) && (r.cost ?? 0) > 0 && r.status === 'ISSUED') {
+      if (!onlineByPnr.has(r.pnr)) onlineByPnr.set(r.pnr, []);
+      onlineByPnr.get(r.pnr)!.push(r);
+    }
+  const onlinePlace = new Map<TeamSheetRow, { held?: Ticket; label: string }>();
+  for (const [pnr, rs] of onlineByPnr) {
+    const held = new Map<string, Ticket>();
+    for (const t of ledger) {
+      if (!isTicket(t) || (t.amount || 0) <= 0) continue;
+      // "GDYW8U|YHCELI" on theirs is "YHCELI|GDYW8U" on ours.
+      const want = new Set(pnrParts(pnr));
+      if (!pnrParts(t.pnr).some(x => want.has(x))) continue;
+      const k = ticketMatchKey(t.ticketNo || '');
+      if (k && !theirSerials.has(k) && !held.has(k)) held.set(k, t);
+    }
+    const oursOnPnr = [...held.values()];
+    rs.forEach((r, i) => onlinePlace.set(r, { held: oursOnPnr[i], label: rs.length > 1 ? `${pnr}-${i + 1}` : pnr }));
+  }
+
   let onHold = 0;
   for (const r of noTicket) {
     // A held option is not a ticket. Nothing was issued, so nothing of
     // ours can be missing, and listing it is listing the system working.
     if (r.status === 'ON_HOLD' && !r.unreadable) { onHold++; continue; }
+
+    const place = onlinePlace.get(r);
+    if (place?.held) {
+      const k = ticketMatchKey(place.held.ticketNo || '');
+      claimedByPnr.add(k);
+      findings.push({
+        ...UNSOURCED, verdict: r.unreadable ? 'UNREADABLE' : 'NO_TICKET_NUMBER',
+        serial: k, airlineCode: place.held.airlineCode || '', pnr: r.pnr, sheet: r,
+        ours: [place.held], reqNum: (place.held.reqNum || '').trim(), theirReq: r.reqNum,
+        note: `Bought on the airline's website; their sheet gives PNR ${r.pnr} and no ticket`
+            + ` number, and we hold it as ${place.held.ticketNo}. Nothing is missing.`,
+      });
+      continue;
+    }
+    if (place) {
+      findings.push({
+        ...UNSOURCED, verdict: 'NOT_IN_LEDGER',
+        serial: place.label, airlineCode: '', pnr: r.pnr, sheet: r, ours: [],
+        reqNum: '', theirReq: r.reqNum,
+        note: `Bought on the airline's website for ${money(r.cost ?? 0)} ${r.currency}`
+            + ` - their sheet gives PNR ${r.pnr} and no ticket number - and not in our books.`
+            + ` Adding it records it under ${place.label}`
+            + (r.currency === 'USD' ? ', in dirhams at 3.67.' : '.'),
+      });
+      continue;
+    }
 
     let identified: Ticket[] = [];
     /* A row with no number at all is identified the same way as one whose
@@ -1233,12 +1369,16 @@ export function compareTeamSheet(
     /* A void, a no-charge reissue and a second coupon are on their sheet and
        rightly absent from our books. Counting them as "only theirs" held a
        request open for tickets nobody ever has to find. */
-    const onlyTheirs = [...theirSet].filter(x => !ourSet.has(x) && !settledTheirs.has(x)).length;
+    const onlyTheirs = [...theirSet].filter(x => !ourSet.has(x) && !settledTheirs.has(x)).length
+      // ...and their website purchases with no ticket number that we do not hold.
+      + findings.filter(f => f.verdict === 'NOT_IN_LEDGER' && !theirBySerial.has(f.serial)
+        && reqParts(f.theirReq).includes(key)).length;
+    const priceDiffers = findings.filter(f => f.verdict === 'PRICE_DIFFERS' && touches(f)).length;
     const onlyOurs = [...ourSet].filter(x => !theirSet.has(x)).length;
     return {
       reqNum: req, theirTickets: theirSet.size, ourTickets: ourSet.size,
-      onlyTheirs, onlyOurs, misfiled, related,
-      agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0,
+      onlyTheirs, onlyOurs, misfiled, related, priceDiffers,
+      agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0 && priceDiffers === 0,
     };
   });
 
