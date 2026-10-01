@@ -36,6 +36,9 @@ export interface ParsedRow {
   /** A reissue at no charge: the document it replaces. Kept at 0 and filed
    *  under that ticket's request, PNR and passenger on import. */
   reissueOf?:      string;
+  /** A reissue at no charge whose report does not say what it replaces
+   *  (RTS). Filed on import under the ticket with its PNR and passenger. */
+  freeReissue?:    boolean;
   /** Cabin sold, read from whatever the report called it. Both are set
    *  together: the reading, and the text it was read from. */
   cabinClass?:     string;

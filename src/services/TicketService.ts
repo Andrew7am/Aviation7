@@ -293,6 +293,19 @@ export class TicketService {
     return rows.map(rowToTicket);
   }
 
+  /** Every row on these PNRs - for filing a reissue at no charge whose report
+   *  names no ticket it replaces under the booking it belongs to. */
+  async fetchByPnrs(pnrs: string[]): Promise<Ticket[]> {
+    if (pnrs.length === 0) return [];
+    const rows: TicketRow[] = [];
+    for (let i = 0; i < pnrs.length; i += 100) {
+      const { data, error } = await supabase.from('tickets').select('*').in('pnr', pnrs.slice(i, i + 100));
+      if (error) throw new Error(error.message);
+      rows.push(...(data ?? []));
+    }
+    return rows.map(rowToTicket);
+  }
+
   /**
    * Insert a single hand-entered transaction (issue / refund / reissue / void).
    * Goes through the same tickets table as an import, so it flows into the

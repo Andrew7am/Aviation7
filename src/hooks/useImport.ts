@@ -138,7 +138,7 @@ export function useImport(userId: string) {
         serial:          r.serial,
         // A reissue at no charge is a ticket at 0, marked so it can be filed
         // under the one it replaces and shown as what it is.
-        transactionType: r.reissueOf && !r.amount ? 'REISSUE' : r.status,
+        transactionType: (r.reissueOf || r.freeReissue) && !r.amount ? 'REISSUE' : r.status,
         closed:          r.closed ?? false,
         channel:         r.channel,
         cabinClass:      r.cabinClass,
@@ -175,6 +175,9 @@ export function useImport(userId: string) {
       const replacedNos = exchanges.map(e => e.replacedTicket).filter(Boolean);
       const originals = replacedNos.length && dup.fresh.some(t => t.transactionType === 'REISSUE')
         ? await svc.fetchByTicketNos(replacedNos) : [];
+      // A report that names no replaced ticket (RTS) is filed by PNR instead.
+      const pnrs = [...new Set(dup.fresh.filter(t => t.transactionType === 'REISSUE' && t.pnr).map(t => t.pnr))];
+      if (pnrs.length) originals.push(...await svc.fetchByPnrs(pnrs));
       const fresh = fileUnderOriginal(dup.fresh, [...existingFromDB, ...originals], exchanges);
       const classified = classifyAgainstExisting(realTkts, existingFromDB);
 

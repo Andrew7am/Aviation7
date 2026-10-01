@@ -10,6 +10,8 @@
  */
 import { fileUnderOriginal } from '../src/core/helpers/freeReissue';
 import type { Ticket } from '../src/types';
+import Papa from 'papaparse';
+import { runParser } from '../src/core/parsers';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -56,6 +58,34 @@ console.log('\n3. Left alone when it should be');
   const typed = fileUnderOriginal([{ ...free('5512369347'), reqNum: 'KSAML9999' }],
     [t({ ticketNo: '5512369256', amount: 2060, reqNum: 'KSAML1441' })], [{ ticketNo: '5512369347', replacedTicket: '5512369256' }]);
   check('a request already on the row is kept', typed[0].reqNum, 'KSAML9999');
+}
+
+console.log('\n4. A report that names no replaced ticket: filed by its booking');
+{
+  // RTS: "016-5513437053 ... ticket, reissue ... 0" on ZO8TOX, HUGHES ALBERT ERIC.
+  const sale = t({ ticketNo: '5513408071', amount: 4740, reqNum: 'UAEVP711', pnr: 'ZO8TOX', passengerName: 'HUGHES ALBERT ERIC', source: 'RTS' });
+  const [r] = fileUnderOriginal([{ ...free('5513437053'), pnr: 'ZO8TOX', passengerName: 'HUGHES ALBERT ERIC', source: 'RTS' }], [sale], []);
+  check('the same PNR and passenger give the request', r.reqNum, 'UAEVP711');
+  const other = t({ ticketNo: '5513408072', amount: 900, reqNum: 'UAEVP999', pnr: 'ZO8TOX', passengerName: 'HUGHES ALBERT ERIC' });
+  const [two] = fileUnderOriginal([{ ...free('5513437053'), pnr: 'ZO8TOX', passengerName: 'HUGHES ALBERT ERIC' }], [sale, other], []);
+  check('two requests on that booking cannot say which', two.reqNum, '');
+  const [stranger] = fileUnderOriginal([{ ...free('5513437053'), pnr: 'ZO8TOX', passengerName: 'SOMEBODY ELSE' }], [sale], []);
+  check('another passenger on the PNR is not this one', stranger.reqNum, '');
+}
+
+console.log('\n5. RTS says which rows are reissues at no charge');
+{
+  // The real columns: Type "ticket", Action "reissue", Issue type "BSP".
+  const head = 'Record Locator,Passenger,PNR creation date,No,Carrier,Type,Action,Issue type,Total,Total currency';
+  const grid = Papa.parse<string[]>([head,
+    'ZO8TOX,HUGHES ALBERT ERIC MR,9/8/2026,016-5513437053,UA,ticket,reissue,BSP,0,AED',
+    'ZO8TOX,HUGHES ALBERT ERIC MR,9/8/2026,016-5513408071,UA,ticket,issue,BSP,4740,AED',
+  ].join('\n'), { skipEmptyLines: true }).data;
+  const rows = runParser(grid, undefined, 'AED', 'rts', []).rows;
+  const by = (n: string) => rows.find(x => x.ticketNo.endsWith(n));
+  check('the reissue at 0 is marked', by('5513437053')?.freeReissue, true);
+  check('and kept, not voided', by('5513437053')?.status, 'ISSUE');
+  check('the sale is not', by('5513408071')?.freeReissue, undefined);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

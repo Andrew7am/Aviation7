@@ -23,6 +23,9 @@ export const RTSParser: VendorParser = {
     // no itinerary — and no way to tell a domestic trip from an international
     // one, which is decided from exactly this field.
     const iRoute = col(headers,'Route');
+    // "Action" says issue, reissue or refund. A reissue at 0 is a ticket at
+    // no charge - the fare is on the one it replaced - and is marked so the
+    // import files it under that booking rather than as a bare zero.
     // An explicit user-added Req column wins first, then the broad heuristic.
     // Neither one matching used to fall back to position 4, on the strength
     // of one export that happened to carry the request there. But RTS's own
@@ -54,6 +57,7 @@ export const RTSParser: VendorParser = {
       const finalAmt = status==='VOID'   ? 0
                      : status==='REFUND' ? -Math.abs(amt)
                      : Math.abs(amt);
+      const freeReissue = /reissue/i.test(cell(row, iStatus)) && status === 'ISSUE' && finalAmt === 0;
       const rtsReq = resolveReq(cell(row, iReq));
       if (!rtsReq) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
       result.push({
@@ -75,6 +79,7 @@ export const RTSParser: VendorParser = {
         // to change it by hand. The file is the authority; the UI default is
         // only the fallback for a file that states nothing.
         currency: resolveCurrency(row, headers, defaultCurrency),
+        ...(freeReissue ? { freeReissue: true } : {}),
       });
     });
     return {rows:result,errors,warnings};

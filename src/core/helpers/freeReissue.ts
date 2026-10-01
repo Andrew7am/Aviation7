@@ -34,7 +34,30 @@ export function fileUnderOriginal<T extends Ticket>(rows: T[], known: Ticket[], 
   known.forEach(remember);
   rows.forEach(remember);
 
-  const origin = (serial: string): Ticket | undefined => {
+  /* Where the report names no ticket it replaces - RTS prints "reissue"
+     and 0.00 and nothing else - the booking says it: the ticket on the same
+     PNR for the same passenger. Only when every such ticket we hold is under
+     one request; two requests on one PNR cannot say which this belongs to. */
+  const key = (t: { pnr?: string; passengerName?: string }) =>
+    `${(t.pnr || '').replace(/\s+/g, '').toUpperCase()}|${(t.passengerName || '').replace(/\s+/g, ' ').trim().toUpperCase()}`;
+  const byBooking = new Map<string, Ticket[]>();
+  for (const t of [...known, ...rows]) {
+    if (!(t.pnr || '').trim() || !(t.reqNum || '').trim()) continue;
+    for (const k of [key(t), key({ pnr: t.pnr })]) {
+      if (!byBooking.has(k)) byBooking.set(k, []);
+      byBooking.get(k)!.push(t);
+    }
+  }
+  const byPnr = (r: Ticket): Ticket | undefined => {
+    if (!(r.pnr || '').trim()) return undefined;
+    const same = byBooking.get(key(r)) ?? (r.passengerName ? undefined : byBooking.get(key({ pnr: r.pnr })));
+    if (!same?.length) return undefined;
+    const reqs = new Set(same.map(t => t.reqNum.trim().toUpperCase()));
+    if (reqs.size !== 1) return undefined;
+    return same.find(t => (t.amount || 0) > 0) ?? same[0];
+  };
+
+  const origin = (serial: string, r: Ticket): Ticket | undefined => {
     const seen = new Set([serial]);
     let cur = back.get(serial);
     while (cur && !seen.has(cur)) {
@@ -43,12 +66,12 @@ export function fileUnderOriginal<T extends Ticket>(rows: T[], known: Ticket[], 
       seen.add(cur);
       cur = back.get(cur);
     }
-    return undefined;
+    return byPnr(r);
   };
 
   return rows.map(r => {
     if ((r.transactionType || '').toUpperCase() !== 'REISSUE' || (r.amount || 0) !== 0) return r;
-    const o = origin(ticketMatchKey(r.ticketNo || ''));
+    const o = origin(ticketMatchKey(r.ticketNo || ''), r);
     if (!o) return r;
     return {
       ...r,
