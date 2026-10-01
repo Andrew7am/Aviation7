@@ -1563,19 +1563,19 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <span className="text-slate-300 hidden sm:inline">|</span>
         {totalsByCurrency.map(([cur, t], i) => (
           <React.Fragment key={cur}>
-            {i > 0 && <span className="text-slate-300">·</span>}
+            {i > 0 && <span className="text-slate-300">|</span>}
             <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-              <CopyableAmount label={`Issued ${cur}`} value={t.issued} fmt={fmt} />
+              <b><CopyableAmount label={`Net ${cur}`} value={t.net} fmt={fmt} /></b>
               {t.refundCount > 0 && <>
                 <span className="text-slate-300">·</span>
                 <CopyableAmount label={`Refunds ${cur} (${t.refundCount})`} value={t.refunds} fmt={fmt} />
               </>}
+              <span className="text-slate-300">·</span>
+              <CopyableAmount label={`Issued ${cur}`} value={t.issued} fmt={fmt} />
               {Math.abs(t.topUps) >= 0.005 && <>
                 <span className="text-slate-300">·</span>
                 <CopyableAmount label={`Top-ups ${cur}`} value={t.topUps} fmt={fmt} />
               </>}
-              <span className="text-slate-300">=</span>
-              <b><CopyableAmount label={`Net ${cur}`} value={t.net} fmt={fmt} /></b>
             </span>
           </React.Fragment>
         ))}
