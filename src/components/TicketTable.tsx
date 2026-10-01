@@ -1661,7 +1661,15 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                         only when the two differ: a refund filed under the
                         ticket's own number already says it. Search finds it
                         by either number. */}
-                    {(() => {
+                    {/* A debit or credit memo: the ticket the airline charged
+                        or credited us over, as BSP's +RTDN line names it. */}
+                    {/^(ADM|ACM)$/i.test(ticket.status || '') && ticket.relatedTicket && (
+                      <span className="block text-[9px] font-normal text-violet-600 select-none"
+                        title={`${(ticket.status || '').toUpperCase() === 'ADM' ? 'Debit' : 'Credit'} memo on ticket ${ticket.relatedTicket}`}>
+                        {(ticket.status || '').toUpperCase()} on {ticket.relatedTicket}
+                      </span>
+                    )}
+                    {!/^(ADM|ACM)$/i.test(ticket.status || '') && (() => {
                       /* What a refund is paying back. The document it names
                          is often a reissue whose own value is the change fee —
                          20.00 against a refund of 48,890 — so the line also

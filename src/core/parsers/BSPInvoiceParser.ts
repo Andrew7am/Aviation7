@@ -417,10 +417,17 @@ export const BSPInvoiceParser: VendorParser = {
       /* A refund names the ticket it refunds on the +RTDN line beneath it,
          after however many lines of tax breakdown the document carries —
          seven on one refund of 9,530. So the search runs to the next
-         document line, not a fixed number of lines. Read only for refunds:
-         on an exchange the same line names the ticket being exchanged,
-         which is a different relationship and is not what this records. */
-      const relatedTicket = isRefund ? rtdnAfter(lines, lineIdx) : '';
+         document line, not a fixed number of lines. Not read on an
+         exchange: there the same line names the ticket being exchanged,
+         which is a different relationship and is not what this records.
+
+         A memo names its ticket the same way. "065 ADMA 6206503067 ...
+         170.00" is an airline charging us 170.00 over ticket 6075549430,
+         and "125 ACMA 0820147238 ... -30,699.00" is one giving 30,699.00
+         back on 5512129182. Without the link, an ADM is a charge nobody
+         can trace to a booking, a request or a client. */
+      const isMemo = /^(ADMA|ADNT|ACMA|ACNT)$/.test(trnc);
+      const relatedTicket = isRefund || isMemo ? rtdnAfter(lines, lineIdx) : '';
 
       result.push({
         ticketNo: cleanTk(docNo, airline),
