@@ -110,7 +110,7 @@ console.log('\n4. The invoice row that started this, end to end');
   check('and the airline',   r.airlineCode, '065');
 }
 
-console.log('\n5. An even exchange on the invoice is not a ticket');
+console.log('\n5. A reissue at no charge on the invoice is kept at 0');
 {
   /* Real rows out of the 09 April 2026 invoice, kept as a fixture because
      the parser reads a table by where the numbers SIT on the page: the
@@ -134,21 +134,23 @@ console.log('\n5. An even exchange on the invoice is not a ticket');
     new URL('./fixtures/bsp-even-exchange.json', import.meta.url), 'utf8'));
   const out = BSPInvoiceParser.parse(rows, [], 'AED');
 
+  /* They used to be dropped, and the 25 that once went in bare were the
+     reason. They are kept now - at 0, marked with the ticket they replace,
+     so the import files each under that ticket's request, PNR and
+     passenger instead of leaving a bare row nobody can close. */
   const kept = out.rows.map(r => r.ticketNo);
+  const ex = (n: string) => out.rows.find(r => r.ticketNo === n);
   check('the sale beside them is kept',   kept.includes('5512369346'), true);
-  check('and it carries its fare',
-    out.rows.find(r => r.ticketNo === '5512369346')?.amount, 3540);
-  check('the empty exchange is not',      kept.includes('5512369347'), false);
-  check('nor the second',                 kept.includes('5512369348'), false);
-  check('nor the third',                  kept.includes('5512369349'), false);
-  check('one row out of four documents',  out.rows.length, 1);
+  check('and it carries its fare',        ex('5512369346')?.amount, 3540);
+  check('the free reissue is kept too',   kept.includes('5512369347'), true);
+  check('at 0',                           [ex('5512369347')?.amount, ex('5512369347')?.totalDoc], [0, 0]);
+  check('naming the ticket it replaces',  ex('5512369347')?.reissueOf, '5512369256');
+  check('all three of them',              ['5512369347', '5512369348', '5512369349'].every(n => kept.includes(n)), true);
+  check('the sale is not a reissue',      ex('5512369346')?.reissueOf, undefined);
 
-  // Dropped loudly. A document that disappears without a word is how
-  // money goes missing.
-  check('the file says what it dropped',
-    out.warnings.some(w => /even exchange/i.test(w)), true);
-  check('and how many',
-    out.warnings.some(w => /3 even exchange/.test(w)), true);
+  // Said, so the preview tells what it did with them.
+  check('the file says what it kept',
+    out.warnings.some(w => /3 reissue\(s\) at no charge kept/.test(w)), true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

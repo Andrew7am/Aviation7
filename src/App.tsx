@@ -29,6 +29,7 @@ const VendorStatements = React.lazy(() => import('./components/VendorStatements'
 const Reports         = React.lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
 const TaxInvoices     = React.lazy(() => import('./components/TaxInvoices').then(m => ({ default: m.TaxInvoices })));
 const Voids           = React.lazy(() => import('./components/Voids').then(m => ({ default: m.Voids })));
+const Adms            = React.lazy(() => import('./components/Adms').then(m => ({ default: m.Adms })));
 const ImportHistory   = React.lazy(() => import('./components/ImportHistory').then(m => ({ default: m.ImportHistory })));
 const ActivityLog     = React.lazy(() => import('./components/ActivityLog').then(m => ({ default: m.ActivityLog })));
 const Settings        = React.lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
@@ -51,6 +52,7 @@ import { useStatements } from './hooks/useStatements';
 import { usePending } from './hooks/usePending';
 import { useTaxInvoices } from './hooks/useTaxInvoices';
 import { useVoids } from './hooks/useVoids';
+import { admKind } from './core/helpers/admRegister';
 import { VoidTicketService } from './services/VoidTicketService';
 import { ExchangeService } from './services/ExchangeService';
 import type { ExchangeEdge } from './core/parsers/types';
@@ -64,7 +66,7 @@ import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
-  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck, Receipt, Ban } from 'lucide-react';
+  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck, Receipt, Ban, FileWarning } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
 const LOW_PCT = 0.2;
@@ -422,6 +424,8 @@ function MainApp({ user }: { user: User }) {
   }, [taxInvoices, tickets]);
 
   type NavItem = { id: ViewState; label: string; icon: React.ReactNode; badge?: number; badgeColor?: 'red' | 'amber' | 'slate' };
+  // Real memos only - an airline's ADM or ACM, or a supplier's. BSP's own fee is not counted.
+  const admCount = React.useMemo(() => tickets.filter(t => { const k = admKind(t); return k && k !== 'BSP_FEE'; }).length, [tickets]);
   const NAV: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard',       icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'tickets',   label: 'All Tickets',     icon: <List className="w-4 h-4" />, badge: tickets.length },
@@ -437,6 +441,7 @@ function MainApp({ user }: { user: User }) {
     { id: 'statements', label: 'Vendor Statements', icon: <FileText className="w-4 h-4" />, badge: statementGapCount || undefined, badgeColor: 'red' },
     { id: 'taxinvoices', label: 'Tax Invoices', icon: <Receipt className="w-4 h-4" />, badge: noTaxInvoiceCount || undefined, badgeColor: 'red' },
     { id: 'voids',     label: 'Voids',           icon: <Ban className="w-4 h-4" />, badge: voids.length || undefined, badgeColor: 'slate' },
+    { id: 'adms',      label: 'ADMs',            icon: <FileWarning className="w-4 h-4" />, badge: admCount || undefined, badgeColor: 'red' },
     { id: 'reports',   label: 'Reports',         icon: <BarChart2 className="w-4 h-4" /> },
     ...(isAdmin ? [{ id: 'activity' as ViewState, label: 'Activity Log', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
     ...(isAdmin ? [{ id: 'settings' as ViewState, label: 'Settings', icon: <SettingsIcon className="w-4 h-4" /> }] : []),
@@ -522,6 +527,7 @@ function MainApp({ user }: { user: User }) {
           {...(isAdmin ? { onUpload: uploadTaxInvoices, onDelete: removeTaxInvoice } : {})} />
       )}
       {view === 'voids'     && <Voids voids={voids} tickets={tickets} />}
+      {view === 'adms'      && <Adms tickets={tickets} />}
       {view === 'reports'   && <Reports tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
       {view === 'activity'  && (isAdmin
         ? <ActivityLog currentUserId={user.id} onUndo={handleUndoAction} />

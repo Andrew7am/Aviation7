@@ -939,8 +939,8 @@ export function compareTeamSheet(
         findings.push({ ...base, verdict: 'REISSUE_NO_CHARGE',
           note: `Their sheet reissues this at no charge${
             first.rawStatus ? ` (${first.rawStatus})` : ''} — the fare was paid on the`
-              + ' original ticket, so no supplier bills this one and our books are right'
-              + ' to be without it.' });
+              + ' original ticket, so it moves no money. Not in our books yet; adding it'
+              + ' records it at 0.00 so the booking\'s documents are complete.' });
       } else if (voidAndIssued) {
         // Show the row that carries the money. `first` is whichever of
         // their rows came up the file, and on five of the six that is the

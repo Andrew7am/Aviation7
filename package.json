@@ -42,7 +42,7 @@
     "test:afterclose": "tsx scripts/test-changed-after-close.ts",
     "test:runningstatement": "tsx scripts/test-running-statement.ts",
     "test:bsprtdn": "tsx scripts/test-bsp-rtdn.ts",
-    "test:ticketchain": "tsx scripts/test-ticket-chain.ts && tsx scripts/test-conjunction.ts && tsx scripts/test-team-sheet-settled.ts && tsx scripts/test-ticket-currency.ts",
+    "test:ticketchain": "tsx scripts/test-ticket-chain.ts && tsx scripts/test-conjunction.ts && tsx scripts/test-team-sheet-settled.ts && tsx scripts/test-ticket-currency.ts && tsx scripts/test-adm-register.ts && tsx scripts/test-free-reissue.ts",
     "test:soapdf": "tsx scripts/test-ibtekar-statement.ts",
     "test:ibtekardates": "tsx scripts/test-ibtekar-dates.ts",
     "test:invariants": "tsx scripts/test-ledger-invariants.ts",

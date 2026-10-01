@@ -227,6 +227,7 @@ export const BSPInvoiceParser: VendorParser = {
 
   parse: (rows, _headers, defaultCurrency): ParserResult => {
     let evenExchanges = 0;
+    let freeReissues = 0;
     const errors: string[] = [];
     const warnings: string[] = [];
     const result: ParsedRow[] = [];
@@ -410,6 +411,24 @@ export const BSPInvoiceParser: VendorParser = {
 
       if (!isVoid && !hasFare && Math.abs(finalPayable) < 0.005
           && Math.abs(commission) < 0.005) {
+        /* A reissue at no charge is kept, at 0. It is a ticket the
+           passenger flies on, and their sheet lists it; without it the
+           ticket list cannot show what the original became. It carries the
+           document it replaces, so the import can file it under that
+           ticket's request, PNR and passenger - which is what the 25 that
+           once went in bare were missing. A zero document that replaces
+           nothing is still nothing, and still dropped. */
+        if (replaced) {
+          freeReissues++;
+          result.push({
+            ticketNo: cleanTk(docNo, airline), pnr: '', passengerName: '',
+            airlineCode: airlineCode(docNo, airline), route: '', date: bspDate(dateRaw),
+            amount: 0, totalDoc: 0, commission: 0, reqNum: '',
+            vendorReference: billingPeriod, status: 'ISSUE', currency,
+            source: IATA_VENDOR, channel, rawType: trnc, reissueOf: replaced,
+          });
+          continue;
+        }
         evenExchanges++;
         continue;
       }
@@ -453,11 +472,15 @@ export const BSPInvoiceParser: VendorParser = {
       });
     }
 
+    if (freeReissues) {
+      warnings.push(
+        `${freeReissues} reissue(s) at no charge kept at 0.00, each filed under the request`
+        + ' of the ticket it replaces. The money is on the original.');
+    }
     if (evenExchanges) {
       warnings.push(
-        `${evenExchanges} even exchange(s) dropped: reissued against an existing ticket `
-        + 'with no fare, no commission and nothing payable. The money is on the original '
-        + 'document, and a row carrying none of it could never be closed.');
+        `${evenExchanges} empty document(s) dropped: no fare, no commission, nothing payable,`
+        + ' and no ticket they replace.');
     }
 
     if (seenTxn === 0) {

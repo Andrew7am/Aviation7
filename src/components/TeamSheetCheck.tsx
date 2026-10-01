@@ -132,7 +132,7 @@ const WHY: Record<Verdict, string> = {
 /** The two verdicts that describe a ticket to add rather than a
  *  disagreement to settle. Everything else the check finds is already in the
  *  books somewhere, and "adding" it would make a second copy. */
-const PROPOSABLE_VERDICTS = new Set<Verdict>(['NOT_IN_LEDGER', 'REFUND_NOT_IN_LEDGER']);
+const PROPOSABLE_VERDICTS = new Set<Verdict>(['NOT_IN_LEDGER', 'REFUND_NOT_IN_LEDGER', 'REISSUE_NO_CHARGE']);
 /** Stable, so a screen given no reissue links does not recompare on every render. */
 const NO_EXCHANGES: { ticketNo: string; replacedTicket: string }[] = [];
 

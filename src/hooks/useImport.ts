@@ -10,6 +10,7 @@ import { LearnedProfile } from '../core/ai/learnedProfile';
 import { parseGrid, gridProblem } from '../core/helpers/parseGrid';
 import { v4 as uuidv4 } from 'uuid';
 import { TicketService } from '../services/TicketService';
+import { fileUnderOriginal } from '../core/helpers/freeReissue';
 
 export interface ImportErrorEntry { row: number; raw: string; error: string }
 
@@ -135,7 +136,9 @@ export function useImport(userId: string) {
         status:          r.status,
         currency:        r.currency,
         serial:          r.serial,
-        transactionType: r.status,
+        // A reissue at no charge is a ticket at 0, marked so it can be filed
+        // under the one it replaces and shown as what it is.
+        transactionType: r.reissueOf && !r.amount ? 'REISSUE' : r.status,
         closed:          r.closed ?? false,
         channel:         r.channel,
         cabinClass:      r.cabinClass,
@@ -164,7 +167,15 @@ export function useImport(userId: string) {
       const batchTicketNos = keepable.map(t => t.ticketNo);
       const existingFromDB = await svc.fetchByTicketNos(batchTicketNos);
 
-      const { fresh, updates, duplicates, settlements } = detectDuplicatesAgainstExisting(realTkts, existingFromDB);
+      const dup = detectDuplicatesAgainstExisting(realTkts, existingFromDB);
+      const { updates, duplicates, settlements } = dup;
+      /* A reissue at no charge goes in under the ticket it replaces - its
+         request, PNR and passenger - looked up in the books, or earlier in
+         this same file when the original is new too. */
+      const replacedNos = exchanges.map(e => e.replacedTicket).filter(Boolean);
+      const originals = replacedNos.length && dup.fresh.some(t => t.transactionType === 'REISSUE')
+        ? await svc.fetchByTicketNos(replacedNos) : [];
+      const fresh = fileUnderOriginal(dup.fresh, [...existingFromDB, ...originals], exchanges);
       const classified = classifyAgainstExisting(realTkts, existingFromDB);
 
       /**

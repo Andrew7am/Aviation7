@@ -55,7 +55,9 @@ import { toDirhams } from './toDirhams';
  */
 
 /** The verdicts that describe a ticket our books do not have. */
-const PROPOSABLE = new Set(['NOT_IN_LEDGER', 'REFUND_NOT_IN_LEDGER']);
+// A reissue at no charge too: a ticket at 0, kept so the booking's documents
+// are complete. A wallet vendor's is held back like any other of theirs.
+const PROPOSABLE = new Set(['NOT_IN_LEDGER', 'REFUND_NOT_IN_LEDGER', 'REISSUE_NO_CHARGE']);
 
 /**
  * What a proposal is ABOUT: its origin, the document, and the finding.
@@ -99,6 +101,7 @@ export function pendingFromFindings(
     if (!s) continue;
 
     const isRefund = f.verdict === 'REFUND_NOT_IN_LEDGER';
+    const isFreeReissue = f.verdict === 'REISSUE_NO_CHARGE';
     // A carrier that issues no IATA ticket puts the booking reference in the
     // ticket column, and that reference IS the document. Either way the
     // serial is what identifies it; the PNR is the fallback for a row whose
@@ -120,11 +123,11 @@ export function pendingFromFindings(
       // tickets: that figure is the booking's and would treble the cost.
       // See the note above. A cell naming none - a website purchase with
       // only a PNR - is one purchase, and its figure is its own.
-      amount: isRefund
+      amount: isFreeReissue ? 0 : isRefund
         ? (s.refund != null ? refundAmount(s.refund) : 0)
         : (s.groupSize <= 1 && s.cost != null ? Math.abs(s.cost) : 0),
       commission: 0,
-      totalDoc: isRefund
+      totalDoc: isFreeReissue ? 0 : isRefund
         ? (s.refund != null ? Math.abs(s.refund) : 0)
         : (s.groupSize <= 1 && s.cost != null ? Math.abs(s.cost) : 0),
       // We hold no row for it, so their request is the only one there is.
@@ -139,7 +142,7 @@ export function pendingFromFindings(
       route: '',
       status: isRefund ? 'REFUND' : 'ISSUE',
       currency: (s.currency || 'AED') as SupportedCurrency,
-      transactionType: isRefund ? 'REFUND' : 'ISSUE',
+      transactionType: isRefund ? 'REFUND' : isFreeReissue ? 'REISSUE' : 'ISSUE',
       // A booking bought on an airline's own site will never be invoiced, so
       // its own reference is the only one it will ever have.
       vendorReference: '',
@@ -181,7 +184,8 @@ export function whyNotConfirmable(p: PendingTicket): string {
   const first = conjunctionFirst(p.ticketNo, p.theirCell || '');
   if (first)
     return `Second coupon of ${first} — same passenger, same fare. Not a ticket of its own.`;
-  if (!p.amount) {
+  // A reissue at no charge is meant to be 0.
+  if (!p.amount && p.finding !== 'REISSUE_NO_CHARGE') {
     // Two different reasons a row arrives unpriced, and telling somebody
     // their cell priced a whole booking when it in fact priced nothing
     // sends them looking for a division that does not exist.
@@ -225,7 +229,8 @@ export function ticketFromPending(p: PendingTicket, id: string, userId: string):
     reqNum: (p.reqNum || '').toUpperCase(),
     vendorReference: (p.vendorReference || '').toUpperCase(),
     status: isRefund ? 'REFUND' : 'ISSUE',
-    transactionType: isRefund ? 'REFUND' : 'ISSUE',
+    transactionType: isRefund ? 'REFUND'
+      : p.finding === 'REISSUE_NO_CHARGE' || (p.transactionType || '').toUpperCase() === 'REISSUE' ? 'REISSUE' : 'ISSUE',
     currency: p.currency,
     reportName: 'Team sheet — reviewed',
     importTime: new Date().toISOString(),

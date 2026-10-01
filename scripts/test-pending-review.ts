@@ -518,8 +518,10 @@ console.log('\n18. The refund is their own column, and it is taken as it stands'
   check('ready to record',                 canConfirm(p), true);
 }
 
-/* -- 19. a free reissue never reaches the queue ------------------------- */
-console.log('\n19. A reissue at no charge is not a ticket to record');
+/* -- 19. a free reissue is recorded at 0 ------------------------------- */
+// It used to be left out of the books altogether. It is a ticket the
+// passenger flies on, so it goes in - at 0, never at a figure.
+console.log('\n19. A reissue at no charge is recorded at 0');
 {
   const rows = parseTeamSheet([
     'Ticket Number,PNR,Status,Net Cost,Issued Date & Time,Portal,REQ No (Auto) (MICE),Ticket Type',
@@ -530,9 +532,16 @@ console.log('\n19. A reissue at no charge is not a ticket to record');
   check('the free reissue is set apart', r.counts.REISSUE_NO_CHARGE, 1);
 
   const out = build(r.findings);
-  check('only the real one is proposed', out.length, 1);
-  check('and it is the charged one',     out[0].ticketNo, '5512878170');
-  check('priced at their figure',        out[0].amount, 900);
+  const charged = out.find(p => p.ticketNo === '5512878170');
+  const free = out.find(p => p.ticketNo === '5512878158');
+  check('both are proposed',               out.length, 2);
+  check('the charged one at their figure', charged?.amount, 900);
+  check('the free reissue at 0',           free?.amount, 0);
+  check('marked a reissue',                free?.transactionType, 'REISSUE');
+  check('and ready to record at 0',        free ? canConfirm(free) : null, true);
+  check('it goes into the books at 0, as a reissue',
+        free ? [ticketFromPending(free, 'x', 'u').amount, ticketFromPending(free, 'x', 'u').transactionType] : null,
+        [0, 'REISSUE']);
 }
 
 /* -- 20. one vendor, one spelling --------------------------------------- */

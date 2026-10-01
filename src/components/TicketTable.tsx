@@ -1661,6 +1661,20 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                         only when the two differ: a refund filed under the
                         ticket's own number already says it. Search finds it
                         by either number. */}
+                    {/* A reissue at no charge: 0.00 here because the fare
+                        is on the ticket it replaced. Said, so a zero row
+                        does not read as a price nobody entered. */}
+                    {(ticket.transactionType || '').toUpperCase() === 'REISSUE' && !ticket.amount && (() => {
+                      const own = (ticket.ticketNo || '').replace(/\D/g, '').slice(-10);
+                      const c = chainOf(own, chainIdx);
+                      const before = c.position > 0 ? c.documents[c.position - 1] : '';
+                      return (
+                        <span className="block text-[9px] font-normal text-sky-600 select-none"
+                          title={c.documents.length > 1 ? `The chain: ${c.documents.join(' → ')}` : 'Reissued at no charge'}>
+                          free reissue{before ? ` of ${before}` : ''}
+                        </span>
+                      );
+                    })()}
                     {/* A debit or credit memo: the ticket the airline charged
                         or credited us over, as BSP's +RTDN line names it. */}
                     {/^(ADM|ACM)$/i.test(ticket.status || '') && ticket.relatedTicket && (
