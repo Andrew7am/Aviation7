@@ -616,9 +616,21 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   // Per-currency net totals, in each ticket's own currency. Dollars are
   // never added to riyals: every currency present gets a total of its own.
-  const netByCurrency = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const t of filtered) { const c = ticketCurrency(t); m.set(c, (m.get(c) ?? 0) + t.amount); }
+  // Beside the net, what went into it: the sales, the refunds - money that
+  // came back, counted - and any top-ups, so the net can be read rather than
+  // only trusted.
+  const totalsByCurrency = useMemo(() => {
+    const m = new Map<string, { issued: number; refunds: number; refundCount: number; topUps: number; net: number }>();
+    for (const t of filtered) {
+      const c = ticketCurrency(t);
+      const e = m.get(c) ?? { issued: 0, refunds: 0, refundCount: 0, topUps: 0, net: 0 };
+      const a = t.amount || 0;
+      if ((t.status || '').toUpperCase() === 'FUND') e.topUps += a;
+      else if (a < 0) { e.refunds += a; e.refundCount++; }
+      else e.issued += a;
+      e.net += a;
+      m.set(c, e);
+    }
     return [...m].sort((a, b) => byCurrencyOrder(a[0], b[0]));
   }, [filtered]);
 
@@ -1549,10 +1561,22 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-[10px] font-mono text-slate-500">
         <span>{filtered.length} tickets</span>
         <span className="text-slate-300 hidden sm:inline">|</span>
-        {netByCurrency.map(([cur, total], i) => (
+        {totalsByCurrency.map(([cur, t], i) => (
           <React.Fragment key={cur}>
             {i > 0 && <span className="text-slate-300">·</span>}
-            <CopyableAmount label={`Net ${cur}`} value={total} fmt={fmt} />
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+              <CopyableAmount label={`Issued ${cur}`} value={t.issued} fmt={fmt} />
+              {t.refundCount > 0 && <>
+                <span className="text-slate-300">·</span>
+                <CopyableAmount label={`Refunds ${cur} (${t.refundCount})`} value={t.refunds} fmt={fmt} />
+              </>}
+              {Math.abs(t.topUps) >= 0.005 && <>
+                <span className="text-slate-300">·</span>
+                <CopyableAmount label={`Top-ups ${cur}`} value={t.topUps} fmt={fmt} />
+              </>}
+              <span className="text-slate-300">=</span>
+              <b><CopyableAmount label={`Net ${cur}`} value={t.net} fmt={fmt} /></b>
+            </span>
           </React.Fragment>
         ))}
         <span className="text-slate-300 hidden sm:inline">|</span>
