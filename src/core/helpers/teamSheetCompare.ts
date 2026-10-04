@@ -851,6 +851,29 @@ export function compareTeamSheet(
     refundsFor.get(rel)!.push(t);
   }
 
+  /* The other bookings a row names in its PNR column, as we hold them under
+     the same request - not the documents already counted, and not ones
+     their sheet carries on rows of their own. */
+  const alsoOnPnrs = (r: TeamSheetRow, already: Ticket[]): Ticket[] => {
+    const parts = pnrParts(r.pnr);
+    if (parts.length < 2) return [];
+    /* Two PNRs are usually one booking under two locators - the airline's
+       and the system's, "IXGMPZ|Y29G7O" on a 65.99 seat. Two bookings are
+       a row that also names two carriers or two portals: "Saudia,Flyadeal",
+       "Ibtkar RUH,F3". Only then, and only what was bought that day. */
+    const many = (v: string) => String(v || '').split(/[,;/|]+/).map(x => x.trim()).filter(Boolean).length > 1;
+    if (!many(r.airline) && !many(r.portal)) return [];
+    const day = r.issued;
+    const have = new Set(already.map(t => t.id));
+    const own = new Set(pnrParts(already[0]?.pnr));
+    const others = new Set(parts.filter(x => !own.has(x)));
+    return ledger.filter(t => isTicket(t) && (t.amount || 0) > 0 && !have.has(t.id)
+      && pnrParts(t.pnr).some(x => others.has(x))
+      && (!r.reqNum || reqParts(t.reqNum || '').some(k => reqParts(r.reqNum).includes(k)))
+      && (!day || String(t.date || '').slice(0, 10) === day)
+      && !theirSerials.has(ticketMatchKey(t.ticketNo || '')));
+  };
+
   /* Our EMDs by day and PNR, once, for the price check's folded EMDs. */
   const emdIndex = new Map<string, Ticket[]>();
   for (const t of ledger) {
@@ -1148,7 +1171,14 @@ export function compareTeamSheet(
        what their sheet prices in riyals, and that is not a finding. */
     {
       const priced = rows.filter(r => r.status !== 'VOID' && (r.cost ?? 0) > 0);
-      const issuedOurs = ours.filter(t => (t.amount || 0) > 0);
+      /* A row naming two PNRs - "8KIDTX, BD4C2H" at 1,233.27 - prices both
+         bookings together: a Saudia ticket and a Flyadeal one. Its figure is
+         read against everything we hold on all of them, not the one ticket
+         in its ticket column. */
+      const alongside = priced.length === 1 ? alsoOnPnrs(priced[0], ours) : [];
+      // ...and those bookings are on their sheet, on this row.
+      for (const t of alongside) claimed.add(ticketMatchKey(t.ticketNo || ''));
+      const issuedOurs = [...ours.filter(t => (t.amount || 0) > 0), ...alongside];
       /* Not on a refunded ticket: on a "Cancelled/Refunded" row their Net
          Cost is as often what is left after the refund as the fare, and
          5512129159 at 420.00 against our 2,180.00 is the one, not a price.
@@ -1486,7 +1516,8 @@ export function compareTeamSheet(
       const docs = [r.serial, ...r.siblings];
       // A cell naming a whole group's documents cannot be read as one price.
       if (docs.length > 10) continue;
-      const held = docs.flatMap(d => (ourBySerial.get(d) ?? []).filter(t => (t.amount || 0) > 0));
+      const inCell = docs.flatMap(d => (ourBySerial.get(d) ?? []).filter(t => (t.amount || 0) > 0));
+      const held = [...inCell, ...alsoOnPnrs(r, inCell)];
       if (!held.length || docs.some(d => voidedSet.has(d))) continue;
       const cur = (r.currency || '').toUpperCase();
       if (!cur || !held.every(t => String(t.originalCurrency || t.currency || '').toUpperCase() === cur)) continue;

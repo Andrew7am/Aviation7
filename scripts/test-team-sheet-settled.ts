@@ -322,6 +322,27 @@ console.log('\n10d. A cell priced as one, and the EMDs on its rows');
   check('an EMD on a void row is not missing', compareTeamSheet(v, [], [], {}, { voided: ['4861509015'] }).unaccounted, []);
 }
 
+console.log('\n10e. A row naming two bookings');
+{
+  // Their row: 065-6906136385, PNR "8KIDTX, BD4C2H", Saudia,Flyadeal via "Ibtkar RUH,F3", 1,233.27 SAR.
+  const H = 'Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,Issued Date & Time,Airline,Portal,REQ No (Auto) (MICE) (from Aviation Quotations)';
+  const s = parseTeamSheet([H, '065-6906136385,"8KIDTX, BD4C2H",Issued,1233.27,1233.267 SAR,3/6/2026 1:29pm,"Saudia,Flyadeal","Ibtkar RUH,F3",KSAML1857'].join('\n')).rows;
+  const ours = [
+    tkt({ ticketNo: '6906136385', pnr: '8KIDTX', date: '2026-06-03', amount: 509, currency: 'SAR', source: 'Ibtekar', reqNum: 'KSAML1857' }),
+    tkt({ ticketNo: 'BD4C2H', pnr: 'BD4C2H', date: '2026-06-03', amount: 428.04, currency: 'AED', source: 'FlyAdeal DXB', reqNum: 'KSAML1857' }),
+  ];
+  const r = compareTeamSheet(s, ours);
+  check('not a price difference on the one ticket', r.findings.some(f => f.verdict === 'PRICE_DIFFERS'), false);
+  check('and the second booking is on their sheet', r.findings.some(f => f.verdict === 'NOT_ON_SHEET'), false);
+  // Two locators for one booking - one carrier - is not two bookings.
+  const one = parseTeamSheet([H, '016-7265561496,IXGMPZ|Y29G7O,Issued,65.99,65.99 AED,27/8/2026 2:23pm,Delta Air Lines,AL Website,UAECO593'].join('\n')).rows;
+  const r2 = compareTeamSheet(one, [
+    tkt({ ticketNo: '7265561496', pnr: 'IXGMPZ|Y29G7O', date: '2026-08-27', amount: 65.99, reqNum: 'UAECO593', source: 'Airline Website' }),
+    tkt({ ticketNo: '5513303525', pnr: 'Y29G7O', date: '2026-08-27', amount: 10010, reqNum: 'UAECO593', source: 'RTS' }),
+  ]);
+  check('two locators of one booking pull nothing in', r2.findings.find(f => f.serial === '5513303525')?.verdict, 'NOT_ON_SHEET');
+}
+
 console.log('\n11. Why two requests differ');
 check('one digit apart', reqDiffHint('UAEVP711', 'UAEVP771'), 'One digit apart - most likely a typo on one of the two sides.');
 check('another prefix', /same number under another prefix/.test(reqDiffHint('UAEC125', 'UAECO125')), true);
