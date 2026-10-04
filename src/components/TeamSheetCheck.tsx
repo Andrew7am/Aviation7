@@ -230,10 +230,14 @@ const Group: React.FC<{
       {open && (
         <>
           <p className="px-4 pb-2 text-[11px] text-slate-500 leading-relaxed">{WHY[verdict]}</p>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[1040px]">
-              <thead>
-                <tr className="bg-slate-50 border-y border-slate-100 text-[9px] uppercase
+          {/* Scrolls inside a box no taller than the screen, both ways. A
+              group of 89 rows put the sideways scroll bar 89 rows down, so
+              the right-hand columns could not be reached without first
+              scrolling to the very end. The header stays put. */}
+          <div className="overflow-auto max-h-[70vh] border-t border-slate-100">
+            <table className="w-full text-left min-w-[1280px]">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-slate-50 border-b border-slate-100 text-[9px] uppercase
                                tracking-wider text-slate-400">
                   <th className="px-3 py-1.5">Ticket</th>
                   <th className="px-3 py-1.5">PNR</th>
@@ -248,7 +252,7 @@ const Group: React.FC<{
                   <th className="px-3 py-1.5 text-right">
                     {refundRow ? 'Our refund' : 'Our net'}
                   </th>
-                  <th className="px-3 py-1.5">What it means</th>
+                  <th className="px-3 py-1.5 min-w-[320px]">What it means</th>
                   {onAddOne && <th className="px-3 py-1.5 text-right">Add</th>}
                 </tr>
               </thead>
@@ -400,7 +404,7 @@ const Group: React.FC<{
                         );
                       })() : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="px-3 py-1.5 text-slate-500 font-sans max-w-[320px]">
+                    <td className="px-3 py-1.5 text-slate-500 font-sans text-[11px] leading-snug min-w-[320px] max-w-[460px]">
                       {(() => {
                         /* A ticket missing from our books usually means a
                            supplier who has not billed yet. When we already
