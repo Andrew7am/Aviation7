@@ -46,6 +46,7 @@ const Loading: React.FC = () => (
 import { AuditService, AuditRecord } from './services/AuditService';
 import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { summariseVendor } from './core/helpers/statementMath';
+import type { Reprice } from './core/helpers/statementAgainstBooks';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
 import { useStatements } from './hooks/useStatements';
@@ -267,6 +268,14 @@ function MainApp({ user }: { user: User }) {
   const handleSaveStatement   = (s: VendorStatement) => {
     saveStatement(s);
     importSvc.audit('SAVE_STATEMENT', s.vendorName, `${s.periodStart} to ${s.periodEnd}: closing ${s.closingBalance}`);
+  };
+  /* Tickets a vendor's statement bills at another figure: the statement is
+     what will be paid, so its figure goes in, and the log says so. */
+  const handleRepriceFromStatement = async (list: Reprice[]) => {
+    for (const x of list) {
+      await updateTicket(x.id, { amount: x.amount, adjustment: x.adjustment, adjustmentNote: x.adjustmentNote });
+      importSvc.audit('EDIT_TICKET', x.ticketNo, `amount: ${x.was} -> ${x.amount} (the vendor's statement of account)`);
+    }
   };
   const handleDeleteStatement = (id: string) => {
     deleteStatement(id);
@@ -542,7 +551,8 @@ function MainApp({ user }: { user: User }) {
       {view === 'statements' && (
         <VendorStatements statements={statements} tickets={tickets} canEdit={isAdmin}
           topUps={topUps} wallets={vendorBalancesLive}
-          onSave={handleSaveStatement} onDelete={handleDeleteStatement} />
+          onSave={handleSaveStatement} onDelete={handleDeleteStatement}
+          onReprice={handleRepriceFromStatement} />
       )}
       {view === 'taxinvoices' && (
         <TaxInvoices tickets={tickets} invoices={taxInvoices}

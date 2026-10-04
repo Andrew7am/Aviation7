@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { Ticket, VendorStatement } from '../types';
+import React, { useState, useRef, useMemo } from 'react';
+import { Ticket, VendorStatement, BalanceTopUp, VendorBalance } from '../types';
 import {
   Upload, FileCheck2, AlertTriangle, CheckCircle2, X, Loader2, ChevronDown, ChevronRight,
   Save, Receipt,
@@ -11,6 +11,7 @@ import {
 import { reconcileAll, InvoiceResult, LineVerdict } from '../core/helpers/invoiceReconcile';
 import { checkStatement } from '../core/helpers/statementMath';
 import { pdfToWords } from '../core/helpers/pdfWords';
+import { reviewStatement, Reprice, StatementReview } from '../core/helpers/statementAgainstBooks';
 
 /**
  * Check a document the vendor sent against the ledger, without importing it.
@@ -194,6 +195,151 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
 /** A balance the way the vendor prints it: Cr in our favour, Dr against. */
 const drCr = (n: number) => `${fmt(n)} ${n < 0 ? 'Dr' : 'Cr'}`;
 
+/**
+ * The statement against our books, said in the order it matters: does the
+ * account agree, what changed on their side since their last statement, the
+ * fee above each fare, and then every line that needs something.
+ */
+const ReviewPanel: React.FC<{
+  r: StatementReview; st: ParsedStatement; onReprice?: (list: Reprice[]) => Promise<void>;
+}> = ({ r, st, onReprice }) => {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<number | null>(null);
+  const agrees = Math.abs(r.closingGap) < 0.05;
+  const missingReceipts = r.receipts.filter(x => !x.recorded);
+  const issues = r.reprice.length + r.ask.length + r.notInBooks.length + r.notBilled.length + missingReceipts.length;
+  const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(n)}`;
+
+  return (
+    <div className="space-y-2">
+      <div className={`rounded-lg border px-4 py-3 text-xs ${agrees
+        ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <span>
+            On {st.periodEnd} the statement closes on <b className="font-mono">{drCr(st.closingBalance)}</b>;
+            our books — every payment recorded, less every ticket — make it <b className="font-mono">{drCr(r.ourClosing)}</b>.
+          </span>
+          <span className="font-bold font-mono flex items-center gap-1.5">
+            {agrees
+              ? <><CheckCircle2 className="w-3.5 h-3.5" /> the account agrees{Math.abs(r.closingGap) >= 0.005 ? ` (${signed(r.closingGap)} rounding)` : ''}</>
+              : <><AlertTriangle className="w-3.5 h-3.5" /> {signed(r.closingGap)} {st.currency}</>}
+          </span>
+        </div>
+        {!agrees && r.reprice.length > 0 && (
+          <div className="mt-1 text-[11px]">
+            Once the {r.reprice.length} ticket(s) below take the statement's figure, the difference is{' '}
+            <b className="font-mono">{signed(r.gapAfterReprice)}</b>.
+          </div>
+        )}
+      </div>
+
+      {r.since && Math.abs(r.since.change) >= 0.005 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
+          <b>Changed on their side since their last statement.</b>{' '}
+          Their statement for {r.since.previous.periodStart} → {r.since.previous.periodEnd} put the account on{' '}
+          {r.since.on} at <b className="font-mono">{drCr(r.since.was)}</b>; this one puts the same day at{' '}
+          <b className="font-mono">{drCr(r.since.now)}</b> — <b className="font-mono">{signed(r.since.change)}</b>{' '}
+          {r.since.change > 0 ? 'in our favour' : 'against us'}, from something dated before{' '}
+          {r.since.on === st.periodStart ? 'this period' : r.since.on}.
+          {agrees && ' Our books already agree with the new figure.'}
+        </div>
+      )}
+      {r.since && Math.abs(r.since.change) < 0.005 && (
+        <div className="text-[11px] text-slate-500 px-1">
+          Nothing changed on their side since their statement for {r.since.previous.periodStart} → {r.since.previous.periodEnd}:
+          both put {r.since.on} at {drCr(r.since.now)}.
+        </div>
+      )}
+
+      {r.fees.count > 0 && (
+        <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-xs text-purple-900">
+          <b>Above the fare:</b> {r.fees.count} ticket(s) are billed{' '}
+          {r.fees.min === r.fees.max ? <b className="font-mono">{fmt(r.fees.min)}</b>
+            : <>between <b className="font-mono">{fmt(r.fees.min)}</b> and <b className="font-mono">{fmt(r.fees.max)}</b></>}{' '}
+          above their own fare, <b className="font-mono">{fmt(r.fees.total)} {st.currency}</b> in all — the statement's
+          figure less the fare their sales report gives for the same ticket. It is in the price we hold; the
+          "Above fare" column below shows it ticket by ticket.
+        </div>
+      )}
+
+      {issues === 0 ? (
+        <div className="text-[11px] text-emerald-700 px-1 flex items-center gap-1.5">
+          <CheckCircle2 className="w-3.5 h-3.5" /> Every line on the statement agrees with our books, and every receipt is recorded.
+        </div>
+      ) : (
+        <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100 text-xs">
+          {r.reprice.length > 0 && (
+            <div className="px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <b className="text-slate-700">Billed at another figure — the statement's figure goes in</b>
+                {onReprice && (
+                  <button disabled={busy || done != null}
+                    onClick={async () => {
+                      setBusy(true);
+                      try { await onReprice(r.reprice); setDone(r.reprice.length); } finally { setBusy(false); }
+                    }}
+                    className={`text-xs font-bold px-3 py-1.5 rounded ${done != null
+                      ? 'bg-emerald-50 text-emerald-700' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
+                    {done != null ? `${done} corrected` : busy ? 'Correcting…' : `Correct ${r.reprice.length} ticket(s)`}
+                  </button>
+                )}
+              </div>
+              {r.reprice.map(x => (
+                <div key={x.id} className="font-mono text-[11px] text-slate-600 flex gap-3 flex-wrap">
+                  <span className="text-slate-800">{x.ticketNo}</span>
+                  <span>{fmt(x.was)} → <b>{fmt(x.amount)}</b></span>
+                  <span className={x.amount > x.was ? 'text-red-600' : 'text-emerald-600'}>{signed(x.amount - x.was)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {r.ask.length > 0 && (
+            <div className="px-4 py-3 space-y-1.5">
+              <b className="text-slate-700">For a person — not changed</b>
+              {r.ask.map(c => (
+                <div key={c.line.ticketNo} className="text-[11px] text-slate-600">
+                  <span className="font-mono text-slate-800">{c.line.ticketNo}</span>{' '}
+                  <span className="font-mono">{signed(c.gap)}</span> — {c.why}
+                </div>
+              ))}
+            </div>
+          )}
+          {r.notInBooks.length > 0 && (
+            <div className="px-4 py-3 space-y-1">
+              <b className="text-red-700">Billed, and not in our books</b>
+              {r.notInBooks.map(c => (
+                <div key={c.line.ticketNo} className="font-mono text-[11px] text-slate-600">
+                  {c.line.date} {c.line.document} {c.line.airline ? `${c.line.airline}-` : ''}{c.line.ticketNo} {fmt(c.theirs)}
+                </div>
+              ))}
+            </div>
+          )}
+          {r.notBilled.length > 0 && (
+            <div className="px-4 py-3 space-y-1">
+              <b className="text-amber-700">Ours in this period, never billed</b>
+              {r.notBilled.map(t => (
+                <div key={t.id} className="font-mono text-[11px] text-slate-600">
+                  {t.date} {t.ticketNo} {fmt(t.amount)} {t.reqNum}
+                </div>
+              ))}
+            </div>
+          )}
+          {missingReceipts.length > 0 && (
+            <div className="px-4 py-3 space-y-1">
+              <b className="text-amber-700">Receipts we have not recorded as a payment</b>
+              {missingReceipts.map(x => (
+                <div key={x.line.document} className="font-mono text-[11px] text-slate-600">
+                  {x.line.date} {x.line.document} +{fmt(x.line.credit)}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const StatementPanel: React.FC<{
   st: ParsedStatement;
   fileName: string;
@@ -201,8 +347,18 @@ const StatementPanel: React.FC<{
   vendorName: string;
   saved: boolean;
   onSave?: () => void;
-}> = ({ st, fileName, tickets, vendorName, saved, onSave }) => {
+  topUps: BalanceTopUp[];
+  statements: VendorStatement[];
+  wallet?: VendorBalance;
+  onReprice?: (list: Reprice[]) => Promise<void>;
+}> = ({ st, fileName, tickets, vendorName, saved, onSave, topUps, statements, wallet, onReprice }) => {
   const [open, setOpen] = useState(false);
+  // Line by line against our books: what agrees, what the statement settles,
+  // what it changed since their last one, and the ten riyals on each ticket.
+  const review = useMemo(() => reviewStatement(st, vendorName, tickets, topUps, statements,
+    wallet && { initialBalance: wallet.initialBalance, openingDate: wallet.openingDate }),
+    [st, vendorName, tickets, topUps, statements, wallet]);
+  const byTicket = useMemo(() => new Map(review.lines.map(c => [c.line.ticketNo, c])), [review]);
 
   // The same comparison the period list makes, so the figure shown here and
   // the figure shown after saving are one calculation, not two.
@@ -285,9 +441,11 @@ const StatementPanel: React.FC<{
         )}
       </div>
 
+      <ReviewPanel r={review} st={st} onReprice={onReprice} />
+
       {open && (
         <div className="bg-white border border-slate-200 rounded max-h-96 overflow-auto">
-          <table className="w-full text-left min-w-[560px]">
+          <table className="w-full text-left min-w-[720px]">
             <thead className="sticky top-0 bg-slate-50">
               <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
                 <th className="px-3 py-2">Date</th>
@@ -296,6 +454,8 @@ const StatementPanel: React.FC<{
                 <th className="px-3 py-2 text-right">Debit</th>
                 <th className="px-3 py-2 text-right">Credit</th>
                 <th className="px-3 py-2 text-right">Balance</th>
+                <th className="px-3 py-2 text-right">Ours</th>
+                <th className="px-3 py-2 text-right" title="The statement's figure less the ticket's own fare">Above fare</th>
               </tr>
             </thead>
             <tbody>
@@ -315,6 +475,19 @@ const StatementPanel: React.FC<{
                   <td className="px-3 py-1.5 text-right font-mono text-slate-500">
                     {l.balance === null ? '—' : fmt(l.balance)}
                   </td>
+                  {(() => {
+                    const c = l.section === 'RECEIPT' ? undefined : byTicket.get(l.ticketNo);
+                    if (!c) return <><td className="px-3 py-1.5" /><td className="px-3 py-1.5" /></>;
+                    return <>
+                      <td className={`px-3 py-1.5 text-right font-mono ${c.verdict === 'AGREES' ? 'text-slate-400'
+                        : c.verdict === 'NOT_IN_BOOKS' ? 'text-red-600' : 'text-amber-700 font-bold'}`} title={c.why}>
+                        {c.verdict === 'NOT_IN_BOOKS' ? 'none' : c.verdict === 'AGREES' ? '✓' : fmt(c.held)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-mono text-purple-700">
+                        {c.fee != null && c.fee >= 1 ? fmt(c.fee) : '—'}
+                      </td>
+                    </>;
+                  })()}
                 </tr>
               ))}
             </tbody>
@@ -329,7 +502,12 @@ export const DocumentCheck: React.FC<{
   tickets: Ticket[];
   vendorName?: string;
   onSaveStatement?: (s: VendorStatement) => void;
-}> = ({ tickets, vendorName = 'Ibtekar', onSaveStatement }) => {
+  topUps?: BalanceTopUp[];
+  statements?: VendorStatement[];
+  wallets?: VendorBalance[];
+  /** Put tickets right to the statement's figure. Absent for a viewer. */
+  onReprice?: (list: Reprice[]) => Promise<void>;
+}> = ({ tickets, vendorName = 'Ibtekar', onSaveStatement, topUps = [], statements = [], wallets = [], onReprice }) => {
   const [results, setResults] = useState<InvoiceResult[] | null>(null);
   const [statement, setStatement] = useState<ParsedStatement | null>(null);
   const [saved, setSaved] = useState(false);
@@ -486,6 +664,8 @@ export const DocumentCheck: React.FC<{
             st={statement} fileName={fileName} tickets={tickets} vendorName={vendorName}
             saved={saved}
             onSave={onSaveStatement && (() => { onSaveStatement(asStatement(statement)); setSaved(true); })}
+            topUps={topUps} statements={statements} onReprice={onReprice}
+            wallet={wallets.find(w => w.vendorName.toLowerCase() === vendorName.toLowerCase())}
           />
         )}
       </div>

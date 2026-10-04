@@ -97,5 +97,33 @@ console.log('\n5. A document with nothing in it');
         parseIbtekarStatementPdf([{ page: 0, x: 1, y: 1, text: 'hello' }]), null);
 }
 
+console.log('\n6. The narrow print, where every cell wraps onto the next line');
+const wrapped = parseIbtekarStatementPdf(fixture('ibtekar-soa-wrapped-words.json'))!;
+{
+  // 01/08-30/09: "08/08/20" over "26", "593 -" over "4861234273",
+  // "14,388.3" over "7 Cr". Read line by line it was a closing balance and
+  // nothing else.
+  check('period', [wrapped.periodStart, wrapped.periodEnd], ['2026-08-01', '2026-09-30']);
+  check('opening, broken across two lines', wrapped.openingBalance, 14388.37);
+  check('closing', wrapped.closingBalance, 13330.23);
+  check('every movement', wrapped.lines.length, 33);
+  check('30 tickets and 3 receipts',
+        [wrapped.lines.filter(l => l.section === 'TICKET').length,
+         wrapped.lines.filter(l => l.section === 'RECEIPT').length], [30, 3]);
+  const f = wrapped.lines[0];
+  check('the first line, put back together', [f.date, f.document, f.airline, f.ticketNo, f.debit, f.balance],
+        ['2026-08-08', 'INV263097', '593', '4861234273', 783, 13605.37]);
+  check('the receipts', wrapped.lines.filter(l => l.credit > 0).map(l => [l.document, l.credit]),
+        [['RV263365', 20000], ['RV263930', 5000], ['RV263980', 10000]]);
+  check("billed, the statement's own Total", wrapped.billed, 36058.14);
+  check('it foots', wrapped.foots, true);
+  let run = wrapped.openingBalance, drift = 0;
+  for (const l of wrapped.lines) {
+    run = Math.round((run + l.credit - l.debit) * 100) / 100;
+    if (l.balance !== null) drift = Math.max(drift, Math.abs(run - l.balance));
+  }
+  check('every printed balance is where the arithmetic lands', drift < 0.011, true);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
