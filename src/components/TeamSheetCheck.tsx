@@ -11,6 +11,8 @@ import {
 } from '../core/helpers/teamSheetCompare';
 import { writeClipboard } from '../utils/clipboard';
 import { addabilityByKey, findingKey } from '../core/helpers/addFromSheet';
+import { TeamSheetMemoryService } from '../services/TeamSheetMemoryService';
+import { explanationKey, fingerprint, snapRows, sheetDiff, type Explanation, type SheetDiff } from '../core/helpers/sheetMemory';
 
 const xlsx = () => import('xlsx');
 
@@ -198,7 +200,12 @@ const Group: React.FC<{
   done?: Map<string, 'adding' | 'added' | 'queued'>;
   /** Documents we know were cancelled, by ten-digit serial. */
   voided?: Map<string, { date: string; period?: string }>;
-}> = ({ verdict, rows, onCopy, onAddOne, why, done, voided }) => {
+  /** Explain a difference so it stops coming back - or undo that. */
+  onExplain?: (f: Finding) => void;
+  onUnexplain?: (f: Finding) => void;
+  /** Shown under another name - the Explained group. */
+  title?: string;
+}> = ({ verdict, rows, onCopy, onAddOne, why, done, voided, onExplain, onUnexplain, title }) => {
   const tone = TONE[verdict];
   // A long group starts shut - its count is on the bar - so the page is a
   // list of groups to open rather than a scroll through every row of each.
@@ -223,15 +230,18 @@ const Group: React.FC<{
         className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50 text-left">
         {open ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${tone.chip}`}>
-          {VERDICT_LABEL[verdict]}
+        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${title ? 'bg-slate-100 text-slate-600' : tone.chip}`}>
+          {title ?? VERDICT_LABEL[verdict]}
         </span>
         <span className="font-mono text-xs font-bold text-slate-700">{rows.length}</span>
       </button>
 
       {open && (
         <>
-          <p className="px-4 pb-2 text-[11px] text-slate-500 leading-relaxed">{WHY[verdict]}</p>
+          <p className="px-4 pb-2 text-[11px] text-slate-500 leading-relaxed">
+            {title ? 'Differences somebody has looked at and explained. They stay out of the lists above while'
+              + ' their figures stay what they were; a change brings them back.' : WHY[verdict]}
+          </p>
           {/* Scrolls inside a box no taller than the screen, both ways. A
               group of 89 rows put the sideways scroll bar 89 rows down, so
               the right-hand columns could not be reached without first
@@ -415,7 +425,31 @@ const Group: React.FC<{
                            different person, and the row should not read as
                            money to chase. */
                         const v = voided?.get((f.serial || '').replace(/\D/g, '').slice(-10));
-                        if (!v) return f.note;
+                        const extra = (
+                          <>
+                            {f.explained && (
+                              <span className="block mt-1 text-slate-700">
+                                <b>Explained:</b> {f.explained}
+                                {onUnexplain && (
+                                  <button onClick={() => onUnexplain(f)}
+                                    className="ml-2 text-[10px] font-bold text-slate-400 hover:text-red-600 underline">undo</button>
+                                )}
+                              </span>
+                            )}
+                            {f.explainedBefore && (
+                              <span className="block mt-1 text-amber-700">
+                                <b>Explained before</b> ("{f.explainedBefore}") - its figures have changed since.
+                              </span>
+                            )}
+                            {onExplain && !f.explained && f.verdict !== 'OK' && (
+                              <button onClick={() => onExplain(f)}
+                                className="block mt-1 text-[10px] font-bold text-sky-700 hover:text-sky-900 underline">
+                                {f.explainedBefore ? 'Explain again' : 'Explain - not a problem'}
+                              </button>
+                            )}
+                          </>
+                        );
+                        if (!v) return <>{f.note}{extra}</>;
                         // Their sheet may already say void. Telling them it
                         // was "never updated" then is simply untrue.
                         const theyKnow = f.sheet?.status === 'VOID';
@@ -486,11 +520,24 @@ interface Props {
   voids?: { ticketNo: string; date: string; source: string; period?: string }[];
   /** Reissue links, so a reissue their sheet does not carry can say whose it is. */
   exchanges?: { ticketNo: string; replacedTicket: string; fee?: number | null }[];
+  /** Who is looking - for explanations and the last sheet, remembered between runs. */
+  userId?: string;
+  userEmail?: string;
 }
 
 export const TeamSheetCheck: React.FC<Props> = ({
-  tickets, onSendToReview, onAddToLedger, voids = [], exchanges = NO_EXCHANGES,
+  tickets, onSendToReview, onAddToLedger, voids = [], exchanges = NO_EXCHANGES, userId, userEmail,
 }) => {
+  /* What the check remembers between runs: explained differences, and the
+     last sheet uploaded so the next one can say what changed. */
+  const memory = useMemo(() => (userId ? new TeamSheetMemoryService(userId) : null), [userId]);
+  const [explanations, setExplanations] = useState<Explanation[]>([]);
+  const [changes, setChanges] = useState<{ since: string; diff: SheetDiff } | null>(null);
+  const [changesOpen, setChangesOpen] = useState(false);
+  const loadExplanations = React.useCallback(() => {
+    memory?.explanations().then(setExplanations).catch(e => console.error('explanations', e));
+  }, [memory]);
+  useEffect(() => { loadExplanations(); }, [loadExplanations]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
@@ -546,8 +593,22 @@ export const TeamSheetCheck: React.FC<Props> = ({
      in must not mean finding the file again. */
   const report = useMemo<TeamSheetReport | null>(
     () => (rows ? compareTeamSheet(rows, tickets, declared, { from: fromDate, to: toDate },
-      { voided: voids.map(v => v.ticketNo), chains: exchanges }) : null),
-    [rows, tickets, declared, fromDate, toDate, voids, exchanges]);
+      { voided: voids.map(v => v.ticketNo), chains: exchanges, explanations }) : null),
+    [rows, tickets, declared, fromDate, toDate, voids, exchanges, explanations]);
+
+  const explain = async (f: Finding) => {
+    if (!memory) return;
+    const note = window.prompt(`Why is this not a problem?\n\n${f.serial || f.pnr} - ${VERDICT_LABEL[f.verdict]}\n${f.note}`,
+      f.explainedBefore ?? '');
+    if (!note || !note.trim()) return;
+    try { await memory.explain(explanationKey(f), fingerprint(f), note.trim(), userEmail ?? ''); loadExplanations(); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  const unexplain = async (f: Finding) => {
+    if (!memory) return;
+    try { await memory.unexplain(explanationKey(f)); loadExplanations(); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
 
   const run = async (file: File) => {
     setBusy(true); setError(''); setRows(null); setFileName(file.name);
@@ -556,6 +617,19 @@ export const TeamSheetCheck: React.FC<Props> = ({
       const parsed = parseTeamSheet(text);
       if (parsed.problem) { setError(parsed.problem); return; }
       setRows(parsed.rows);
+      /* Against the last sheet uploaded: what is new, changed, gone. Then
+         this one becomes the last. Never in the way of the check. */
+      setChanges(null);
+      if (memory) {
+        const snap = snapRows(parsed.rows);
+        memory.lastSnapshot()
+          .then(prev => {
+            if (prev) setChanges({ since: `${prev.fileName} · ${prev.uploadedAt.slice(0, 16).replace('T', ' ')}`,
+              diff: sheetDiff(prev.rows, snap) });
+            if (onAddToLedger) return memory.saveSnapshot(file.name, snap);
+          })
+          .catch(e => console.error('sheet snapshot', e));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That file could not be read.');
     } finally {
@@ -824,6 +898,35 @@ export const TeamSheetCheck: React.FC<Props> = ({
         </div>
       )}
 
+      {report && changes && (
+        <div className="bg-sky-50 border border-sky-200 rounded-lg text-xs text-sky-900">
+          <button onClick={() => setChangesOpen(o => !o)} className="w-full flex items-center gap-2 px-4 py-2.5 text-left">
+            {changesOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            <b>Since the last sheet</b>
+            <span className="text-sky-700">({changes.since}):</span>
+            <span>{changes.diff.added.length} new · {changes.diff.changed.length} changed · {changes.diff.removed.length} gone</span>
+          </button>
+          {changesOpen && (
+            <div className="px-4 pb-3 space-y-2 max-h-[45vh] overflow-auto">
+              {([['New rows', changes.diff.added], ['Changed', changes.diff.changed], ['Gone from their sheet', changes.diff.removed]] as const)
+                .filter(([, l]) => l.length).map(([label, l]) => (
+                  <div key={label}>
+                    <div className="font-bold mb-0.5">{label} ({l.length})</div>
+                    <ul className="space-y-0.5 font-mono text-[11px]">
+                      {l.map((c, i) => (
+                        <li key={i}><span className="font-bold">{c.ref}</span>{c.rowNo ? <span className="text-sky-600"> · row {c.rowNo}</span> : null} — {c.what}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              {!changes.diff.added.length && !changes.diff.changed.length && !changes.diff.removed.length && (
+                <div>Nothing changed.</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {report && (
         <>
           {/* Rows nothing below accounts for. Meant to be empty; a row here
@@ -1086,12 +1189,18 @@ export const TeamSheetCheck: React.FC<Props> = ({
           <div className="space-y-2">
             {order.map(v => (
               <Group key={v} verdict={v} onCopy={copy}
-                rows={report.findings.filter(f => f.verdict === v)}
+                rows={report.findings.filter(f => f.verdict === v && !f.explained)}
                 voided={voidedSerials}
+                {...(memory && onAddToLedger ? { onExplain: explain } : {})}
                 {...(onAddToLedger && PROPOSABLE_VERDICTS.has(v)
                   ? { onAddOne: addOne, why: addability, done: rowState }
                   : {})} />
             ))}
+            {/* Explained differences: kept, apart, with the reason. */}
+            <Group key="explained" verdict="OK" title="Explained" onCopy={copy}
+              rows={report.findings.filter(f => f.explained)}
+              voided={voidedSerials}
+              {...(memory && onAddToLedger ? { onUnexplain: unexplain } : {})} />
           </div>
         </>
       )}

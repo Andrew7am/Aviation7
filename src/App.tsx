@@ -494,7 +494,7 @@ function MainApp({ user }: { user: User }) {
       {/* Read-only, so everybody gets it: the person closing a flight sheet
           is not always the person who can write to the ledger. */}
       {view === 'teamsheet' && <TeamSheetCheck tickets={tickets}
-        voids={voids} exchanges={exchanges}
+        voids={voids} exchanges={exchanges} userId={user.id} userEmail={user.email}
         {...(isAdmin ? { onSendToReview: handleSendToReview,
                          onAddToLedger: handleAddFromSheet } : {})} />}
       {view === 'review'    && (

@@ -4,6 +4,7 @@ import { TeamSheetRow } from '../parsers/teamSheet';
 import { portalSource } from '../config/teamPortals';
 import { chainIndex, chainOf, type Edge } from './ticketChain';
 import { unconfirmed } from './supplierProof';
+import { explanationFor, type Explanation } from './sheetMemory';
 
 /**
  * Their sheet against our ledger, before a flight sheet is signed off.
@@ -510,6 +511,10 @@ export interface Finding {
   heldBack: boolean;
   /** Why it was held back, in the reader's terms. '' when it was not. */
   heldBackWhy: string;
+  /** Somebody explained this difference, at these figures: the reason. */
+  explained?: string;
+  /** Explained once, at other figures; it is back because they changed. */
+  explainedBefore?: string;
 }
 
 /** One request, as each side holds it. The row a sheet is closed on. */
@@ -714,7 +719,7 @@ export function compareTeamSheet(
   /** Documents the supplier cancelled — the Voids register. A ticket their
    *  sheet still shows as live is then a void they never updated, not a
    *  ticket missing from our books. */
-  opts: { voided?: Iterable<string>; chains?: Edge[] } = {},
+  opts: { voided?: Iterable<string>; chains?: Edge[]; explanations?: Explanation[] } = {},
 ): TeamSheetReport {
   const chains = chainIndex(opts.chains ?? []);
   const voidedSet = new Set([...(opts.voided ?? [])].map(v => ticketMatchKey(v || '')).filter(Boolean));
@@ -1463,6 +1468,19 @@ export function compareTeamSheet(
     }
   }
 
+  /* Differences somebody explained, at the figures they explained them
+     at, settle like a void: they stay listed, under Explained, and do not
+     hold a request open. Explained at other figures, they are back. */
+  const explainedKeys = new Map((opts.explanations ?? []).map(e => [e.findingKey, e]));
+  for (const f of findings) {
+    if (f.verdict === 'OK') continue;
+    const e = explanationFor(f, explainedKeys);
+    if (!e) continue;
+    if (e.stale) f.explainedBefore = e.explanation.note;
+    else f.explained = e.explanation.note;
+  }
+  const explainedSerials = new Set(findings.filter(f => f.explained).map(f => f.serial).filter(Boolean));
+
   const settledTheirs = new Set(findings
     .filter(f => f.verdict === 'VOID_NOT_BILLED' || f.verdict === 'REISSUE_NO_CHARGE'
       || f.verdict === 'CONJUNCT_ALREADY_HELD')
@@ -1488,17 +1506,17 @@ export function compareTeamSheet(
     for (const serial of claimed) if (ourSet.has(serial)) theirSet.add(serial);
     const touches = (f: Finding) =>
       reqParts(f.reqNum).includes(key) || reqParts(f.theirReq).includes(key);
-    const misfiled = findings.filter(f => f.verdict === 'REQ_DIFFERS' && touches(f)).length;
+    const misfiled = findings.filter(f => f.verdict === 'REQ_DIFFERS' && !f.explained && touches(f)).length;
     const related = [...(relations.get(key) ?? [])].filter(x => x !== key).sort();
     /* A void, a no-charge reissue and a second coupon are on their sheet and
        rightly absent from our books. Counting them as "only theirs" held a
        request open for tickets nobody ever has to find. */
-    const onlyTheirs = [...theirSet].filter(x => !ourSet.has(x) && !settledTheirs.has(x)).length
+    const onlyTheirs = [...theirSet].filter(x => !ourSet.has(x) && !settledTheirs.has(x) && !explainedSerials.has(x)).length
       // ...and their website purchases with no ticket number that we do not hold.
-      + findings.filter(f => f.verdict === 'NOT_IN_LEDGER' && !theirBySerial.has(f.serial)
+      + findings.filter(f => f.verdict === 'NOT_IN_LEDGER' && !f.explained && !theirBySerial.has(f.serial)
         && reqParts(f.theirReq).includes(key)).length;
-    const priceDiffers = findings.filter(f => f.verdict === 'PRICE_DIFFERS' && touches(f)).length;
-    const onlyOurs = [...ourSet].filter(x => !theirSet.has(x)).length;
+    const priceDiffers = findings.filter(f => f.verdict === 'PRICE_DIFFERS' && !f.explained && touches(f)).length;
+    const onlyOurs = [...ourSet].filter(x => !theirSet.has(x) && !explainedSerials.has(x)).length;
     const unconf = ledger.filter(t => isTicket(t) && reqParts(t.reqNum || '').includes(key) && unconfirmed(t)).length;
     return {
       reqNum: req, theirTickets: theirSet.size, ourTickets: ourSet.size,
@@ -1580,7 +1598,7 @@ export function compareTeamSheet(
     // A void, a row still on hold and a related request are states of the
     // world rather than disagreements, so a sheet carrying only those is a
     // sheet that can be closed.
-    clean: findings.every(f =>
+    clean: findings.every(f => !!f.explained ||
       f.verdict === 'OK' || f.verdict === 'VOID_NOT_BILLED'
       || f.verdict === 'REISSUE_NO_CHARGE'
       || f.verdict === 'REQ_RELATED'
