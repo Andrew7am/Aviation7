@@ -8,7 +8,7 @@
  * typed by hand is unconfirmed until a report of that supplier carries the
  * same document at the same amount.
  */
-import { unconfirmed, confirmationsFrom, fromSheetOrHand } from '../src/core/helpers/supplierProof';
+import { unconfirmed, confirmationsFrom, fromSheetOrHand, correctionsFrom, awaitsSupplier } from '../src/core/helpers/supplierProof';
 import type { Ticket } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -47,6 +47,29 @@ console.log('\n2. A supplier report confirms, or disagrees');
   const dollars = confirmationsFrom([t({ id: '', reportName: 'X', amount: 1323.4, totalDoc: 1323.4, status: 'ISSUE' })],
     [t({ id: 'c', amount: 4856.88, totalDoc: 4856.88, status: 'ISSUE', originalAmount: 1323.4, originalCurrency: 'USD' })], 'X');
   check('a dollar row is compared in dollars', dollars.confirm.length, 1);
+}
+
+console.log('\n3. The supplier\'s figure goes in');
+{
+  // 5512878161: recorded at 0.00 as a reissue at no charge from their sheet; RTS sells it at 650.00.
+  const ours = [t({ id: 'z', ticketNo: '5512878161', amount: 0, totalDoc: 0, status: 'ISSUE', transactionType: 'REISSUE', reqNum: 'UAEVP420' })];
+  const report = [t({ id: '', reportName: 'RTS', ticketNo: '5512878161', amount: 650, totalDoc: 650, status: 'ISSUE' })];
+  const p = confirmationsFrom(report, ours, 'RTS sales report');
+  check('a row at 0.00 is still checked against the report', p.differ.length, 1);
+  const fix = correctionsFrom(p.differ, 'RTS sales report');
+  check('and corrected to 650.00', fix.correct.map(c => [c.ticketNo, c.was.amount, c.amount]), [['5512878161', 0, 650]]);
+  // AL SAUD: 20,140.00 SAR from their sheet, 20.00 AED on RTS - a question, not a copy.
+  const saud = confirmationsFrom(
+    [t({ id: '', reportName: 'RTS', ticketNo: '5512845081', amount: 20, totalDoc: 20, status: 'ISSUE', currency: 'AED' })],
+    [t({ id: 's', ticketNo: '5512845081', amount: 20140, totalDoc: 20140, status: 'ISSUE', currency: 'SAR' })], 'RTS');
+  const f2 = correctionsFrom(saud.differ, 'RTS');
+  check('another currency is asked, not copied', [f2.correct.length, f2.ask.length], [0, 1]);
+  // Another supplier's report: its row goes in on its own; ours is not touched.
+  const other = confirmationsFrom(
+    [t({ id: '', reportName: 'BSP', source: 'IATA BSP', amount: 5700, totalDoc: 5700, status: 'ISSUE', ticketNo: '5513303522' })],
+    [t({ id: 'o', source: 'RTS', amount: 320, totalDoc: 320, status: 'ISSUE', ticketNo: '5513303522' })], 'BSP');
+  check('another supplier\'s figure is asked, not copied', correctionsFrom(other.differ, 'BSP').correct.length, 0);
+  check('a website purchase never waits for a report', awaitsSupplier(t({ source: 'Airline Website', amount: 0 })), false);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

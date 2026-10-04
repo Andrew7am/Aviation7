@@ -23,12 +23,20 @@ export const fromSheetOrHand = (t: Pick<Ticket, 'reportName'>): boolean =>
 /** Nothing will ever report these; their sheet or the receipt is the record. */
 const NO_SUPPLIER_REPORT = /^airline website$/i;
 
-/** Still waiting for the supplier to vouch for it. */
-export function unconfirmed(t: Ticket): boolean {
+/** From their sheet or by hand, for a supplier that reports, and not yet
+ *  carried by any of its reports - at whatever amount, 0.00 included: a
+ *  "reissue at no charge" from their sheet is exactly what a supplier's
+ *  report may sell at 650.00. */
+export function awaitsSupplier(t: Ticket): boolean {
   if (!fromSheetOrHand(t)) return false;
   if (NO_SUPPLIER_REPORT.test((t.source || '').trim())) return false;
-  if ((t.amount || 0) === 0) return false; // a reissue at no charge moves no money
   return !(t.confirmedBy || '').trim();
+}
+
+/** Still waiting for the supplier to vouch for money in it. A row at 0.00
+ *  moves no money and is not flagged - though a report can still correct it. */
+export function unconfirmed(t: Ticket): boolean {
+  return awaitsSupplier(t) && (t.amount || 0) !== 0;
 }
 
 const dir = (t: Ticket) => ((t.amount || 0) < 0 ? 'R' : 'S');
@@ -39,6 +47,42 @@ const sameMoney = (a: Ticket, b: Ticket) => {
 
 export interface Confirmation { id: string; ticketNo: string; by: string }
 export interface Disagreement { ours: Ticket; report: Ticket }
+/** A row from their sheet or by hand, put right to the supplier's figure. */
+export interface Correction {
+  id: string; ticketNo: string; by: string;
+  was: { amount: number; totalDoc: number; commission: number; transactionType: string };
+  amount: number; totalDoc: number; commission: number;
+}
+
+/**
+ * Which disagreements the supplier settles on its own.
+ *
+ * Their sheet is the team's account of a sale; the supplier's report is the
+ * sale. Where the two disagree on a row we recorded from their sheet, the
+ * supplier's figure goes in - 5512878158 to 166 went in at 0.00 as reissues
+ * at no charge from their sheet, and RTS sells each at 650.00.
+ *
+ * Not where the currency differs: 20,140.00 SAR against RTS's 20.00 AED is
+ * not a figure to copy across but a question for a person. And not where
+ * the supplier differs, because then the report's row goes in as a ticket of
+ * its own and correcting ours as well would count it twice.
+ */
+export function correctionsFrom(differ: Disagreement[], by: string): { correct: Correction[]; ask: Disagreement[] } {
+  const correct: Correction[] = [], ask: Disagreement[] = [];
+  for (const d of differ) {
+    const sameCurrency = (d.ours.originalCurrency ? '' : (d.ours.currency || '')).toUpperCase()
+      === (d.report.currency || '').toUpperCase();
+    const sameSupplier = (d.ours.source || '').trim().toLowerCase() === (d.report.source || '').trim().toLowerCase();
+    if (!sameCurrency || !sameSupplier) { ask.push(d); continue; }
+    correct.push({
+      id: d.ours.id, ticketNo: d.ours.ticketNo, by,
+      was: { amount: d.ours.amount, totalDoc: d.ours.totalDoc ?? 0, commission: d.ours.commission ?? 0,
+             transactionType: d.ours.transactionType || '' },
+      amount: d.report.amount, totalDoc: d.report.totalDoc ?? Math.abs(d.report.amount), commission: d.report.commission ?? 0,
+    });
+  }
+  return { correct, ask };
+}
 
 /**
  * What an incoming supplier report says about rows we recorded from their
@@ -50,7 +94,7 @@ export function confirmationsFrom(incoming: Ticket[], existing: Ticket[], report
   : { confirm: Confirmation[]; differ: Disagreement[] } {
   const waiting = new Map<string, Ticket[]>();
   for (const t of existing) {
-    if (!unconfirmed(t)) continue;
+    if (!awaitsSupplier(t)) continue;
     const k = `${ticketMatchKey(t.ticketNo || '')}|${dir(t)}`;
     if (!waiting.has(k)) waiting.set(k, []);
     waiting.get(k)!.push(t);

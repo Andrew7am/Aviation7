@@ -11,7 +11,7 @@ import { parseGrid, gridProblem } from '../core/helpers/parseGrid';
 import { v4 as uuidv4 } from 'uuid';
 import { TicketService } from '../services/TicketService';
 import { fileUnderOriginal } from '../core/helpers/freeReissue';
-import { confirmationsFrom, type Confirmation } from '../core/helpers/supplierProof';
+import { confirmationsFrom, correctionsFrom, type Confirmation, type Correction } from '../core/helpers/supplierProof';
 
 export interface ImportErrorEntry { row: number; raw: string; error: string }
 
@@ -31,6 +31,9 @@ export interface ImportPreview {
   /** Rows we recorded from their sheet or by hand that this report carries
    *  at the same amount - confirmed by it on import. */
   confirmations?: Confirmation[];
+  /** Rows from their sheet or by hand that this report carries at a
+   *  different amount - put right to the report's figure on import. */
+  corrections?: Correction[];
   errors:      ImportErrorEntry[];
   warnings:    string[];
   parserName:  string;
@@ -56,6 +59,7 @@ export interface ImportMeta {
   vendor:     string;
   reportName: string;
   confirmations?: Confirmation[];
+  corrections?: Correction[];
 }
 
 /**
@@ -215,10 +219,17 @@ export function useImport(userId: string) {
       /* What this report says about rows we recorded from their sheet or by
          hand: the same amount confirms them; a different one is said here,
          before the import, because one of the two records is wrong. */
-      const proof = confirmationsFrom(realTkts, existingFromDB, reportName || routedVendor || parserName);
-      const proofWarnings = proof.differ.map(d =>
-        `${d.ours.ticketNo}: we recorded ${d.ours.amount} ${d.ours.currency} from ${d.ours.reportName || 'their sheet'};`
-        + ` this report says ${d.report.amount} ${d.report.currency}. Not confirmed - check which is right.`);
+      const proofBy = reportName || routedVendor || parserName;
+      const proof = confirmationsFrom(realTkts, existingFromDB, proofBy);
+      const fix = correctionsFrom(proof.differ, proofBy);
+      const proofWarnings = [
+        ...fix.correct.map(c =>
+          `${c.ticketNo}: recorded ${c.was.amount} from their sheet or by hand; this report says ${c.amount} -`
+          + ' it will be corrected to the report\'s figure.'),
+        ...fix.ask.map(d =>
+          `${d.ours.ticketNo}: we recorded ${d.ours.amount} ${d.ours.currency} from ${d.ours.reportName || 'their sheet'};`
+          + ` this report says ${d.report.amount} ${d.report.currency}. Not changed - check which is right.`),
+      ];
       if (proof.confirm.length)
         proofWarnings.unshift(`${proof.confirm.length} row(s) recorded from their sheet or by hand are carried by this`
           + ' report at the same amount and will be marked confirmed.');
@@ -226,6 +237,7 @@ export function useImport(userId: string) {
       setPreview({
         fresh, updates, duplicates, topUps, settlements, voided, exchanges,
         confirmations: proof.confirm,
+        corrections: fix.correct,
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
         warnings: [...proofWarnings, ...dateWarnings, ...warnings], parserName, confidence, routedVendor,
@@ -256,6 +268,7 @@ export function useImport(userId: string) {
       vendor,
       reportName: vendor,
       confirmations: (preview.confirmations ?? []).map(c => ({ ...c, by: vendor || c.by })),
+      corrections: (preview.corrections ?? []).map(c => ({ ...c, by: vendor || c.by })),
     };
   }, [preview]);
 

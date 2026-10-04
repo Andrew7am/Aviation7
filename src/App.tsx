@@ -138,7 +138,8 @@ function MainApp({ user }: { user: User }) {
     settlementTickets: Ticket[],
     voidedTickets: Ticket[],
     exchanges: ExchangeEdge[],
-    meta?: { parserName: string; confidence: number; totalRows: number; warnings: number; errors: { row: number; raw: string; error: string }[]; vendor: string; reportName: string; confirmations?: { id: string; ticketNo: string; by: string }[] }
+    meta?: { parserName: string; confidence: number; totalRows: number; warnings: number; errors: { row: number; raw: string; error: string }[]; vendor: string; reportName: string; confirmations?: { id: string; ticketNo: string; by: string }[];
+      corrections?: { id: string; ticketNo: string; by: string; amount: number; totalDoc: number; commission: number; was: { amount: number } }[] }
   ) => {
     const startTime = Date.now();
     try {
@@ -174,6 +175,17 @@ function MainApp({ user }: { user: User }) {
           for (const c of meta.confirmations)
             importSvc.audit('CONFIRMED', c.ticketNo, `Confirmed by ${c.by}: the supplier's report carries it at the amount we recorded.`);
         } catch (e) { console.error('confirmations not recorded', e); }
+      }
+
+      /* Rows from their sheet or by hand this supplier's report carries at a
+         different amount: the report's figure goes in, and says so. */
+      if (meta?.corrections?.length) {
+        try {
+          await ticketSvc.correctFromSupplier(meta.corrections);
+          for (const c of meta.corrections)
+            importSvc.audit('EDIT_TICKET', c.ticketNo,
+              `amount: ${c.was.amount} -> ${c.amount} (corrected to ${c.by}; it had been recorded from the team sheet or by hand)`);
+        } catch (e) { console.error('corrections not recorded', e); }
       }
 
       let exchangesKept = 0;

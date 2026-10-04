@@ -299,6 +299,20 @@ export class TicketService {
     return rows.map(rowToTicket);
   }
 
+  /** Put rows from their sheet or by hand right to a supplier report's figure. */
+  async correctFromSupplier(list: { id: string; by: string; amount: number; totalDoc: number; commission: number }[]): Promise<void> {
+    const at = new Date().toISOString();
+    for (const c of list) {
+      const patch: Record<string, unknown> = {
+        amount: c.amount, total_doc: c.totalDoc, commission: c.commission, confirmed_by: c.by, confirmed_at: at,
+      };
+      // A "reissue at no charge" the supplier charges for is a sale.
+      if (c.amount !== 0) patch.transaction_type = c.amount < 0 ? 'REFUND' : 'ISSUE';
+      const { error } = await supabase.from('tickets').update(patch).eq('id', c.id);
+      if (error) throw new Error(error.message);
+    }
+  }
+
   /** Mark rows a supplier's report has now carried at the same amount. */
   async confirm(list: { id: string; by: string }[]): Promise<void> {
     const at = new Date().toISOString();
