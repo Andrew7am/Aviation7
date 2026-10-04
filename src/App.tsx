@@ -266,8 +266,16 @@ function MainApp({ user }: { user: User }) {
   const handleDeleteVendor = (id: string) => { if (confirm('Delete vendor?')) { deleteVendor(id); importSvc.audit('DELETE_VENDOR', id, 'Vendor deleted'); } };
   const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount}`); };
   const handleSaveStatement   = (s: VendorStatement) => {
+    /* A statement opening on the same day as one already saved is its newer
+       issue: Ibtekar's 01/08-30/09 opens where their 01/08-14/09 did, on a
+       figure they have since revised. Kept side by side the two would split
+       the account into overlapping periods, so the newer replaces it. */
+    const superseded = statements.filter(o => o.id !== s.id && o.vendorName === s.vendorName
+      && o.periodStart === s.periodStart);
     saveStatement(s);
-    importSvc.audit('SAVE_STATEMENT', s.vendorName, `${s.periodStart} to ${s.periodEnd}: closing ${s.closingBalance}`);
+    for (const o of superseded) deleteStatement(o.id);
+    importSvc.audit('SAVE_STATEMENT', s.vendorName, `${s.periodStart} to ${s.periodEnd}: closing ${s.closingBalance}`
+      + (superseded.length ? ` (replaces ${superseded.map(o => `${o.periodStart} to ${o.periodEnd}`).join(', ')})` : ''));
   };
   /* Tickets a vendor's statement bills at another figure: the statement is
      what will be paid, so its figure goes in, and the log says so. */
