@@ -1468,6 +1468,56 @@ export function compareTeamSheet(
     }
   }
 
+  /* ── a cell of several tickets, priced as one ───────────────────────────
+     Their sheet often prices a booking in one cell: "079-5513303522 -
+     016-5513303523 · 17,140.00". Each ticket on its own cannot be checked
+     against that, so it never was - and 5513303522 sat in our books at
+     320.00, its seat's price, while its 5,700.00 fare was missing: the cell
+     was 5,400.00 short and nothing said so. The cell is checked as a whole:
+     the sum of what we hold on its documents, in the same currency, against
+     its figure. */
+  {
+    const seenCells = new Set<string>();
+    for (const r of sheet) {
+      if (r.groupSize < 2 || !r.serial || r.status === 'VOID' || r.status === 'REFUNDED' || !(r.cost ?? 0)) continue;
+      const cellKey = `${r.rowNo}`;
+      if (seenCells.has(cellKey)) continue;
+      seenCells.add(cellKey);
+      const docs = [r.serial, ...r.siblings];
+      // A cell naming a whole group's documents cannot be read as one price.
+      if (docs.length > 10) continue;
+      const held = docs.flatMap(d => (ourBySerial.get(d) ?? []).filter(t => (t.amount || 0) > 0));
+      if (!held.length || docs.some(d => voidedSet.has(d))) continue;
+      const cur = (r.currency || '').toUpperCase();
+      if (!cur || !held.every(t => String(t.originalCurrency || t.currency || '').toUpperCase() === cur)) continue;
+      const asBought = (t: Ticket, v: number) => t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
+      const payable = held.reduce((n, t) => n + asBought(t, t.amount || 0), 0);
+      const fare = held.reduce((n, t) => n + asBought(t, t.totalDoc || t.amount || 0), 0);
+      /* Their figure is the cell's total - or, as often, each ticket's: 640.00
+         written once for two tickets at 640.00 each. Either reading that
+         agrees is agreement; the cell is a difference only when neither
+         does. */
+      const each = Math.abs(r.cost ?? 0);
+      const readings = Array.from({ length: docs.length }, (_, i) => each * (i + 1));
+      const gaps = readings.flatMap(t => [payable, fare].map(v => t - v));
+      const gap = gaps.sort((a, b) => Math.abs(a) - Math.abs(b))[0];
+      // Only a gap no single ticket explains, and big enough to be a fare:
+      // a cell is a booking, and its small differences are already the
+      // tickets' own.
+      if (Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
+      if (findings.some(f => f.verdict === 'PRICE_DIFFERS' && docs.includes(f.serial))) continue;
+      const missingDocs = docs.filter(d => !ourBySerial.has(d));
+      findings.push({
+        ...UNSOURCED, verdict: 'PRICE_DIFFERS', serial: r.serial, airlineCode: r.airlineCode, pnr: r.pnr, sheet: r,
+        ours: held, reqNum: (held[0].reqNum || '').trim(), theirReq: r.reqNum,
+        note: `Their cell ${r.rawTicket.trim()} prices ${docs.length} documents at ${money(each)} ${cur}; we hold`
+          + ` ${money(payable)} on them - ${money(Math.abs(gap))} ${gap > 0 ? 'short in our books' : 'more in ours'}.`
+          + (missingDocs.length ? ` ${missingDocs.join(', ')} not in our books at all.` : '')
+          + ' One of the tickets may be recorded at the wrong price, or missing.',
+      });
+    }
+  }
+
   /* Differences somebody explained, at the figures they explained them
      at, settle like a void: they stay listed, under Explained, and do not
      hold a request open. Explained at other figures, they are back. */
@@ -1555,10 +1605,16 @@ export function compareTeamSheet(
         && !fs.some(f => REFUND_SAYS.has(f.verdict) || f.ours.some(t => (t.amount || 0) < 0)))
       unaccounted.push({ side: 'theirs', ref: r.serial, rowNo: r.rowNo,
         what: `Their row ${r.rowNo} refunds ${money(r.refund ?? 0)} on ${r.serial}; no result says whether we hold it.` });
-    for (const e of r.emds ?? [])
-      if (!ourBySerial.has(e) && !voidedSet.has(e))
-        unaccounted.push({ side: 'theirs', ref: e, rowNo: r.rowNo,
-          what: `Their row ${r.rowNo} names EMD ${e} in its EMD column; it is not in our books.` });
+    // An EMD on a voided row went with it.
+    if (r.status !== 'VOID' && !voidedSet.has(r.serial))
+      for (const e of r.emds ?? [])
+        if (!ourBySerial.has(e) && !voidedSet.has(e))
+          unaccounted.push({ side: 'theirs', ref: e, rowNo: r.rowNo,
+            what: `Their row ${r.rowNo} names EMD ${e} in its EMD column; it is not in our books under its own number.`
+              + (ourBySerial.has(r.serial)
+                ? ` If its price is recorded under ${r.serial}, check that ${r.serial}'s own fare is in our books too -`
+                  + ` the ticket and its EMD are two documents.`
+                : '') });
   }
   const accountedOurs = new Set<string>([...claimed, ...claimedByPnr, ...ourExtra.keys(),
     ...findings.flatMap(f => f.ours.map(t => ticketMatchKey(t.ticketNo || '')))]);

@@ -296,6 +296,32 @@ console.log('\n10c. Every row reaches a result');
   check('unless it is a void', r3.unaccounted, []);
 }
 
+console.log('\n10d. A cell priced as one, and the EMDs on its rows');
+{
+  // Their real cell: "079-5513303522 - 016-5513303523" at 17,140 (RTS: 5,700 + 11,420).
+  // Ours: 5513303523 at 11,420, and 5513303522 at 320 - its seat's price.
+  const s = sheet(['079-5513303522  -  016-5513303523,XZZFFO,Issued,17140.00,,18/8/2026 11:20pm,IATA Portal (UAE),UAECO593'])
+    .map(r => ({ ...r, currency: 'AED' }));
+  const short = [
+    tkt({ ticketNo: '5513303523', pnr: 'XZZFFO', date: '2026-08-20', amount: 11420, reqNum: 'UAECO593', source: 'RTS' }),
+    tkt({ ticketNo: '5513303522', pnr: 'XZZFFO', date: '2026-08-26', amount: 320, reqNum: 'UAECO593', source: 'RTS' }),
+  ];
+  const r = compareTeamSheet(s, short);
+  const f = r.findings.find(x => x.verdict === 'PRICE_DIFFERS');
+  check('the cell is 5,400 short', /5,400\.00 short in our books/.test(f?.note ?? ''), true);
+  const right = [short[0], { ...short[1], amount: 5700, totalDoc: 5700 }];
+  check('right, it agrees', compareTeamSheet(s, right).findings.some(x => x.verdict === 'PRICE_DIFFERS'), false);
+  // A cell written at each ticket's price: 640.00 for two tickets at 640.00.
+  const each = sheet(['633-5512559512 // 633-5512559513,ABC123,Issued,640.00,,5/5/2026 1:00pm,IATA Portal (UAE),UAEVP322'])
+    .map(r => ({ ...r, currency: 'AED' }));
+  const two = ['5512559512', '5512559513'].map(n => tkt({ ticketNo: n, pnr: 'ABC123', date: '2026-05-05', amount: 640, reqNum: 'UAEVP322' }));
+  check('a cell priced per ticket is not a difference', compareTeamSheet(each, two).findings.some(x => x.verdict === 'PRICE_DIFFERS'), false);
+  // An EMD on a voided row went with it.
+  const H = 'Ticket Number,PNR,Status,Net Cost,Issued Date & Time,EMD Number,REQ No (Auto) (Trip) (from Aviation Quotations)';
+  const v = parseTeamSheet([H, '176-4861509015,ZM6KT3,Void,436.00,31/8/2026 1:00pm,176-1950146234,UAECO119'].join('\n')).rows;
+  check('an EMD on a void row is not missing', compareTeamSheet(v, [], [], {}, { voided: ['4861509015'] }).unaccounted, []);
+}
+
 console.log('\n11. Why two requests differ');
 check('one digit apart', reqDiffHint('UAEVP711', 'UAEVP771'), 'One digit apart - most likely a typo on one of the two sides.');
 check('another prefix', /same number under another prefix/.test(reqDiffHint('UAEC125', 'UAECO125')), true);
