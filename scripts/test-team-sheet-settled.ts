@@ -274,6 +274,28 @@ console.log('\n10b. A ticket missing with its refund raises both');
   check('the refund carries 700', r.findings.find(f => f.verdict === 'REFUND_NOT_IN_LEDGER')?.sheet?.refund, 700);
 }
 
+console.log('\n10c. Every row reaches a result');
+{
+  // KSAML1198 as in section 1: every row accounted for.
+  check('a sheet the check fully reads leaves nothing over', compareTeamSheet(theirs, ours).unaccounted, []);
+  // A refund on a misfiled ticket: 4815135258, theirs DXB vs ours UAECO352, refunded 1,935.00 on theirs.
+  const s = sheet([
+    '4815135258,ABCDEF,Issued,2555.00,,4/7/2026 1:00pm,RTS,UAECO352',
+    '4815135258,ABCDEF,Cancelled/Refunded,,1935.00,10/7/2026 1:00pm,RTS,UAECO352',
+  ]);
+  const r = compareTeamSheet(s, [tkt({ ticketNo: '4815135258', pnr: 'ABCDEF', date: '2026-07-04', amount: 2555, reqNum: 'DXB', source: 'Gold Medal' })]);
+  check('the misfiling is reported', r.findings.some(f => f.verdict === 'REQ_DIFFERS'), true);
+  check('and the refund still is', r.findings.some(f => f.verdict === 'REFUND_NOT_IN_LEDGER'), true);
+  check('so nothing is left over', r.unaccounted, []);
+  // An EMD in their EMD column that we do not hold.
+  const H = 'Ticket Number,PNR,Status,Net Cost,Issued Date & Time,EMD Number,REQ No (Auto) (Trip) (from Aviation Quotations)';
+  const e = parseTeamSheet([H, '065-5513058997,Y7ZS3D,Reissue,1280.00,5/8/2026 11:57pm,"065-1930576275",UAEVP608'].join('\n')).rows;
+  const r2 = compareTeamSheet(e, [tkt({ ticketNo: '5513058997', pnr: 'Y7ZS3D', date: '2026-08-05', amount: 20, reqNum: 'UAEVP608' })]);
+  check('an EMD they name and we do not hold is said', r2.unaccounted.map(u => u.ref), ['1930576275']);
+  const r3 = compareTeamSheet(e, [tkt({ ticketNo: '5513058997', pnr: 'Y7ZS3D', date: '2026-08-05', amount: 20, reqNum: 'UAEVP608' })], [], {}, { voided: ['1930576275'] });
+  check('unless it is a void', r3.unaccounted, []);
+}
+
 console.log('\n11. Why two requests differ');
 check('one digit apart', reqDiffHint('UAEVP711', 'UAEVP771'), 'One digit apart - most likely a typo on one of the two sides.');
 check('another prefix', /same number under another prefix/.test(reqDiffHint('UAEC125', 'UAECO125')), true);

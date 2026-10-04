@@ -826,7 +826,25 @@ export const TeamSheetCheck: React.FC<Props> = ({
 
       {report && (
         <>
-          {report.clean ? (
+          {/* Rows nothing below accounts for. Meant to be empty; a row here
+              is the check not looking at something, said up front. */}
+          {report.unaccounted.length > 0 && (
+            <div className="bg-red-50 border border-red-300 rounded-lg px-4 py-3 text-xs text-red-900">
+              <div className="flex items-center gap-2 font-bold mb-1">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                {report.unaccounted.length} row{report.unaccounted.length === 1 ? '' : 's'} not accounted for by any result below
+              </div>
+              <ul className="list-disc pl-6 space-y-0.5">
+                {report.unaccounted.slice(0, 25).map((u, i) => (
+                  <li key={i}><span className="font-mono">{u.side === 'theirs' ? 'Theirs' : 'Ours'}</span> — {u.what}</li>
+                ))}
+              </ul>
+              {report.unaccounted.length > 25 && (
+                <div className="mt-1 text-red-700">and {report.unaccounted.length - 25} more</div>
+              )}
+            </div>
+          )}
+          {report.clean && !report.unaccounted.length ? (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3
                             flex items-start gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />

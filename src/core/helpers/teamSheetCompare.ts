@@ -530,8 +530,26 @@ export interface RequestLine {
   agrees: boolean;
 }
 
+/** A row - theirs or ours - the comparison reached no result on. */
+export interface Unaccounted {
+  side: 'theirs' | 'ours';
+  /** Ticket, PNR or row number. */
+  ref: string;
+  /** Their row number, when it is theirs. */
+  rowNo?: number;
+  what: string;
+}
+
 export interface TeamSheetReport {
   findings: Finding[];
+  /**
+   * Every row of their sheet and every row of ours in scope that no result
+   * accounts for. Meant to be empty. A row in here is the check failing to
+   * look at something - the refund on U92Z3D, swallowed by the finding about
+   * its sale; the EMDs in a column nobody read - and is said at the top of
+   * the screen instead of being found by hand weeks later.
+   */
+  unaccounted: Unaccounted[];
   /** Request by request, which is how a sheet gets closed. */
   byRequest: RequestLine[];
   /**
@@ -985,6 +1003,11 @@ export function compareTeamSheet(
     }
 
     matched++;
+    /* Filed under a different request is reported - and the refund is
+       still compared. It used to end the comparison of that ticket, so
+       4815135258, refunded 1,935.00 on their sheet and not in our books,
+       said only that the two requests differ. */
+    let misfiled = false;
 
     /* The finding this screen exists for: both sides hold the ticket, and
        they hold it in different files. Reported before anything else,
@@ -1006,7 +1029,7 @@ export function compareTeamSheet(
         findings.push({ ...base, verdict: 'REQ_DIFFERS',
           note: `We file it under ${ourReq}; their sheet files it under ${theirReq}.`
               + (hint ? ` ${hint}` : ' One of the two requests is carrying a ticket that is not its own.') });
-        continue;
+        misfiled = true;
       }
       // SAME: either the very same request, or one field naming both.
     } else if (!theirReq && ourReq && declaredKeys.size > 0) {
@@ -1020,7 +1043,7 @@ export function compareTeamSheet(
         findings.push({ ...base, verdict: 'REQ_DIFFERS',
           note: `We file it under ${ourReq}. This sheet was declared as`
               + ` ${declared.join(', ')}, and ${ourReq} is not among them.` });
-        continue;
+        misfiled = true;
       }
     }
 
@@ -1029,7 +1052,7 @@ export function compareTeamSheet(
     if (theirReq && !ourReq) {
       findings.push({ ...base, verdict: 'REQ_DIFFERS',
         note: `Their sheet files it under ${theirReq}; our row carries no request at all.` });
-      continue;
+      misfiled = true;
     }
 
     const ourRefunds = ours.filter(isRefund);
@@ -1105,6 +1128,8 @@ export function compareTeamSheet(
         continue;
       }
     }
+
+    if (misfiled) continue;
 
     /* The price. Compared only where it can mean something: one priced row
        of theirs for this document, a cell naming only it, and both sides in
@@ -1481,8 +1506,58 @@ export function compareTeamSheet(
   const ourRows = [...ourBySerial.values()].flat().filter(inScope).length
     + [...ourExtra.values()].flat().length;
 
+  /* ── did every row reach a result? ───────────────────────────────────── */
+  const unaccounted: Unaccounted[] = [];
+  const bySerialF = new Map<string, Finding[]>();
+  for (const f of findings) if (f.serial) {
+    if (!bySerialF.has(f.serial)) bySerialF.set(f.serial, []);
+    bySerialF.get(f.serial)!.push(f);
+  }
+  const sheetsSeen = new Set(findings.map(f => f.sheet).filter(Boolean));
+  const REFUND_SAYS = new Set<Verdict>(['REFUND_NOT_IN_LEDGER', 'REFUND_DIFFERS', 'TWICE_ON_THEIR_SHEET',
+    'VOID_NOT_BILLED', 'VOID_AND_ISSUED', 'CONJUNCT_ALREADY_HELD', 'REISSUE_NO_CHARGE']);
+  for (const r of sheet) {
+    if (r.status === 'ON_HOLD' && !r.unreadable) continue;
+    if (!r.serial) {
+      if (!sheetsSeen.has(r)) unaccounted.push({ side: 'theirs', ref: r.pnr || r.rawTicket || `row ${r.rowNo}`, rowNo: r.rowNo,
+        what: `Their row ${r.rowNo} ("${r.rawTicket}") reached no result.` });
+      continue;
+    }
+    const fs = bySerialF.get(r.serial) ?? [];
+    if (!fs.length) {
+      unaccounted.push({ side: 'theirs', ref: r.serial, rowNo: r.rowNo, what: `Their row ${r.rowNo} (${r.serial}) reached no result.` });
+      continue;
+    }
+    if (r.status === 'REFUNDED' && (r.refund ?? 0) > 0
+        && !fs.some(f => REFUND_SAYS.has(f.verdict) || f.ours.some(t => (t.amount || 0) < 0)))
+      unaccounted.push({ side: 'theirs', ref: r.serial, rowNo: r.rowNo,
+        what: `Their row ${r.rowNo} refunds ${money(r.refund ?? 0)} on ${r.serial}; no result says whether we hold it.` });
+    for (const e of r.emds ?? [])
+      if (!ourBySerial.has(e) && !voidedSet.has(e))
+        unaccounted.push({ side: 'theirs', ref: e, rowNo: r.rowNo,
+          what: `Their row ${r.rowNo} names EMD ${e} in its EMD column; it is not in our books.` });
+  }
+  const accountedOurs = new Set<string>([...claimed, ...claimedByPnr, ...ourExtra.keys(),
+    ...findings.flatMap(f => f.ours.map(t => ticketMatchKey(t.ticketNo || '')))]);
+  const OUR_REFUND_SAYS = new Set<Verdict>(['REFUND_NOT_ON_SHEET', 'REFUND_DIFFERS', 'TWICE_ON_THEIR_SHEET', 'NOT_ON_SHEET']);
+  for (const [k, rows] of ourBySerial) {
+    const mine = rows.filter(t => inScope(t) && inPeriod((t.date as string) || '', from, to));
+    if (!mine.length) continue;
+    if (!accountedOurs.has(k) && !(isReference(k) && theirPnrs.has(k))) {
+      unaccounted.push({ side: 'ours', ref: k, what: `Our ${k} (${mine[0].reqNum}) reached no result.` });
+      continue;
+    }
+    const ourRefund = mine.filter(t => (t.amount || 0) < 0);
+    const fs = bySerialF.get(k) ?? [];
+    const theyRefund = (theirBySerial.get(k) ?? []).some(r => r.status === 'REFUNDED');
+    if (ourRefund.length && theirBySerial.has(k) && !theyRefund && !fs.some(f => OUR_REFUND_SAYS.has(f.verdict)))
+      unaccounted.push({ side: 'ours', ref: k,
+        what: `We hold a refund of ${money(Math.abs(ourRefund.reduce((n, t) => n + (t.amount || 0), 0)))} on ${k};`
+          + ' their sheet does not refund it and no result says so.' });
+  }
+
   return {
-    findings, byRequest, sheetHasReq,
+    findings, unaccounted, byRequest, sheetHasReq,
     sheetFrom, beforeTheirSystem: tooOld.size, onHold,
     period: { from, to },
     periodFromSource: typedFrom ? 'typed' : from ? 'sheet' : 'none',
