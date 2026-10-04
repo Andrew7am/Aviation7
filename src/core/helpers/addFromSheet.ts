@@ -44,9 +44,19 @@ export interface PlanOptions {
   tickets: Ticket[];
 }
 
-const keyOf = (t: { ticketNo?: string; pnr?: string }) =>
-  ticketMatchKey(t.ticketNo || '') || (t.ticketNo || '').toUpperCase()
-  || (t.pnr || '').toUpperCase();
+/* A document and its direction. A sale and its refund are two rows on one
+   ticket; keyed on the ticket alone, a refund was "already held" whenever
+   the sale was, and so could never be added - nor the refund of a ticket
+   added in the same batch. */
+const dirOf = (t: { amount?: number; transactionType?: string; status?: string }) =>
+  (t.amount ?? 0) < 0 || /REFUND/i.test(`${t.transactionType || ''} ${t.status || ''}`) ? 'R' : 'S';
+const keyOf = (t: { ticketNo?: string; pnr?: string; amount?: number; transactionType?: string; status?: string }) => {
+  const doc = ticketMatchKey(t.ticketNo || '') || (t.ticketNo || '').toUpperCase() || (t.pnr || '').toUpperCase();
+  return doc ? `${doc}|${dirOf(t)}` : '';
+};
+
+export const SUPPLIER_REFUND_WHY =
+  "A supplier's refund arrives with its own report - their sheet saying it was refunded is not the credit.";
 
 export function planSheetAdd(
   findings: Finding[], { newId, userId, tickets }: PlanOptions,
@@ -56,6 +66,7 @@ export function planSheetAdd(
     const k = keyOf(t);
     if (k) held.add(k);
   }
+  const ledgerKeys = new Set(held);
 
   const plan: SheetAddPlan = { ready: [], waiting: [], alreadyHeld: [] };
   for (const proposal of pendingFromFindings(findings, { newId, userId })) {
@@ -73,6 +84,18 @@ export function planSheetAdd(
        wallet, so a ticket keyed in by hand moves that balance twice. */
     if (settlesOnStatement(proposal.source)) {
       plan.waiting.push({ proposal, why: proposal.heldBackWhy || STATEMENT_WHY() });
+      continue;
+    }
+    /* A refund of a ticket already in our books, billed by a supplier that
+       reports its refunds - BSP, RTS and the rest - comes from that
+       supplier's report, never from their sheet. 7,025.00 on 5513408117
+       went in from their sheet and RTS has not credited it. Only a purchase
+       on an airline's own website, which no report will ever show, or a
+       ticket going in together with its refund, is recorded from here. */
+    const isRefund = dirOf(proposal) === 'R';
+    const saleHeldBefore = isRefund && ledgerKeys.has(k.replace(/\|R$/, '|S'));
+    if (saleHeldBefore && proposal.source !== 'Airline Website') {
+      plan.waiting.push({ proposal, why: SUPPLIER_REFUND_WHY });
       continue;
     }
     const why = whyNotConfirmable(proposal);
@@ -115,5 +138,5 @@ export function addabilityByKey(
 }
 
 /** The key a finding is listed under, so a row can look itself up. */
-export const findingKey = (f: { serial?: string; pnr?: string }) =>
-  keyOf({ ticketNo: f.serial, pnr: f.pnr });
+export const findingKey = (f: { serial?: string; pnr?: string; verdict?: string }) =>
+  keyOf({ ticketNo: f.serial, pnr: f.pnr, transactionType: f.verdict === 'REFUND_NOT_IN_LEDGER' ? 'REFUND' : '' });

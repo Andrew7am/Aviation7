@@ -971,6 +971,15 @@ export function compareTeamSheet(
               + ' supplier has not billed it yet, or an import missed it.'
             : 'On their sheet and nowhere in our books — either the supplier has not billed'
               + ' it yet, or an import missed it.' });
+        /* And its refund, when their sheet refunds it too. U92Z3D was issued
+           at 1,460.00 and refunded 700.00 the same day; reported as one
+           missing ticket, adding it recorded the 1,460.00 and the refund
+           was never seen again. The refund is a finding of its own. */
+        const refundRow = rows.find(x => x.status === 'REFUNDED' && (x.refund ?? 0) > 0);
+        if (refundRow)
+          findings.push({ ...base, sheet: refundRow, verdict: 'REFUND_NOT_IN_LEDGER',
+            note: `Their sheet refunds ${money(refundRow.refund ?? 0)} ${refundRow.currency}`.trimEnd()
+                + ' on this ticket, which is not in our books either. Add the ticket and its refund together.' });
       }
       continue;
     }

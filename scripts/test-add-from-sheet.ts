@@ -191,5 +191,31 @@ console.log('\n11. Nothing to do is not an error');
   check('no reasons', waitingReasons(p), []);
 }
 
+console.log('\n9. A refund, and the ticket it refunds');
+{
+  // U92Z3D: bought on Air India Express's site at 1,460.00, 700.00 refunded the same day.
+  const sale = finding({ serial: 'U92Z3D', rawTicket: 'U92Z3D', pnr: 'U92Z3D', airlineCode: '', cost: 1460,
+    portal: 'AL Website', reqNum: 'UAECO788', issued: '2026-10-02' });
+  const refund = { ...finding({ serial: 'U92Z3D', rawTicket: 'U92Z3D', pnr: 'U92Z3D', airlineCode: '', cost: null,
+    refund: 700, status: 'REFUNDED' as TeamSheetRow['status'], rawStatus: 'Cancelled/Refunded',
+    portal: 'AL Website', reqNum: 'UAECO788', issued: '2026-10-02' }), verdict: 'REFUND_NOT_IN_LEDGER' } as Finding;
+  const p = plan([sale, refund]);
+  check('both go in together', p.ready.map(x => x.amount), [1460, -700]);
+  check('neither is "already in the books"', p.alreadyHeld.length, 0);
+
+  // A BSP ticket we hold, which their sheet says was refunded.
+  const bspRefund = { ...finding({ cost: null, refund: 7025, status: 'REFUNDED' as TeamSheetRow['status'],
+    rawStatus: 'Cancelled/Refunded' }), verdict: 'REFUND_NOT_IN_LEDGER' } as Finding;
+  const q = plan([bspRefund], [tkt('5513373350')]);
+  check('a supplier\'s refund is not taken from their sheet', q.ready.length, 0);
+  check('it waits for the supplier\'s report', /arrives with its own report/.test(q.waiting[0]?.why ?? ''), true);
+  check('and is not mistaken for one already held', q.alreadyHeld.length, 0);
+
+  // A website purchase we hold, refunded: no report will ever show it.
+  const webSale = { ...tkt('U92Z3D'), source: 'Airline Website', pnr: 'U92Z3D', amount: 1460 };
+  check('a website refund is taken from their sheet', plan([refund], [webSale]).ready.map(x => x.amount), [-700]);
+  check('and a refund we already hold is held', plan([refund], [webSale, { ...webSale, id: 'r', amount: -700, status: 'REFUND' }]).alreadyHeld.length, 1);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

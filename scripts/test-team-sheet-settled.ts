@@ -261,6 +261,19 @@ console.log('\n10. Why a ticket of ours is not on their sheet');
   check('another passenger on their PNR says so', /PNR ZEO9MB is on their sheet, but not this ticket/.test(note('5512759999')), true);
 }
 
+console.log('\n10b. A ticket missing with its refund raises both');
+{
+  // U92Z3D, their two rows: issued 1,460.00 and refunded 700.00, nothing in our books.
+  const s = sheet([
+    'U92Z3D,U92Z3D,Cancelled/Refunded,,700.00,2/10/2026 6:40pm,AL Website,UAECO788',
+    'U92Z3D,U92Z3D,Issued,1460.00,,2/10/2026 2:42pm,AL Website,UAECO788',
+  ]);
+  const r = compareTeamSheet(s, []);
+  check('the sale and the refund', r.findings.filter(f => f.serial === 'U92Z3D').map(f => f.verdict).sort(),
+        ['NOT_IN_LEDGER', 'REFUND_NOT_IN_LEDGER']);
+  check('the refund carries 700', r.findings.find(f => f.verdict === 'REFUND_NOT_IN_LEDGER')?.sheet?.refund, 700);
+}
+
 console.log('\n11. Why two requests differ');
 check('one digit apart', reqDiffHint('UAEVP711', 'UAEVP771'), 'One digit apart - most likely a typo on one of the two sides.');
 check('another prefix', /same number under another prefix/.test(reqDiffHint('UAEC125', 'UAECO125')), true);
