@@ -138,7 +138,7 @@ function MainApp({ user }: { user: User }) {
     settlementTickets: Ticket[],
     voidedTickets: Ticket[],
     exchanges: ExchangeEdge[],
-    meta?: { parserName: string; confidence: number; totalRows: number; warnings: number; errors: { row: number; raw: string; error: string }[]; vendor: string; reportName: string }
+    meta?: { parserName: string; confidence: number; totalRows: number; warnings: number; errors: { row: number; raw: string; error: string }[]; vendor: string; reportName: string; confirmations?: { id: string; ticketNo: string; by: string }[] }
   ) => {
     const startTime = Date.now();
     try {
@@ -166,6 +166,16 @@ function MainApp({ user }: { user: User }) {
       /* Reissues, money or none. The zero-value ones never became ledger
          rows, and their link is the only thing tying a later refund of them
          back to the original that holds the money. */
+      /* Rows recorded from their sheet or by hand that this supplier report
+         carries at the same amount: confirmed, and said by what. */
+      if (meta?.confirmations?.length) {
+        try {
+          await ticketSvc.confirm(meta.confirmations);
+          for (const c of meta.confirmations)
+            importSvc.audit('CONFIRMED', c.ticketNo, `Confirmed by ${c.by}: the supplier's report carries it at the amount we recorded.`);
+        } catch (e) { console.error('confirmations not recorded', e); }
+      }
+
       let exchangesKept = 0;
       if (exchanges?.length) {
         try {

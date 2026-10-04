@@ -33,6 +33,8 @@ type TicketRow = {
   adjustment: number | string | null;
   adjustment_note: string | null;
   original_currency?: string | null;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
   original_amount?: number | string | null;
   fx_rate?: number | string | null;
   related_ticket: string | null;
@@ -72,6 +74,8 @@ function rowToTicket(r: TicketRow): Ticket {
     adjustmentNote: r.adjustment_note ?? undefined,
     relatedTicket: r.related_ticket ?? undefined,
     originalCurrency: r.original_currency ?? undefined,
+    confirmedBy: r.confirmed_by ?? undefined,
+    confirmedAt: r.confirmed_at ?? undefined,
     originalAmount: r.original_amount == null ? undefined : Number(r.original_amount),
     fxRate: r.fx_rate == null ? undefined : Number(r.fx_rate),
   };
@@ -109,6 +113,8 @@ function ticketToRow(t: Ticket, userId: string) {
     adjustment_note: t.adjustmentNote ?? null,
     related_ticket: t.relatedTicket ?? null,
     original_currency: t.originalCurrency ?? null,
+    confirmed_by: t.confirmedBy ?? null,
+    confirmed_at: t.confirmedAt ?? null,
     original_amount: t.originalAmount ?? null,
     fx_rate: t.fxRate ?? null,
   };
@@ -293,6 +299,15 @@ export class TicketService {
     return rows.map(rowToTicket);
   }
 
+  /** Mark rows a supplier's report has now carried at the same amount. */
+  async confirm(list: { id: string; by: string }[]): Promise<void> {
+    const at = new Date().toISOString();
+    for (const c of list) {
+      const { error } = await supabase.from('tickets').update({ confirmed_by: c.by, confirmed_at: at }).eq('id', c.id);
+      if (error) throw new Error(error.message);
+    }
+  }
+
   /** Every row on these PNRs - for filing a reissue at no charge whose report
    *  names no ticket it replaces under the booking it belongs to. */
   async fetchByPnrs(pnrs: string[]): Promise<Ticket[]> {
@@ -422,6 +437,8 @@ export class TicketService {
       adjustmentNote:  'adjustment_note',
       relatedTicket:   'related_ticket',
       originalCurrency: 'original_currency',
+      confirmedBy:     'confirmed_by',
+      confirmedAt:     'confirmed_at',
       originalAmount:  'original_amount',
       fxRate:          'fx_rate',
     };

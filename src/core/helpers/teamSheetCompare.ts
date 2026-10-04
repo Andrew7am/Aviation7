@@ -3,6 +3,7 @@ import { ticketMatchKey } from './ticketIdentity';
 import { TeamSheetRow } from '../parsers/teamSheet';
 import { portalSource } from '../config/teamPortals';
 import { chainIndex, chainOf, type Edge } from './ticketChain';
+import { unconfirmed } from './supplierProof';
 
 /**
  * Their sheet against our ledger, before a flight sheet is signed off.
@@ -523,6 +524,9 @@ export interface RequestLine {
   misfiled: number;
   /** Tickets both sides hold at different prices, in the same currency. */
   priceDiffers: number;
+  /** Our rows under it recorded from their sheet or by hand that no supplier
+   *  report has carried yet. A request is not settled on money nobody billed. */
+  unconfirmed: number;
   /** Requests this one belongs with, as the ledger has recorded them - a
    *  cash-paid split, usually. Shown so a count that looks short is read
    *  beside the request the rest of it is under. */
@@ -1495,10 +1499,11 @@ export function compareTeamSheet(
         && reqParts(f.theirReq).includes(key)).length;
     const priceDiffers = findings.filter(f => f.verdict === 'PRICE_DIFFERS' && touches(f)).length;
     const onlyOurs = [...ourSet].filter(x => !theirSet.has(x)).length;
+    const unconf = ledger.filter(t => isTicket(t) && reqParts(t.reqNum || '').includes(key) && unconfirmed(t)).length;
     return {
       reqNum: req, theirTickets: theirSet.size, ourTickets: ourSet.size,
-      onlyTheirs, onlyOurs, misfiled, related, priceDiffers,
-      agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0 && priceDiffers === 0,
+      onlyTheirs, onlyOurs, misfiled, related, priceDiffers, unconfirmed: unconf,
+      agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0 && priceDiffers === 0 && unconf === 0,
     };
   });
 

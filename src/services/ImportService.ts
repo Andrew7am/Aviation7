@@ -30,7 +30,7 @@ export interface AuditEntry {
     // The review queue. A proposal raised is not a change to the ledger, but
     // it is how a couple of hundred tickets get queued for one, so it is
     // logged beside the confirm that records each of them.
-    | 'PENDING_RAISED' | 'PENDING_CONFIRMED' | 'PENDING_REJECTED';
+    | 'PENDING_RAISED' | 'PENDING_CONFIRMED' | 'PENDING_REJECTED' | 'CONFIRMED';
   entity:     string;   // ticketNo / vendorName / etc
   detail:     string;
   performedAt: string;

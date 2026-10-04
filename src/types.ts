@@ -75,6 +75,10 @@ export interface Ticket {
   relatedTicket?: string;
   /** Bought in another currency and converted on the way in — USD at 3.67.
    *  What the receipt and their sheet say; `amount` is the dirhams. */
+  /** The supplier report that carried this row at the same amount, for a
+   *  row first recorded from their sheet or by hand. Empty: not yet. */
+  confirmedBy?: string;
+  confirmedAt?: string;
   originalCurrency?: string;
   originalAmount?: number;
   fxRate?: number;

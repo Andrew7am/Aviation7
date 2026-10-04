@@ -4,6 +4,7 @@ import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, C
 import { writeClipboard } from '../utils/clipboard';
 import { ticketLine, ticketLines, copyableTickets } from '../core/helpers/ticketClipboard';
 import { ticketCurrency, byCurrencyOrder } from '../core/helpers/sourceCurrency';
+import { unconfirmed } from '../core/helpers/supplierProof';
 import { RequestProfile } from './RequestProfile';
 
 /**
@@ -29,7 +30,7 @@ import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers
 interface TicketTableProps {
   tickets: Ticket[];
   title: string;
-  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED';
+  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED';
   /** Opens the table already narrowed to a closure state, so a view can be
    *  "the outstanding list" without the user having to find the dropdown. */
   defaultClosed?: 'ALL' | 'CLOSED' | 'NOT_CLOSED';
@@ -381,7 +382,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [searchTerm, setSearchTerm]     = useState('');
   const chainIdx = useMemo(() => chainIndex(exchanges), [exchanges]);
   const [filterMode, setFilterMode] =
-    useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED'>(defaultFilter);
+    useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED'>(defaultFilter);
   // Vendors are multi-select: comparing NSA against IATA, or a handful of
   // portals at once, is the normal reconciliation question. Empty = every
   // vendor, so the filter starts out of the way.
@@ -452,6 +453,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterMode === 'ADJUSTED' && t.adjustment == null) return false;
       if (filterMode === 'NO_DATE' && !missingDate(t.date)) return false;
       if (filterMode === 'CHANGED' && !afterClose?.has(t.id)) return false;
+      if (filterMode === 'UNCONFIRMED' && !unconfirmed(t)) return false;
       // No vendor ticked means every vendor, not none.
       if (sourceSel.length > 0 && !sourceSel.includes(t.source)) return false;
       // Dates are YYYY-MM-DD, so these compare as strings. A row with no date
@@ -616,6 +618,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   // Per-currency net totals, in each ticket's own currency. Dollars are
   // never added to riyals: every currency present gets a total of its own.
+  const unconfirmedCount = useMemo(() => tickets.filter(unconfirmed).length, [tickets]);
+
   // Beside the net, what went into it: the sales, the refunds - money that
   // came back, counted - and any top-ups, so the net can be read rather than
   // only trusted.
@@ -665,6 +669,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       else if (filterMode === 'ADJUSTED') parts.push('Adjusted');
       else if (filterMode === 'NO_DATE') parts.push('NoDate');
       else if (filterMode === 'CHANGED') parts.push('ChangedAfterClose');
+      else if (filterMode === 'UNCONFIRMED') parts.push('Unconfirmed');
     }
     if (parts.length === 0) parts.push(sanitize(title));
     return parts.join('-');
@@ -1286,6 +1291,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               : filterMode === 'ADJUSTED' ? 'bg-amber-50 text-amber-700 border-amber-200'
               : filterMode === 'NO_DATE' ? 'bg-red-50 text-red-600 border-red-200'
               : filterMode === 'CHANGED' ? 'bg-orange-50 text-orange-700 border-orange-200'
+              : filterMode === 'UNCONFIRMED' ? 'bg-violet-50 text-violet-700 border-violet-200'
               : 'bg-white text-slate-500 border-slate-200'
             }`}
           >
@@ -1296,6 +1302,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             <option value="NO_DATE">No date</option>
             {afterClose && afterClose.size > 0 && (
               <option value="CHANGED">Changed after close ({afterClose.size})</option>
+            )}
+            {unconfirmedCount > 0 && (
+              <option value="UNCONFIRMED">Not confirmed by supplier ({unconfirmedCount})</option>
             )}
           </select>
 
@@ -1685,6 +1694,15 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                         only when the two differ: a refund filed under the
                         ticket's own number already says it. Search finds it
                         by either number. */}
+                    {/* From their sheet or by hand, and no supplier report has
+                        carried it yet. 7,025.00 on 5513408117 sat as an RTS
+                        refund that way while RTS's report never showed it. */}
+                    {unconfirmed(ticket) && (
+                      <span className="block text-[9px] font-normal text-violet-600 select-none"
+                        title={`Recorded from ${ticket.reportName || 'their sheet'}. No ${ticket.source} report has carried it yet - it is confirmed when one does, at the same amount.`}>
+                        not confirmed by {ticket.source}
+                      </span>
+                    )}
                     {/* A reissue at no charge: 0.00 here because the fare
                         is on the ticket it replaced. Said, so a zero row
                         does not read as a price nobody entered. */}
