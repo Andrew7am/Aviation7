@@ -200,7 +200,9 @@ const Group: React.FC<{
   voided?: Map<string, { date: string; period?: string }>;
 }> = ({ verdict, rows, onCopy, onAddOne, why, done, voided }) => {
   const tone = TONE[verdict];
-  const [open, setOpen] = useState(verdict !== 'OK');
+  // A long group starts shut - its count is on the bar - so the page is a
+  // list of groups to open rather than a scroll through every row of each.
+  const [open, setOpen] = useState(verdict !== 'OK' && rows.length <= 10);
   if (!rows.length) return null;
 
   /**
@@ -570,6 +572,11 @@ export const TeamSheetCheck: React.FC<Props> = ({
     PROPOSABLE_VERDICTS.has(f.verdict)), [report]);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState('');
+  /* The request table folds away: on a full sheet it is 341 rows, and the
+     findings it summarises sit underneath it. Shut by default when long. */
+  const [reqOpen, setReqOpen] = useState<boolean | null>(null);
+  const [reqOnlyBad, setReqOnlyBad] = useState(false);
+  const [reqFind, setReqFind] = useState('');
 
   const sendToReview = async () => {
     if (!onSendToReview || sending || !proposable.length) return;
@@ -954,17 +961,38 @@ export const TeamSheetCheck: React.FC<Props> = ({
           {/* Request by request: the row a sheet is actually closed on. */}
           {report.byRequest.length > 0 && (
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-              <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center
-                              justify-between text-[9px] font-bold uppercase text-slate-500">
-                <span>Request by request</span>
+              <button onClick={() => setReqOpen(!(reqOpen ?? report.byRequest.length <= 8))}
+                className="w-full px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center
+                           justify-between text-[9px] font-bold uppercase text-slate-500 hover:bg-slate-100">
+                <span className="flex items-center gap-1.5">
+                  {(reqOpen ?? report.byRequest.length <= 8)
+                    ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                    : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
+                  Request by request
+                  <span className="font-normal normal-case text-slate-400">
+                    · {report.byRequest.filter(r => !r.agrees).length} to settle
+                  </span>
+                </span>
                 <span className={report.byRequest.every(r => r.agrees)
                   ? 'text-emerald-600' : 'text-red-600'}>
                   {report.byRequest.filter(r => r.agrees).length} of {report.byRequest.length} agree
                 </span>
+              </button>
+              {(reqOpen ?? report.byRequest.length <= 8) && (<>
+              <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-slate-100 text-[11px]">
+                <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={reqOnlyBad} onChange={e => setReqOnlyBad(e.target.checked)} />
+                  Only the ones that do not agree
+                </label>
+                <input value={reqFind} onChange={e => setReqFind(e.target.value)} placeholder="Find a request..."
+                  className="ml-auto px-2 py-1 text-xs border border-slate-200 rounded w-48
+                             focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
               </div>
-              <div className="overflow-x-auto">
+              {/* Scrolls inside its own box, header held, so the findings
+                  below it are a short scroll away rather than 341 rows. */}
+              <div className="overflow-auto max-h-[55vh]">
                 <table className="w-full text-left min-w-[620px]">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-white">
                     <tr className="border-b border-slate-100 text-[9px] uppercase
                                    tracking-wider text-slate-400">
                       <th className="px-3 py-1.5">Request</th>
@@ -978,7 +1006,11 @@ export const TeamSheetCheck: React.FC<Props> = ({
                     </tr>
                   </thead>
                   <tbody className="font-mono text-xs">
-                    {report.byRequest.map(r => (
+                    {report.byRequest
+                      .filter(r => !reqOnlyBad || !r.agrees)
+                      .filter(r => !reqFind.trim() || r.reqNum.toUpperCase().replace(/\s+/g, '')
+                        .includes(reqFind.toUpperCase().replace(/\s+/g, '')))
+                      .map(r => (
                       <tr key={r.reqNum}
                           className={`border-b border-slate-50 ${r.agrees ? '' : 'bg-red-50/40'}`}>
                         <td className="px-3 py-1.5 font-bold text-purple-700 whitespace-nowrap">
@@ -1024,6 +1056,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
                   </tbody>
                 </table>
               </div>
+              </>)}
             </div>
           )}
 
