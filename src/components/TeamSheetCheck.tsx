@@ -7,7 +7,7 @@ import {
 import { readFileAsText } from '../core/ImportEngine';
 import { parseTeamSheet, TeamSheetRow } from '../core/parsers/teamSheet';
 import {
-  compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK,
+  compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK, rowsForRequests,
 } from '../core/helpers/teamSheetCompare';
 import { writeClipboard } from '../utils/clipboard';
 import { addabilityByKey, findingKey } from '../core/helpers/addFromSheet';
@@ -583,6 +583,12 @@ export const TeamSheetCheck: React.FC<Props> = ({
   };
 
   const [declaredText, setDeclaredText] = useState('');
+  /* Two different jobs. The whole sheet is checked against the last one,
+     with what was ignored kept out, and becomes the last one. One request is
+     read fresh: every difference shows, nothing ignored applies, and nothing
+     is remembered - so reviewing UAEVP420 never moves the whole-sheet
+     baseline and never hides what the person came to look at. */
+  const [mode, setMode] = useState<'sheet' | 'request'>('sheet');
   /**
    * The stretch of time this copy of their sheet is for.
    *
@@ -598,12 +604,23 @@ export const TeamSheetCheck: React.FC<Props> = ({
     () => declaredText.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean),
     [declaredText]);
 
+  /* The request under review: as typed, or - for an export of one request
+     with nothing typed - the one request the file itself names. */
+  const reviewing = useMemo(() => {
+    if (mode !== 'request' || declared.length || !rows) return declared;
+    const named = [...new Set(rows.map(r => (r.reqNum || '').trim()).filter(Boolean))];
+    return named.length === 1 ? named : [];
+  }, [mode, declared, rows]);
+
   /* Recomputed rather than re-read: changing the request after the file is
      in must not mean finding the file again. */
   const report = useMemo<TeamSheetReport | null>(
-    () => (rows ? compareTeamSheet(rows, tickets, declared, { from: fromDate, to: toDate },
-      { voided: voids.map(v => v.ticketNo), chains: exchanges, explanations }) : null),
-    [rows, tickets, declared, fromDate, toDate, voids, exchanges, explanations]);
+    () => (rows && (mode === 'sheet' || reviewing.length)
+      ? compareTeamSheet(mode === 'request' ? rowsForRequests(rows, reviewing) : rows, tickets,
+          mode === 'request' ? reviewing : declared, { from: fromDate, to: toDate },
+          { voided: voids.map(v => v.ticketNo), chains: exchanges, explanations: mode === 'request' ? [] : explanations })
+      : null),
+    [rows, tickets, declared, reviewing, fromDate, toDate, voids, exchanges, explanations, mode]);
 
   const explain = async (f: Finding) => {
     if (!memory) return;
@@ -631,7 +648,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
       /* Against the last sheet uploaded: what is new, changed, gone. Then
          this one becomes the last. Never in the way of the check. */
       setChanges(null);
-      if (memory) {
+      if (memory && mode === 'sheet') {
         const snap = snapRows(parsed.rows);
         // Against the last FULL sheet: a short export of a few rows is not
         // what the team's sheet looked like, and laid against it everything
@@ -827,8 +844,23 @@ export const TeamSheetCheck: React.FC<Props> = ({
         </div>
       )}
 
+      {/* Which job this is - first, because it decides everything below. */}
+      <div className="bg-white border border-slate-200 rounded-lg p-1.5 flex flex-col sm:flex-row gap-1.5">
+        {([
+          ['sheet', 'Whole sheet', 'Against the last full sheet. Ignored differences stay out, and this sheet becomes the last one.'],
+          ['request', 'One request', 'Read fresh, as if for the first time: every difference shows, nothing ignored applies, nothing is remembered.'],
+        ] as const).map(([m, label, hint]) => (
+          <button key={m} onClick={() => { setMode(m); setOnlyNew(false); }}
+            className={`flex-1 text-left rounded px-3 py-2 border ${mode === m
+              ? 'bg-purple-50 border-purple-300' : 'bg-white border-transparent hover:bg-slate-50'}`}>
+            <div className={`text-xs font-bold ${mode === m ? 'text-purple-800' : 'text-slate-600'}`}>{label}</div>
+            <div className="text-[11px] text-slate-500 leading-snug">{hint}</div>
+          </button>
+        ))}
+      </div>
+
       {/* Before the drop zone, because it is meant to be filled in first. */}
-      <div className="bg-white border border-slate-200 rounded-lg px-4 py-3">
+      <div className={`bg-white border rounded-lg px-4 py-3 ${mode === 'request' && !reviewing.length ? 'border-purple-300' : 'border-slate-200'}`}>
         <label className="flex flex-wrap items-center gap-3">
           <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider shrink-0">
             Request number
@@ -841,9 +873,12 @@ export const TeamSheetCheck: React.FC<Props> = ({
                        focus:outline-none focus:ring-2 focus:ring-purple-500/20
                        focus:border-purple-400" />
           <span className="text-[11px] text-slate-500">
-            Which request their sheet is for. Their export does not carry it, so typing it
-            here turns the filing check on. Several, separated by commas, for a sheet
-            covering more than one.
+            {mode === 'request'
+              ? <>The request to review. Drop in the whole sheet or an export of just that request -
+                  only its rows are compared. Several, separated by commas.</>
+              : <>Which request their sheet is for. Their export does not carry it, so typing it
+                  here turns the filing check on. Several, separated by commas, for a sheet
+                  covering more than one.</>}
           </span>
         </label>
 
@@ -1210,13 +1245,13 @@ export const TeamSheetCheck: React.FC<Props> = ({
               <Group key={v} verdict={v} onCopy={copy}
                 rows={report.findings.filter(f => f.verdict === v && !f.explained && (!onlyNew || isNew(f)))}
                 voided={voidedSerials}
-                {...(memory && onAddToLedger ? { onExplain: explain } : {})}
+                {...(memory && onAddToLedger && mode === 'sheet' ? { onExplain: explain } : {})}
                 {...(onAddToLedger && PROPOSABLE_VERDICTS.has(v)
                   ? { onAddOne: addOne, why: addability, done: rowState }
                   : {})} />
             ))}
             {/* Ignored differences: kept, apart, with the reason. */}
-            {!onlyNew && <Group key="explained" verdict="OK" title="Ignored" onCopy={copy}
+            {!onlyNew && mode === 'sheet' && <Group key="explained" verdict="OK" title="Ignored" onCopy={copy}
               rows={report.findings.filter(f => f.explained)}
               voided={voidedSerials}
               {...(memory && onAddToLedger ? { onUnexplain: unexplain } : {})} />}

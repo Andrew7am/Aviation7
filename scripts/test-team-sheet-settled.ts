@@ -12,7 +12,7 @@
  * request is wrong, and the screen said otherwise. Asserted on those rows.
  */
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
-import { compareTeamSheet, reqDiffHint } from '../src/core/helpers/teamSheetCompare';
+import { compareTeamSheet, reqDiffHint, rowsForRequests } from '../src/core/helpers/teamSheetCompare';
 import type { Ticket } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -348,6 +348,15 @@ check('one digit apart', reqDiffHint('UAEVP711', 'UAEVP771'), 'One digit apart -
 check('another prefix', /same number under another prefix/.test(reqDiffHint('UAEC125', 'UAECO125')), true);
 check('a label, not a request', /label rather than/.test(reqDiffHint('COMPANY EXPENSE', 'UAECO623')), true);
 check('two plain requests say nothing', reqDiffHint('UAEVP504', 'UAEVP522'), '');
+
+console.log('\n13. One request, out of the whole sheet or its own export');
+{
+  const whole = [{ reqNum: 'UAEVP420', n: 1 }, { reqNum: 'UAEVP771', n: 2 }, { reqNum: '', n: 3 }, { reqNum: 'UAEVP420-UAEVP421', n: 4 }];
+  check('the whole sheet is cut to its rows', rowsForRequests(whole, ['UAEVP420']).map(r => r.n), [1, 4]);
+  const own = [{ reqNum: 'UAEVP420', n: 1 }, { reqNum: '', n: 2 }];
+  check('its own export is taken whole, unnamed rows too', rowsForRequests(own, ['UAEVP420']).map(r => r.n), [1, 2]);
+  check('nothing typed: every row', rowsForRequests(whole, []).length, 4);
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

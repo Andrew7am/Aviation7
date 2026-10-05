@@ -382,6 +382,24 @@ export function reqParts(raw: string | undefined | null): string[] {
 }
 
 /**
+ * The rows of their sheet that belong to the requests being reviewed.
+ *
+ * Reviewing one request is a different job from checking the whole sheet,
+ * and it should not depend on which file was dropped in. An export made for
+ * that one request is taken whole - its rows with no request are that
+ * request's too. The whole sheet is cut down to the rows that name it, so
+ * one request declared over two thousand rows never reads as "this sheet
+ * is all UAEVP420".
+ */
+export function rowsForRequests<T extends { reqNum: string }>(rows: T[], requests: string[]): T[] {
+  const want = new Set(requests.flatMap(reqParts));
+  if (!want.size) return rows;
+  const named = new Set(rows.flatMap(r => reqParts(r.reqNum)));
+  if (named.size <= 1) return rows;
+  return rows.filter(r => reqParts(r.reqNum).some(k => want.has(k)));
+}
+
+/**
  * Which requests belong with which, learned from the ledger.
  *
  * Every req field that names more than one request is a statement that
