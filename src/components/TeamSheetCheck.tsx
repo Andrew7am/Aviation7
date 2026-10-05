@@ -429,7 +429,7 @@ const Group: React.FC<{
                           <>
                             {f.explained && (
                               <span className="block mt-1 text-slate-700">
-                                <b>Explained:</b> {f.explained}
+                                <b>Ignored:</b> {f.explained}
                                 {onUnexplain && (
                                   <button onClick={() => onUnexplain(f)}
                                     className="ml-2 text-[10px] font-bold text-slate-400 hover:text-red-600 underline">undo</button>
@@ -438,13 +438,13 @@ const Group: React.FC<{
                             )}
                             {f.explainedBefore && (
                               <span className="block mt-1 text-amber-700">
-                                <b>Explained before</b> ("{f.explainedBefore}") - its figures have changed since.
+                                <b>Ignored before</b> ("{f.explainedBefore}") - its figures have changed since, so it is back.
                               </span>
                             )}
                             {onExplain && !f.explained && f.verdict !== 'OK' && (
                               <button onClick={() => onExplain(f)}
                                 className="block mt-1 text-[10px] font-bold text-sky-700 hover:text-sky-900 underline">
-                                {f.explainedBefore ? 'Explain again' : 'Explain - not a problem'}
+                                {f.explainedBefore ? 'Ignore again' : 'Ignore'}
                               </button>
                             )}
                           </>
@@ -532,7 +532,16 @@ export const TeamSheetCheck: React.FC<Props> = ({
      last sheet uploaded so the next one can say what changed. */
   const memory = useMemo(() => (userId ? new TeamSheetMemoryService(userId) : null), [userId]);
   const [explanations, setExplanations] = useState<Explanation[]>([]);
-  const [changes, setChanges] = useState<{ since: string; diff: SheetDiff } | null>(null);
+  const [changes, setChanges] = useState<{ since: string; at: string; diff: SheetDiff } | null>(null);
+  /* Only what arrived since the last sheet: rows of theirs that are new or
+     changed, and tickets of ours imported after it. With the ignored ones
+     out, what is left is what still has to be done. */
+  const [onlyNew, setOnlyNew] = useState(false);
+  const newRows = useMemo(() => new Set((changes ? [...changes.diff.added, ...changes.diff.changed] : [])
+    .map(c => c.rowNo).filter((n): n is number => n != null)), [changes]);
+  const isNew = (f: Finding) => !changes ? true
+    : f.sheet ? newRows.has(f.sheet.rowNo)
+    : f.ours.some(t => (t.importTime || '') > changes.at);
   const [changesOpen, setChangesOpen] = useState(false);
   const loadExplanations = React.useCallback(() => {
     memory?.explanations().then(setExplanations).catch(e => console.error('explanations', e));
@@ -598,10 +607,12 @@ export const TeamSheetCheck: React.FC<Props> = ({
 
   const explain = async (f: Finding) => {
     if (!memory) return;
-    const note = window.prompt(`Why is this not a problem?\n\n${f.serial || f.pnr} - ${VERDICT_LABEL[f.verdict]}\n${f.note}`,
+    // Ignored until its figures change: a reason is kept if one is given.
+    const note = window.prompt(`Ignore this from now on? It comes back only if its figures change.\n`
+      + `A reason (optional):\n\n${f.serial || f.pnr} - ${VERDICT_LABEL[f.verdict]}\n${f.note}`,
       f.explainedBefore ?? '');
-    if (!note || !note.trim()) return;
-    try { await memory.explain(explanationKey(f), fingerprint(f), note.trim(), userEmail ?? ''); loadExplanations(); }
+    if (note === null) return;
+    try { await memory.explain(explanationKey(f), fingerprint(f), note.trim() || 'Ignored', userEmail ?? ''); loadExplanations(); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
   const unexplain = async (f: Finding) => {
@@ -622,10 +633,13 @@ export const TeamSheetCheck: React.FC<Props> = ({
       setChanges(null);
       if (memory) {
         const snap = snapRows(parsed.rows);
-        memory.lastSnapshot()
+        // Against the last FULL sheet: a short export of a few rows is not
+        // what the team's sheet looked like, and laid against it everything
+        // else would read as new.
+        memory.lastSnapshot(Math.floor(snap.length / 2))
           .then(prev => {
             if (prev) setChanges({ since: `${prev.fileName} · ${prev.uploadedAt.slice(0, 16).replace('T', ' ')}`,
-              diff: sheetDiff(prev.rows, snap) });
+              at: prev.uploadedAt, diff: sheetDiff(prev.rows, snap) });
             if (onAddToLedger) return memory.saveSnapshot(file.name, snap);
           })
           .catch(e => console.error('sheet snapshot', e));
@@ -906,6 +920,11 @@ export const TeamSheetCheck: React.FC<Props> = ({
             <span className="text-sky-700">({changes.since}):</span>
             <span>{changes.diff.added.length} new · {changes.diff.changed.length} changed · {changes.diff.removed.length} gone</span>
           </button>
+          <label className="flex items-center gap-2 px-4 pb-2.5 -mt-1 cursor-pointer select-none">
+            <input type="checkbox" checked={onlyNew} onChange={e => setOnlyNew(e.target.checked)} />
+            <span><b>Show only what is new</b> — differences on rows that are new or changed since that sheet,
+              and tickets of ours added after it. Ignored ones stay out either way.</span>
+          </label>
           {changesOpen && (
             <div className="px-4 pb-3 space-y-2 max-h-[45vh] overflow-auto">
               {([['New rows', changes.diff.added], ['Changed', changes.diff.changed], ['Gone from their sheet', changes.diff.removed]] as const)
@@ -1189,18 +1208,18 @@ export const TeamSheetCheck: React.FC<Props> = ({
           <div className="space-y-2">
             {order.map(v => (
               <Group key={v} verdict={v} onCopy={copy}
-                rows={report.findings.filter(f => f.verdict === v && !f.explained)}
+                rows={report.findings.filter(f => f.verdict === v && !f.explained && (!onlyNew || isNew(f)))}
                 voided={voidedSerials}
                 {...(memory && onAddToLedger ? { onExplain: explain } : {})}
                 {...(onAddToLedger && PROPOSABLE_VERDICTS.has(v)
                   ? { onAddOne: addOne, why: addability, done: rowState }
                   : {})} />
             ))}
-            {/* Explained differences: kept, apart, with the reason. */}
-            <Group key="explained" verdict="OK" title="Explained" onCopy={copy}
+            {/* Ignored differences: kept, apart, with the reason. */}
+            {!onlyNew && <Group key="explained" verdict="OK" title="Ignored" onCopy={copy}
               rows={report.findings.filter(f => f.explained)}
               voided={voidedSerials}
-              {...(memory && onAddToLedger ? { onUnexplain: unexplain } : {})} />
+              {...(memory && onAddToLedger ? { onUnexplain: unexplain } : {})} />}
           </div>
         </>
       )}

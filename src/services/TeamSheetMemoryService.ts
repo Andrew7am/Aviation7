@@ -31,11 +31,13 @@ export class TeamSheetMemoryService {
     if (error) throw new Error(error.message);
   }
 
-  async lastSnapshot(): Promise<{ fileName: string; uploadedAt: string; rows: SnapRow[] } | null> {
+  /** The latest sheet saved with at least `minRows` rows - so a short
+   *  export of a handful of rows is never the sheet everything is laid against. */
+  async lastSnapshot(minRows = 0): Promise<{ fileName: string; uploadedAt: string; rows: SnapRow[] } | null> {
     const { data, error } = await supabase.from('team_sheet_snapshots')
-      .select('file_name, uploaded_at, rows').order('uploaded_at', { ascending: false }).limit(1);
+      .select('file_name, uploaded_at, rows').order('uploaded_at', { ascending: false }).limit(6);
     if (error) throw new Error(error.message);
-    const r = data?.[0];
+    const r = (data ?? []).find(x => ((x.rows as SnapRow[]) ?? []).length >= minRows);
     return r ? { fileName: r.file_name ?? '', uploadedAt: r.uploaded_at, rows: r.rows as SnapRow[] } : null;
   }
 
