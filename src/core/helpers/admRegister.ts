@@ -84,6 +84,36 @@ export function admRegister(tickets: Ticket[]): AdmRow[] {
   return out.sort((a, b) => String(b.ticket.date || '').localeCompare(String(a.ticket.date || '')));
 }
 
+export interface AdmVendor {
+  /** Who billed it to us: IATA BSP, NSA... the ticket's source. */
+  vendor: string;
+  currency: string;
+  count: number;
+  amount: number;
+  /** Through BSP the vendor is a clearing house; the airline is who raised
+   *  the memo. One line per airline code, largest first. */
+  airlines: { code: string; count: number; amount: number }[];
+}
+
+/** The memos by the vendor that billed them, and under it the airline. */
+export function admByVendor(rows: AdmRow[]): AdmVendor[] {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const m = new Map<string, AdmVendor>();
+  for (const r of rows) {
+    const vendor = (r.ticket.source || '').trim() || 'No vendor';
+    const currency = r.ticket.currency || '';
+    const k = `${vendor}|${currency}`;
+    const v = m.get(k) ?? { vendor, currency, count: 0, amount: 0, airlines: [] };
+    v.count++; v.amount = r2(v.amount + (r.ticket.amount || 0));
+    const code = (r.ticket.airlineCode || '').trim();
+    const a = v.airlines.find(x => x.code === code) ?? (v.airlines.push({ code, count: 0, amount: 0 }), v.airlines[v.airlines.length - 1]);
+    a.count++; a.amount = r2(a.amount + (r.ticket.amount || 0));
+    m.set(k, v);
+  }
+  for (const v of m.values()) v.airlines.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  return [...m.values()].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+}
+
 /** Totals per kind and currency. */
 export function admTotals(rows: AdmRow[]): { kind: AdmKind; currency: string; count: number; amount: number }[] {
   const m = new Map<string, { kind: AdmKind; currency: string; count: number; amount: number }>();

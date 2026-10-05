@@ -7,7 +7,7 @@
  * memo, BSP's own fee printed under DEBIT MEMOS, and a supplier's ADM passed
  * on under the request "ADM". Asserted on the real rows.
  */
-import { admKind, admRegister, admTotals } from '../src/core/helpers/admRegister';
+import { admKind, admRegister, admTotals, admByVendor } from '../src/core/helpers/admRegister';
 import type { Ticket } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -44,6 +44,20 @@ console.log('\n2. The ticket it is about');
   check('the one on a ticket we do not hold says so', reg[2].flag, 'Ticket 6075549430 is not in our books.');
   check('the one naming no ticket says so', reg[0].flag, 'The memo names no ticket.');
   check('totals by kind', admTotals(reg).map(x => [x.kind, x.count, x.amount]), [['ADM', 3, 1414.36]]);
+}
+
+console.log('\n3. By the vendor that billed it, and the airline that raised it');
+{
+  const reg = admRegister([
+    t({ ticketNo: '6223509267', source: 'IATA BSP', airlineCode: '235', status: 'ADM', amount: 550, currency: 'AED' }),
+    t({ ticketNo: '6212703201', source: 'IATA BSP', airlineCode: '157', status: 'ADM', amount: 1140, currency: 'AED' }),
+    t({ ticketNo: '6212703202', source: 'IATA BSP', airlineCode: '157', status: 'ADM', amount: 60, currency: 'AED' }),
+    t({ ticketNo: 'NSA_NOREF_pit3t8', source: 'NSA', reqNum: 'ADM', amount: 2281, currency: 'SAR', airlineCode: '' }),
+  ]);
+  const v = admByVendor(reg);
+  check('one line per vendor and currency, largest first', v.map(x => [x.vendor, x.currency, x.count, x.amount]),
+        [['NSA', 'SAR', 1, 2281], ['IATA BSP', 'AED', 3, 1750]]);
+  check('under BSP, the airlines', v[1].airlines.map(a => [a.code, a.count, a.amount]), [['157', 2, 1200], ['235', 1, 550]]);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -1,7 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import { FileWarning, Search, Download, AlertTriangle } from 'lucide-react';
 import type { Ticket } from '../types';
-import { admRegister, admTotals, ADM_KIND_LABEL, type AdmKind, type AdmRow } from '../core/helpers/admRegister';
+import { admRegister, admTotals, admByVendor, ADM_KIND_LABEL, type AdmKind, type AdmRow } from '../core/helpers/admRegister';
+import { airlineName } from '../core/config/airlines';
+
+/** The airline behind a memo: the name where we have one, the code always. */
+const carrier = (code?: string) => {
+  const c = (code || '').trim();
+  if (!c) return '';
+  if (c === '953') return '953 BSP';
+  const n = airlineName(c);
+  return n ? `${c} ${n}` : c;
+};
 
 const xlsx = () => import('xlsx');
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -26,15 +36,19 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
   const all = useMemo(() => admRegister(tickets), [tickets]);
   const [kind, setKind] = useState<AdmKind | 'ALL' | 'REAL'>('REAL');
   const [q, setQ] = useState('');
+  const [vendor, setVendor] = useState('ALL');
+  const vendors = useMemo(() => [...new Set(all.map(r => (r.ticket.source || '').trim() || 'No vendor'))].sort(), [all]);
 
   const shown = useMemo(() => {
     const needle = q.trim().toUpperCase().replace(/\s+/g, '');
     return all.filter(r =>
       (kind === 'ALL' || (kind === 'REAL' ? r.kind !== 'BSP_FEE' : r.kind === kind))
+      && (vendor === 'ALL' || ((r.ticket.source || '').trim() || 'No vendor') === vendor)
       && (!needle || [r.ticket.ticketNo, r.onTicket, r.ticket.reqNum, r.ticket.pnr,
           ...r.onTicketRows.map(t => `${t.reqNum} ${t.pnr} ${t.passengerName}`)]
         .some(x => String(x || '').toUpperCase().replace(/\s+/g, '').includes(needle))));
-  }, [all, kind, q]);
+  }, [all, kind, q, vendor]);
+  const byVendor = useMemo(() => admByVendor(shown), [shown]);
   const totals = useMemo(() => admTotals(all), [all]);
   const flagged = all.filter(r => r.flag).length;
 
@@ -43,7 +57,7 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
     const rows = shown.map(r => ({
       'Kind': ADM_KIND_LABEL[r.kind], 'Document': r.ticket.ticketNo, 'Airline': r.ticket.airlineCode || '',
       'Date': r.ticket.date, 'Amount': r.ticket.amount, 'Currency': r.ticket.currency || '',
-      'Vendor': r.ticket.source, 'Billing period': r.ticket.vendorReference || '',
+      'Vendor': r.ticket.source, 'Raised by': carrier(r.ticket.airlineCode), 'Billing period': r.ticket.vendorReference || '',
       'On ticket': r.onTicket, 'Ticket request': [...new Set(r.onTicketRows.map(t => t.reqNum))].join(', '),
       'Ticket PNR': r.onTicketRows[0]?.pnr || '', 'Passenger': r.onTicketRows[0]?.passengerName || '',
       'Filed under': r.ticket.reqNum || '', 'Closed': r.ticket.closed ? 'Closed' : 'Not closed', 'Check': r.flag,
@@ -98,6 +112,11 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
         {chip('SUPPLIER_ADM', 'Supplier ADM', count('SUPPLIER_ADM'))}
         {chip('BSP_FEE', 'BSP fee', count('BSP_FEE'))}
         {chip('ALL', 'All', all.length)}
+        <select value={vendor} onChange={e => setVendor(e.target.value)}
+          className="px-2 py-1 text-[10px] font-bold uppercase border border-slate-200 rounded bg-white text-slate-600">
+          <option value="ALL">Every vendor</option>
+          {vendors.map(v => <option key={v} value={v}>{v}</option>)}
+        </select>
         <div className="relative ml-auto">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="ADM, ticket, request, PNR..."
@@ -109,11 +128,44 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
         </button>
       </div>
 
+      {byVendor.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
+          <div className="px-3 py-2 border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            By vendor <span className="normal-case font-normal">— who billed it, and under it the airline that raised it</span>
+          </div>
+          <table className="w-full text-left min-w-[480px]">
+            <tbody className="text-xs">
+              {byVendor.map(v => (
+                <React.Fragment key={`${v.vendor}|${v.currency}`}>
+                  <tr className="border-b border-slate-100 bg-slate-50/60">
+                    <td className="px-3 py-1.5 font-bold text-slate-700">
+                      <button onClick={() => setVendor(vendor === v.vendor ? 'ALL' : v.vendor)} className="hover:underline">{v.vendor}</button>
+                    </td>
+                    <td className="px-3 py-1.5 text-slate-400 text-[11px]">{v.count} document{v.count === 1 ? '' : 's'}</td>
+                    <td className={`px-3 py-1.5 text-right font-mono font-bold ${v.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
+                      {fmt(v.amount)} <span className="text-[9px] text-slate-400">{v.currency}</span>
+                    </td>
+                  </tr>
+                  {v.airlines.length > 1 || v.airlines[0]?.code ? v.airlines.map(a => (
+                    <tr key={a.code} className="border-b border-slate-50">
+                      <td className="pl-8 pr-3 py-1 text-slate-500 text-[11px]">{carrier(a.code) || 'no airline'}</td>
+                      <td className="px-3 py-1 text-slate-400 text-[11px]">{a.count}</td>
+                      <td className={`px-3 py-1 text-right font-mono text-[11px] ${a.amount < 0 ? 'text-emerald-600' : 'text-slate-600'}`}>{fmt(a.amount)}</td>
+                    </tr>
+                  )) : null}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-        <table className="w-full text-left min-w-[900px]">
+        <table className="w-full text-left min-w-[1000px]">
           <thead className="bg-slate-50 border-b border-slate-100">
             <tr className="text-[9px] uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">Kind</th>
+              <th className="px-3 py-2">Vendor</th>
               <th className="px-3 py-2">Document</th>
               <th className="px-3 py-2">Date</th>
               <th className="px-3 py-2 text-right">Amount</th>
@@ -133,6 +185,10 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold ${KIND_STYLE[r.kind]}`}>
                       {ADM_KIND_LABEL[r.kind]}
                     </span>
+                  </td>
+                  <td className="px-3 py-2 font-sans text-[11px] whitespace-nowrap">
+                    <div className="font-bold text-slate-700">{r.ticket.source || '—'}</div>
+                    {carrier(r.ticket.airlineCode) && <div className="text-slate-400">{carrier(r.ticket.airlineCode)}</div>}
                   </td>
                   <td className="px-3 py-2 font-bold whitespace-nowrap">
                     {r.ticket.airlineCode && <span className="text-slate-400 font-normal">{r.ticket.airlineCode} </span>}
@@ -164,7 +220,7 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
               );
             })}
             {!shown.length && (
-              <tr><td colSpan={9} className="px-3 py-8 text-center text-slate-400 font-sans">No memos match.</td></tr>
+              <tr><td colSpan={10} className="px-3 py-8 text-center text-slate-400 font-sans">No memos match.</td></tr>
             )}
           </tbody>
         </table>
