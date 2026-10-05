@@ -15,7 +15,14 @@ export const RTSParser: VendorParser = {
   parse: (rows, headers, defaultCurrency): ParserResult => {
     const errors: string[] = [], warnings: string[] = [], result = [];
     const iPNR = col(headers,'Record Locator'); const iNo = col(headers,'No');
-    const iPax = col(headers,'Passenger'); const iDate = col(headers,'PNR creation date');
+    const iPax = col(headers,'Passenger');
+    // "Date" is the day the document was issued. "PNR creation date" is the
+    // day the booking was opened, which can be months earlier: ZWE5AG was
+    // opened on 6 June and its tickets issued on the 10th, and a reissue
+    // read off the booking's date lands in a month it was never sold in.
+    // Matched exactly, because a loose match finds DepDate or the PNR date.
+    const iIssued = headers.findIndex(c => (c || '').trim().toLowerCase() === 'date');
+    const iBooked = col(headers,'PNR creation date');
     const iAmt = col(headers,'Total'); const iStatus = col(headers,'Action');
     const iComm = col(headers,'Commission','commission');
     // RTS ships a Route column listing the journey a sector at a time
@@ -66,7 +73,7 @@ export const RTSParser: VendorParser = {
         passengerName: cleanPax(cell(row,iPax)),
         airlineCode: ac,
         route: iRoute !== -1 ? extractRoute(cell(row, iRoute)) : '',
-        date: parseDate(cell(row,iDate)),
+        date: parseDate(cell(row, iIssued !== -1 && cell(row, iIssued) ? iIssued : iBooked)),
         amount: finalAmt,
         totalDoc: Math.abs(finalAmt),
         commission: comm,

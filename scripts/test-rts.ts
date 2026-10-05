@@ -126,5 +126,17 @@ console.log('\n8. An explicit Req column is still read where it exists');
   eq('no missing-req warning', r.warnings.filter(w => w.includes('Missing Req')), []);
 }
 
+console.log('\n9. A ticket is dated the day it was issued, not the day its booking was opened');
+{
+  // The row's booking was opened on day 46246 and the reissue sold on 46265.
+  const r = parse([ROW]);
+  eq('the issue date', r.rows[0].date, '2026-08-31');
+  // ZWE5AG: opened 6 June, tickets issued 10 June.
+  const zwe = ROW.replace(/^46246,/, '6/6/2026,').replace(',46265,', ',6/10/2026,');
+  eq('a booking opened earlier', parse([zwe]).rows[0].date, '2026-06-10');
+  const noIssue = ROW.replace(',46265,', ',,');
+  eq('no issue date: the booking date, as before', parse([noIssue]).rows[0].date, '2026-08-12');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
