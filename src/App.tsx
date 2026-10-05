@@ -312,6 +312,9 @@ function MainApp({ user }: { user: User }) {
    * gone anyway.
    */
   const handleAddFromSheet = async (findings: Finding[]) => {
+    // Never a document the supplier voided, whatever their sheet still says.
+    const voided = new Set(voids.map(v => (v.ticketNo || '').replace(/\D/g, '').slice(-10)));
+    findings = findings.filter(f => !voided.has((f.serial || '').replace(/\D/g, '').slice(-10)));
     const plan = planSheetAdd(findings, { newId: uuidv4, userId: user.id, tickets });
     for (const p of plan.ready) {
       const t = ticketFromPending(p, uuidv4(), user.id);

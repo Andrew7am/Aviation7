@@ -154,6 +154,8 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
  * would refuse. A button pressed and then explained is a wasted click, and
  * on two hundred rows it is two hundred of them.
  */
+const VOIDED_WHY = 'Voided at the supplier - it is in our Voids register. Nothing to add to our books.';
+
 const RowAdd: React.FC<{
   f: Finding;
   onAdd: (f: Finding) => Promise<void>;
@@ -171,6 +173,8 @@ const RowAdd: React.FC<{
   if (state === 'queued')
     return <span className="text-[10px] font-bold text-amber-700">To Review</span>;
 
+  if (why === VOIDED_WHY)
+    return <span title={why} className="text-[10px] text-slate-400 italic cursor-help">voided</span>;
   // Known in advance: say so rather than offering a button that refuses.
   if (why)
     return (
@@ -713,9 +717,17 @@ export const TeamSheetCheck: React.FC<Props> = ({
      moment they exist rather than when a button is pressed. Same helper the
      handler uses, so a row that says "needs a look" is exactly a row the
      handler would queue. */
-  const addability = useMemo(
-    () => addabilityByKey(proposable, { newId: () => '', userId: '', tickets }),
-    [proposable, tickets]);
+  const addability = useMemo(() => {
+    const m = addabilityByKey(proposable, { newId: () => '', userId: '', tickets });
+    // A document in our Voids register was cancelled at the supplier: their
+    // sheet still showing it live is their sheet not updated, not a ticket
+    // missing from our books. 5513427809 and 810 were offered for entry at
+    // 32,730.00 and 14,550.00 while voided at IATA.
+    for (const f of proposable)
+      if (voidedSerials.has((f.serial || '').replace(/\D/g, '').slice(-10)))
+        m.set(findingKey(f), VOIDED_WHY);
+    return m;
+  }, [proposable, tickets, voidedSerials]);
 
   const [rowState, setRowState] =
     useState<Map<string, 'adding' | 'added' | 'queued'>>(new Map());
@@ -734,6 +746,34 @@ export const TeamSheetCheck: React.FC<Props> = ({
       setRowState(m => { const n = new Map(m); n.delete(k); return n; });
       setError(e instanceof Error ? e.message : String(e));
     }
+  };
+
+  /* Every missing ticket that already passes each test the confirm button
+     applies - in one go, for one request or the whole sheet. The rest are
+     not touched here: each still says on its row why it waits. */
+  const ready = useMemo(() => proposable.filter(f =>
+    addability.get(findingKey(f)) === '' && !rowState.has(findingKey(f))), [proposable, addability, rowState]);
+  const [addingAll, setAddingAll] = useState(false);
+  const [addedMsg, setAddedMsg] = useState('');
+  const addAll = async () => {
+    if (!onAddToLedger || addingAll || !ready.length) return;
+    const total = ready.reduce((n, f) => n + Math.abs(f.sheet?.cost ?? f.sheet?.refund ?? 0), 0);
+    if (!window.confirm(`Add ${ready.length} ticket(s) from their sheet to our books`
+      + ` (${total.toLocaleString('en-US', { maximumFractionDigits: 2 })} in their figures)?\n\n`
+      + ready.slice(0, 15).map(f => `${f.serial || f.pnr}  ${f.theirReq || ''}  ${f.sheet?.cost ?? f.sheet?.refund ?? ''} ${f.sheet?.currency ?? ''}`).join('\n')
+      + (ready.length > 15 ? `\n...and ${ready.length - 15} more` : ''))) return;
+    setAddingAll(true); setError(''); setAddedMsg('');
+    const keys = ready.map(findingKey);
+    setRowState(m => { const n = new Map(m); keys.forEach(k => n.set(k, 'adding')); return n; });
+    try {
+      const r = await onAddToLedger(ready);
+      setRowState(m => { const n = new Map(m); keys.forEach(k => n.set(k, 'added')); return n; });
+      setAddedMsg([r.added && `${r.added} added to the books`, r.queued && `${r.queued} sent to To review`,
+        r.alreadyHeld && `${r.alreadyHeld} already in the books`].filter(Boolean).join(' · ') || 'Nothing added');
+    } catch (e) {
+      setRowState(m => { const n = new Map(m); keys.forEach(k => n.delete(k)); return n; });
+      setError(e instanceof Error ? e.message : String(e));
+    } finally { setAddingAll(false); }
   };
 
   /** The findings as a sheet, worst first, same order as the screen. */
@@ -812,6 +852,15 @@ export const TeamSheetCheck: React.FC<Props> = ({
         </div>
         {report && (
           <div className="flex items-center gap-2 shrink-0">
+            {onAddToLedger && ready.length > 0 && (
+              <button onClick={addAll} disabled={addingAll}
+                title={`${ready.length} ticket(s) on their sheet, missing from our books, that pass every check`}
+                className="flex items-center gap-1.5 bg-blue-600 text-white text-[11px]
+                           font-bold px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50">
+                {addingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Add {ready.length} ready to the books
+              </button>
+            )}
             {onSendToReview && proposable.length > 0 && (
               <button onClick={sendToReview} disabled={sending}
                 title={`${proposable.length} ticket(s) on their sheet and in nobody's books`}
@@ -832,6 +881,13 @@ export const TeamSheetCheck: React.FC<Props> = ({
           </div>
         )}
       </div>
+
+      {addedMsg && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-[11px] text-blue-800 flex items-start gap-2">
+          <CheckCircle2 className="w-3.5 h-3.5 mt-px shrink-0" />
+          <span>{addedMsg}. Each is in All Tickets, marked as recorded from their sheet until a supplier report confirms it.</span>
+        </div>
+      )}
 
       {sent && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5
