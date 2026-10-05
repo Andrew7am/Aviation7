@@ -108,6 +108,33 @@ export function planSheetAdd(
 
 /** The reasons rows are waiting, commonest first — for the one line the
  *  screen has room for. */
+/**
+ * Each finding's proposal and why it waits, by the key its row looks itself
+ * up under - so a row held back can be put in by a person who has read it,
+ * starting from what the check already filled in.
+ */
+export function proposalsByKey(
+  findings: Finding[], opts: PlanOptions,
+): Map<string, { proposal: PendingTicket; why: string }> {
+  const plan = planSheetAdd(findings, opts);
+  const out = new Map<string, { proposal: PendingTicket; why: string }>();
+  for (const p of plan.ready) out.set(keyOf(p), { proposal: p, why: '' });
+  for (const w of plan.waiting) out.set(keyOf(w.proposal), w);
+  return out;
+}
+
+/**
+ * Why a row can never be put in by hand from their sheet, whatever a person
+ * decides: Ibtekar and NSA settle against a credit wallet, so a ticket keyed
+ * in moves that balance twice; a row the check held back for its own reason
+ * stays held. '' when a person may decide.
+ */
+export function neverByHand(p: PendingTicket): string {
+  if (settlesOnStatement(p.source)) return p.heldBackWhy || STATEMENT_WHY();
+  if (p.heldBack) return p.heldBackWhy || 'Held back.';
+  return '';
+}
+
 export function waitingReasons(plan: SheetAddPlan): { why: string; count: number }[] {
   const by = new Map<string, number>();
   for (const w of plan.waiting) by.set(w.why, (by.get(w.why) ?? 0) + 1);

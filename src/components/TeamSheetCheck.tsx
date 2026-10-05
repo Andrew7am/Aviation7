@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { Ticket } from '../types';
+import { Ticket, PendingTicket } from '../types';
 import {
   Upload, AlertTriangle, CheckCircle2, X, Loader2, FileSpreadsheet, Download,
   ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen, Copy, ClipboardCheck, Plus,
@@ -10,7 +10,8 @@ import {
   compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK, rowsForRequests,
 } from '../core/helpers/teamSheetCompare';
 import { writeClipboard } from '../utils/clipboard';
-import { addabilityByKey, findingKey } from '../core/helpers/addFromSheet';
+import { addabilityByKey, findingKey, proposalsByKey, neverByHand } from '../core/helpers/addFromSheet';
+import { whyNotConfirmable } from '../core/helpers/pendingFromFindings';
 import { TeamSheetMemoryService } from '../services/TeamSheetMemoryService';
 import { explanationKey, fingerprint, snapRows, sheetDiff, type Explanation, type SheetDiff } from '../core/helpers/sheetMemory';
 
@@ -156,12 +157,101 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
  */
 const VOIDED_WHY = 'Voided at the supplier - it is in our Voids register. Nothing to add to our books.';
 
+/**
+ * A row the check held back, put in by a person who has read why.
+ *
+ * Starts from what the check filled in; the person supplies what it could
+ * not - the vendor, the figure - and the row goes in exactly as a confirmed
+ * proposal does. It is recorded as from their sheet, so it shows as not
+ * confirmed by the supplier until a report carries it, and that report's
+ * figure replaces this one if they differ.
+ */
+const ByHand: React.FC<{
+  p: PendingTicket; why: string; sources: string[];
+  onAdd: (p: PendingTicket, why: string) => Promise<void>;
+  onClose: () => void;
+}> = ({ p, why, sources, onAdd, onClose }) => {
+  const isRefund = (p.transactionType || '').toUpperCase() === 'REFUND';
+  const [source, setSource] = useState(p.source || '');
+  const [date, setDate] = useState(p.date || '');
+  const [amount, setAmount] = useState(p.amount ? String(Math.abs(p.amount)) : '');
+  const [currency, setCurrency] = useState<string>(p.currency || 'AED');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const next: PendingTicket = {
+    ...p, source: source.trim(), date, currency: currency as PendingTicket['currency'],
+    amount: Math.abs(Number(amount) || 0), totalDoc: Math.abs(Number(amount) || 0),
+  };
+  const blocked = neverByHand(next) || whyNotConfirmable(next);
+  const field = 'border border-slate-200 rounded px-1.5 py-1 text-[11px] font-mono w-full';
+  return (
+    // Over the page rather than inside the row: the table scrolls and would cut it off.
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
+    <div onClick={e => e.stopPropagation()}
+      className="w-full max-w-sm bg-white border border-slate-300 rounded-lg shadow-xl p-4 text-left font-sans space-y-2 whitespace-normal">
+      <div className="text-xs font-bold text-slate-700 font-mono">
+        {p.ticketNo || p.pnr} · {p.reqNum || p.theirReq || 'no request'}{(p.transactionType || '').toUpperCase() === 'REFUND' ? ' · refund' : ''}
+      </div>
+      <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 leading-snug">
+        <b>Held back:</b> {why}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="col-span-2 text-[10px] text-slate-500">Vendor
+          <input list="byhand-sources" value={source} onChange={e => setSource(e.target.value)} className={field} />
+        </label>
+        <label className="text-[10px] text-slate-500">Date
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} className={field} />
+        </label>
+        <label className="text-[10px] text-slate-500">{isRefund ? 'Refund' : 'Cost'}
+          <div className="flex gap-1">
+            <input value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} className={field} placeholder="0.00" />
+            <select value={currency} onChange={e => setCurrency(e.target.value)} className="border border-slate-200 rounded text-[11px]">
+              {['AED', 'SAR', 'USD', 'EUR'].map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+        </label>
+      </div>
+      <datalist id="byhand-sources">{sources.map(s => <option key={s} value={s} />)}</datalist>
+      <div className="text-[10px] text-slate-500 leading-snug">
+        Goes in as recorded from their sheet: marked <b>not confirmed by supplier</b> until a report carries it,
+        and that report's figure replaces this one if they differ.
+      </div>
+      {(blocked || err) && <div className="text-[11px] text-red-700">{err || blocked}</div>}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onClose} className="text-[11px] text-slate-500 px-2 py-1">Cancel</button>
+        <button type="button" disabled={!!blocked || busy}
+          onClick={async () => {
+            setBusy(true); setErr('');
+            try { await onAdd(next, why); onClose(); }
+            catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+            finally { setBusy(false); }
+          }}
+          className="text-[11px] font-bold bg-blue-600 text-white px-3 py-1 rounded disabled:opacity-40">
+          {busy ? 'Adding…' : `Add anyway${isRefund ? ' (refund)' : ''}`}
+        </button>
+      </div>
+    </div>
+    </div>
+  );
+};
+
 const RowAdd: React.FC<{
   f: Finding;
   onAdd: (f: Finding) => Promise<void>;
   why?: string;
   state?: 'adding' | 'added' | 'queued';
-}> = ({ f, onAdd, why, state }) => {
+  proposal?: PendingTicket;
+  sources?: string[];
+  onAddByHand?: (p: PendingTicket, why: string) => Promise<void>;
+}> = ({ f, onAdd, why, state, proposal, sources = [], onAddByHand }) => {
+  const [open, setOpen] = useState(false);
+  const [byHand, setByHand] = useState(false);
+  if (byHand)
+    return (
+      <span className="text-[10px] font-bold text-emerald-700 inline-flex items-center gap-1">
+        <CheckCircle2 className="w-3 h-3" /> Added by hand
+      </span>
+    );
   if (state === 'adding')
     return <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 inline" />;
   if (state === 'added')
@@ -175,14 +265,30 @@ const RowAdd: React.FC<{
 
   if (why === VOIDED_WHY)
     return <span title={why} className="text-[10px] text-slate-400 italic cursor-help">voided</span>;
-  // Known in advance: say so rather than offering a button that refuses.
-  if (why)
+  // Known in advance: say so rather than offering a button that refuses -
+  // and where a person may decide otherwise, let them.
+  if (why) {
+    const canDecide = !!(onAddByHand && proposal && !neverByHand(proposal));
+    if (!canDecide)
+      return (
+        <span title={why}
+          className="text-[10px] text-slate-400 italic cursor-help">
+          needs a look
+        </span>
+      );
     return (
-      <span title={why}
-        className="text-[10px] text-slate-400 italic cursor-help">
-        needs a look
+      <span className="inline-block">
+        <button type="button" onClick={() => setOpen(o => !o)} title={why}
+          className="text-[10px] italic text-amber-700 underline decoration-dotted hover:text-amber-900">
+          needs a look
+        </button>
+        {open && proposal && onAddByHand && (
+          <ByHand p={proposal} why={why} sources={sources} onClose={() => setOpen(false)}
+            onAdd={async (p, w) => { await onAddByHand(p, w); setByHand(true); }} />
+        )}
       </span>
     );
+  }
 
   return (
     <button type="button" onClick={() => void onAdd(f)}
@@ -198,6 +304,10 @@ const Group: React.FC<{
   verdict: Verdict; rows: Finding[]; onCopy: (text: string) => void;
   /** Present only on the two verdicts that describe a ticket to add. */
   onAddOne?: (f: Finding) => Promise<void>;
+  /** Each row's proposal, so one held back can be put in by a person. */
+  proposals?: Map<string, { proposal: PendingTicket; why: string }>;
+  sources?: string[];
+  onAddByHand?: (p: PendingTicket, why: string) => Promise<void>;
   /** Why each row can or cannot go in, worked out before anybody clicks. */
   why?: Map<string, string>;
   /** What became of the ones already pressed, by the same key. */
@@ -209,7 +319,7 @@ const Group: React.FC<{
   onUnexplain?: (f: Finding) => void;
   /** Shown under another name - the Explained group. */
   title?: string;
-}> = ({ verdict, rows, onCopy, onAddOne, why, done, voided, onExplain, onUnexplain, title }) => {
+}> = ({ verdict, rows, onCopy, onAddOne, why, done, voided, onExplain, onUnexplain, title, proposals, sources, onAddByHand }) => {
   const tone = TONE[verdict];
   // A long group starts shut - its count is on the bar - so the page is a
   // list of groups to open rather than a scroll through every row of each.
@@ -473,7 +583,9 @@ const Group: React.FC<{
                       <td className="px-3 py-1.5 text-right whitespace-nowrap font-sans">
                         <RowAdd f={f} onAdd={onAddOne}
                           why={why?.get(findingKey(f))}
-                          state={done?.get(findingKey(f))} />
+                          state={done?.get(findingKey(f))}
+                          proposal={proposals?.get(findingKey(f))?.proposal}
+                          sources={sources} onAddByHand={onAddByHand} />
                       </td>
                     )}
                   </tr>
@@ -508,6 +620,8 @@ interface Props {
    * balance twice — so this puts in only what already passes every test
    * the confirm button applies, and queues the rest with the reason.
    */
+  /** Put in a row the check held back, after a person has read why. */
+  onAddByHand?: (p: PendingTicket, why: string) => Promise<void>;
   onAddToLedger?: (findings: Finding[]) => Promise<{
     added: number; queued: number; alreadyHeld: number;
     reasons: { why: string; count: number }[];
@@ -530,7 +644,7 @@ interface Props {
 }
 
 export const TeamSheetCheck: React.FC<Props> = ({
-  tickets, onSendToReview, onAddToLedger, voids = [], exchanges = NO_EXCHANGES, userId, userEmail,
+  tickets, onSendToReview, onAddToLedger, onAddByHand, voids = [], exchanges = NO_EXCHANGES, userId, userEmail,
 }) => {
   /* What the check remembers between runs: explained differences, and the
      last sheet uploaded so the next one can say what changed. */
@@ -728,6 +842,11 @@ export const TeamSheetCheck: React.FC<Props> = ({
         m.set(findingKey(f), VOIDED_WHY);
     return m;
   }, [proposable, tickets, voidedSerials]);
+
+  const proposals = useMemo(
+    () => proposalsByKey(proposable, { newId: () => crypto.randomUUID(), userId: userId ?? '', tickets }),
+    [proposable, tickets, userId]);
+  const sources = useMemo(() => [...new Set(tickets.map(t => t.source).filter(Boolean))].sort(), [tickets]);
 
   const [rowState, setRowState] =
     useState<Map<string, 'adding' | 'added' | 'queued'>>(new Map());
@@ -1303,7 +1422,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
                 voided={voidedSerials}
                 {...(memory && onAddToLedger && mode === 'sheet' ? { onExplain: explain } : {})}
                 {...(onAddToLedger && PROPOSABLE_VERDICTS.has(v)
-                  ? { onAddOne: addOne, why: addability, done: rowState }
+                  ? { onAddOne: addOne, why: addability, done: rowState, proposals, sources, onAddByHand }
                   : {})} />
             ))}
             {/* Ignored differences: kept, apart, with the reason. */}

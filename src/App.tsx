@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { ViewState, Ticket, VendorBalance, BalanceTopUp, VendorStatement, AppAlert } from './types';
+import { ViewState, Ticket, VendorBalance, BalanceTopUp, VendorStatement, AppAlert, PendingTicket } from './types';
 import { logout } from './utils/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import { AuthGuard } from './components/AuthGuard';
@@ -60,8 +60,8 @@ import type { ExchangeEdge } from './core/parsers/types';
 import { voidsFromImport } from './core/helpers/voidFromImport';
 import { changedAfterClose, AuditEvent } from './core/helpers/changedAfterClose';
 import { coverageReport } from './core/helpers/taxInvoiceCoverage';
-import { pendingFromFindings, ticketFromPending } from './core/helpers/pendingFromFindings';
-import { planSheetAdd, waitingReasons } from './core/helpers/addFromSheet';
+import { pendingFromFindings, ticketFromPending, whyNotConfirmable } from './core/helpers/pendingFromFindings';
+import { planSheetAdd, waitingReasons, neverByHand } from './core/helpers/addFromSheet';
 import type { Finding } from './core/helpers/teamSheetCompare';
 import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
@@ -338,6 +338,23 @@ function MainApp({ user }: { user: User }) {
     };
   };
 
+  /* A row Team Sheet Check held back, put in by a person who read why. Never
+     a wallet vendor's or a voided one, whatever the screen sends. It goes in
+     as from their sheet, so it waits for a supplier report like any other. */
+  const handleAddByHand = async (p: PendingTicket, why: string) => {
+    const no = neverByHand(p);
+    if (no) throw new Error(no);
+    const voided = new Set(voids.map(v => (v.ticketNo || '').replace(/\D/g, '').slice(-10)));
+    if (voided.has((p.ticketNo || '').replace(/\D/g, '').slice(-10))) throw new Error('Voided at the supplier - nothing to add.');
+    const left = whyNotConfirmable(p);
+    if (left) throw new Error(left);
+    const t = ticketFromPending(p, uuidv4(), user.id);
+    await addManualTicket(t);
+    importSvc.audit('MANUAL_ENTRY', t.ticketNo,
+      `Recorded from the team sheet by hand — ${t.source} ${t.amount} ${t.currency}`
+      + `${t.reqNum ? ` (req ${t.reqNum})` : ''}; the check had held it back: ${why}`);
+  };
+
   const handleConfirmPending = async (p: Parameters<typeof confirmPending>[0]) => {
     const t = await confirmPending(p);
     importSvc.audit('PENDING_CONFIRMED', t.ticketNo,
@@ -528,7 +545,7 @@ function MainApp({ user }: { user: User }) {
       {view === 'teamsheet' && <TeamSheetCheck tickets={tickets}
         voids={voids} exchanges={exchanges} userId={user.id} userEmail={user.email}
         {...(isAdmin ? { onSendToReview: handleSendToReview,
-                         onAddToLedger: handleAddFromSheet } : {})} />}
+                         onAddToLedger: handleAddFromSheet, onAddByHand: handleAddByHand } : {})} />}
       {view === 'review'    && (
         <PendingReview
           pending={pending}

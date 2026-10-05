@@ -18,7 +18,7 @@
  * function — whyNotConfirmable — because two definitions of "ready" is how a
  * row gets in one way that could not get in the other.
  */
-import { planSheetAdd, waitingReasons } from '../src/core/helpers/addFromSheet';
+import { planSheetAdd, waitingReasons, neverByHand } from '../src/core/helpers/addFromSheet';
 import { whyNotConfirmable } from '../src/core/helpers/pendingFromFindings';
 import type { Finding } from '../src/core/helpers/teamSheetCompare';
 import type { TeamSheetRow } from '../src/core/parsers/teamSheet';
@@ -215,6 +215,16 @@ console.log('\n9. A refund, and the ticket it refunds');
   const webSale = { ...tkt('U92Z3D'), source: 'Airline Website', pnr: 'U92Z3D', amount: 1460 };
   check('a website refund is taken from their sheet', plan([refund], [webSale]).ready.map(x => x.amount), [-700]);
   check('and a refund we already hold is held', plan([refund], [webSale, { ...webSale, id: 'r', amount: -700, status: 'REFUND' }]).alreadyHeld.length, 1);
+}
+
+console.log('\n10. What a person may still put in by hand');
+{
+  const base = { id: 'x', userId: '', ticketNo: '5513437053', source: 'RTS', date: '2026-09-13', amount: 1250, commission: 0,
+    totalDoc: 1250, reqNum: 'UAEVP711', origin: 'TEAM_SHEET', state: 'PENDING', dedupe: '' } as any;
+  check('an RTS refund held back for its report: a person may decide', neverByHand({ ...base, transactionType: 'REFUND' }), '');
+  check('Ibtekar never - its wallet would move twice', neverByHand({ ...base, source: 'Ibtekar' }) !== '', true);
+  check('nor NSA', neverByHand({ ...base, source: 'NSA' }) !== '', true);
+  check('nor a row the check held back', neverByHand({ ...base, heldBack: true, heldBackWhy: 'x' }), 'x');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
