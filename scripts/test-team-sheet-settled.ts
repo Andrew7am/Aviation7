@@ -12,7 +12,7 @@
  * request is wrong, and the screen said otherwise. Asserted on those rows.
  */
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
-import { compareTeamSheet, reqDiffHint, rowsForRequests } from '../src/core/helpers/teamSheetCompare';
+import { compareTeamSheet, reqDiffHint, rowsForRequests, whoActs } from '../src/core/helpers/teamSheetCompare';
 import type { Ticket } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -356,6 +356,17 @@ console.log('\n13. One request, out of the whole sheet or its own export');
   const own = [{ reqNum: 'UAEVP420', n: 1 }, { reqNum: '', n: 2 }];
   check('its own export is taken whole, unnamed rows too', rowsForRequests(own, ['UAEVP420']).map(r => r.n), [1, 2]);
   check('nothing typed: every row', rowsForRequests(whole, []).length, 4);
+}
+
+console.log('\n14. Who has to act on a finding');
+{
+  const held = [{ id: 'x' }] as any;
+  check('a ticket missing from our books is ours to settle', whoActs({ verdict: 'NOT_IN_LEDGER', ours: [] }), 'US');
+  check('a request that differs is ours to decide', whoActs({ verdict: 'REQ_DIFFERS', ours: held }), 'US');
+  check('"EMD" in their ticket column, and we hold it: theirs to tidy', whoActs({ verdict: 'UNREADABLE', ours: held }), 'THEM');
+  check('the same, and we hold nothing: ours to look into', whoActs({ verdict: 'UNREADABLE', ours: [] }), 'US');
+  check('a refund we hold they have not marked: theirs', whoActs({ verdict: 'REFUND_NOT_ON_SHEET', ours: held }), 'THEM');
+  check('voided and never billed: nobody', whoActs({ verdict: 'VOID_NOT_BILLED', ours: [] }), 'INFO');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

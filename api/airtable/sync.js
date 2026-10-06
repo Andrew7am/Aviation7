@@ -593,6 +593,25 @@ function explanationFor(f, byKey) {
 }
 
 // src/core/helpers/teamSheetCompare.ts
+function whoActs(f) {
+  switch (f.verdict) {
+    case "OK":
+    case "VOID_NOT_BILLED":
+    case "REISSUE_NO_CHARGE":
+    case "REQ_RELATED":
+    case "CONJUNCT_ALREADY_HELD":
+      return "INFO";
+    case "FILED_ELSEWHERE":
+    case "REFUND_NOT_ON_SHEET":
+    case "TWICE_ON_THEIR_SHEET":
+      return "THEM";
+    case "UNREADABLE":
+    case "NO_TICKET_NUMBER":
+      return f.ours.length ? "THEM" : "US";
+    default:
+      return "US";
+  }
+}
 var VERDICT_RANK = {
   // First, because it is the only finding that leaves both sides' counts
   // looking right while two requests are wrong.
@@ -1051,7 +1070,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   }
   let onHold = 0;
   for (const r of noTicket) {
-    if (r.status === "ON_HOLD" && !r.unreadable) {
+    if (r.status === "ON_HOLD") {
       onHold++;
       continue;
     }
@@ -1311,7 +1330,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     "REISSUE_NO_CHARGE"
   ]);
   for (const r of sheet) {
-    if (r.status === "ON_HOLD" && !r.unreadable) continue;
+    if (r.status === "ON_HOLD") continue;
     if (!r.serial) {
       if (!sheetsSeen.has(r)) unaccounted.push({
         side: "theirs",
@@ -1393,8 +1412,9 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     // A void, a row still on hold and a related request are states of the
     // world rather than disagreements, so a sheet carrying only those is a
     // sheet that can be closed.
-    clean: findings.every((f) => !!f.explained || f.verdict === "OK" || f.verdict === "VOID_NOT_BILLED" || f.verdict === "REISSUE_NO_CHARGE" || f.verdict === "REQ_RELATED" || f.verdict === "FILED_ELSEWHERE" || f.verdict === "CONJUNCT_ALREADY_HELD")
-    // VOID_AND_ISSUED deliberately absent: it is a question, not a state.
+    // Closed when nothing is left for our books: what remains is either a
+    // state of the world or their own sheet to tidy.
+    clean: findings.every((f) => !!f.explained || whoActs(f) !== "US")
   };
 }
 

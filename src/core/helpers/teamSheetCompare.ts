@@ -296,6 +296,35 @@ export type Verdict =
   | 'UNREADABLE'
   | 'NOT_ON_SHEET';
 
+/**
+ * Who a finding is for.
+ *
+ *   US    - our books are missing something, or the two sides disagree and
+ *           somebody here has to decide: a ticket or refund not in our books,
+ *           a price or a request that differs, ours that their sheet lacks.
+ *   THEM  - both sides hold the ticket; only their sheet needs tidying: a
+ *           ticket column reading "EMD" or a name where the PNR finds the
+ *           ticket we hold, a refund we hold that they have not marked, a
+ *           refund they wrote twice, a reference in the wrong column.
+ *   INFO  - a state of the world, nothing to do: agrees, voided and never
+ *           billed, reissued at no charge, the other coupon holds the fare.
+ *
+ * "Things need settling" counts US alone - a row both sides hold is not a
+ * thing to settle.
+ */
+export function whoActs(f: Pick<Finding, 'verdict' | 'ours'>): 'US' | 'THEM' | 'INFO' {
+  switch (f.verdict) {
+    case 'OK': case 'VOID_NOT_BILLED': case 'REISSUE_NO_CHARGE': case 'REQ_RELATED': case 'CONJUNCT_ALREADY_HELD':
+      return 'INFO';
+    case 'FILED_ELSEWHERE': case 'REFUND_NOT_ON_SHEET': case 'TWICE_ON_THEIR_SHEET':
+      return 'THEM';
+    case 'UNREADABLE': case 'NO_TICKET_NUMBER':
+      return f.ours.length ? 'THEM' : 'US';
+    default:
+      return 'US';
+  }
+}
+
 export const VERDICT_LABEL: Record<Verdict, string> = {
   OK:                   'Agrees',
   REQ_DIFFERS:          'Filed under a different request',
@@ -1289,8 +1318,10 @@ export function compareTeamSheet(
   let onHold = 0;
   for (const r of noTicket) {
     // A held option is not a ticket. Nothing was issued, so nothing of
-    // ours can be missing, and listing it is listing the system working.
-    if (r.status === 'ON_HOLD' && !r.unreadable) { onHold++; continue; }
+    // ours can be missing, and listing it is listing the system working -
+    // whatever they typed in its ticket column while it waits: "Issued",
+    // "Waiting Time Limit to get reflected by airlines", "--3pax +1inf".
+    if (r.status === 'ON_HOLD') { onHold++; continue; }
 
     const place = onlinePlace.get(r);
     if (place?.held) {
@@ -1644,7 +1675,8 @@ export function compareTeamSheet(
   const REFUND_SAYS = new Set<Verdict>(['REFUND_NOT_IN_LEDGER', 'REFUND_DIFFERS', 'TWICE_ON_THEIR_SHEET',
     'VOID_NOT_BILLED', 'VOID_AND_ISSUED', 'CONJUNCT_ALREADY_HELD', 'REISSUE_NO_CHARGE']);
   for (const r of sheet) {
-    if (r.status === 'ON_HOLD' && !r.unreadable) continue;
+    // A held booking was not issued: there is nothing it could have reached.
+    if (r.status === 'ON_HOLD') continue;
     if (!r.serial) {
       if (!sheetsSeen.has(r)) unaccounted.push({ side: 'theirs', ref: r.pnr || r.rawTicket || `row ${r.rowNo}`, rowNo: r.rowNo,
         what: `Their row ${r.rowNo} ("${r.rawTicket}") reached no result.` });
@@ -1708,12 +1740,8 @@ export function compareTeamSheet(
     // A void, a row still on hold and a related request are states of the
     // world rather than disagreements, so a sheet carrying only those is a
     // sheet that can be closed.
-    clean: findings.every(f => !!f.explained ||
-      f.verdict === 'OK' || f.verdict === 'VOID_NOT_BILLED'
-      || f.verdict === 'REISSUE_NO_CHARGE'
-      || f.verdict === 'REQ_RELATED'
-      || f.verdict === 'FILED_ELSEWHERE'
-      || f.verdict === 'CONJUNCT_ALREADY_HELD'),
-    // VOID_AND_ISSUED deliberately absent: it is a question, not a state.
+    // Closed when nothing is left for our books: what remains is either a
+    // state of the world or their own sheet to tidy.
+    clean: findings.every(f => !!f.explained || whoActs(f) !== 'US'),
   };
 }

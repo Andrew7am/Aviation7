@@ -10,7 +10,7 @@ import { AirtableService } from '../services/AirtableService';
 import { rowsToCsv } from '../core/integrations/airtable';
 import { parseTeamSheet, TeamSheetRow } from '../core/parsers/teamSheet';
 import {
-  compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK, rowsForRequests,
+  compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK, rowsForRequests, whoActs,
 } from '../core/helpers/teamSheetCompare';
 import { writeClipboard } from '../utils/clipboard';
 import { addabilityByKey, findingKey, proposalsByKey, neverByHand } from '../core/helpers/addFromSheet';
@@ -762,7 +762,13 @@ export const TeamSheetCheck: React.FC<Props> = ({
 
   /* Their sheet, from a file they exported or live from their Airtable -
      the same text either way, read by the same reader. */
-  const run = async (file: File | { name: string; text: () => Promise<string> }) => {
+  /* A file becomes the last sheet the moment it is read. The live copy does
+     not: it is read every time the screen opens, and taken as the new
+     baseline only when somebody says they have reviewed it - otherwise
+     opening the screen would make everything new look old. */
+  const [toMark, setToMark] = useState<{ name: string; snap: ReturnType<typeof snapRows> } | null>(null);
+  const [marked, setMarked] = useState('');
+  const run = async (file: File | { name: string; text: () => Promise<string>; live?: boolean }) => {
     setBusy(true); setError(''); setRows(null); setFileName(file.name);
     try {
       const text = file instanceof File ? await readFileAsText(file) : await file.text();
@@ -781,6 +787,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
           .then(prev => {
             if (prev) setChanges({ since: `${prev.fileName} · ${prev.uploadedAt.slice(0, 16).replace('T', ' ')}`,
               at: prev.uploadedAt, diff: sheetDiff(prev.rows, snap) });
+            if (!(file instanceof File) && file.live) { setToMark({ name: file.name, snap }); setMarked(''); return; }
             if (onAddToLedger) return memory.saveSnapshot(file.name, snap);
           })
           .catch(e => console.error('sheet snapshot', e));
@@ -901,6 +908,24 @@ export const TeamSheetCheck: React.FC<Props> = ({
     } finally { setAddingAll(false); }
   };
 
+  /* Live, from the copy of their Airtable the server keeps. */
+  const runLive = () => run({
+    name: `Airtable (live, ${new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })})`,
+    live: true,
+    text: async () => {
+      const rowsLive = await new AirtableService().liveSheetRows();
+      if (!rowsLive.length) throw new Error('The live copy of their Airtable is empty - has the sync run yet?');
+      return rowsToCsv(rowsLive, d => Papa.unparse(d as Papa.UnparseObject<string[]>));
+    },
+  });
+  // The screen opens on their sheet as it is now; a file is for when one is wanted.
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current || !tickets.length) return;
+    opened.current = true;
+    runLive();
+  }, [tickets.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /** The findings as a sheet, worst first, same order as the screen. */
   const exportReport = async () => {
     if (!report) return;
@@ -949,8 +974,11 @@ export const TeamSheetCheck: React.FC<Props> = ({
 
   const order = (Object.keys(VERDICT_RANK) as Verdict[])
     .sort((a, b) => VERDICT_RANK[a] - VERDICT_RANK[b]);
+  // Only what is ours to settle: a row both sides hold, that their sheet
+  // merely writes untidily, is theirs to tidy and not a thing to settle.
   const needsWork = report
-    ? report.findings.filter(f => TONE[f.verdict].money).length : 0;
+    ? report.findings.filter(f => !f.explained && whoActs(f) === 'US' && TONE[f.verdict].money).length : 0;
+  const forThem = report ? report.findings.filter(f => !f.explained && whoActs(f) === 'THEM' && (!onlyNew || isNew(f))) : [];
 
   return (
     <div className="p-6 space-y-4">
@@ -1100,15 +1128,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
           at most - no export, no file. */}
       <div className="bg-white border border-purple-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-3">
         <button type="button" disabled={busy}
-          onClick={() => run({
-            name: `Airtable (live, ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })})`,
-            text: async () => {
-              const live = new AirtableService();
-              const rows = await live.liveSheetRows();
-              if (!rows.length) throw new Error('The live copy of their Airtable is empty - has the sync run yet?');
-              return rowsToCsv(rows, d => Papa.unparse(d as Papa.UnparseObject<string[]>));
-            },
-          })}
+          onClick={runLive}
           className="flex items-center gap-1.5 bg-purple-600 text-white text-xs font-bold px-3 py-2 rounded hover:bg-purple-700 disabled:opacity-50">
           <RefreshCw className="w-3.5 h-3.5" /> Live from Airtable
         </button>
@@ -1158,6 +1178,19 @@ export const TeamSheetCheck: React.FC<Props> = ({
             <span className="text-sky-700">({changes.since}):</span>
             <span>{changes.diff.added.length} new · {changes.diff.changed.length} changed · {changes.diff.removed.length} gone</span>
           </button>
+          {toMark && memory && onAddToLedger && (
+            <div className="flex items-center gap-2 px-4 pb-2 -mt-1">
+              <button type="button" disabled={!!marked}
+                onClick={async () => {
+                  try { await memory.saveSnapshot(toMark.name, toMark.snap); setMarked(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })); }
+                  catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+                }}
+                className="text-[11px] font-bold bg-sky-600 text-white px-2.5 py-1 rounded hover:bg-sky-700 disabled:opacity-60">
+                {marked ? `Marked as reviewed at ${marked}` : 'Mark as reviewed'}
+              </button>
+              <span className="text-[11px] text-sky-700">The next "what is new" is counted from here.</span>
+            </div>
+          )}
           <label className="flex items-center gap-2 px-4 pb-2.5 -mt-1 cursor-pointer select-none">
             <input type="checkbox" checked={onlyNew} onChange={e => setOnlyNew(e.target.checked)} />
             <span><b>Show only what is new</b> — differences on rows that are new or changed since that sheet,
@@ -1446,13 +1479,35 @@ export const TeamSheetCheck: React.FC<Props> = ({
           <div className="space-y-2">
             {order.map(v => (
               <Group key={v} verdict={v} onCopy={copy}
-                rows={report.findings.filter(f => f.verdict === v && !f.explained && (!onlyNew || isNew(f)))}
+                rows={report.findings.filter(f => f.verdict === v && !f.explained && whoActs(f) !== 'THEM' && (!onlyNew || isNew(f)))}
                 voided={voidedSerials}
                 {...(memory && onAddToLedger && mode === 'sheet' ? { onExplain: explain } : {})}
                 {...(onAddToLedger && PROPOSABLE_VERDICTS.has(v)
                   ? { onAddOne: addOne, why: addability, done: rowState, proposals, sources, onAddByHand }
                   : {})} />
             ))}
+            {/* Their sheet to tidy: both sides hold these, nothing is
+                missing on our side. Apart, folded, and out of the count. */}
+            {forThem.length > 0 && (
+              <details className="bg-slate-50 border border-slate-200 rounded-lg">
+                <summary className="px-4 py-3 cursor-pointer text-xs text-slate-600 select-none">
+                  <b>Their sheet to tidy — nothing missing on our side</b>{' '}
+                  <span className="text-slate-400">({forThem.length})</span>
+                  <span className="block text-[11px] text-slate-400 mt-0.5">
+                    Both sides hold these tickets. Their sheet writes them untidily — a ticket column reading
+                    "EMD" or a name, a refund not marked, a refund written twice. Not counted as things to settle;
+                    send them to the team (Airtable → For the team to fix).
+                  </span>
+                </summary>
+                <div className="p-2 space-y-2">
+                  {order.map(v => (
+                    <Group key={`them-${v}`} verdict={v} onCopy={copy}
+                      rows={forThem.filter(f => f.verdict === v)} voided={voidedSerials}
+                      {...(memory && onAddToLedger && mode === 'sheet' ? { onExplain: explain } : {})} />
+                  ))}
+                </div>
+              </details>
+            )}
             {/* Ignored differences: kept, apart, with the reason. */}
             {!onlyNew && mode === 'sheet' && <Group key="explained" verdict="OK" title="Ignored" onCopy={copy}
               rows={report.findings.filter(f => f.explained)}

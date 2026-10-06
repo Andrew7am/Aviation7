@@ -1237,13 +1237,16 @@ console.log('\n44. A held option is not a ticket; a blank number on a live one i
   check('nothing but holds is clean', allHeld.clean, true);
   check('and all of it counted',      allHeld.onHold, 1);
 
-  // A damaged number on a held row is still damage - it is the cell that
-  // is wrong, not the booking, and only they can fix it.
+  // A held booking is not a ticket, whatever its ticket column says while
+  // it waits - "6.55512E+11", "Issued", "Waiting Time Limit to get reflected
+  // by airlines". Nothing was issued, so there is nothing of ours to check
+  // and nothing to settle.
   const heldDamage = compareTeamSheet(
-    parseTeamSheet('Ticket Number,PNR,Status,Req Num\n6.55512E+11,ZV2XCQ,On Hold,KSAML2053').rows,
+    parseTeamSheet('Ticket Number,PNR,Status,Req Num\n6.55512E+11,ZV2XCQ,On Hold,KSAML2053\nWaiting Time Limit to get reflected by airlines,ZU93AC,On Hold,KSAML2053').rows,
     [], ['KSAML2053']);
-  check('a damaged cell is still reported', heldDamage.counts.UNREADABLE, 1);
-  check('and not counted as a hold',        heldDamage.onHold, 0);
+  check('a held booking is not reported, whatever its ticket column says', heldDamage.counts.UNREADABLE ?? 0, 0);
+  check('it is counted as a hold',        heldDamage.onHold, 2);
+  check('and the sheet is clean',         heldDamage.clean, true);
 }
 
 console.log('\n45. A finding carries the row it is about, not the first one');
