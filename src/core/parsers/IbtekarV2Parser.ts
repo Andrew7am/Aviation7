@@ -55,6 +55,18 @@ export const IbtekarV2Parser: VendorParser = {
       return { rows: result, errors, warnings };
     }
 
+    /* Their report prints 1970-01-01 - the zero date - on the second ticket
+       of a booking: 8RPYVM's 593-4862343263 beside its 065-4862343264 of
+       2026-10-06. That is their blank, not a ticket issued in 1970, so it
+       takes the date of the booking's dated ticket. */
+    const isEpoch = (d: string) => /^1970-01-0[12]$/.test(d) || !d;
+    const bookingDate = new Map<string, string>();
+    for (const row of rows) {
+      const d = parseDate(cell(row, iDate));
+      const pnr = pnrClean(cell(row, iPNR));
+      if (pnr && d && !isEpoch(d) && !bookingDate.has(pnr)) bookingDate.set(pnr, d);
+    }
+
     rows.forEach((row, idx) => {
       const rawTk = cell(row, iTicket);
       if (!rawTk) {
@@ -95,7 +107,12 @@ export const IbtekarV2Parser: VendorParser = {
       // Excel-epoch conversion; falls back to string parse if it's already a
       // date string.
       const rawDate = cell(row, iDate);
-      const date = parseDate(rawDate);
+      let date = parseDate(rawDate);
+      if (isEpoch(date)) {
+        const theirs = bookingDate.get(pnrClean(cell(row, iPNR)));
+        if (theirs) date = theirs;
+        else { date = ''; warnings.push(`Ticket ${cleanTk(rawTk)}: no date on Ibtekar's report (it reads ${rawDate || 'blank'})`); }
+      }
 
       const tkClean = cleanTk(rawTk);
       const ac = airlineCode(rawTk);

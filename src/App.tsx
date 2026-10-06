@@ -260,6 +260,10 @@ function MainApp({ user }: { user: User }) {
         dismissed: false, createdAt: new Date().toISOString(),
       }]);
       setView('tickets');
+      /* A supplier report carries no request; their Airtable does. Sync now
+         rather than in up to two minutes, so the tickets just imported take
+         their requests while the person is still looking at them. */
+      airtable.syncNow().then(loadAirtable).catch(e => console.error('airtable sync after import', e));
     } catch (e) {
       console.error('Import error', e);
     }

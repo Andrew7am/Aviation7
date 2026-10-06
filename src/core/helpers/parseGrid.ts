@@ -69,22 +69,39 @@ export function unwrapRows(rows: string[][]): string[][] {
   for (let i = 0; i < rows.length; i++) {
     if (rows[i].length >= width) { out.push(rows[i]); continue; }
 
-    // Gather forward while the pieces could still add up.
-    let joined = rows[i].slice();
-    let j = i;
-    while (joined.length < width && j + 1 < rows.length && rows[j + 1].length < width) {
-      joined = joined.concat(rows[j + 1]);
-      j++;
-    }
-    if (joined.length === width) { out.push(joined); i = j; }
+    // Gather forward while the pieces could still add up. The break falls
+    // either between two cells, or inside one: a piece that ends in a tab
+    // ("ALMUTAIRI SULTAN SALMAN<tab><tab>" / "065-4862343266<tab>") has
+    // opened the next cell before the line broke, and the next piece's first
+    // value finishes it. Both readings are tried; only one that adds up to
+    // exactly the header's width is taken.
+    const gather = (mergeOpenCell: boolean) => {
+      let joined = rows[i].slice();
+      let j = i;
+      while (joined.length < width && j + 1 < rows.length && rows[j + 1].length < width) {
+        const next = rows[j + 1];
+        if (mergeOpenCell && joined.length && joined[joined.length - 1] === '' && next.length)
+          joined = [...joined.slice(0, -1), next[0], ...next.slice(1)];
+        else joined = joined.concat(next);
+        j++;
+        if (joined.length === width) break;
+      }
+      return { joined, j };
+    };
+    const plain = gather(false);
+    const merged = plain.joined.length === width ? plain : gather(true);
+    if (merged.joined.length === width) { out.push(merged.joined); i = merged.j; }
     else out.push(rows[i]);   // did not add up - leave it exactly as it was
   }
   return out;
 }
 
 export function parseGrid(text: string): ParsedGrid {
-  const clean = text.trim();
-  if (!clean) return { rows: [], delimiter: 'none' };
+  // Blank lines off the ends, but never a tab: a pasted table's last cell is
+  // often empty, and trimming its tab leaves the last row a column short -
+  // the last ticket of an Ibtekar paste was read as ticket 0.
+  const clean = text.replace(/^(?:[ \t]*\r?\n)+/, '').replace(/(?:\r?\n[ \t]*)+$/, '');
+  if (!clean.trim()) return { rows: [], delimiter: 'none' };
 
   const rows = unwrapRows(Papa.parse(clean, { skipEmptyLines: true }).data as string[][]);
   const widest = rows.reduce((w, r) => Math.max(w, r.length), 0);

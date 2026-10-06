@@ -7,6 +7,7 @@ import { sheetTime, toSheetRow, normalize, diffRecord, rowsToCsv, type AirtableT
 import { noticesFor, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
 import { teamFixes } from '../src/core/integrations/airtableFixes';
+import { requestsFor } from '../src/core/integrations/airtableRequests';
 import Papa from 'papaparse';
 
 let passed = 0, failed = 0;
@@ -96,6 +97,23 @@ console.log('\n6. What the team has to put right on their side');
   check('no request', kinds([row({ ticket_cell: '065-5513427739', serials: ['5513427739'], req_num: '' })]), ['NO_REQUEST']);
   check('issued with no cost', kinds([row({ ticket_cell: '065-5513427739', serials: ['5513427739'], net_cost: null })]), ['NO_COST']);
   check('one ticket issued on two rows', kinds([row({ serials: ['5513427739'] }), row({ record_id: 'r2', serials: ['5513427739'] })]), ['ISSUED_TWICE', 'ISSUED_TWICE']);
+}
+
+console.log('\n7. A ticket with no request takes the one their sheet gives');
+{
+  const row = (o: any) => ({ serials: [], emd: '', pnr: '', req_num: '', status: 'Issued', ...o });
+  const fill = (t: any, rows: any[]) => requestsFor([{ id: 'a', ticketNo: '', pnr: '', ...t }], rows).map(f => [f.req, f.how]);
+  check('by its number', fill({ ticketNo: '5513427739' }, [row({ serials: ['5513427739'], req_num: 'KSAML2053' })]), [['KSAML2053', 'ticket number']]);
+  check('an EMD by their EMD column', fill({ ticketNo: '1949933377' }, [row({ serials: [], emd: '065-1949933377', req_num: 'UAEVP711' })]), [['UAEVP711', 'ticket number']]);
+  // ZWE5AG: their cell names two of nine passengers; the booking is one request.
+  const zwe = [row({ serials: ['5512845110', '5512845111'], pnr: 'ZWE5AG', req_num: 'UAEVP420' }), row({ serials: ['5512878176'], pnr: 'ZWE5AG', req_num: 'UAEVP420' })];
+  check('by its booking when every row of it agrees', fill({ ticketNo: '5512845112', pnr: 'ZWE5AG' }, zwe), [['UAEVP420', 'booking PNR']]);
+  check('not when the booking is under two requests', fill({ ticketNo: '5512845112', pnr: 'ZWE5AG' },
+    [...zwe, row({ serials: ['5512878177'], pnr: 'ZWE5AG', req_num: 'UAEVP421' })]), []);
+  check('not from a row naming two requests', fill({ ticketNo: '5513427739' }, [row({ serials: ['5513427739'], req_num: 'UAEVP420, KSAML2053' })]), []);
+  check('not from a held booking', fill({ ticketNo: 'X', pnr: 'YFMA7K' }, [row({ pnr: 'YFMA7K', status: 'On Hold', req_num: 'KSAML1271' })]), []);
+  check('a number their sheet files under two requests is not settled by its booking either',
+    fill({ ticketNo: '5513427739', pnr: 'P1' }, [row({ serials: ['5513427739'], pnr: 'P1', req_num: 'A1' }), row({ serials: ['5513427739'], pnr: 'P1', req_num: 'B2' })]), []);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

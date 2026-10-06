@@ -128,5 +128,33 @@ console.log('\n6. Rows are joined only when the arithmetic is exact');
   check('and the whole rows are untouched', middle.rows[3], ['4','5','6']);
 }
 
+console.log('\n9. Ibtekar pasted from their site, every line ending in a tab');
+{
+  // The paste of 2026-10-06, as the clipboard gave it: each line ends in a
+  // tab, so the break falls INSIDE a cell - the ticket number and the status
+  // each finish a cell the line before had opened.
+  const H = 'Tk Date\tRecLoc\tOfficeID Bk\tOfficeID Tk\tPassenger\tPaxType\tNo\tStatus\tType\tType of issue\tVC\tRoute\tPayment\tFM\tFM equiv.\tTaxes\tMisc. fees\tFare\tFare eq.\tTotal\tNGrandTotal\tGrandTotal\tActions';
+  const rec = (d: string, pnr: string, pax: string, tk: string, vc: string, route: string, taxes: string, fare: string, total: string) =>
+    `${d}\t${pnr}\tRUHS2242O\tRUHS2234T\t${pax}\t\t\n${tk}\t\nissd\tElectron\tBSP\t${vc}\t${route}\tCASH\t0\t0.00 SAR\t${taxes} SAR\t0.00 SAR\t${fare} SAR\t\t${total} SAR\t${total} SAR\t${total} SAR\t`;
+  const paste = [H,
+    rec('2026-10-06', '8TA6A4', 'ALMUTAIRI SULTAN SALMAN', '065-4862343266', 'SV', 'RUH-JED; JED-RUH', '553.65', '701.00', '1254.65'),
+    rec('2026-10-06', '8ST4RQ', 'ALRABABA BASHEER MOHAMMED', '593-4862343265', 'XY', 'DMM-JED; JED-DMM', '703.50', '343.00', '1046.50'),
+    rec('2026-10-06', '8RPYVM', 'DAHBUR HUDA MUSTAFA', '065-4862343264', 'SV', 'JED-DMM', '264.90', '271.00', '535.90'),
+    rec('1970-01-01', '8RPYVM', 'DAHBUR HUDA MUSTAFA', '593-4862343263', 'XY', 'DMM-JED', '338.55', '141.00', '479.55'),
+    rec('2026-10-06', '8RH5ND', 'SALEH FAHAD MOHAMMED', '593-4862343261', 'XY', 'JED-DMM', '364.95', '202.00', '566.95'),
+    rec('1970-01-01', '8RH5ND', 'SALEH FAHAD MOHAMMED', '560-4862343260', 'F3', 'DMM-TIF', '298.10', '201.00', '499.10'),
+    rec('2026-10-06', '8RAK9Q', 'ELTANTAWI AHMED MOHAMED', '593-4862343259', 'XY', 'DMM-JED; JED-DMM', '740.25', '473.00', '1213.25'),
+  ].join('\n') + '\n';
+  const g = parseGrid(paste);
+  check('seven rows of 23 columns under the header', [g.rows.length, ...new Set(g.rows.map(r => r.length))], [8, 23]);
+  const r = runParser(g.rows, undefined, 'SAR', 'pasted');
+  check('recognised as Ibtekar on its own', r.parserName, 'Ibtekar');
+  check('seven tickets read', r.rows.map(t => t.ticketNo), ['4862343266', '4862343265', '4862343264', '4862343263', '4862343261', '4862343260', '4862343259']);
+  check('each at its grand total', r.rows.map(t => t.amount), [1254.65, 1046.5, 535.9, 479.55, 566.95, 499.1, 1213.25]);
+  check('the passenger in the passenger column', r.rows[0].passengerName, 'ALMUTAIRI SULTAN SALMAN');
+  check('the 1970 one takes its booking\'s date', r.rows.find(t => t.ticketNo === '4862343263')!.date, '2026-10-06');
+  check('and nothing dated 1970', r.rows.some(t => (t.date || '').startsWith('1970')), false);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

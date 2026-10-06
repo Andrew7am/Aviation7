@@ -54,6 +54,15 @@ export class AirtableService {
       refund_amount: r.refund_amount == null ? null : Number(r.refund_amount), serials: r.serials ?? [] }));
   }
 
+  /** What each of their rows says about requests - for filling ours. */
+  async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string }[]> {
+    const rows = await fetchAllRows<any>((from, to) =>
+      supabase.from('airtable_tickets').select('serials, pnr, req_num, status, sheet_row')
+        .eq('deleted', false).range(from, to));
+    return rows.map(r => ({ serials: r.serials ?? [], emd: r.sheet_row?.['EMD Number'] ?? '', pnr: r.pnr ?? '',
+      req_num: r.req_num ?? '', status: r.status ?? '' }));
+  }
+
   /** What moved on their side, newest first. */
   async changes(limit = 1000): Promise<ChangeRow[]> {
     const { data, error } = await supabase.from('airtable_changes')

@@ -12,6 +12,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { TicketService } from '../services/TicketService';
 import { fileUnderOriginal } from '../core/helpers/freeReissue';
 import { confirmationsFrom, correctionsFrom, type Confirmation, type Correction } from '../core/helpers/supplierProof';
+import { AirtableService } from '../services/AirtableService';
+import { requestsFor } from '../core/integrations/airtableRequests';
 
 export interface ImportErrorEntry { row: number; raw: string; error: string }
 
@@ -159,6 +161,24 @@ export function useImport(userId: string) {
         userId:          'temp',
       }));
 
+      /* A supplier report carries no request; the team's Airtable does. Each
+         ticket without one takes theirs here, before the preview - by its
+         number, or failing that by its booking - so it is imported filed
+         rather than landing in Needs Action. */
+      const filledFromAirtable = new Set<string>();
+      const needReq = rawTickets.filter(t => !t.reqNum && t.status !== 'FUND');
+      if (needReq.length) {
+        try {
+          const sources = await new AirtableService().reqSources();
+          for (const f of requestsFor(needReq.map(t => ({ id: t.id, ticketNo: t.ticketNo, pnr: t.pnr || '' })), sources)) {
+            const t = rawTickets.find(x => x.id === f.id);
+            if (t) { t.reqNum = f.req; filledFromAirtable.add(t.ticketNo); }
+          }
+        } catch (e) { console.error('requests from Airtable', e); }
+      }
+      const reqWarnings = filledFromAirtable.size
+        ? [`${filledFromAirtable.size} ticket(s) took their request from the team's Airtable.`] : [];
+
       const topUps   = rawTickets.filter(t => t.status === 'FUND');
 
       // Voided documents are dropped, not stored. VOID covers the vendors'
@@ -240,7 +260,8 @@ export function useImport(userId: string) {
         corrections: fix.correct,
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
-        warnings: [...proofWarnings, ...dateWarnings, ...warnings], parserName, confidence, routedVendor,
+        warnings: [...reqWarnings, ...proofWarnings, ...dateWarnings,
+           ...warnings.filter(w => !/Missing Req Num/i.test(w) || ![...filledFromAirtable].some(tk => w.includes(tk)))], parserName, confidence, routedVendor,
         totalRows: allRows.length,
       });
     } finally {

@@ -22,6 +22,7 @@ import { parseTeamSheet } from '../core/parsers/teamSheet';
 import { compareTeamSheet } from '../core/helpers/teamSheetCompare';
 import { planSheetAdd } from '../core/helpers/addFromSheet';
 import { pendingRow } from '../core/helpers/pendingRow';
+import { requestsFor } from '../core/integrations/airtableRequests';
 import type { Ticket } from '../types';
 
 const STATE_ID = 'aviation_tickets';
@@ -30,7 +31,7 @@ const FULL_EVERY_MS = 60 * 60 * 1000;
 export interface SyncResult {
   mode: 'full' | 'incremental';
   fetched: number; changedRecords: number; fieldChanges: number; added: number; deleted: number;
-  notices: number; onlineQueued: number; ms: number;
+  notices: number; onlineQueued: number; reqFilled: number; ms: number;
 }
 
 async function airtable(token: string, table: string, params: Record<string, string | string[]>): Promise<AirtableRecord[]> {
@@ -214,6 +215,33 @@ export async function syncAirtable(env: {
       if (error) throw new Error(`airtable_notifications: ${error.message}`);
     }
 
+    /* Tickets of ours with no request take the one their sheet gives -
+       every run, so a ticket imported from a supplier report gets it within
+       two minutes, and one the team only adds to their sheet later gets it
+       the moment they do. Fill only, and said in the activity log. */
+    let reqFilled = 0;
+    const { data: miss, error: missErr } = await db.from('tickets')
+      .select('id, ticket_no, pnr, status, user_id').or('req_num.is.null,req_num.eq.').neq('status', 'FUND');
+    if (missErr) throw new Error(`tickets: ${missErr.message}`);
+    if (miss?.length) {
+      const live = await selectAll<{ serials: string[]; pnr: string; req_num: string; status: string; sheet_row: Record<string, string> }>(
+        db, 'airtable_tickets', 'serials, pnr, req_num, status, sheet_row', q => q.eq('deleted', false));
+      const fills = requestsFor(
+        miss.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', pnr: t.pnr ?? '' })),
+        live.map(r => ({ serials: r.serials ?? [], emd: r.sheet_row?.['EMD Number'] ?? '', pnr: r.pnr ?? '', req_num: r.req_num ?? '', status: r.status ?? '' })));
+      const owner = miss.find(t => t.user_id)?.user_id;
+      for (const f of fills) {
+        if (dry) { reqFilled++; continue; }
+        const { data: upd, error } = await db.from('tickets').update({ req_num: f.req })
+          .eq('id', f.id).or('req_num.is.null,req_num.eq.').select('id');
+        if (error) throw new Error(`tickets: ${error.message}`);
+        if (!upd?.length) continue;   // somebody filled it in the meantime
+        reqFilled++;
+        await db.from('audit_log').insert({ id: crypto.randomUUID(), user_id: owner, action: 'UPDATE_REQ', entity: f.ticketNo,
+          entity_type: 'ticket', actor_email: 'Airtable sync', detail: `Request ${f.req} from the team's Airtable (matched by ${f.how})`, performed_at: new Date().toISOString() });
+      }
+    }
+
     const newest = [st?.cursor, ...rows.map(r => r.last_modified), ...rows.map(r => r.created_at)]
       .filter(Boolean).map(x => new Date(x as string).getTime()).reduce((a, b) => Math.max(a, b), 0);
     const { count } = await db.from('airtable_tickets').select('record_id', { count: 'exact', head: true }).eq('deleted', false);
@@ -223,7 +251,7 @@ export async function syncAirtable(env: {
       last_error: null, record_count: count ?? null, last_changed: changedRows.length, names,
     });
     return { mode: full ? 'full' : 'incremental', fetched: recs.length, changedRecords: changes.size, fieldChanges: log.length,
-      added, deleted, notices: notices.length, onlineQueued, ms: Date.now() - t0, preview };
+      added, deleted, notices: notices.length, onlineQueued, reqFilled, ms: Date.now() - t0, preview };
   } catch (e) {
     if (!dry) await db.from('airtable_sync_state').upsert({ id: STATE_ID, last_error: e instanceof Error ? e.message : String(e) });
     throw e;

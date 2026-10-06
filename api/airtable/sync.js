@@ -20,22 +20,31 @@ function unwrapRows(rows) {
       out.push(rows[i]);
       continue;
     }
-    let joined = rows[i].slice();
-    let j = i;
-    while (joined.length < width && j + 1 < rows.length && rows[j + 1].length < width) {
-      joined = joined.concat(rows[j + 1]);
-      j++;
-    }
-    if (joined.length === width) {
-      out.push(joined);
-      i = j;
+    const gather = (mergeOpenCell) => {
+      let joined = rows[i].slice();
+      let j = i;
+      while (joined.length < width && j + 1 < rows.length && rows[j + 1].length < width) {
+        const next = rows[j + 1];
+        if (mergeOpenCell && joined.length && joined[joined.length - 1] === "" && next.length)
+          joined = [...joined.slice(0, -1), next[0], ...next.slice(1)];
+        else joined = joined.concat(next);
+        j++;
+        if (joined.length === width) break;
+      }
+      return { joined, j };
+    };
+    const plain2 = gather(false);
+    const merged = plain2.joined.length === width ? plain2 : gather(true);
+    if (merged.joined.length === width) {
+      out.push(merged.joined);
+      i = merged.j;
     } else out.push(rows[i]);
   }
   return out;
 }
 function parseGrid(text) {
-  const clean = text.trim();
-  if (!clean) return { rows: [], delimiter: "none" };
+  const clean = text.replace(/^(?:[ \t]*\r?\n)+/, "").replace(/(?:\r?\n[ \t]*)+$/, "");
+  if (!clean.trim()) return { rows: [], delimiter: "none" };
   const rows = unwrapRows(Papa.parse(clean, { skipEmptyLines: true }).data);
   const widest = rows.reduce((w, r) => Math.max(w, r.length), 0);
   if (widest > 1) return { rows, delimiter: "papa" };
@@ -509,13 +518,13 @@ function portalSource(cell2) {
   if (parts.length === 0) return { portal: "", source: "", choices: [], heldBack: false, why: "" };
   const all = parts.map(one);
   const named = all.find((p) => p.source || p.choices.length) ?? all[0];
-  const held = all.find((p) => p.heldBack);
+  const held2 = all.find((p) => p.heldBack);
   return {
     portal: all.map((p) => p.portal).join(", "),
     source: named.source,
     choices: named.choices,
-    heldBack: !!held,
-    why: held?.why ?? ""
+    heldBack: !!held2,
+    why: held2?.why ?? ""
   };
 }
 
@@ -1061,15 +1070,15 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     }
   const onlinePlace = /* @__PURE__ */ new Map();
   for (const [pnr, rs] of onlineByPnr) {
-    const held = /* @__PURE__ */ new Map();
+    const held2 = /* @__PURE__ */ new Map();
     for (const t of ledger) {
       if (!isTicket(t) || (t.amount || 0) <= 0) continue;
       const want = new Set(pnrParts(pnr));
       if (!pnrParts(t.pnr).some((x) => want.has(x))) continue;
       const k = ticketMatchKey(t.ticketNo || "");
-      if (k && !theirSerials.has(k) && !held.has(k)) held.set(k, t);
+      if (k && !theirSerials.has(k) && !held2.has(k)) held2.set(k, t);
     }
-    const oursOnPnr = [...held.values()];
+    const oursOnPnr = [...held2.values()];
     rs.forEach((r, i) => onlinePlace.set(r, { held: oursOnPnr[i], label: rs.length > 1 ? `${pnr}-${i + 1}` : pnr }));
   }
   let onHold = neverIssued.length;
@@ -1245,13 +1254,13 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       const docs = [r.serial, ...r.siblings];
       if (docs.length > 10) continue;
       const inCell = docs.flatMap((d) => (ourBySerial.get(d) ?? []).filter((t) => (t.amount || 0) > 0));
-      const held = [...inCell, ...alsoOnPnrs(r, inCell)];
-      if (!held.length || docs.some((d) => voidedSet.has(d))) continue;
+      const held2 = [...inCell, ...alsoOnPnrs(r, inCell)];
+      if (!held2.length || docs.some((d) => voidedSet.has(d))) continue;
       const cur = (r.currency || "").toUpperCase();
-      if (!cur || !held.every((t) => String(t.originalCurrency || t.currency || "").toUpperCase() === cur)) continue;
+      if (!cur || !held2.every((t) => String(t.originalCurrency || t.currency || "").toUpperCase() === cur)) continue;
       const asBought = (t, v) => t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
-      const payable = held.reduce((n, t) => n + asBought(t, t.amount || 0), 0);
-      const fare = held.reduce((n, t) => n + asBought(t, t.totalDoc || t.amount || 0), 0);
+      const payable = held2.reduce((n, t) => n + asBought(t, t.amount || 0), 0);
+      const fare = held2.reduce((n, t) => n + asBought(t, t.totalDoc || t.amount || 0), 0);
       const each = Math.abs(r.cost ?? 0);
       const readings = Array.from({ length: docs.length }, (_, i) => each * (i + 1));
       const gaps = readings.flatMap((t) => [payable, fare].map((v) => t - v));
@@ -1266,8 +1275,8 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         airlineCode: r.airlineCode,
         pnr: r.pnr,
         sheet: r,
-        ours: held,
-        reqNum: (held[0].reqNum || "").trim(),
+        ours: held2,
+        reqNum: (held2[0].reqNum || "").trim(),
         theirReq: r.reqNum,
         note: `Their cell ${r.rawTicket.trim()} prices ${docs.length} documents at ${money2(each)} ${cur}; we hold ${money2(payable)} on them - ${money2(Math.abs(gap))} ${gap > 0 ? "short in our books" : "more in ours"}.` + (missingDocs.length ? ` ${missingDocs.join(", ")} not in our books at all.` : "") + " One of the tickets may be recorded at the wrong price, or missing."
       });
@@ -1677,16 +1686,16 @@ var keyOf = (t) => {
 };
 var SUPPLIER_REFUND_WHY = "A supplier's refund arrives with its own report - their sheet saying it was refunded is not the credit.";
 function planSheetAdd(findings, { newId, userId, tickets }) {
-  const held = /* @__PURE__ */ new Set();
+  const held2 = /* @__PURE__ */ new Set();
   for (const t of tickets) {
     const k = keyOf(t);
-    if (k) held.add(k);
+    if (k) held2.add(k);
   }
-  const ledgerKeys = new Set(held);
+  const ledgerKeys = new Set(held2);
   const plan = { ready: [], waiting: [], alreadyHeld: [] };
   for (const proposal of pendingFromFindings(findings, { newId, userId })) {
     const k = keyOf(proposal);
-    if (k && held.has(k)) {
+    if (k && held2.has(k)) {
       plan.alreadyHeld.push(proposal);
       continue;
     }
@@ -1706,7 +1715,7 @@ function planSheetAdd(findings, { newId, userId, tickets }) {
       continue;
     }
     plan.ready.push(proposal);
-    if (k) held.add(k);
+    if (k) held2.add(k);
   }
   return plan;
 }
@@ -1744,6 +1753,46 @@ var pendingRow = (p, userId) => ({
   review_note: p.reviewNote || null,
   dedupe: p.dedupe
 });
+
+// src/core/integrations/airtableRequests.ts
+var pnrParts2 = (p) => (p || "").toUpperCase().split(/[|,/\s]+/).filter(Boolean);
+var one2 = (req) => {
+  const parts = (req || "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
+  return parts.length === 1 ? parts[0] : parts.length ? "TWO" : "";
+};
+var held = (s) => /hold/i.test(s || "");
+function requestsFor(missing, rows) {
+  const byDoc = /* @__PURE__ */ new Map();
+  const byPnr = /* @__PURE__ */ new Map();
+  const add = (m, k, v) => {
+    if (!k) return;
+    if (!m.has(k)) m.set(k, /* @__PURE__ */ new Set());
+    m.get(k).add(v);
+  };
+  for (const r of rows) {
+    if (held(r.status)) continue;
+    const req = one2(r.req_num);
+    if (!req) continue;
+    const docs = [...r.serials, ...teamSerials(r.emd || "").map((d) => d.serial)];
+    for (const d of docs) add(byDoc, docKey(d), req);
+    for (const p of pnrParts2(r.pnr)) add(byPnr, p, req);
+  }
+  const settled = (s) => s && s.size === 1 && !s.has("TWO") ? [...s][0] : "";
+  const out = [];
+  for (const t of missing) {
+    const byNumber = settled(byDoc.get(docKey(t.ticketNo)));
+    if (byNumber) {
+      out.push({ id: t.id, ticketNo: t.ticketNo, req: byNumber, how: "ticket number" });
+      continue;
+    }
+    if (byDoc.has(docKey(t.ticketNo))) continue;
+    const pnrs = pnrParts2(t.pnr);
+    const reqs = new Set(pnrs.flatMap((p) => [...byPnr.get(p) ?? []]));
+    const byBooking = pnrs.length && reqs.size === 1 && !reqs.has("TWO") ? [...reqs][0] : "";
+    if (byBooking) out.push({ id: t.id, ticketNo: t.ticketNo, req: byBooking, how: "booking PNR" });
+  }
+  return out;
+}
 
 // src/server/airtableSync.ts
 var STATE_ID = "aviation_tickets";
@@ -1943,6 +1992,42 @@ async function syncAirtable(env) {
       const { error } = await db.from("airtable_notifications").upsert(notices.slice(i, i + 500), { onConflict: "dedupe_key", ignoreDuplicates: true });
       if (error) throw new Error(`airtable_notifications: ${error.message}`);
     }
+    let reqFilled = 0;
+    const { data: miss, error: missErr } = await db.from("tickets").select("id, ticket_no, pnr, status, user_id").or("req_num.is.null,req_num.eq.").neq("status", "FUND");
+    if (missErr) throw new Error(`tickets: ${missErr.message}`);
+    if (miss?.length) {
+      const live = await selectAll(
+        db,
+        "airtable_tickets",
+        "serials, pnr, req_num, status, sheet_row",
+        (q) => q.eq("deleted", false)
+      );
+      const fills = requestsFor(
+        miss.map((t) => ({ id: t.id, ticketNo: t.ticket_no ?? "", pnr: t.pnr ?? "" })),
+        live.map((r) => ({ serials: r.serials ?? [], emd: r.sheet_row?.["EMD Number"] ?? "", pnr: r.pnr ?? "", req_num: r.req_num ?? "", status: r.status ?? "" }))
+      );
+      const owner = miss.find((t) => t.user_id)?.user_id;
+      for (const f of fills) {
+        if (dry) {
+          reqFilled++;
+          continue;
+        }
+        const { data: upd, error } = await db.from("tickets").update({ req_num: f.req }).eq("id", f.id).or("req_num.is.null,req_num.eq.").select("id");
+        if (error) throw new Error(`tickets: ${error.message}`);
+        if (!upd?.length) continue;
+        reqFilled++;
+        await db.from("audit_log").insert({
+          id: crypto.randomUUID(),
+          user_id: owner,
+          action: "UPDATE_REQ",
+          entity: f.ticketNo,
+          entity_type: "ticket",
+          actor_email: "Airtable sync",
+          detail: `Request ${f.req} from the team's Airtable (matched by ${f.how})`,
+          performed_at: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+    }
     const newest = [st?.cursor, ...rows.map((r) => r.last_modified), ...rows.map((r) => r.created_at)].filter(Boolean).map((x) => new Date(x).getTime()).reduce((a, b) => Math.max(a, b), 0);
     const { count } = await db.from("airtable_tickets").select("record_id", { count: "exact", head: true }).eq("deleted", false);
     if (!dry) await db.from("airtable_sync_state").upsert({
@@ -1965,6 +2050,7 @@ async function syncAirtable(env) {
       deleted,
       notices: notices.length,
       onlineQueued,
+      reqFilled,
       ms: Date.now() - t0,
       preview
     };
