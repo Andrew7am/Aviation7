@@ -1247,6 +1247,18 @@ console.log('\n44. A held option is not a ticket; a blank number on a live one i
   check('a held booking is not reported, whatever its ticket column says', heldDamage.counts.UNREADABLE ?? 0, 0);
   check('it is counted as a hold',        heldDamage.onHold, 2);
   check('and the sheet is clean',         heldDamage.clean, true);
+
+  // The agency's rule: On Hold with no ticket number was never issued -
+  // even with a cost, a PNR, or a booking reference in the ticket column.
+  const heldRef = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,Portal,Req Num',
+    'ZP4D4C,ZP4D4C,On Hold,500.00,500 AED,AL Website,UAEVP711',
+    'RX12237ZB622D,RX12237ZB622D,On Hold,5890.00,5890 AED,Riyadh Air Portal,UAEVP711',
+    ',YFMA7K,On Hold,6648.00,6648 SAR,IATA Portal (UAE),UAEVP711',
+  ].join('\n')).rows, [], ['UAEVP711']);
+  check('a booking reference on a held row is no ticket', heldRef.findings.length, 0);
+  check('all three are holds', heldRef.onHold, 3);
+  check('nothing left to settle', heldRef.clean, true);
 }
 
 console.log('\n45. A finding carries the row it is about, not the first one');

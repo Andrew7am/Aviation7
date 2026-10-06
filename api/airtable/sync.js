@@ -742,6 +742,10 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   const to = typedTo;
   const theirOutsidePeriod = sheet.filter((r) => !inPeriod(r.issued, from, to)).length;
   if (theirOutsidePeriod) sheet = sheet.filter((r) => inPeriod(r.issued, from, to));
+  const isTicketNumber = (x) => /^\d{10}$/.test(x || "");
+  const allTheirRows = sheet.length;
+  const neverIssued = sheet.filter((r) => r.status === "ON_HOLD" && !isTicketNumber(r.serial));
+  if (neverIssued.length) sheet = sheet.filter((r) => !(r.status === "ON_HOLD" && !isTicketNumber(r.serial)));
   const ourBySerial = /* @__PURE__ */ new Map();
   for (const t of ledger) {
     if (!isTicket(t)) continue;
@@ -1068,7 +1072,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     const oursOnPnr = [...held.values()];
     rs.forEach((r, i) => onlinePlace.set(r, { held: oursOnPnr[i], label: rs.length > 1 ? `${pnr}-${i + 1}` : pnr }));
   }
-  let onHold = 0;
+  let onHold = neverIssued.length;
   for (const r of noTicket) {
     if (r.status === "ON_HOLD") {
       onHold++;
@@ -1403,7 +1407,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     declared,
     requests: [...requests].sort(),
     counts,
-    theirRows: sheet.length,
+    theirRows: allTheirRows,
     theirTickets: theirBySerial.size,
     ourRows,
     matched,

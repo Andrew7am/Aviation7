@@ -805,6 +805,17 @@ export function compareTeamSheet(
   // a row the person did not mean to send.
   if (theirOutsidePeriod) sheet = sheet.filter(r => inPeriod(r.issued, from, to));
 
+  /* On Hold with no ticket number was never issued - whatever else the row
+     carries: a cost, a PNR, a booking reference written in the ticket
+     column (ZP4D4C, RX12237ZB622D). Nothing of ours can be missing for a
+     ticket that does not exist, so these rows are counted as holds and go
+     no further. (The agency's rule.) */
+  const isTicketNumber = (x: string) => /^\d{10}$/.test(x || '');
+  const allTheirRows = sheet.length;
+  const neverIssued = sheet.filter(r => r.status === 'ON_HOLD' && !isTicketNumber(r.serial));
+  if (neverIssued.length) sheet = sheet.filter(r => !(r.status === 'ON_HOLD' && !isTicketNumber(r.serial)));
+
+
   /* ── index our side by serial ─────────────────────────────────────────── */
   const ourBySerial = new Map<string, Ticket[]>();
   for (const t of ledger) {
@@ -1315,7 +1326,7 @@ export function compareTeamSheet(
     rs.forEach((r, i) => onlinePlace.set(r, { held: oursOnPnr[i], label: rs.length > 1 ? `${pnr}-${i + 1}` : pnr }));
   }
 
-  let onHold = 0;
+  let onHold = neverIssued.length;
   for (const r of noTicket) {
     // A held option is not a ticket. Nothing was issued, so nothing of
     // ours can be missing, and listing it is listing the system working -
@@ -1731,7 +1742,7 @@ export function compareTeamSheet(
     reqSource: sheetHasReq ? 'sheet' : declared.length ? 'typed' : 'none',
     declared,
     requests: [...requests].sort(), counts,
-    theirRows: sheet.length,
+    theirRows: allTheirRows,
     theirTickets: theirBySerial.size,
     ourRows,
     matched,
