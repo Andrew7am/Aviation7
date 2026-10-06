@@ -838,7 +838,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     const applications = refundsFor.get(serial3) ?? [];
     for (const t of applications) claimed.add(ticketMatchKey(t.ticketNo || ""));
     const ours = [...ourBySerial.get(serial3) ?? [], ...applications];
-    const first = rows[0];
+    const first2 = rows[0];
     const theirReq = (rows.find((r) => reqKey(r.reqNum))?.reqNum || "").trim();
     const ourReq = (ours.find((t) => reqKey(t.reqNum || ""))?.reqNum || "").trim();
     const theySayRefunded = rows.some((r) => r.status === "REFUNDED");
@@ -850,9 +850,9 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     const voidAndIssued = anyVoid && !theySayVoid && atLatest.some((r) => r.status === "VOID");
     const base = {
       serial: serial3,
-      airlineCode: first.airlineCode,
-      pnr: first.pnr,
-      sheet: first,
+      airlineCode: first2.airlineCode,
+      pnr: first2.pnr,
+      sheet: first2,
       ours,
       reqNum: ourReq,
       theirReq,
@@ -871,7 +871,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         });
         continue;
       }
-      const priced = rows.find((x) => x.status !== "REFUNDED" && x.status !== "VOID" && x.cost != null) ?? first;
+      const priced = rows.find((x) => x.status !== "REFUNDED" && x.status !== "VOID" && x.cost != null) ?? first2;
       const sibs = priced.siblings.flatMap((x) => ourBySerial.get(x) ?? []).filter((t) => (t.amount || 0) > 0);
       const theirCell = Math.abs(priced.cost ?? 0);
       const weHold = sibs.reduce((sum, t) => sum + (t.amount || 0), 0);
@@ -895,7 +895,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
           note: "Voided on their side, so no supplier ever billed it. Nothing to record."
         });
       } else if (voidedSet.has(serial3)) {
-        const issued = rows.find((x) => x.status !== "REFUNDED" && x.cost != null) ?? first;
+        const issued = rows.find((x) => x.status !== "REFUNDED" && x.cost != null) ?? first2;
         findings.push({
           ...base,
           sheet: issued,
@@ -906,10 +906,10 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         findings.push({
           ...base,
           verdict: "REISSUE_NO_CHARGE",
-          note: `Their sheet reissues this at no charge${first.rawStatus ? ` (${first.rawStatus})` : ""} \u2014 the fare was paid on the original ticket, so it moves no money. Not in our books yet; adding it records it at 0.00 so the booking's documents are complete.`
+          note: `Their sheet reissues this at no charge${first2.rawStatus ? ` (${first2.rawStatus})` : ""} \u2014 the fare was paid on the original ticket, so it moves no money. Not in our books yet; adding it records it at 0.00 so the booking's documents are complete.`
         });
       } else if (voidAndIssued) {
-        const priced2 = rows.find((x) => x.status !== "VOID" && x.cost != null) ?? first;
+        const priced2 = rows.find((x) => x.status !== "VOID" && x.cost != null) ?? first2;
         base.sheet = priced2;
         const both = rows.map((r) => `${r.rawStatus}${r.issued ? " " + r.issued : ""}` + (r.cost != null ? ` for ${money2(r.cost)}` : "")).join(", and ");
         findings.push({
@@ -918,7 +918,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
           note: `Their sheet says ${both} \u2014 the same date on both, so it cannot say which came last. If it was voided there is nothing to record; if it was issued again, this is a ticket we do not have.`
         });
       } else {
-        const issued = rows.find((x) => x.status !== "REFUNDED" && x.status !== "VOID" && x.cost != null) ?? first;
+        const issued = rows.find((x) => x.status !== "REFUNDED" && x.status !== "VOID" && x.cost != null) ?? first2;
         findings.push({
           ...base,
           sheet: issued,
@@ -978,7 +978,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     }
     const ourRefunds = ours.filter(isRefund);
     if (theySayRefunded && ourRefunds.length === 0) {
-      const stated = rows.find((x) => x.refund != null) ?? first;
+      const stated = rows.find((x) => x.refund != null) ?? first2;
       const refundRow = { ...base, sheet: stated };
       findings.push({
         ...refundRow,
@@ -1439,12 +1439,12 @@ function cleanPax(raw) {
   if (!raw) return "";
   let s = raw.trim().replace(LEADING_TITLE, "").replace(TRAILING_TITLE, "");
   if (s.includes("/")) {
-    const [last, first] = s.split("/");
-    s = `${(first || "").trim()} ${(last || "").trim()}`.trim();
+    const [last, first2] = s.split("/");
+    s = `${(first2 || "").trim()} ${(last || "").trim()}`.trim();
   }
   if (s.includes(",")) {
-    const [last, first] = s.split(",");
-    s = `${(first || "").trim()} ${(last || "").trim()}`.trim();
+    const [last, first2] = s.split(",");
+    s = `${(first2 || "").trim()} ${(last || "").trim()}`.trim();
   }
   return s.replace(LEADING_TITLE, "").replace(TRAILING_TITLE, "").replace(/\s+/g, " ").toUpperCase().trim();
 }
@@ -1504,30 +1504,6 @@ function noticesFor(rows, changes, ledger) {
         payload: { from: req.old, to: r.req_num, ours: move.map((t) => ({ id: t.id, ticketNo: t.ticketNo, reqNum: t.reqNum })) }
       });
     }
-    if (onePassenger(r)) {
-      const name = usableName(r.client_name);
-      const lack = ours.filter((t) => !(t.passengerName || "").trim());
-      if (name && lack.length) out.push({
-        ...base,
-        kind: "NAME",
-        dedupe_key: `NAME|${lack.map((t) => t.id).sort().join(",")}|${name}`,
-        ticket_ids: lack.map((t) => t.id),
-        title: `Passenger name for ${label}: ${name}`,
-        detail: `Their sheet names the passenger; we hold no name on ${lack.length} row${lack.length === 1 ? "" : "s"}. Accept to fill it in.`,
-        payload: { name }
-      });
-      const cabin = usableCabin(r.cabin);
-      const noCabin = ours.filter((t) => !(t.cabinClass || "").trim());
-      if (cabin && noCabin.length) out.push({
-        ...base,
-        kind: "CABIN",
-        dedupe_key: `CABIN|${noCabin.map((t) => t.id).sort().join(",")}|${cabin}`,
-        ticket_ids: noCabin.map((t) => t.id),
-        title: `Cabin for ${label}: ${cabin}`,
-        detail: `Their sheet gives the cabin; we hold none. Accept to fill it in.`,
-        payload: { cabin }
-      });
-    }
     const st = changed("status");
     if (st && /refund/i.test(r.status)) out.push({
       ...base,
@@ -1572,15 +1548,15 @@ function noticesFor(rows, changes, ledger) {
 
 // src/core/helpers/conjunction.ts
 var serial2 = (t) => (t || "").replace(/\D/g, "").slice(-10);
-var isNext = (first, second) => Number(second) === Number(first) + 1;
+var isNext = (first2, second) => Number(second) === Number(first2) + 1;
 function conjunctionFirst(ticketNo, cell2) {
   const me = serial2(ticketNo);
   if (!me || !cell2) return null;
   for (const hit of cell2.matchAll(/(?:\d{3}-?)?(\d{10})-(\d{1,2})(?!\d)/g)) {
-    const first = hit[1];
+    const first2 = hit[1];
     const tail = hit[2].padStart(2, "0");
-    const second = first.slice(0, 10 - tail.length) + tail;
-    if (second === me && isNext(first, second)) return first;
+    const second = first2.slice(0, 10 - tail.length) + tail;
+    if (second === me && isNext(first2, second)) return first2;
   }
   return null;
 }
@@ -1665,9 +1641,9 @@ function whyNotConfirmable(p) {
   if (!p.source.trim()) return "Pick the vendor that billed it.";
   if (!p.ticketNo.trim() && !(p.pnr || "").trim()) return "No ticket number and no PNR.";
   if (!p.date.trim()) return "Give it a date.";
-  const first = conjunctionFirst(p.ticketNo, p.theirCell || "");
-  if (first)
-    return `Second coupon of ${first} \u2014 same passenger, same fare. Not a ticket of its own.`;
+  const first2 = conjunctionFirst(p.ticketNo, p.theirCell || "");
+  if (first2)
+    return `Second coupon of ${first2} \u2014 same passenger, same fare. Not a ticket of its own.`;
   if (!p.amount && p.finding !== "REISSUE_NO_CHARGE") {
     return passengersNamed(p) > 1 ? `Enter what it cost \u2014 their figure covers all ${passengersNamed(p)} tickets in that cell.` : "Enter what it cost \u2014 their sheet states no figure for it.";
   }
@@ -1755,7 +1731,6 @@ var pendingRow = (p, userId) => ({
 });
 
 // src/core/integrations/airtableRequests.ts
-var pnrParts2 = (p) => (p || "").toUpperCase().split(/[|,/\s]+/).filter(Boolean);
 var one2 = (req) => {
   const parts = (req || "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
   return parts.length === 1 ? parts[0] : parts.length ? "TWO" : "";
@@ -1763,33 +1738,60 @@ var one2 = (req) => {
 var held = (s) => /hold/i.test(s || "");
 function requestsFor(missing, rows) {
   const byDoc = /* @__PURE__ */ new Map();
-  const byPnr = /* @__PURE__ */ new Map();
-  const add = (m, k, v) => {
-    if (!k) return;
-    if (!m.has(k)) m.set(k, /* @__PURE__ */ new Set());
-    m.get(k).add(v);
-  };
   for (const r of rows) {
     if (held(r.status)) continue;
     const req = one2(r.req_num);
     if (!req) continue;
-    const docs = [...r.serials, ...teamSerials(r.emd || "").map((d) => d.serial)];
-    for (const d of docs) add(byDoc, docKey(d), req);
-    for (const p of pnrParts2(r.pnr)) add(byPnr, p, req);
+    for (const d of [...r.serials, ...teamSerials(r.emd || "").map((x) => x.serial)]) {
+      const k = docKey(d);
+      if (!k) continue;
+      if (!byDoc.has(k)) byDoc.set(k, /* @__PURE__ */ new Set());
+      byDoc.get(k).add(req);
+    }
   }
-  const settled = (s) => s && s.size === 1 && !s.has("TWO") ? [...s][0] : "";
   const out = [];
   for (const t of missing) {
-    const byNumber = settled(byDoc.get(docKey(t.ticketNo)));
-    if (byNumber) {
-      out.push({ id: t.id, ticketNo: t.ticketNo, req: byNumber, how: "ticket number" });
-      continue;
+    const s = byDoc.get(docKey(t.ticketNo));
+    if (s && s.size === 1 && !s.has("TWO")) out.push({ id: t.id, ticketNo: t.ticketNo, req: [...s][0], how: "ticket number" });
+  }
+  return out;
+}
+
+// src/core/integrations/airtableDetails.ts
+var first = (v) => (v || "").split(",").map((x) => x.trim().toUpperCase()).find(Boolean) ?? "";
+var routeOf = (r) => {
+  const o = first(r.sheet_row?.["Origin Airports (from Aviation Quotations)"] ?? "");
+  const d = first(r.sheet_row?.["Destination Airports (from Aviation Quotations)"] ?? "");
+  return o && d && o !== d && /^[A-Z]{3}$/.test(o) && /^[A-Z]{3}$/.test(d) ? `${o}/${d}` : "";
+};
+function detailsFor(ours, rows) {
+  const byDoc = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    if (/hold/i.test(r.status || "")) continue;
+    const name = onePassenger(r) ? usableName(r.client_name) : "";
+    const cabin = usableCabin(r.cabin);
+    const route = routeOf(r);
+    for (const s of r.serials) {
+      const k = docKey(s);
+      if (!k) continue;
+      const e = byDoc.get(k) ?? { name: /* @__PURE__ */ new Set(), cabin: /* @__PURE__ */ new Set(), route: /* @__PURE__ */ new Set() };
+      if (name) e.name.add(name);
+      if (cabin) e.cabin.add(cabin);
+      if (route) e.route.add(route);
+      byDoc.set(k, e);
     }
-    if (byDoc.has(docKey(t.ticketNo))) continue;
-    const pnrs = pnrParts2(t.pnr);
-    const reqs = new Set(pnrs.flatMap((p) => [...byPnr.get(p) ?? []]));
-    const byBooking = pnrs.length && reqs.size === 1 && !reqs.has("TWO") ? [...reqs][0] : "";
-    if (byBooking) out.push({ id: t.id, ticketNo: t.ticketNo, req: byBooking, how: "booking PNR" });
+  }
+  const single = (s) => s.size === 1 ? [...s][0] : "";
+  const out = [];
+  for (const t of ours) {
+    const e = byDoc.get(docKey(t.ticketNo));
+    if (!e) continue;
+    const add = (field, have, v) => {
+      if (!have.trim() && v) out.push({ id: t.id, ticketNo: t.ticketNo, field, value: v });
+    };
+    add("passenger_name", t.passengerName, single(e.name));
+    add("cabin_class", t.cabinClass, single(e.cabin));
+    add("route", t.route, single(e.route));
   }
   return out;
 }
@@ -1957,7 +1959,7 @@ async function syncAirtable(env) {
         voided: voids.map((v) => v.ticket_no),
         chains: chains.map((c) => ({ ticketNo: c.ticket_no, replacedTicket: c.replaced_ticket }))
       });
-      const online = report.findings.filter((f) => f.verdict === "NOT_IN_LEDGER" && f.issuedFrom === "Airline Website" && f.sheet?.status === "ISSUED" && !voided.has(docKey(f.serial || f.pnr)));
+      const online = report.findings.filter((f) => f.verdict === "NOT_IN_LEDGER" && f.sheet?.status === "ISSUED" && !voided.has(docKey(f.serial || f.pnr)));
       if (online.length) {
         const owner = ledger.find((t) => t.user_id)?.user_id ?? "";
         const plan = planSheetAdd(online, { newId: () => crypto.randomUUID(), userId: owner, tickets });
@@ -1974,17 +1976,20 @@ async function syncAirtable(env) {
           if (error) throw new Error(`pending_tickets: ${error.message}`);
         }
         onlineQueued = fresh.length;
-        for (const p of fresh) notices.push({
-          kind: "ONLINE_TICKET",
-          dedupe_key: `ONLINE|${p.dedupe}`,
-          record_id: "",
-          ticket_no: p.ticketNo || p.pnr || "",
-          ticket_ids: [],
-          req_num: p.reqNum,
-          title: `Bought online: ${p.ticketNo || p.pnr} \xB7 ${p.amount ? `${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} ${p.currency}` : "no price on their sheet"} \xB7 ${p.reqNum || "no request"}`,
-          detail: `On their sheet from ${p.theirPortal || "an airline website"} and not in our books. Waiting in To Review - add it or reject it.`,
-          payload: { dedupe: p.dedupe }
-        });
+        for (const p of fresh) {
+          const web = p.source === "Airline Website";
+          notices.push({
+            kind: web ? "ONLINE_TICKET" : "NOT_IN_BOOKS",
+            dedupe_key: `${web ? "ONLINE" : "MISSING"}|${p.dedupe}`,
+            record_id: "",
+            ticket_no: p.ticketNo || p.pnr || "",
+            ticket_ids: [],
+            req_num: p.reqNum,
+            title: `${web ? "Bought online" : "Not in our books"}: ${p.ticketNo || p.pnr} \xB7 ${p.amount ? `${p.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} ${p.currency}` : "no price on their sheet"} \xB7 ${p.reqNum || "no request"}`,
+            detail: `On their sheet from ${p.theirPortal || p.source || "their portal"} and not in our books. Waiting in To Review - add it or reject it.`,
+            payload: { dedupe: p.dedupe }
+          });
+        }
       }
     }
     const preview = dry ? { notices, online: notices.filter((n) => n.kind === "ONLINE_TICKET").map((n) => n.title), changes: [...changes].slice(0, 40) } : void 0;
@@ -1992,16 +1997,59 @@ async function syncAirtable(env) {
       const { error } = await db.from("airtable_notifications").upsert(notices.slice(i, i + 500), { onConflict: "dedupe_key", ignoreDuplicates: true });
       if (error) throw new Error(`airtable_notifications: ${error.message}`);
     }
-    let reqFilled = 0;
-    const { data: miss, error: missErr } = await db.from("tickets").select("id, ticket_no, pnr, status, user_id").or("req_num.is.null,req_num.eq.").neq("status", "FUND");
+    let reqFilled = 0, detailsFilled = 0;
+    const fillNow = full || changedRows.length > 0 || !!env.fillNow;
+    let liveRows = null;
+    const liveAll = async () => liveRows ??= await selectAll(
+      db,
+      "airtable_tickets",
+      "serials, ticket_cell, pnr, req_num, status, client_name, cabin, sheet_row",
+      (q) => q.eq("deleted", false)
+    );
+    const audit = (owner, entity, detail) => db.from("audit_log").insert({
+      id: crypto.randomUUID(),
+      user_id: owner,
+      action: "UPDATE_REQ",
+      entity,
+      entity_type: "ticket",
+      actor_email: "Airtable sync",
+      detail,
+      performed_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    if (fillNow) {
+      const lacking = await selectAll(
+        db,
+        "tickets",
+        "id, ticket_no, passenger_name, cabin_class, route, user_id",
+        (q) => q.neq("status", "FUND").or("passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.")
+      );
+      if (lacking.length) {
+        const fills = detailsFor(lacking.map((t) => ({
+          id: t.id,
+          ticketNo: t.ticket_no ?? "",
+          passengerName: t.passenger_name ?? "",
+          cabinClass: t.cabin_class ?? "",
+          route: t.route ?? ""
+        })), await liveAll());
+        const owner = lacking.find((t) => t.user_id)?.user_id;
+        for (const f of fills) {
+          if (dry) {
+            detailsFilled++;
+            continue;
+          }
+          const { data: upd, error } = await db.from("tickets").update({ [f.field]: f.value }).eq("id", f.id).or(`${f.field}.is.null,${f.field}.eq.`).select("id");
+          if (error) throw new Error(`tickets: ${error.message}`);
+          if (!upd?.length) continue;
+          detailsFilled++;
+          await audit(owner, f.ticketNo, `${f.field === "passenger_name" ? "Passenger name" : f.field === "cabin_class" ? "Cabin" : "Route"} ${f.value} from the team's Airtable`);
+        }
+      }
+      if (!dry) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("kind", ["NAME", "CABIN"]).eq("state", "OPEN");
+    }
+    const { data: miss, error: missErr } = fillNow ? await db.from("tickets").select("id, ticket_no, pnr, status, user_id").or("req_num.is.null,req_num.eq.").neq("status", "FUND") : { data: [], error: null };
     if (missErr) throw new Error(`tickets: ${missErr.message}`);
     if (miss?.length) {
-      const live = await selectAll(
-        db,
-        "airtable_tickets",
-        "serials, pnr, req_num, status, sheet_row",
-        (q) => q.eq("deleted", false)
-      );
+      const live = await liveAll();
       const fills = requestsFor(
         miss.map((t) => ({ id: t.id, ticketNo: t.ticket_no ?? "", pnr: t.pnr ?? "" })),
         live.map((r) => ({ serials: r.serials ?? [], emd: r.sheet_row?.["EMD Number"] ?? "", pnr: r.pnr ?? "", req_num: r.req_num ?? "", status: r.status ?? "" }))
@@ -2016,16 +2064,7 @@ async function syncAirtable(env) {
         if (error) throw new Error(`tickets: ${error.message}`);
         if (!upd?.length) continue;
         reqFilled++;
-        await db.from("audit_log").insert({
-          id: crypto.randomUUID(),
-          user_id: owner,
-          action: "UPDATE_REQ",
-          entity: f.ticketNo,
-          entity_type: "ticket",
-          actor_email: "Airtable sync",
-          detail: `Request ${f.req} from the team's Airtable (matched by ${f.how})`,
-          performed_at: (/* @__PURE__ */ new Date()).toISOString()
-        });
+        await audit(owner, f.ticketNo, `Request ${f.req} from the team's Airtable (matched by ${f.how})`);
       }
     }
     const newest = [st?.cursor, ...rows.map((r) => r.last_modified), ...rows.map((r) => r.created_at)].filter(Boolean).map((x) => new Date(x).getTime()).reduce((a, b) => Math.max(a, b), 0);
@@ -2051,6 +2090,7 @@ async function syncAirtable(env) {
       notices: notices.length,
       onlineQueued,
       reqFilled,
+      detailsFilled,
       ms: Date.now() - t0,
       preview
     };
@@ -2089,7 +2129,7 @@ async function handler(req, res) {
     return;
   }
   try {
-    const result = await syncAirtable({ airtableToken, supabaseUrl, serviceKey, forceFull: req.query.full === "1" });
+    const result = await syncAirtable({ airtableToken, supabaseUrl, serviceKey, forceFull: req.query.full === "1", fillNow: req.query.fill === "1" });
     res.status(200).json(result);
   } catch (err) {
     console.error(err);

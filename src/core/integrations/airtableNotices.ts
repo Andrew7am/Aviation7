@@ -7,8 +7,6 @@
  * would do, so the person reads the change and the consequence together.
  *
  *   REQ_CHANGED  their request on a ticket we hold moved     -> move ours
- *   NAME         a passenger name we lack                     -> fill ours
- *   CABIN        a cabin we lack                              -> fill ours
  *   REFUND       their sheet refunded a ticket we hold        -> look; the supplier's report credits it
  *   VOID         their sheet voided a ticket we hold          -> look
  *   PRICE        their cost on a ticket we hold changed       -> look; the supplier's figure stands
@@ -21,7 +19,7 @@ import type { AirtableTicketRow, FieldChange } from './airtable';
 import { reqParts } from '../helpers/teamSheetCompare';
 import { cleanPax } from '../parsers/shared';
 
-export type NoticeKind = 'REQ_CHANGED' | 'NAME' | 'CABIN' | 'REFUND' | 'VOID' | 'PRICE' | 'ONLINE_TICKET';
+export type NoticeKind = 'REQ_CHANGED' | 'NAME' | 'CABIN' | 'REFUND' | 'VOID' | 'PRICE' | 'ONLINE_TICKET' | 'NOT_IN_BOOKS';
 
 export interface Notice {
   kind: NoticeKind;
@@ -110,24 +108,8 @@ export function noticesFor(
         payload: { from: req.old, to: r.req_num, ours: move.map(t => ({ id: t.id, ticketNo: t.ticketNo, reqNum: t.reqNum })) } });
     }
 
-    if (onePassenger(r)) {
-      const name = usableName(r.client_name);
-      const lack = ours.filter(t => !(t.passengerName || '').trim());
-      if (name && lack.length) out.push({ ...base, kind: 'NAME',
-        dedupe_key: `NAME|${lack.map(t => t.id).sort().join(',')}|${name}`,
-        ticket_ids: lack.map(t => t.id),
-        title: `Passenger name for ${label}: ${name}`,
-        detail: `Their sheet names the passenger; we hold no name on ${lack.length} row${lack.length === 1 ? '' : 's'}. Accept to fill it in.`,
-        payload: { name } });
-      const cabin = usableCabin(r.cabin);
-      const noCabin = ours.filter(t => !(t.cabinClass || '').trim());
-      if (cabin && noCabin.length) out.push({ ...base, kind: 'CABIN',
-        dedupe_key: `CABIN|${noCabin.map(t => t.id).sort().join(',')}|${cabin}`,
-        ticket_ids: noCabin.map(t => t.id),
-        title: `Cabin for ${label}: ${cabin}`,
-        detail: `Their sheet gives the cabin; we hold none. Accept to fill it in.`,
-        payload: { cabin } });
-    }
+    // Names and cabins are not notices: they are filled from the row by its
+    // number, with nobody asked (airtableDetails).
 
     const st = changed('status');
     if (st && /refund/i.test(r.status)) out.push({ ...base, kind: 'REFUND',

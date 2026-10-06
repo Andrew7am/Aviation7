@@ -27,10 +27,11 @@ const xlsx = () => import('xlsx');
 
 const KIND_LABEL: Record<string, string> = {
   REQ_CHANGED: 'Request changed', ONLINE_TICKET: 'Bought online', NAME: 'Passenger name', CABIN: 'Cabin',
-  REFUND: 'Refunded on theirs', VOID: 'Voided on theirs', PRICE: 'Cost changed',
+  REFUND: 'Refunded on theirs', VOID: 'Voided on theirs', PRICE: 'Cost changed', NOT_IN_BOOKS: 'Not in our books',
 };
+const APPROVAL = new Set(['ONLINE_TICKET', 'NOT_IN_BOOKS']);
 const ACCEPT_LABEL: Record<string, string> = {
-  REQ_CHANGED: 'Move ours', ONLINE_TICKET: 'Open in To Review', NAME: 'Fill in', CABIN: 'Fill in', REFUND: 'Seen', VOID: 'Seen', PRICE: 'Seen',
+  REQ_CHANGED: 'Move ours', ONLINE_TICKET: 'Open in To Review', NOT_IN_BOOKS: 'Open in To Review', NAME: 'Fill in', CABIN: 'Fill in', REFUND: 'Seen', VOID: 'Seen', PRICE: 'Seen',
 };
 
 export const AirtablePage: React.FC<{
@@ -51,7 +52,7 @@ export const AirtablePage: React.FC<{
   const [err, setErr] = useState('');
   const [q, setQ] = useState('');
   const [onlyMissing, setOnlyMissing] = useState(false);
-  const [noticeState, setNoticeState] = useState<'OPEN' | 'DECIDED'>('OPEN');
+  const [noticeState, setNoticeState] = useState<'OPEN' | 'INFO' | 'DECIDED'>('OPEN');
   const [fixKind, setFixKind] = useState<FixKind | 'ALL'>('ALL');
 
   const load = async () => {
@@ -75,7 +76,11 @@ export const AirtablePage: React.FC<{
   const held = (r: LiveRecord) => r.serials.some(s => ours.has(docKey(s))) || (!!r.pnr && ours.has(docKey(r.pnr)));
 
   const fixes = useMemo(() => records ? teamFixes(records, p => NUMBERED_SOURCES.has(portalSource(p).source)) : [], [records]);
-  const openNotices = notices.filter(n => n.state === 'OPEN');
+  // Waiting for a decision: tickets of theirs in nobody's books. Everything
+  // else they changed is listed for information and asks nothing.
+  const openNotices = notices.filter(n => n.state === 'OPEN' && APPROVAL.has(n.kind));
+  const infoNotices = notices.filter(n => n.state === 'OPEN' && !APPROVAL.has(n.kind));
+  const shownNotices = noticeState === 'OPEN' ? openNotices : noticeState === 'INFO' ? infoNotices : notices.filter(n => n.state !== 'OPEN');
   const needle = q.trim().toUpperCase().replace(/\s+/g, '');
   const hit = (...xs: (string | null | undefined)[]) => !needle || xs.some(x => String(x || '').toUpperCase().replace(/\s+/g, '').includes(needle));
 
@@ -155,15 +160,15 @@ export const AirtablePage: React.FC<{
       {tab === 'notices' && (
         <div className="space-y-2">
           <div className="flex gap-2 items-center">
-            {(['OPEN', 'DECIDED'] as const).map(s => (
+            {(['OPEN', 'INFO', 'DECIDED'] as const).map(s => (
               <button key={s} onClick={() => setNoticeState(s)}
                 className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase border ${noticeState === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>
-                {s === 'OPEN' ? `Waiting ${openNotices.length}` : 'Decided (last 7 days)'}
+                {s === 'OPEN' ? `Waiting for you ${openNotices.length}` : s === 'INFO' ? `For information ${infoNotices.length}` : 'Decided (last 7 days)'}
               </button>
             ))}
           </div>
           <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
-            {notices.filter(n => noticeState === 'OPEN' ? n.state === 'OPEN' : n.state !== 'OPEN').map(n => (
+            {shownNotices.map(n => (
               <div key={n.id} className="px-4 py-2.5 flex flex-wrap items-start gap-3">
                 <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">{KIND_LABEL[n.kind] ?? n.kind}</span>
                 <div className="flex-1 min-w-[240px]">
@@ -182,7 +187,7 @@ export const AirtablePage: React.FC<{
                 )}
               </div>
             ))}
-            {!notices.some(n => noticeState === 'OPEN' ? n.state === 'OPEN' : n.state !== 'OPEN') && (
+            {!shownNotices.length && (
               <div className="px-4 py-8 text-center text-xs text-slate-400">Nothing here.</div>
             )}
           </div>

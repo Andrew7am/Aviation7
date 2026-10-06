@@ -12,13 +12,18 @@ import type { AirtableNotice, SyncState } from '../services/AirtableService';
 const KIND: Record<string, { label: string; accept: string; tone: string }> = {
   REQ_CHANGED:   { label: 'Request changed',   accept: 'Move ours',        tone: 'bg-purple-100 text-purple-800' },
   ONLINE_TICKET: { label: 'Bought online',     accept: 'Open in To Review', tone: 'bg-blue-100 text-blue-800' },
+  NOT_IN_BOOKS:  { label: 'Not in our books',  accept: 'Open in To Review', tone: 'bg-red-100 text-red-800' },
   NAME:          { label: 'Passenger name',    accept: 'Fill in',          tone: 'bg-emerald-100 text-emerald-800' },
   CABIN:         { label: 'Cabin',             accept: 'Fill in',          tone: 'bg-emerald-100 text-emerald-800' },
   REFUND:        { label: 'Refunded on theirs', accept: 'Seen',            tone: 'bg-amber-100 text-amber-800' },
   VOID:          { label: 'Voided on theirs',  accept: 'Seen',             tone: 'bg-red-100 text-red-800' },
   PRICE:         { label: 'Cost changed',      accept: 'Seen',             tone: 'bg-slate-100 text-slate-700' },
 };
-const ORDER = ['REQ_CHANGED', 'ONLINE_TICKET', 'REFUND', 'VOID', 'PRICE', 'NAME', 'CABIN'];
+const ORDER = ['NOT_IN_BOOKS', 'ONLINE_TICKET'];
+/** The only notices that ask for a decision: a ticket on their sheet that is
+ *  in nobody's books - add it or not. Names, cabins, routes and requests are
+ *  filled on their own; the rest is on the Airtable page, for information. */
+export const NEEDS_APPROVAL = new Set(ORDER);
 
 const ago = (iso?: string | null) => {
   if (!iso) return 'never';
@@ -37,7 +42,7 @@ export const AirtableBell: React.FC<{
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string>('');
   const [err, setErr] = useState('');
-  const openOnes = useMemo(() => notices.filter(n => n.state === 'OPEN'), [notices]);
+  const openOnes = useMemo(() => notices.filter(n => n.state === 'OPEN' && NEEDS_APPROVAL.has(n.kind)), [notices]);
   const groups = useMemo(() => ORDER.map(k => [k, openOnes.filter(n => n.kind === k)] as const).filter(([, l]) => l.length), [openOnes]);
   const stale = sync?.lastOkAt ? Date.now() - new Date(sync.lastOkAt).getTime() > 10 * 60000 : true;
 
@@ -81,14 +86,14 @@ export const AirtableBell: React.FC<{
             {err && <div className="px-4 py-2 text-[11px] text-red-700 bg-red-50 flex gap-1.5"><AlertTriangle className="w-3.5 h-3.5 shrink-0" />{err}</div>}
 
             <div className="overflow-auto flex-1">
-              {!groups.length && <div className="px-4 py-8 text-center text-xs text-slate-400">Nothing waiting. Changes on their sheet show here.</div>}
+              {!groups.length && <div className="px-4 py-8 text-center text-xs text-slate-400">Nothing waiting. A ticket on their sheet that is not in our books shows here.</div>}
               {groups.map(([k, list]) => (
                 <div key={k} className="border-b border-slate-100">
                   <div className="px-4 py-2 bg-slate-50 flex items-center gap-2">
                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${KIND[k]?.tone ?? ''}`}>{KIND[k]?.label ?? k}</span>
                     <span className="text-[10px] text-slate-400">{list.length}</span>
                     <span className="flex-1" />
-                    {canEdit && list.length > 1 && k !== 'ONLINE_TICKET' && (
+                    {canEdit && list.length > 1 && !NEEDS_APPROVAL.has(k) && (
                       <button onClick={() => act(`all-${k}`, () => onAccept(list))} disabled={!!busy}
                         className="text-[10px] font-bold text-emerald-700 hover:underline">
                         {busy === `all-${k}` ? 'Working…' : `${KIND[k]?.accept ?? 'Accept'} - all ${list.length}`}

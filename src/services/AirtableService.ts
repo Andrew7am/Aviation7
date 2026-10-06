@@ -83,7 +83,7 @@ export class AirtableService {
   /** Ask the server to sync now, as the signed-in user. */
   async syncNow(): Promise<{ fetched: number; changedRecords: number; notices: number }> {
     const { data } = await supabase.auth.getSession();
-    const r = await fetch('/api/airtable/sync', {
+    const r = await fetch('/api/airtable/sync?fill=1', {
       method: 'POST', headers: { Authorization: `Bearer ${data.session?.access_token ?? ''}` },
     });
     const j = await r.json().catch(() => ({}));

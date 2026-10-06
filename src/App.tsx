@@ -49,7 +49,7 @@ import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { summariseVendor } from './core/helpers/statementMath';
 import type { Reprice } from './core/helpers/statementAgainstBooks';
 import { AirtableService, type AirtableNotice, type SyncState } from './services/AirtableService';
-import { AirtableBell } from './components/AirtableBell';
+import { AirtableBell, NEEDS_APPROVAL } from './components/AirtableBell';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
 import { useStatements } from './hooks/useStatements';
@@ -309,7 +309,7 @@ function MainApp({ user }: { user: User }) {
           await updateTicket(id, { [field]: value } as Partial<Ticket>);
           importSvc.audit('EDIT_TICKET', t.ticketNo, `${n.kind === 'NAME' ? 'passenger_name' : 'cabin'}: - -> ${value} (from the team's Airtable)`);
         }
-      } else if (n.kind === 'ONLINE_TICKET') {
+      } else if (n.kind === 'ONLINE_TICKET' || n.kind === 'NOT_IN_BOOKS') {
         // Decided where every proposal is decided; the notice closes itself then.
         setView('review');
         continue;
@@ -327,7 +327,7 @@ function MainApp({ user }: { user: User }) {
   /* A ticket bought online is decided in To Review; once it is, its notice is done. */
   useEffect(() => {
     if (!isAdmin) return;
-    const decided = atNotices.filter(n => n.kind === 'ONLINE_TICKET' && n.state === 'OPEN'
+    const decided = atNotices.filter(n => (n.kind === 'ONLINE_TICKET' || n.kind === 'NOT_IN_BOOKS') && n.state === 'OPEN'
       && pending.some(p => p.dedupe === n.payload.dedupe && p.state !== 'PENDING'));
     if (decided.length) airtable.decide(decided.map(n => n.id), 'ACCEPTED', user.email ?? '').then(loadAirtable).catch(console.error);
   }, [atNotices, pending, isAdmin, airtable, loadAirtable, user.email]);
@@ -560,7 +560,7 @@ function MainApp({ user }: { user: User }) {
     { id: 'notclosed', label: 'Not Closed',      icon: <Circle className="w-4 h-4" />, badge: notClosedCount || undefined, badgeColor: 'amber' },
     ...(isAdmin ? [{ id: 'import' as ViewState, label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
     { id: 'teamsheet', label: 'Team Sheet Check', icon: <FileSearch className="w-4 h-4" /> },
-    { id: 'airtable',  label: 'Airtable',        icon: <Table2 className="w-4 h-4" />, badge: atNotices.filter(n => n.state === 'OPEN').length || undefined, badgeColor: 'red' },
+    { id: 'airtable',  label: 'Airtable',        icon: <Table2 className="w-4 h-4" />, badge: atNotices.filter(n => n.state === 'OPEN' && NEEDS_APPROVAL.has(n.kind)).length || undefined, badgeColor: 'red' },
     { id: 'review',    label: 'To Review',        icon: <ClipboardCheck className="w-4 h-4" />,
       badge: pendingCount || undefined, badgeColor: 'amber' },
     { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },

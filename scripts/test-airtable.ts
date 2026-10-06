@@ -8,6 +8,7 @@ import { noticesFor, ledgerIndex, onePassenger, usableName, usableCabin } from '
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
 import { teamFixes } from '../src/core/integrations/airtableFixes';
 import { requestsFor } from '../src/core/integrations/airtableRequests';
+import { detailsFor } from '../src/core/integrations/airtableDetails';
 import Papa from 'papaparse';
 
 let passed = 0, failed = 0;
@@ -62,10 +63,10 @@ console.log('\n4. What a change means for our books');
     client_name: 'SALEEM KHADER ELDADAH', cabin: 'Economy', net_cost: 330, status: 'Reissue' };
   const changes = new Map([['recB', diffRecord({ ...row, req_num: 'KSAFM2611', net_cost: 300 }, row)]]);
   const n = noticesFor([row], changes, ledgerIndex(ours));
-  check('a request moved, a name and a cabin we lack, a cost changed', n.map(x => x.kind).sort(), ['CABIN', 'NAME', 'PRICE', 'REQ_CHANGED']);
+  check('a request moved and a cost changed - names and cabins are no notices', n.map(x => x.kind).sort(), ['PRICE', 'REQ_CHANGED']);
   const req = n.find(x => x.kind === 'REQ_CHANGED')!;
   check('accepting moves ours to theirs', [req.payload.to, req.ticket_ids], ['KSAML2053', ['t1']]);
-  check('nothing moved: names and cabins only', noticesFor([row], new Map(), ledgerIndex(ours)).map(x => x.kind).sort(), ['CABIN', 'NAME']);
+  check('nothing moved: nothing said', noticesFor([row], new Map(), ledgerIndex(ours)).map(x => x.kind), []);
   const ref = noticesFor([{ ...row, status: 'Cancelled/Refunded', refund_amount: 1560 }],
     new Map([['recB', diffRecord(row, { ...row, status: 'Cancelled/Refunded', refund_amount: 1560 })]]), ledgerIndex(ours));
   check('a refund on theirs', ref.some(x => x.kind === 'REFUND'), true);
@@ -107,13 +108,26 @@ console.log('\n7. A ticket with no request takes the one their sheet gives');
   check('an EMD by their EMD column', fill({ ticketNo: '1949933377' }, [row({ serials: [], emd: '065-1949933377', req_num: 'UAEVP711' })]), [['UAEVP711', 'ticket number']]);
   // ZWE5AG: their cell names two of nine passengers; the booking is one request.
   const zwe = [row({ serials: ['5512845110', '5512845111'], pnr: 'ZWE5AG', req_num: 'UAEVP420' }), row({ serials: ['5512878176'], pnr: 'ZWE5AG', req_num: 'UAEVP420' })];
-  check('by its booking when every row of it agrees', fill({ ticketNo: '5512845112', pnr: 'ZWE5AG' }, zwe), [['UAEVP420', 'booking PNR']]);
-  check('not when the booking is under two requests', fill({ ticketNo: '5512845112', pnr: 'ZWE5AG' },
-    [...zwe, row({ serials: ['5512878177'], pnr: 'ZWE5AG', req_num: 'UAEVP421' })]), []);
+  // A ticket their sheet does not name is one they forgot - to be sent back
+  // to them, not filed from the rest of its booking.
+  check('never by its booking: a ticket they did not write stays without one', fill({ ticketNo: '5512845112', pnr: 'ZWE5AG' }, zwe), []);
   check('not from a row naming two requests', fill({ ticketNo: '5513427739' }, [row({ serials: ['5513427739'], req_num: 'UAEVP420, KSAML2053' })]), []);
   check('not from a held booking', fill({ ticketNo: 'X', pnr: 'YFMA7K' }, [row({ pnr: 'YFMA7K', status: 'On Hold', req_num: 'KSAML1271' })]), []);
-  check('a number their sheet files under two requests is not settled by its booking either',
+  check('a number their sheet files under two requests is not settled',
     fill({ ticketNo: '5513427739', pnr: 'P1' }, [row({ serials: ['5513427739'], pnr: 'P1', req_num: 'A1' }), row({ serials: ['5513427739'], pnr: 'P1', req_num: 'B2' })]), []);
+}
+
+console.log('\n8. Names, cabins and routes we lack are filled, by number, without asking');
+{
+  const live = (o: any) => ({ serials: ['5513427739'], ticket_cell: '065-5513427739', status: 'Issued', client_name: 'SALEEM KHADER ELDADAH',
+    cabin: 'Economy', sheet_row: { 'Origin Airports (from Aviation Quotations)': 'RUH', 'Destination Airports (from Aviation Quotations)': 'JED,DMM' }, ...o });
+  const ours = (o: any = {}) => [{ id: 't', ticketNo: '5513427739', passengerName: '', cabinClass: '', route: '', ...o }];
+  const fills = (o: any, rows: any[]) => detailsFor(ours(o), rows).map(f => [f.field, f.value]);
+  check('name, cabin and route', fills({}, [live({})]), [['passenger_name', 'SALEEM KHADER ELDADAH'], ['cabin_class', 'ECONOMY'], ['route', 'RUH/JED']]);
+  check('nothing already there is touched', fills({ passengerName: 'X', cabinClass: 'BUSINESS', route: 'RUH/LHR' }, [live({})]), []);
+  check('no name from a cell of two tickets', fills({}, [live({ serials: ['5513427739', '5513427740'], ticket_cell: '065-5513427739\n065-5513427740' })]).map(f => f[0]), ['cabin_class', 'route']);
+  check('two rows giving two cabins: none', fills({}, [live({}), live({ cabin: 'Business' })]).map(f => f[0]), ['passenger_name', 'route']);
+  check('never by booking: a ticket their sheet does not name gets nothing', fills({ ticketNo: '5513427799' }, [live({})]), []);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -28,7 +28,7 @@ async function startServer() {
     const secretOk = !!process.env.AIRTABLE_SYNC_SECRET && req.headers["x-sync-secret"] === process.env.AIRTABLE_SYNC_SECRET;
     const { data } = bearer ? await createClient(url, key, { auth: { persistSession: false } }).auth.getUser(bearer) : { data: null as any };
     if (!secretOk && !data?.user) return res.status(401).json({ error: "Not allowed" });
-    try { res.json(await syncAirtable({ airtableToken: token, supabaseUrl: url, serviceKey: key, forceFull: req.query.full === "1" })); }
+    try { res.json(await syncAirtable({ airtableToken: token, supabaseUrl: url, serviceKey: key, forceFull: req.query.full === "1", fillNow: req.query.fill === "1" })); }
     catch (e) { res.status(500).json({ error: e instanceof Error ? e.message : String(e) }); }
   });
 

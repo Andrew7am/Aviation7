@@ -34,7 +34,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!allowed) { res.status(401).json({ error: 'Not allowed' }); return; }
 
   try {
-    const result = await syncAirtable({ airtableToken, supabaseUrl, serviceKey, forceFull: req.query.full === '1' });
+    const result = await syncAirtable({ airtableToken, supabaseUrl, serviceKey, forceFull: req.query.full === '1', fillNow: req.query.fill === '1' });
     res.status(200).json(result);
   } catch (err) {
     console.error(err);

@@ -23,6 +23,7 @@ import { compareTeamSheet } from '../core/helpers/teamSheetCompare';
 import { planSheetAdd } from '../core/helpers/addFromSheet';
 import { pendingRow } from '../core/helpers/pendingRow';
 import { requestsFor } from '../core/integrations/airtableRequests';
+import { detailsFor } from '../core/integrations/airtableDetails';
 import type { Ticket } from '../types';
 
 const STATE_ID = 'aviation_tickets';
@@ -31,7 +32,7 @@ const FULL_EVERY_MS = 60 * 60 * 1000;
 export interface SyncResult {
   mode: 'full' | 'incremental';
   fetched: number; changedRecords: number; fieldChanges: number; added: number; deleted: number;
-  notices: number; onlineQueued: number; reqFilled: number; ms: number;
+  notices: number; onlineQueued: number; reqFilled: number; detailsFilled: number; ms: number;
 }
 
 async function airtable(token: string, table: string, params: Record<string, string | string[]>): Promise<AirtableRecord[]> {
@@ -81,6 +82,8 @@ export async function syncAirtable(env: {
   airtableToken: string; supabaseUrl: string; serviceKey: string; forceFull?: boolean;
   /** Work everything out, write nothing - for looking before the first run. */
   dryRun?: boolean;
+  /** Fill requests, names, cabins and routes now - after an import. */
+  fillNow?: boolean;
 }): Promise<SyncResult & { preview?: { notices: Notice[]; online: string[]; changes?: unknown } }> {
   const t0 = Date.now();
   const db = createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false } });
@@ -183,7 +186,9 @@ export async function syncAirtable(env: {
       const voided = new Set(voids.map(v => docKey(v.ticket_no)));
       const report = compareTeamSheet(sheet, tickets, [], {}, {
         voided: voids.map(v => v.ticket_no), chains: chains.map(c => ({ ticketNo: c.ticket_no, replacedTicket: c.replaced_ticket })) });
-      const online = report.findings.filter(f => f.verdict === 'NOT_IN_LEDGER' && f.issuedFrom === 'Airline Website'
+      // Every ticket of theirs that is in nobody's books waits for a person
+      // in To Review: the one decision this integration asks of anybody.
+      const online = report.findings.filter(f => f.verdict === 'NOT_IN_LEDGER'
         && f.sheet?.status === 'ISSUED' && !voided.has(docKey(f.serial || f.pnr)));
       if (online.length) {
         const owner = ledger.find(t => t.user_id)?.user_id ?? '';
@@ -201,12 +206,15 @@ export async function syncAirtable(env: {
           if (error) throw new Error(`pending_tickets: ${error.message}`);
         }
         onlineQueued = fresh.length;
-        for (const p of fresh) notices.push({
-          kind: 'ONLINE_TICKET', dedupe_key: `ONLINE|${p.dedupe}`, record_id: '', ticket_no: p.ticketNo || p.pnr || '',
-          ticket_ids: [], req_num: p.reqNum,
-          title: `Bought online: ${p.ticketNo || p.pnr} · ${p.amount ? `${p.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${p.currency}` : 'no price on their sheet'} · ${p.reqNum || 'no request'}`,
-          detail: `On their sheet from ${p.theirPortal || 'an airline website'} and not in our books. Waiting in To Review - add it or reject it.`,
-          payload: { dedupe: p.dedupe } });
+        for (const p of fresh) {
+          const web = p.source === 'Airline Website';
+          notices.push({
+            kind: web ? 'ONLINE_TICKET' : 'NOT_IN_BOOKS', dedupe_key: `${web ? 'ONLINE' : 'MISSING'}|${p.dedupe}`, record_id: '',
+            ticket_no: p.ticketNo || p.pnr || '', ticket_ids: [], req_num: p.reqNum,
+            title: `${web ? 'Bought online' : 'Not in our books'}: ${p.ticketNo || p.pnr} · ${p.amount ? `${p.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${p.currency}` : 'no price on their sheet'} · ${p.reqNum || 'no request'}`,
+            detail: `On their sheet from ${p.theirPortal || p.source || 'their portal'} and not in our books. Waiting in To Review - add it or reject it.`,
+            payload: { dedupe: p.dedupe } });
+        }
       }
     }
     const preview = dry ? { notices, online: notices.filter(n => n.kind === 'ONLINE_TICKET').map(n => n.title), changes: [...changes].slice(0, 40) } : undefined;
@@ -219,13 +227,47 @@ export async function syncAirtable(env: {
        every run, so a ticket imported from a supplier report gets it within
        two minutes, and one the team only adds to their sheet later gets it
        the moment they do. Fill only, and said in the activity log. */
-    let reqFilled = 0;
-    const { data: miss, error: missErr } = await db.from('tickets')
-      .select('id, ticket_no, pnr, status, user_id').or('req_num.is.null,req_num.eq.').neq('status', 'FUND');
+    let reqFilled = 0, detailsFilled = 0;
+    const fillNow = full || changedRows.length > 0 || !!env.fillNow;
+    type LiveRow = { serials: string[]; ticket_cell: string; pnr: string; req_num: string; status: string; client_name: string; cabin: string; sheet_row: Record<string, string> };
+    let liveRows: LiveRow[] | null = null;
+    const liveAll = async () => liveRows ??= await selectAll<LiveRow>(db, 'airtable_tickets',
+      'serials, ticket_cell, pnr, req_num, status, client_name, cabin, sheet_row', q => q.eq('deleted', false));
+    const audit = (owner: string | undefined, entity: string, detail: string) => db.from('audit_log').insert({
+      id: crypto.randomUUID(), user_id: owner, action: 'UPDATE_REQ', entity, entity_type: 'ticket',
+      actor_email: 'Airtable sync', detail, performed_at: new Date().toISOString() });
+
+    // Names, cabins and routes we lack, filled from the row that names the
+    // same document. Nobody is asked; nothing already there is touched.
+    if (fillNow) {
+      const lacking = await selectAll<{ id: string; ticket_no: string; passenger_name: string | null; cabin_class: string | null; route: string | null; user_id: string }>(
+        db, 'tickets', 'id, ticket_no, passenger_name, cabin_class, route, user_id',
+        q => q.neq('status', 'FUND').or('passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.'));
+      if (lacking.length) {
+        const fills = detailsFor(lacking.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', passengerName: t.passenger_name ?? '',
+          cabinClass: t.cabin_class ?? '', route: t.route ?? '' })), await liveAll());
+        const owner = lacking.find(t => t.user_id)?.user_id;
+        for (const f of fills) {
+          if (dry) { detailsFilled++; continue; }
+          const { data: upd, error } = await db.from('tickets').update({ [f.field]: f.value })
+            .eq('id', f.id).or(`${f.field}.is.null,${f.field}.eq.`).select('id');
+          if (error) throw new Error(`tickets: ${error.message}`);
+          if (!upd?.length) continue;
+          detailsFilled++;
+          await audit(owner, f.ticketNo, `${f.field === 'passenger_name' ? 'Passenger name' : f.field === 'cabin_class' ? 'Cabin' : 'Route'} ${f.value} from the team's Airtable`);
+        }
+      }
+      // Names and cabins were notices once; they are filled now, so the old ones are closed.
+      if (!dry) await db.from('airtable_notifications').update({ state: 'ACCEPTED', decided_by: 'Airtable sync', decided_at: new Date().toISOString() })
+        .in('kind', ['NAME', 'CABIN']).eq('state', 'OPEN');
+    }
+
+    const { data: miss, error: missErr } = fillNow
+      ? await db.from('tickets').select('id, ticket_no, pnr, status, user_id').or('req_num.is.null,req_num.eq.').neq('status', 'FUND')
+      : { data: [], error: null };
     if (missErr) throw new Error(`tickets: ${missErr.message}`);
     if (miss?.length) {
-      const live = await selectAll<{ serials: string[]; pnr: string; req_num: string; status: string; sheet_row: Record<string, string> }>(
-        db, 'airtable_tickets', 'serials, pnr, req_num, status, sheet_row', q => q.eq('deleted', false));
+      const live = await liveAll();
       const fills = requestsFor(
         miss.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', pnr: t.pnr ?? '' })),
         live.map(r => ({ serials: r.serials ?? [], emd: r.sheet_row?.['EMD Number'] ?? '', pnr: r.pnr ?? '', req_num: r.req_num ?? '', status: r.status ?? '' })));
@@ -237,8 +279,7 @@ export async function syncAirtable(env: {
         if (error) throw new Error(`tickets: ${error.message}`);
         if (!upd?.length) continue;   // somebody filled it in the meantime
         reqFilled++;
-        await db.from('audit_log').insert({ id: crypto.randomUUID(), user_id: owner, action: 'UPDATE_REQ', entity: f.ticketNo,
-          entity_type: 'ticket', actor_email: 'Airtable sync', detail: `Request ${f.req} from the team's Airtable (matched by ${f.how})`, performed_at: new Date().toISOString() });
+        await audit(owner, f.ticketNo, `Request ${f.req} from the team's Airtable (matched by ${f.how})`);
       }
     }
 
@@ -251,7 +292,7 @@ export async function syncAirtable(env: {
       last_error: null, record_count: count ?? null, last_changed: changedRows.length, names,
     });
     return { mode: full ? 'full' : 'incremental', fetched: recs.length, changedRecords: changes.size, fieldChanges: log.length,
-      added, deleted, notices: notices.length, onlineQueued, reqFilled, ms: Date.now() - t0, preview };
+      added, deleted, notices: notices.length, onlineQueued, reqFilled, detailsFilled, ms: Date.now() - t0, preview };
   } catch (e) {
     if (!dry) await db.from('airtable_sync_state').upsert({ id: STATE_ID, last_error: e instanceof Error ? e.message : String(e) });
     throw e;
