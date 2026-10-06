@@ -2000,22 +2000,25 @@ async function syncAirtable(env) {
     let reqFilled = 0, detailsFilled = 0;
     const fillNow = full || changedRows.length > 0 || !!env.fillNow;
     let liveRows = null;
-    const liveAll = async () => liveRows ??= await selectAll(
+    const liveAll = async () => liveRows ??= full ? rows : await selectAll(
       db,
       "airtable_tickets",
       "serials, ticket_cell, pnr, req_num, status, client_name, cabin, sheet_row",
       (q) => q.eq("deleted", false)
     );
-    const audit = (owner, entity, detail) => db.from("audit_log").insert({
-      id: crypto.randomUUID(),
-      user_id: owner,
-      action: "UPDATE_REQ",
-      entity,
-      entity_type: "ticket",
-      actor_email: "Airtable sync",
-      detail,
-      performed_at: (/* @__PURE__ */ new Date()).toISOString()
-    });
+    const auditRows = [];
+    const audit = async (owner, entity, detail) => {
+      auditRows.push({
+        id: crypto.randomUUID(),
+        user_id: owner,
+        action: "UPDATE_REQ",
+        entity,
+        entity_type: "ticket",
+        actor_email: "Airtable sync",
+        detail,
+        performed_at: (/* @__PURE__ */ new Date()).toISOString()
+      });
+    };
     if (fillNow) {
       const lacking = await selectAll(
         db,
@@ -2066,6 +2069,10 @@ async function syncAirtable(env) {
         reqFilled++;
         await audit(owner, f.ticketNo, `Request ${f.req} from the team's Airtable (matched by ${f.how})`);
       }
+    }
+    for (let i = 0; i < auditRows.length && !dry; i += 500) {
+      const { error } = await db.from("audit_log").insert(auditRows.slice(i, i + 500));
+      if (error) throw new Error(`audit_log: ${error.message}`);
     }
     const newest = [st?.cursor, ...rows.map((r) => r.last_modified), ...rows.map((r) => r.created_at)].filter(Boolean).map((x) => new Date(x).getTime()).reduce((a, b) => Math.max(a, b), 0);
     const { count } = await db.from("airtable_tickets").select("record_id", { count: "exact", head: true }).eq("deleted", false);

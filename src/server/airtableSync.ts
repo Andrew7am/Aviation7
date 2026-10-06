@@ -231,11 +231,14 @@ export async function syncAirtable(env: {
     const fillNow = full || changedRows.length > 0 || !!env.fillNow;
     type LiveRow = { serials: string[]; ticket_cell: string; pnr: string; req_num: string; status: string; client_name: string; cabin: string; sheet_row: Record<string, string> };
     let liveRows: LiveRow[] | null = null;
-    const liveAll = async () => liveRows ??= await selectAll<LiveRow>(db, 'airtable_tickets',
+    // On a full run their whole table was just read; on any other, read our copy.
+    const liveAll = async () => liveRows ??= full ? rows as unknown as LiveRow[] : await selectAll<LiveRow>(db, 'airtable_tickets',
       'serials, ticket_cell, pnr, req_num, status, client_name, cabin, sheet_row', q => q.eq('deleted', false));
-    const audit = (owner: string | undefined, entity: string, detail: string) => db.from('audit_log').insert({
+    // The log lines, written together at the end rather than one round trip each.
+    const auditRows: Record<string, unknown>[] = [];
+    const audit = async (owner: string | undefined, entity: string, detail: string) => { auditRows.push({
       id: crypto.randomUUID(), user_id: owner, action: 'UPDATE_REQ', entity, entity_type: 'ticket',
-      actor_email: 'Airtable sync', detail, performed_at: new Date().toISOString() });
+      actor_email: 'Airtable sync', detail, performed_at: new Date().toISOString() }); };
 
     // Names, cabins and routes we lack, filled from the row that names the
     // same document. Nobody is asked; nothing already there is touched.
@@ -281,6 +284,11 @@ export async function syncAirtable(env: {
         reqFilled++;
         await audit(owner, f.ticketNo, `Request ${f.req} from the team's Airtable (matched by ${f.how})`);
       }
+    }
+
+    for (let i = 0; i < auditRows.length && !dry; i += 500) {
+      const { error } = await db.from('audit_log').insert(auditRows.slice(i, i + 500));
+      if (error) throw new Error(`audit_log: ${error.message}`);
     }
 
     const newest = [st?.cursor, ...rows.map(r => r.last_modified), ...rows.map(r => r.created_at)]
