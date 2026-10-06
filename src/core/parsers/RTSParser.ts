@@ -8,11 +8,16 @@ import { normalizeStatus } from '../helpers/normalizeStatus';
 
 export const RTSParser: VendorParser = {
   id: 'RTS', name: 'RTS',
+  // Two RTS exports: the Sales Report (one row per action, in an "Action"
+  // column) and the General Ticket Report (one row per ticket, its state in
+  // "DisplayStatus", a date for each thing that happened to it).
   detect: (headers) => {
     const hj = headers.map(c=>(c||'').toLowerCase().replace(/[^a-z0-9.]/g,'')).join('|');
-    return hj.includes('recordlocator')&&hj.includes('action');
+    return hj.includes('recordlocator') && (hj.includes('action') || hj.includes('displaystatus'));
   },
   parse: (rows, headers, defaultCurrency): ParserResult => {
+    const exact = (name: string) => headers.findIndex(c => (c || '').trim().toLowerCase() === name);
+    if (exact('action') === -1 && exact('displaystatus') !== -1) return parseGeneral(rows, headers, defaultCurrency);
     const errors: string[] = [], warnings: string[] = [], result = [];
     const iPNR = col(headers,'Record Locator'); const iNo = col(headers,'No');
     const iPax = col(headers,'Passenger');
@@ -92,3 +97,78 @@ export const RTSParser: VendorParser = {
     return {rows:result,errors,warnings};
   },
 };
+
+/**
+ * RTS's General Ticket Report: one row per ticket, what became of it in
+ * "DisplayStatus" (issued / refunded / voided / reissued), and a date for
+ * each: Ticketing date, Void date, Refund date, Reissue date.
+ *
+ * Read as the Sales Report's rows would have been: the sale on the day it
+ * was ticketed (or reissued); a void as a void on its void date; a refund as
+ * the sale plus a refund row for the "Refund" figure on its refund date - the
+ * sale is already in the books and is matched there, the refund is the news.
+ * The request is never guessed: RTS has no column for it, and a blank one is
+ * filled from the team's Airtable by ticket number.
+ */
+function parseGeneral(rows: string[][], headers: string[], defaultCurrency: SupportedCurrency): ParserResult {
+  const errors: string[] = [], warnings: string[] = [], result: ParserResult['rows'] = [];
+  const exact = (name: string) => headers.findIndex(c => (c || '').trim().toLowerCase() === name);
+  const iTk = exact('ticket no') !== -1 ? exact('ticket no') : exact('no');
+  const iStatus = exact('displaystatus');
+  if (iTk === -1) {
+    errors.push('RTS General Ticket Report: no "Ticket No" column.');
+    return { rows: result, errors, warnings };
+  }
+  const iPNR = col(headers, 'Record Locator'), iPax = col(headers, 'Passenger'), iRoute = col(headers, 'Route');
+  const iTicketed = exact('ticketing date'), iVoided = exact('void date'), iRefunded = exact('refund date');
+  const iReissued = exact('reissue date'), iBooked = exact('pnr creation date');
+  const iTotal = exact('total') !== -1 ? exact('total') : exact('grand total');
+  const iRefund = exact('refund'), iComm = exact('commission');
+  const iReq = findExplicitReqColumn(headers);
+  const at = (row: string[], i: number) => (i >= 0 ? cell(row, i) : '');
+
+  rows.forEach(row => {
+    const rawTk = at(row, iTk);
+    if (!rawTk || !rawTk.includes('-')) return;
+    const parts = rawTk.split('-');
+    const cleanRTS = parts.length >= 3 ? parts.slice(0, -1).join('-') : rawTk;
+    const tkClean = cleanTk(cleanRTS);
+    const total = num(at(row, iTotal));
+    const shown = at(row, iStatus);
+    let status = normalizeStatus(shown);
+    if (status === 'UNKNOWN') {
+      warnings.push(`Ticket ${tkClean}: RTS status "${shown}" not recognised - read as issued`);
+      status = 'ISSUE';
+    }
+    const reissued = !!at(row, iReissued);
+    const issuedOn = parseDate(at(row, iTicketed) || at(row, iReissued) || at(row, iBooked));
+    const req = resolveReq(at(row, iReq));
+    if (!req && status !== 'VOID') warnings.push(`Ticket ${tkClean}: Missing Req Num`);
+    const base = {
+      ticketNo: tkClean,
+      pnr: at(row, iPNR).replace(/\s+/g, '').toUpperCase(),
+      passengerName: cleanPax(at(row, iPax)),
+      airlineCode: airlineCode(cleanRTS),
+      route: iRoute !== -1 ? extractRoute(at(row, iRoute)) : '',
+      commission: num(at(row, iComm)),
+      reqNum: req,
+      vendorReference: at(row, iReq),
+      currency: resolveCurrency(row, headers, defaultCurrency),
+    };
+
+    if (status === 'VOID') {
+      result.push({ ...base, date: parseDate(at(row, iVoided)) || issuedOn, amount: 0, totalDoc: Math.abs(total), status: 'VOID' });
+      return;
+    }
+    // The sale - at no charge on a reissue that cost nothing.
+    result.push({ ...base, date: issuedOn, amount: Math.abs(total), totalDoc: Math.abs(total), status: 'ISSUE',
+      ...(reissued && total === 0 ? { freeReissue: true } : {}) });
+    if (status === 'REFUND') {
+      const refund = Math.abs(num(at(row, iRefund)));
+      if (refund > 0)
+        result.push({ ...base, date: parseDate(at(row, iRefunded)) || issuedOn, amount: -refund, totalDoc: refund, status: 'REFUND' });
+      else warnings.push(`Ticket ${tkClean}: RTS says refunded, with no refund amount - the refund was not recorded`);
+    }
+  });
+  return { rows: result, errors, warnings };
+}

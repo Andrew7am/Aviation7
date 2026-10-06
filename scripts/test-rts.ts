@@ -13,6 +13,10 @@ import { RTSParser } from '../src/core/parsers/RTSParser';
 import { smartDetect } from '../src/core/parsers';
 import { extractRoute } from '../src/core/helpers/extractRoute';
 import { classifyTravel } from '../src/core/helpers/travelScope';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+import { runParser } from '../src/core/parsers';
+import { parseGrid } from '../src/core/helpers/parseGrid';
 
 let pass = 0, fail = 0;
 function eq(label: string, got: unknown, want: unknown) {
@@ -136,6 +140,36 @@ console.log('\n9. A ticket is dated the day it was issued, not the day its booki
   eq('a booking opened earlier', parse([zwe]).rows[0].date, '2026-06-10');
   const noIssue = ROW.replace(',46265,', ',,');
   eq('no issue date: the booking date, as before', parse([noIssue]).rows[0].date, '2026-08-12');
+}
+
+console.log('\n10. The General Ticket Report - one row per ticket, its state in DisplayStatus');
+{
+  const file = readFileSync(resolve('scripts/fixtures/rts-general-ticket-report.csv'), 'utf8');
+  const fromFile = runParser(parseGrid(file).rows, undefined, 'SAR', 'Agent_RTS_General_Ticket_Report.csv');
+  eq('recognised as RTS on its own', fromFile.parserName, 'RTS');
+  eq('the ticket, at its total, on the day it was ticketed',
+    fromFile.rows.map(r => [r.ticketNo, r.status, r.amount, r.currency, r.date, r.pnr, r.route]),
+    [['5513574474', 'ISSUE', 2240, 'AED', '2026-10-03', 'XC4UK4', 'LAS-LAX-LAS']]);
+  eq('no request guessed from any column', fromFile.rows[0].reqNum, '');
+
+  // The same, pasted from RTS's screen: tab-separated.
+  const pasted = file.split(/\r?\n/).filter(Boolean).map(l => Papa.parse<string[]>(l).data[0].join('\t')).join('\n');
+  const fromPaste = runParser(parseGrid(pasted).rows, undefined, 'SAR', 'pasted');
+  eq('pasted, it reads the same', fromPaste.rows.map(r => [r.ticketNo, r.amount, r.date]), [['5513574474', 2240, '2026-10-03']]);
+
+  // A refunded and a voided ticket, written the way the report writes them.
+  const grid = parseGrid(file).rows;
+  const H = grid[0];
+  const row = (o: Record<string, string>) => H.map((h, i) => (h in o ? o[h] : grid[1][i]));
+  const more = [H,
+    row({ 'Ticket No': '006-5513574475', DisplayStatus: 'refunded', 'Refund date': '2026-10-05', Refund: '1950.00', 'Refund Fee': '290.00', Balance: '290.00' }),
+    row({ 'Ticket No': '006-5513574476', DisplayStatus: 'voided', 'Void date': '2026-10-03' }),
+  ];
+  const r = runParser(more, undefined, 'SAR', 'x');
+  eq('a refunded ticket: its sale, and the refund on its refund date',
+    r.rows.filter(x => x.ticketNo === '5513574475').map(x => [x.status, x.amount, x.date]),
+    [['ISSUE', 2240, '2026-10-03'], ['REFUND', -1950, '2026-10-05']]);
+  eq('a voided ticket: a void, at nothing', r.rows.filter(x => x.ticketNo === '5513574476').map(x => [x.status, x.amount]), [['VOID', 0]]);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -8,6 +8,9 @@ export function normalizeStatus(raw: unknown): NormalizedStatus {
     TKTT: 'ISSUE', ISSU: 'ISSUE', ISSUE: 'ISSUE', TICKETED: 'ISSUE',
     CONFIRMED: 'ISSUE', CLOSED: 'ISSUE', EMDA: 'ISSUE', EMDS: 'ISSUE',
     SALE: 'ISSUE', INVOICE: 'ISSUE', INV: 'ISSUE', DEBIT: 'ISSUE',
+    // RTS's General Ticket Report says what became of a ticket in the past
+    // tense, in a DisplayStatus column: "issued", "refunded", "voided".
+    ISSUED: 'ISSUE',
     // An exchange settles like a sale: a document is issued and the agency
     // collects the difference, which is nothing at all when the new fare
     // matches the old. Every other part of the app already knew this — the
@@ -15,15 +18,15 @@ export function normalizeStatus(raw: unknown): NormalizedStatus {
     // did not, so a reissue arrived UNKNOWN. On an RTS sheet that then met a
     // rule reading a zero total as a cancellation, and five real exchanges
     // were dropped as voids and never reached the ledger.
-    REISSUE: 'ISSUE', EXCHANGE: 'ISSUE', EXCH: 'ISSUE',
+    REISSUE: 'ISSUE', EXCHANGE: 'ISSUE', EXCH: 'ISSUE', REISSUED: 'ISSUE', EXCHANGED: 'ISSUE',
     REVALIDATION: 'ISSUE', REVALIDATE: 'ISSUE', REVAL: 'ISSUE',
     // REFUND — real money movement back to us
     RFND: 'REFUND', RFND_: 'REFUND', REF: 'REFUND', REFUND: 'REFUND',
-    CRN: 'REFUND', CREDIT: 'REFUND', RV: 'REFUND',
+    CRN: 'REFUND', CREDIT: 'REFUND', RV: 'REFUND', REFUNDED: 'REFUND',
     // VOID — cancelled ticket / cancelled refund. Zero-value informational
     // rows, no balance effect. Kept separate from REFUND on purpose.
     VOID: 'VOID', CANN: 'VOID', CANX: 'VOID', CANCEL: 'VOID',
-    CANCELLED: 'VOID', RFNX: 'VOID',
+    CANCELLED: 'VOID', RFNX: 'VOID', VOIDED: 'VOID',
     // BSP's own hand-typed variants. Five real rows read "canxx" and one
     // "canx"; the doubled X was not in this map, so those five came back
     // UNKNOWN and were read as sales by the amount.

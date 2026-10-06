@@ -2049,6 +2049,19 @@ async function syncAirtable(env) {
       }
       if (!dry) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("kind", ["NAME", "CABIN"]).eq("state", "OPEN");
     }
+    if (fillNow && !dry) {
+      const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, dedupe").eq("origin", "AIRTABLE").eq("state", "PENDING");
+      if (waiting?.length) {
+        const nos = [...new Set(waiting.map((w) => w.ticket_no).filter(Boolean))];
+        const { data: arrived } = await db.from("tickets").select("ticket_no").in("ticket_no", nos);
+        const have = new Set((arrived ?? []).map((t) => docKey(t.ticket_no)));
+        const done = waiting.filter((w) => have.has(docKey(w.ticket_no)));
+        if (done.length) {
+          await db.from("pending_tickets").update({ state: "CONFIRMED", review_note: "Arrived with the supplier's report" }).in("id", done.map((w) => w.id));
+          await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("dedupe_key", done.flatMap((w) => [`ONLINE|${w.dedupe}`, `MISSING|${w.dedupe}`])).eq("state", "OPEN");
+        }
+      }
+    }
     const { data: miss, error: missErr } = fillNow ? await db.from("tickets").select("id, ticket_no, pnr, status, user_id").or("req_num.is.null,req_num.eq.").neq("status", "FUND") : { data: [], error: null };
     if (missErr) throw new Error(`tickets: ${missErr.message}`);
     if (miss?.length) {
