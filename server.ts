@@ -16,6 +16,22 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  // Mirrors api/airtable/sync.ts for local development.
+  app.post("/api/airtable/sync", async (req, res) => {
+    const { createClient } = await import("@supabase/supabase-js");
+    const { syncAirtable } = await import("./src/server/airtableSync");
+    const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    const token = process.env.AIRTABLE_TOKEN || "";
+    if (!url || !key || !token) return res.status(500).json({ error: "Airtable sync is not configured" });
+    const bearer = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    const secretOk = !!process.env.AIRTABLE_SYNC_SECRET && req.headers["x-sync-secret"] === process.env.AIRTABLE_SYNC_SECRET;
+    const { data } = bearer ? await createClient(url, key, { auth: { persistSession: false } }).auth.getUser(bearer) : { data: null as any };
+    if (!secretOk && !data?.user) return res.status(401).json({ error: "Not allowed" });
+    try { res.json(await syncAirtable({ airtableToken: token, supabaseUrl: url, serviceKey: key, forceFull: req.query.full === "1" })); }
+    catch (e) { res.status(500).json({ error: e instanceof Error ? e.message : String(e) }); }
+  });
+
   app.post("/api/gemini/generate", async (req, res) => {
     try {
       const apiKey = process.env.GEMINI_API_KEY;

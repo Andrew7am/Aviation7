@@ -2,9 +2,12 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Ticket, PendingTicket } from '../types';
 import {
   Upload, AlertTriangle, CheckCircle2, X, Loader2, FileSpreadsheet, Download,
-  ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen, Copy, ClipboardCheck, Plus,
+  ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen, Copy, ClipboardCheck, Plus, RefreshCw,
 } from 'lucide-react';
 import { readFileAsText } from '../core/ImportEngine';
+import Papa from 'papaparse';
+import { AirtableService } from '../services/AirtableService';
+import { rowsToCsv } from '../core/integrations/airtable';
 import { parseTeamSheet, TeamSheetRow } from '../core/parsers/teamSheet';
 import {
   compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK, rowsForRequests,
@@ -756,10 +759,12 @@ export const TeamSheetCheck: React.FC<Props> = ({
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
 
-  const run = async (file: File) => {
+  /* Their sheet, from a file they exported or live from their Airtable -
+     the same text either way, read by the same reader. */
+  const run = async (file: File | { name: string; text: () => Promise<string> }) => {
     setBusy(true); setError(''); setRows(null); setFileName(file.name);
     try {
-      const text = await readFileAsText(file);
+      const text = file instanceof File ? await readFileAsText(file) : await file.text();
       const parsed = parseTeamSheet(text);
       if (parsed.problem) { setError(parsed.problem); return; }
       setRows(parsed.rows);
@@ -1088,6 +1093,28 @@ export const TeamSheetCheck: React.FC<Props> = ({
             billed it, and those cross a month end.
           </span>
         </div>
+      </div>
+
+      {/* Live: the copy of their Airtable the server keeps, two minutes old
+          at most - no export, no file. */}
+      <div className="bg-white border border-purple-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-3">
+        <button type="button" disabled={busy}
+          onClick={() => run({
+            name: `Airtable (live, ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })})`,
+            text: async () => {
+              const live = new AirtableService();
+              const rows = await live.liveSheetRows();
+              if (!rows.length) throw new Error('The live copy of their Airtable is empty - has the sync run yet?');
+              return rowsToCsv(rows, d => Papa.unparse(d as Papa.UnparseObject<string[]>));
+            },
+          })}
+          className="flex items-center gap-1.5 bg-purple-600 text-white text-xs font-bold px-3 py-2 rounded hover:bg-purple-700 disabled:opacity-50">
+          <RefreshCw className="w-3.5 h-3.5" /> Live from Airtable
+        </button>
+        <span className="text-[11px] text-slate-500 flex-1 min-w-[200px]">
+          Their Airtable as it is now - kept in step every two minutes, so there is nothing to export.
+          {mode === 'request' ? ' Type the request above first; only its rows are read.' : ''}
+        </span>
       </div>
 
       <div

@@ -43,7 +43,7 @@
     "test:runningstatement": "tsx scripts/test-running-statement.ts",
     "test:bsprtdn": "tsx scripts/test-bsp-rtdn.ts",
     "test:ticketchain": "tsx scripts/test-ticket-chain.ts && tsx scripts/test-conjunction.ts && tsx scripts/test-team-sheet-settled.ts && tsx scripts/test-ticket-currency.ts && tsx scripts/test-adm-register.ts && tsx scripts/test-free-reissue.ts && tsx scripts/test-supplier-proof.ts && tsx scripts/test-sheet-memory.ts",
-    "test:soapdf": "tsx scripts/test-ibtekar-statement.ts && tsx scripts/test-statement-review.ts",
+    "test:soapdf": "tsx scripts/test-ibtekar-statement.ts && tsx scripts/test-statement-review.ts && tsx scripts/test-airtable.ts",
     "test:ibtekardates": "tsx scripts/test-ibtekar-dates.ts",
     "test:invariants": "tsx scripts/test-ledger-invariants.ts",
     "test:iata": "tsx scripts/test-iata-phase3.ts",

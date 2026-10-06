@@ -1,4 +1,5 @@
 import { supabase, fetchAllRows } from '../utils/supabase';
+import { pendingRow } from '../core/helpers/pendingRow';
 import { PendingTicket, Ticket } from '../types';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
 import { whyNotConfirmable, ticketFromPending } from '../core/helpers/pendingFromFindings';
@@ -75,38 +76,7 @@ const rowTo = (r: Row): PendingTicket => ({
   createdAt: r.created_at,
 });
 
-const toRow = (p: PendingTicket, userId: string) => ({
-  id: p.id,
-  user_id: userId,
-  ticket_no: p.ticketNo || '',
-  source: p.source || '',
-  date: p.date || '',
-  amount: p.amount ?? 0,
-  commission: p.commission ?? 0,
-  total_doc: p.totalDoc ?? 0,
-  req_num: p.reqNum || '',
-  pnr: p.pnr || '',
-  passenger_name: p.passengerName || '',
-  airline_code: p.airlineCode || '',
-  route: p.route || '',
-  status: p.status || '',
-  currency: p.currency || 'AED',
-  transaction_type: p.transactionType || '',
-  vendor_reference: p.vendorReference || '',
-  origin: p.origin || 'TEAM_SHEET',
-  their_portal: p.theirPortal || '',
-  their_req: p.theirReq || '',
-  their_cost: p.theirCost ?? null,
-  their_group: p.theirGroup ?? 1,
-  their_cell: p.theirCell || '',
-  finding: p.finding || '',
-  note: p.note || '',
-  held_back: !!p.heldBack,
-  held_back_why: p.heldBackWhy || '',
-  state: p.state || 'PENDING',
-  review_note: p.reviewNote || null,
-  dedupe: p.dedupe,
-});
+const toRow = pendingRow;
 
 /**
  * The review queue: tickets proposed and not yet agreed to.

@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { ViewState, Ticket, VendorBalance, BalanceTopUp, VendorStatement, AppAlert, PendingTicket } from './types';
 import { logout } from './utils/supabase';
 import { v4 as uuidv4 } from 'uuid';
@@ -47,6 +47,8 @@ import { AuditService, AuditRecord } from './services/AuditService';
 import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { summariseVendor } from './core/helpers/statementMath';
 import type { Reprice } from './core/helpers/statementAgainstBooks';
+import { AirtableService, type AirtableNotice, type SyncState } from './services/AirtableService';
+import { AirtableBell } from './components/AirtableBell';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
 import { useStatements } from './hooks/useStatements';
@@ -265,6 +267,66 @@ function MainApp({ user }: { user: User }) {
   const handleSaveVendor   = (v: VendorBalance) => { saveVendor(v); importSvc.audit('ADD_VENDOR', v.vendorName, `Initial balance: ${v.initialBalance}`); };
   const handleDeleteVendor = (id: string) => { if (confirm('Delete vendor?')) { deleteVendor(id); importSvc.audit('DELETE_VENDOR', id, 'Vendor deleted'); } };
   const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount}`); };
+  /* ── the team's Airtable, live ─────────────────────────────────────────
+     The server syncs it every two minutes; this reads the notices it left
+     and the sync's health, and carries out what a person accepts. */
+  const airtable = React.useMemo(() => new AirtableService(), []);
+  const [atNotices, setAtNotices] = useState<AirtableNotice[]>([]);
+  const [atSync, setAtSync] = useState<SyncState | null>(null);
+  const loadAirtable = React.useCallback(async () => {
+    try {
+      const [n, s] = await Promise.all([airtable.notices(), airtable.state()]);
+      setAtNotices(n); setAtSync(s);
+    } catch (e) { console.error('airtable notices', e); }
+  }, [airtable]);
+  useEffect(() => {
+    loadAirtable();
+    const t = window.setInterval(loadAirtable, 60_000);
+    return () => window.clearInterval(t);
+  }, [loadAirtable]);
+
+  const acceptNotices = async (list: AirtableNotice[]) => {
+    const done: string[] = [];
+    for (const n of list) {
+      if (n.kind === 'REQ_CHANGED') {
+        for (const o of (n.payload.ours ?? []) as { id: string; ticketNo: string; reqNum: string }[]) {
+          if (!tickets.some(t => t.id === o.id)) continue;
+          await updateTicket(o.id, { reqNum: String(n.payload.to) });
+          importSvc.audit('EDIT_TICKET', o.ticketNo, `req: ${o.reqNum || '-'} -> ${n.payload.to} (moved on the team's Airtable)`);
+        }
+      } else if (n.kind === 'NAME' || n.kind === 'CABIN') {
+        const field = n.kind === 'NAME' ? 'passengerName' : 'cabinClass';
+        const value = String(n.kind === 'NAME' ? n.payload.name : n.payload.cabin);
+        for (const id of n.ticketIds) {
+          const t = tickets.find(x => x.id === id);
+          // Fill only: a value somebody put in since is left alone.
+          if (!t || String((t as any)[field] ?? '').trim()) continue;
+          await updateTicket(id, { [field]: value } as Partial<Ticket>);
+          importSvc.audit('EDIT_TICKET', t.ticketNo, `${n.kind === 'NAME' ? 'passenger_name' : 'cabin'}: - -> ${value} (from the team's Airtable)`);
+        }
+      } else if (n.kind === 'ONLINE_TICKET') {
+        // Decided where every proposal is decided; the notice closes itself then.
+        setView('review');
+        continue;
+      }
+      done.push(n.id);
+    }
+    if (done.length) await airtable.decide(done, 'ACCEPTED', user.email ?? '');
+    await loadAirtable();
+  };
+  const dismissNotices = async (list: AirtableNotice[]) => {
+    await airtable.decide(list.map(n => n.id), 'DISMISSED', user.email ?? '');
+    await loadAirtable();
+  };
+  const syncAirtableNow = async () => { await airtable.syncNow(); await loadAirtable(); };
+  /* A ticket bought online is decided in To Review; once it is, its notice is done. */
+  useEffect(() => {
+    if (!isAdmin) return;
+    const decided = atNotices.filter(n => n.kind === 'ONLINE_TICKET' && n.state === 'OPEN'
+      && pending.some(p => p.dedupe === n.payload.dedupe && p.state !== 'PENDING'));
+    if (decided.length) airtable.decide(decided.map(n => n.id), 'ACCEPTED', user.email ?? '').then(loadAirtable).catch(console.error);
+  }, [atNotices, pending, isAdmin, airtable, loadAirtable, user.email]);
+
   const handleSaveStatement   = (s: VendorStatement) => {
     /* A statement opening on the same day as one already saved is its newer
        issue: Ibtekar's 01/08-30/09 opens where their 01/08-14/09 did, on a
@@ -521,6 +583,8 @@ function MainApp({ user }: { user: User }) {
       onAddManually={() => setShowManualEntry(true)}
       onImport={() => setView('import')}
       onLogout={logout}
+      headerExtra={<AirtableBell notices={atNotices} sync={atSync} canEdit={isAdmin}
+        onAccept={acceptNotices} onDismiss={dismissNotices} onSyncNow={syncAirtableNow} />}
       banner={<AlertBanner alerts={alerts} onDismiss={dismissAlert} />}
     >
       <React.Suspense fallback={<Loading />}>

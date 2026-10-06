@@ -33,6 +33,8 @@ interface Props {
   onAddManually: () => void;
   onImport: () => void;
   onLogout: () => void;
+  /** Beside the header buttons - the Airtable bell. */
+  headerExtra?: React.ReactNode;
   /** Sits full width under the header, above the nav and the content, which is
    *  where an alert about the whole workspace belongs. */
   banner?: React.ReactNode;
@@ -41,7 +43,7 @@ interface Props {
 
 export const Shell: React.FC<Props> = ({
   navItems, view, onView, isAdmin, email, stats,
-  onAddManually, onImport, onLogout, banner, children,
+  onAddManually, onImport, onLogout, banner, children, headerExtra,
 }) => {
   // Closed by default so a phone opens on the ledger rather than on a menu.
   const [navOpen, setNavOpen] = useState(false);
@@ -80,6 +82,7 @@ export const Shell: React.FC<Props> = ({
               The labels fold away under md and the icon carries the button.
               Two four-word labels and a title do not fit across a phone, and
               what gets pushed off the edge is the button, not the label. */}
+          {headerExtra}
           {isAdmin ? (
             <>
               <button onClick={onAddManually} title="Add Manually"
