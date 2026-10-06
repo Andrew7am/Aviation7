@@ -47,7 +47,7 @@ export function makeProfileParser(profile: LearnedProfile): VendorParser {
       const iExplicitReq = findExplicitReqColumn(headers);
       const iReq    = iExplicitReq !== -1 ? iExplicitReq
                      : c.req ? col(headers, c.req)
-                     : findReqColumn(headers);
+                     : -1;   // no broad guess: a blank request is filled from Airtable by ticket number
 
       const cabinText = (row: string[]) => iCabin >= 0 ? cell(row, iCabin).trim() : '';
 

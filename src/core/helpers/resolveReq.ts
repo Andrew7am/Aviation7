@@ -63,8 +63,12 @@ export function pickReqColumn(
 ): number {
   const explicit = findExplicitReqColumn(headers);
   if (explicit !== -1) return explicit;
-  if (vendorColIdx !== -1) return vendorColIdx;
-  return findReqColumn(headers);
+  // No broad guess past the vendor's own column. Its last resort matched any
+  // header with "reference" in it - flydubai's Booking Reference, a Payment
+  // Reference - and filed every ticket under its PNR. A request left blank
+  // is filled from the team's Airtable by ticket number; a wrong one sits
+  // there looking filed, and nothing ever corrects it.
+  return vendorColIdx;
 }
 
 /**

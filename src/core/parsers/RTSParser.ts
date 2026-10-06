@@ -43,8 +43,8 @@ export const RTSParser: VendorParser = {
     // warning. A file that does not say which request a ticket belongs to is
     // a file that does not say. That is what the warning below is for, and a
     // guessed column is not an answer to it.
-    let iReq = findExplicitReqColumn(headers);
-    if (iReq === -1) iReq = findReqColumn(headers);
+    const iReq = findExplicitReqColumn(headers);
+    // No broad guess: a blank request is filled from the team's Airtable by ticket number.
     rows.forEach((row,idx) => {
       const rawTk = cell(row,iNo);
       if (!rawTk||!rawTk.includes('-')) return;
