@@ -949,8 +949,21 @@ export function compareTeamSheet(
   for (const [serial, rows] of theirBySerial) {
     const applications = refundsFor.get(serial) ?? [];
     for (const t of applications) claimed.add(ticketMatchKey(t.ticketNo || ''));
-    const ours = [...(ourBySerial.get(serial) ?? []), ...applications];
+    let ours = [...(ourBySerial.get(serial) ?? []), ...applications];
     const first = rows[0];
+    /* Flyadeal's reports carry no ticket number: we hold its tickets under
+       the PNR (H692FC), and their sheet writes the number off the e-ticket
+       (560-9152641826). For a flyadeal row the number finds nothing, so the
+       booking does - our flyadeal tickets on its PNR. */
+    const flyadeal = rows.some(r => /flyadeal/i.test(r.airline || '') || /^\s*f3\b/i.test(r.portal || ''));
+    if (!ours.length && flyadeal) {
+      const viaPnr = rows.flatMap(r => pnrParts(r.pnr)).flatMap(p => ourByPnr.get(pnrKey(p)) ?? [])
+        .filter((t, i, all) => /flyadeal/i.test(t.source || '') && all.indexOf(t) === i);
+      if (viaPnr.length) {
+        ours = viaPnr;
+        for (const t of viaPnr) claimed.add(ticketMatchKey(t.ticketNo || ''));
+      }
+    }
     const theirReq = (rows.find(r => reqKey(r.reqNum))?.reqNum || '').trim();
     const ourReq = (ours.find(t => reqKey(t.reqNum || ''))?.reqNum || '').trim();
     const theySayRefunded = rows.some(r => r.status === 'REFUNDED');

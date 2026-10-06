@@ -55,12 +55,12 @@ export class AirtableService {
   }
 
   /** What each of their rows says about requests - for filling ours. */
-  async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string }[]> {
+  async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal: string; airline: string }[]> {
     const rows = await fetchAllRows<any>((from, to) =>
-      supabase.from('airtable_tickets').select('serials, pnr, req_num, status, sheet_row')
+      supabase.from('airtable_tickets').select('serials, pnr, req_num, status, portal, airline, sheet_row')
         .eq('deleted', false).range(from, to));
     return rows.map(r => ({ serials: r.serials ?? [], emd: r.sheet_row?.['EMD Number'] ?? '', pnr: r.pnr ?? '',
-      req_num: r.req_num ?? '', status: r.status ?? '' }));
+      req_num: r.req_num ?? '', status: r.status ?? '', portal: r.portal ?? '', airline: r.airline ?? '' }));
   }
 
   /** What moved on their side, newest first. */

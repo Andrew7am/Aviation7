@@ -172,7 +172,7 @@ export function useImport(userId: string) {
       if (needReq.length) {
         try {
           const sources = await new AirtableService().reqSources();
-          for (const f of requestsFor(needReq.map(t => ({ id: t.id, ticketNo: t.ticketNo, pnr: t.pnr || '' })), sources)) {
+          for (const f of requestsFor(needReq.map(t => ({ id: t.id, ticketNo: t.ticketNo, pnr: t.pnr || '', source: t.source })), sources)) {
             const t = rawTickets.find(x => x.id === f.id);
             if (t) { t.reqNum = f.req; filledFromAirtable.add(t.ticketNo); }
           }

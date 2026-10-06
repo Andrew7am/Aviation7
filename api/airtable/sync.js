@@ -837,8 +837,16 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   for (const [serial3, rows] of theirBySerial) {
     const applications = refundsFor.get(serial3) ?? [];
     for (const t of applications) claimed.add(ticketMatchKey(t.ticketNo || ""));
-    const ours = [...ourBySerial.get(serial3) ?? [], ...applications];
+    let ours = [...ourBySerial.get(serial3) ?? [], ...applications];
     const first2 = rows[0];
+    const flyadeal = rows.some((r) => /flyadeal/i.test(r.airline || "") || /^\s*f3\b/i.test(r.portal || ""));
+    if (!ours.length && flyadeal) {
+      const viaPnr = rows.flatMap((r) => pnrParts(r.pnr)).flatMap((p) => ourByPnr.get(pnrKey(p)) ?? []).filter((t, i, all) => /flyadeal/i.test(t.source || "") && all.indexOf(t) === i);
+      if (viaPnr.length) {
+        ours = viaPnr;
+        for (const t of viaPnr) claimed.add(ticketMatchKey(t.ticketNo || ""));
+      }
+    }
     const theirReq = (rows.find((r) => reqKey(r.reqNum))?.reqNum || "").trim();
     const ourReq = (ours.find((t) => reqKey(t.reqNum || ""))?.reqNum || "").trim();
     const theySayRefunded = rows.some((r) => r.status === "REFUNDED");
@@ -1731,6 +1739,9 @@ var pendingRow = (p, userId) => ({
 });
 
 // src/core/integrations/airtableRequests.ts
+var isFlyadealRow = (r) => /flyadeal/i.test(r.airline || "") || /^\s*f3\b/i.test(r.portal || "");
+var isFlyadealTicket = (source) => /flyadeal/i.test(source || "");
+var pnrParts2 = (p) => (p || "").toUpperCase().split(/[|,/\s]+/).filter(Boolean);
 var one2 = (req) => {
   const parts = (req || "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
   return parts.length === 1 ? parts[0] : parts.length ? "TWO" : "";
@@ -1738,10 +1749,15 @@ var one2 = (req) => {
 var held = (s) => /hold/i.test(s || "");
 function requestsFor(missing, rows) {
   const byDoc = /* @__PURE__ */ new Map();
+  const byFlyadealPnr = /* @__PURE__ */ new Map();
   for (const r of rows) {
     if (held(r.status)) continue;
     const req = one2(r.req_num);
     if (!req) continue;
+    if (isFlyadealRow(r)) for (const p of pnrParts2(r.pnr)) {
+      if (!byFlyadealPnr.has(p)) byFlyadealPnr.set(p, /* @__PURE__ */ new Set());
+      byFlyadealPnr.get(p).add(req);
+    }
     for (const d of [...r.serials, ...teamSerials(r.emd || "").map((x) => x.serial)]) {
       const k = docKey(d);
       if (!k) continue;
@@ -1752,7 +1768,13 @@ function requestsFor(missing, rows) {
   const out = [];
   for (const t of missing) {
     const s = byDoc.get(docKey(t.ticketNo));
-    if (s && s.size === 1 && !s.has("TWO")) out.push({ id: t.id, ticketNo: t.ticketNo, req: [...s][0], how: "ticket number" });
+    if (s && s.size === 1 && !s.has("TWO")) {
+      out.push({ id: t.id, ticketNo: t.ticketNo, req: [...s][0], how: "ticket number" });
+      continue;
+    }
+    if (!isFlyadealTicket(t.source)) continue;
+    const f = new Set(pnrParts2(t.pnr || t.ticketNo).flatMap((p) => [...byFlyadealPnr.get(p) ?? []]));
+    if (f.size === 1 && !f.has("TWO")) out.push({ id: t.id, ticketNo: t.ticketNo, req: [...f][0], how: "flyadeal PNR" });
   }
   return out;
 }
@@ -1771,8 +1793,9 @@ function detailsFor(ours, rows) {
     const name = onePassenger(r) ? usableName(r.client_name) : "";
     const cabin = usableCabin(r.cabin);
     const route = routeOf(r);
-    for (const s of r.serials) {
-      const k = docKey(s);
+    const keys = [...r.serials, ...isFlyadealRow(r) ? (r.pnr || "").split(/[|,/\s]+/).filter(Boolean).map((p) => `F3:${p.toUpperCase()}`) : []];
+    for (const s of keys) {
+      const k = s.startsWith("F3:") ? s : docKey(s);
       if (!k) continue;
       const e = byDoc.get(k) ?? { name: /* @__PURE__ */ new Set(), cabin: /* @__PURE__ */ new Set(), route: /* @__PURE__ */ new Set() };
       if (name) e.name.add(name);
@@ -1784,7 +1807,7 @@ function detailsFor(ours, rows) {
   const single = (s) => s.size === 1 ? [...s][0] : "";
   const out = [];
   for (const t of ours) {
-    const e = byDoc.get(docKey(t.ticketNo));
+    const e = byDoc.get(docKey(t.ticketNo)) ?? (isFlyadealTicket(t.source) ? byDoc.get(`F3:${(t.pnr || t.ticketNo).toUpperCase().split(/[|,/\s]+/)[0]}`) : void 0);
     if (!e) continue;
     const add = (field, have, v) => {
       if (!have.trim() && v) out.push({ id: t.id, ticketNo: t.ticketNo, field, value: v });
@@ -2003,7 +2026,7 @@ async function syncAirtable(env) {
     const liveAll = async () => liveRows ??= full ? rows : await selectAll(
       db,
       "airtable_tickets",
-      "serials, ticket_cell, pnr, req_num, status, client_name, cabin, sheet_row",
+      "serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, sheet_row",
       (q) => q.eq("deleted", false)
     );
     const auditRows = [];
@@ -2023,7 +2046,7 @@ async function syncAirtable(env) {
       const lacking = await selectAll(
         db,
         "tickets",
-        "id, ticket_no, passenger_name, cabin_class, route, user_id",
+        "id, ticket_no, passenger_name, cabin_class, route, user_id, pnr, source",
         (q) => q.neq("status", "FUND").or("passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.")
       );
       if (lacking.length) {
@@ -2032,7 +2055,9 @@ async function syncAirtable(env) {
           ticketNo: t.ticket_no ?? "",
           passengerName: t.passenger_name ?? "",
           cabinClass: t.cabin_class ?? "",
-          route: t.route ?? ""
+          route: t.route ?? "",
+          pnr: t.pnr ?? "",
+          source: t.source ?? ""
         })), await liveAll());
         const owner = lacking.find((t) => t.user_id)?.user_id;
         for (const f of fills) {
@@ -2050,25 +2075,37 @@ async function syncAirtable(env) {
       if (!dry) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("kind", ["NAME", "CABIN"]).eq("state", "OPEN");
     }
     if (fillNow && !dry) {
-      const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, dedupe").eq("origin", "AIRTABLE").eq("state", "PENDING");
+      const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, pnr, their_portal, dedupe").eq("origin", "AIRTABLE").eq("state", "PENDING");
       if (waiting?.length) {
         const nos = [...new Set(waiting.map((w) => w.ticket_no).filter(Boolean))];
         const { data: arrived } = await db.from("tickets").select("ticket_no").in("ticket_no", nos);
         const have = new Set((arrived ?? []).map((t) => docKey(t.ticket_no)));
-        const done = waiting.filter((w) => have.has(docKey(w.ticket_no)));
+        const f3 = waiting.filter((w) => isFlyadealRow({ portal: w.their_portal }) && w.pnr);
+        const f3Pnrs = [...new Set(f3.flatMap((w) => String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean)))];
+        const { data: f3Held } = f3Pnrs.length ? await db.from("tickets").select("pnr").ilike("source", "%flyadeal%").in("pnr", f3Pnrs) : { data: [] };
+        const heldPnr = new Set((f3Held ?? []).map((t) => String(t.pnr).toUpperCase()));
+        const done = waiting.filter((w) => have.has(docKey(w.ticket_no)) || f3.includes(w) && String(w.pnr).toUpperCase().split(/[|,/\s]+/).some((p) => heldPnr.has(p)));
         if (done.length) {
           await db.from("pending_tickets").update({ state: "CONFIRMED", review_note: "Arrived with the supplier's report" }).in("id", done.map((w) => w.id));
           await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("dedupe_key", done.flatMap((w) => [`ONLINE|${w.dedupe}`, `MISSING|${w.dedupe}`])).eq("state", "OPEN");
         }
       }
     }
-    const { data: miss, error: missErr } = fillNow ? await db.from("tickets").select("id, ticket_no, pnr, status, user_id").or("req_num.is.null,req_num.eq.").neq("status", "FUND") : { data: [], error: null };
+    const { data: miss, error: missErr } = fillNow ? await db.from("tickets").select("id, ticket_no, pnr, status, user_id, source").or("req_num.is.null,req_num.eq.").neq("status", "FUND") : { data: [], error: null };
     if (missErr) throw new Error(`tickets: ${missErr.message}`);
     if (miss?.length) {
       const live = await liveAll();
       const fills = requestsFor(
-        miss.map((t) => ({ id: t.id, ticketNo: t.ticket_no ?? "", pnr: t.pnr ?? "" })),
-        live.map((r) => ({ serials: r.serials ?? [], emd: r.sheet_row?.["EMD Number"] ?? "", pnr: r.pnr ?? "", req_num: r.req_num ?? "", status: r.status ?? "" }))
+        miss.map((t) => ({ id: t.id, ticketNo: t.ticket_no ?? "", pnr: t.pnr ?? "", source: t.source ?? "" })),
+        live.map((r) => ({
+          serials: r.serials ?? [],
+          emd: r.sheet_row?.["EMD Number"] ?? "",
+          pnr: r.pnr ?? "",
+          req_num: r.req_num ?? "",
+          status: r.status ?? "",
+          portal: r.portal ?? "",
+          airline: r.airline ?? ""
+        }))
       );
       const owner = miss.find((t) => t.user_id)?.user_id;
       for (const f of fills) {

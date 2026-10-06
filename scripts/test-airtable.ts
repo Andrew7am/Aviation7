@@ -117,6 +117,19 @@ console.log('\n7. A ticket with no request takes the one their sheet gives');
     fill({ ticketNo: '5513427739', pnr: 'P1' }, [row({ serials: ['5513427739'], pnr: 'P1', req_num: 'A1' }), row({ serials: ['5513427739'], pnr: 'P1', req_num: 'B2' })]), []);
 }
 
+console.log('\n7b. Flyadeal by its PNR - its report has no ticket number');
+{
+  const f3row = { serials: ['9152641826'], emd: '', pnr: 'H692FC', req_num: 'KSAML2706', status: 'Issued', portal: 'F3', airline: 'Flyadeal' };
+  check('a flyadeal ticket of ours, held under its PNR, takes their request',
+    requestsFor([{ id: 'a', ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB' }], [f3row]).map(f => [f.req, f.how]), [['KSAML2706', 'flyadeal PNR']]);
+  check('any other vendor still only by number',
+    requestsFor([{ id: 'a', ticketNo: 'H692FC', pnr: 'H692FC', source: 'IATA BSP' }], [f3row]), []);
+  check('and its name and cabin too',
+    detailsFor([{ id: 'a', ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB', passengerName: '', cabinClass: '', route: 'RUH/JED' }],
+      [{ serials: ['9152641826'], ticket_cell: '5609152641826', status: 'Issued', client_name: 'ZAKI ATTAR', cabin: 'Economy', pnr: 'H692FC', portal: 'F3', airline: 'Flyadeal', sheet_row: {} }])
+      .map(f => [f.field, f.value]), [['passenger_name', 'ZAKI ATTAR'], ['cabin_class', 'ECONOMY']]);
+}
+
 console.log('\n8. Names, cabins and routes we lack are filled, by number, without asking');
 {
   const live = (o: any) => ({ serials: ['5513427739'], ticket_cell: '065-5513427739', status: 'Issued', client_name: 'SALEEM KHADER ELDADAH',

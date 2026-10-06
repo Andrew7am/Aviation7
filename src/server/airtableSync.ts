@@ -22,7 +22,7 @@ import { parseTeamSheet } from '../core/parsers/teamSheet';
 import { compareTeamSheet } from '../core/helpers/teamSheetCompare';
 import { planSheetAdd } from '../core/helpers/addFromSheet';
 import { pendingRow } from '../core/helpers/pendingRow';
-import { requestsFor } from '../core/integrations/airtableRequests';
+import { requestsFor, isFlyadealRow } from '../core/integrations/airtableRequests';
 import { detailsFor } from '../core/integrations/airtableDetails';
 import type { Ticket } from '../types';
 
@@ -229,11 +229,11 @@ export async function syncAirtable(env: {
        the moment they do. Fill only, and said in the activity log. */
     let reqFilled = 0, detailsFilled = 0;
     const fillNow = full || changedRows.length > 0 || !!env.fillNow;
-    type LiveRow = { serials: string[]; ticket_cell: string; pnr: string; req_num: string; status: string; client_name: string; cabin: string; sheet_row: Record<string, string> };
+    type LiveRow = { serials: string[]; ticket_cell: string; pnr: string; req_num: string; status: string; client_name: string; cabin: string; portal: string; airline: string; sheet_row: Record<string, string> };
     let liveRows: LiveRow[] | null = null;
     // On a full run their whole table was just read; on any other, read our copy.
     const liveAll = async () => liveRows ??= full ? rows as unknown as LiveRow[] : await selectAll<LiveRow>(db, 'airtable_tickets',
-      'serials, ticket_cell, pnr, req_num, status, client_name, cabin, sheet_row', q => q.eq('deleted', false));
+      'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, sheet_row', q => q.eq('deleted', false));
     // The log lines, written together at the end rather than one round trip each.
     const auditRows: Record<string, unknown>[] = [];
     const audit = async (owner: string | undefined, entity: string, detail: string) => { auditRows.push({
@@ -243,12 +243,12 @@ export async function syncAirtable(env: {
     // Names, cabins and routes we lack, filled from the row that names the
     // same document. Nobody is asked; nothing already there is touched.
     if (fillNow) {
-      const lacking = await selectAll<{ id: string; ticket_no: string; passenger_name: string | null; cabin_class: string | null; route: string | null; user_id: string }>(
-        db, 'tickets', 'id, ticket_no, passenger_name, cabin_class, route, user_id',
+      const lacking = await selectAll<{ id: string; ticket_no: string; passenger_name: string | null; cabin_class: string | null; route: string | null; user_id: string; pnr: string | null; source: string | null }>(
+        db, 'tickets', 'id, ticket_no, passenger_name, cabin_class, route, user_id, pnr, source',
         q => q.neq('status', 'FUND').or('passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.'));
       if (lacking.length) {
         const fills = detailsFor(lacking.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', passengerName: t.passenger_name ?? '',
-          cabinClass: t.cabin_class ?? '', route: t.route ?? '' })), await liveAll());
+          cabinClass: t.cabin_class ?? '', route: t.route ?? '', pnr: t.pnr ?? '', source: t.source ?? '' })), await liveAll());
         const owner = lacking.find(t => t.user_id)?.user_id;
         for (const f of fills) {
           if (dry) { detailsFilled++; continue; }
@@ -269,13 +269,21 @@ export async function syncAirtable(env: {
        has since arrived with a supplier's report: its question is answered.
        The proposal is closed, and its notice with it. */
     if (fillNow && !dry) {
-      const { data: waiting } = await db.from('pending_tickets').select('id, ticket_no, dedupe')
+      const { data: waiting } = await db.from('pending_tickets').select('id, ticket_no, pnr, their_portal, dedupe')
         .eq('origin', 'AIRTABLE').eq('state', 'PENDING');
       if (waiting?.length) {
         const nos = [...new Set(waiting.map(w => w.ticket_no).filter(Boolean))];
         const { data: arrived } = await db.from('tickets').select('ticket_no').in('ticket_no', nos);
         const have = new Set((arrived ?? []).map(t => docKey(t.ticket_no)));
-        const done = waiting.filter(w => have.has(docKey(w.ticket_no)));
+        // Flyadeal arrives under its PNR - its report has no ticket number.
+        const f3 = waiting.filter(w => isFlyadealRow({ portal: w.their_portal }) && w.pnr);
+        const f3Pnrs = [...new Set(f3.flatMap(w => String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean)))];
+        const { data: f3Held } = f3Pnrs.length
+          ? await db.from('tickets').select('pnr').ilike('source', '%flyadeal%').in('pnr', f3Pnrs)
+          : { data: [] as { pnr: string }[] };
+        const heldPnr = new Set((f3Held ?? []).map(t => String(t.pnr).toUpperCase()));
+        const done = waiting.filter(w => have.has(docKey(w.ticket_no))
+          || (f3.includes(w) && String(w.pnr).toUpperCase().split(/[|,/\s]+/).some(p => heldPnr.has(p))));
         if (done.length) {
           await db.from('pending_tickets').update({ state: 'CONFIRMED', review_note: "Arrived with the supplier's report" })
             .in('id', done.map(w => w.id));
@@ -286,14 +294,15 @@ export async function syncAirtable(env: {
     }
 
     const { data: miss, error: missErr } = fillNow
-      ? await db.from('tickets').select('id, ticket_no, pnr, status, user_id').or('req_num.is.null,req_num.eq.').neq('status', 'FUND')
+      ? await db.from('tickets').select('id, ticket_no, pnr, status, user_id, source').or('req_num.is.null,req_num.eq.').neq('status', 'FUND')
       : { data: [], error: null };
     if (missErr) throw new Error(`tickets: ${missErr.message}`);
     if (miss?.length) {
       const live = await liveAll();
       const fills = requestsFor(
-        miss.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', pnr: t.pnr ?? '' })),
-        live.map(r => ({ serials: r.serials ?? [], emd: r.sheet_row?.['EMD Number'] ?? '', pnr: r.pnr ?? '', req_num: r.req_num ?? '', status: r.status ?? '' })));
+        miss.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', pnr: t.pnr ?? '', source: t.source ?? '' })),
+        live.map(r => ({ serials: r.serials ?? [], emd: r.sheet_row?.['EMD Number'] ?? '', pnr: r.pnr ?? '', req_num: r.req_num ?? '',
+          status: r.status ?? '', portal: r.portal ?? '', airline: r.airline ?? '' })));
       const owner = miss.find(t => t.user_id)?.user_id;
       for (const f of fills) {
         if (dry) { reqFilled++; continue; }

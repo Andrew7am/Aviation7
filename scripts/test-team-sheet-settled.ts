@@ -358,6 +358,20 @@ console.log('\n13. One request, out of the whole sheet or its own export');
   check('nothing typed: every row', rowsForRequests(whole, []).length, 4);
 }
 
+console.log('\n15. Flyadeal: their ticket number, our PNR');
+{
+  // H692FC: their sheet writes 560-9152641826, flyadeal's report gives only the PNR.
+  const f3 = sheet(['5609152641826,H692FC,Issued,1288.00,,6/10/2026 10:00am,F3,KSAML2706']);
+  const ours = [tkt({ ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB', amount: 1261.51, totalDoc: 1261.51, reqNum: 'KSAML2706', date: '2026-10-06' })];
+  const r = compareTeamSheet(f3, ours, ['KSAML2706']);
+  check('found by its PNR, not missing', r.findings.some(f => f.verdict === 'NOT_IN_LEDGER'), false);
+  check('and ours is not "not on their sheet"', r.findings.some(f => f.verdict === 'NOT_ON_SHEET'), false);
+  // Not for anyone else: a BSP ticket's number is its identity.
+  const bsp = sheet(['0655513427739,H692FC,Issued,330.00,,6/10/2026 10:00am,IATA Portal (UAE),KSAML2706']);
+  const rb = compareTeamSheet(bsp, [tkt({ ticketNo: 'H692FC', pnr: 'H692FC', source: 'IATA BSP', amount: 330, reqNum: 'KSAML2706', date: '2026-10-06' })], ['KSAML2706']);
+  check('a BSP number is never matched by its PNR', rb.findings.some(f => f.verdict === 'NOT_IN_LEDGER'), true);
+}
+
 console.log('\n14. Who has to act on a finding');
 {
   const held = [{ id: 'x' }] as any;
