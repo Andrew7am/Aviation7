@@ -84,7 +84,7 @@ export interface Ticket {
   fxRate?: number;
 }
 
-export type ViewState = 'dashboard' | 'tickets' | 'requests' | 'missing' | 'notclosed' | 'import' | 'teamsheet' | 'review' | 'vendors' | 'statements' | 'taxinvoices' | 'voids' | 'adms' | 'reports' | 'history' | 'activity' | 'settings';
+export type ViewState = 'dashboard' | 'tickets' | 'requests' | 'missing' | 'notclosed' | 'import' | 'teamsheet' | 'airtable' | 'review' | 'vendors' | 'statements' | 'taxinvoices' | 'voids' | 'adms' | 'reports' | 'history' | 'activity' | 'settings';
 
 /**
  * A vendor's own account of a period, as their statement prints it.

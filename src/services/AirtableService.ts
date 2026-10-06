@@ -17,6 +17,18 @@ export interface AirtableNotice {
   decidedBy: string | null; decidedAt: string | null;
 }
 
+export interface LiveRecord {
+  record_id: string; ticket_cell: string; serials: string[]; pnr: string; status: string; req_num: string;
+  net_cost: number | null; currency: string; refund_amount: number | null; issued_at: string | null;
+  client_name: string; cabin: string; portal: string; airline: string; team_member: string;
+  old_ticket: string; last_modified: string | null;
+}
+
+export interface ChangeRow {
+  id: number; record_id: string; ticket_cell: string | null; field: string;
+  old_value: string | null; new_value: string | null; changed_at: string;
+}
+
 const notice = (r: any): AirtableNotice => ({
   id: r.id, kind: r.kind, dedupeKey: r.dedupe_key, recordId: r.record_id, ticketNo: r.ticket_no,
   ticketIds: r.ticket_ids ?? [], reqNum: r.req_num, title: r.title, detail: r.detail, payload: r.payload ?? {},
@@ -30,6 +42,25 @@ export class AirtableService {
       supabase.from('airtable_tickets').select('sheet_row, created_at')
         .eq('deleted', false).order('created_at', { ascending: true }).range(from, to));
     return rows.map(r => r.sheet_row);
+  }
+
+  /** Their tickets as the sync keeps them - every field we read, no sheet row. */
+  async liveRecords(): Promise<LiveRecord[]> {
+    const rows = await fetchAllRows<any>((from, to) =>
+      supabase.from('airtable_tickets')
+        .select('record_id, ticket_cell, serials, pnr, status, req_num, net_cost, currency, refund_amount, issued_at, client_name, cabin, portal, airline, team_member, old_ticket, last_modified')
+        .eq('deleted', false).order('issued_at', { ascending: false, nullsFirst: false }).range(from, to));
+    return rows.map(r => ({ ...r, net_cost: r.net_cost == null ? null : Number(r.net_cost),
+      refund_amount: r.refund_amount == null ? null : Number(r.refund_amount), serials: r.serials ?? [] }));
+  }
+
+  /** What moved on their side, newest first. */
+  async changes(limit = 1000): Promise<ChangeRow[]> {
+    const { data, error } = await supabase.from('airtable_changes')
+      .select('id, record_id, ticket_cell, field, old_value, new_value, changed_at')
+      .order('changed_at', { ascending: false }).limit(limit);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as ChangeRow[];
   }
 
   async state(): Promise<SyncState | null> {

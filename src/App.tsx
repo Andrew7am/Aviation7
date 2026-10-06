@@ -22,6 +22,7 @@ import { TicketTable } from './components/TicketTable';
  */
 const Requests        = React.lazy(() => import('./components/Requests').then(m => ({ default: m.Requests })));
 const ImportData      = React.lazy(() => import('./components/ImportData').then(m => ({ default: m.ImportData })));
+const AirtablePage = React.lazy(() => import('./components/AirtablePage').then(m => ({ default: m.AirtablePage })));
 const TeamSheetCheck  = React.lazy(() => import('./components/TeamSheetCheck').then(m => ({ default: m.TeamSheetCheck })));
 const PendingReview   = React.lazy(() => import('./components/PendingReview').then(m => ({ default: m.PendingReview })));
 const VendorBalances  = React.lazy(() => import('./components/VendorBalances').then(m => ({ default: m.VendorBalances })));
@@ -69,7 +70,7 @@ import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
-  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck, Receipt, Ban, FileWarning } from 'lucide-react';
+  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck, Receipt, Ban, FileWarning, Table2 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
 const LOW_PCT = 0.2;
@@ -555,6 +556,7 @@ function MainApp({ user }: { user: User }) {
     { id: 'notclosed', label: 'Not Closed',      icon: <Circle className="w-4 h-4" />, badge: notClosedCount || undefined, badgeColor: 'amber' },
     ...(isAdmin ? [{ id: 'import' as ViewState, label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
     { id: 'teamsheet', label: 'Team Sheet Check', icon: <FileSearch className="w-4 h-4" /> },
+    { id: 'airtable',  label: 'Airtable',        icon: <Table2 className="w-4 h-4" />, badge: atNotices.filter(n => n.state === 'OPEN').length || undefined, badgeColor: 'red' },
     { id: 'review',    label: 'To Review',        icon: <ClipboardCheck className="w-4 h-4" />,
       badge: pendingCount || undefined, badgeColor: 'amber' },
     { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
@@ -606,6 +608,9 @@ function MainApp({ user }: { user: User }) {
       {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
       {/* Read-only, so everybody gets it: the person closing a flight sheet
           is not always the person who can write to the ledger. */}
+      {view === 'airtable' && <AirtablePage tickets={tickets} notices={atNotices} sync={atSync} canEdit={isAdmin}
+        onAccept={acceptNotices} onDismiss={dismissNotices} onSyncNow={syncAirtableNow}
+        onOpenSheetCheck={() => setView('teamsheet')} />}
       {view === 'teamsheet' && <TeamSheetCheck tickets={tickets}
         voids={voids} exchanges={exchanges} userId={user.id} userEmail={user.email}
         {...(isAdmin ? { onSendToReview: handleSendToReview,

@@ -312,7 +312,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   PRICE_DIFFERS:        'Price differs',
   TWICE_ON_THEIR_SHEET: 'Their sheet refunds it twice',
   NO_TICKET_NUMBER:     'Issued with no ticket number',
-  UNREADABLE:           'Their ticket number is damaged',
+  UNREADABLE:           'Their ticket column has no usable number',
   NOT_ON_SHEET:         'Not on their sheet',
 };
 
@@ -1343,13 +1343,18 @@ export function compareTeamSheet(
       ours: identified,
       reqNum: identified[0]?.reqNum?.trim() || '', theirReq: r.reqNum,
       note: r.unreadable
-        // Excel stored a 13-digit number as a number and rounded it away.
-        ? `Their cell reads "${r.rawTicket}" — the number was lost on the way out of`
-          + ' their system, most likely by being stored as a number.'
+        // Two different things land here: a 13-digit number Excel rounded
+        // away ("6.55512E+11"), and a ticket column holding something that
+        // was never a number - "EMD", the passenger's name. Saying the first
+        // about the second sent people looking for an export problem.
+        ? (r.excelDamaged
+            ? `Their cell reads "${r.rawTicket}" — a ticket number Excel stored as a number and rounded away.`
+            : `Their ticket column reads "${r.rawTicket}" — not a ticket number.`)
           + (identified.length
             ? ` PNR ${r.pnr} identifies it as this ticket, which is in our books, so nothing`
-              + ' is missing — but their record still needs the number put back.'
-            : ' Ask for the export with the ticket column as text.')
+              + ' is missing on our side — the team only needs to write the number in.'
+            : r.excelDamaged ? ' Ask for the export with the ticket column as text.'
+              : ' Nothing to match it on until the team writes the number in.')
         : identified.length
           ? `Their sheet marks this ${r.rawStatus || 'issued'} and leaves the ticket number`
             + ` blank. PNR ${r.pnr} identifies it as this ticket, which is in our books, so`

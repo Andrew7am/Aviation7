@@ -99,9 +99,10 @@ const WHY: Record<Verdict, string> = {
     + ' two as one piece of work — a cash-paid ticket raised under its own number beside'
     + ' the request it was split from. Listed so it is seen, not so it is chased.',
   UNREADABLE:
-    'Their export lost these ticket numbers — a 13-digit number stored as a number comes'
-    + ' out as 6.55512E+11 with the digits gone for good. Nothing about these rows can be'
-    + ' checked. Ask them to export the ticket column as text.',
+    'Their ticket column holds something other than a ticket number — a word such as "EMD",'
+    + ' the passenger\'s name, or a number Excel rounded away (6.55512E+11). Where the PNR'
+    + ' identifies the ticket and it is in our books, nothing is missing on our side: the row'
+    + ' only needs the team to write the number in.',
   FILED_ELSEWHERE:
     'The carriers that issue no IATA ticket give a booking reference that is both the'
     + ' booking and the document, and the two systems put it in different columns — theirs'

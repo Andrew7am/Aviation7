@@ -6,6 +6,7 @@
 import { sheetTime, toSheetRow, normalize, diffRecord, rowsToCsv, type AirtableTicketRow } from '../src/core/integrations/airtable';
 import { noticesFor, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
+import { teamFixes } from '../src/core/integrations/airtableFixes';
 import Papa from 'papaparse';
 
 let passed = 0, failed = 0;
@@ -80,6 +81,21 @@ console.log('\n5. Names and cabins only where the row is one passenger');
   check('two tickets in one cell', onePassenger(r('157-5513427794\n157-5513427795', ['5513427794', '5513427795'])), false);
   check('a placeholder is no name', [usableName('CLIENT NAME NOT FOUND'), usableName('CC'), usableName('ms Abrar Hamwah')], ['', '', 'ABRAR HAMWAH']);
   check('a cabin, or none', [usableCabin('Business'), usableCabin("Class couldn't be determined"), usableCabin('Economy; Business')], ['BUSINESS', '', '']);
+}
+
+console.log('\n6. What the team has to put right on their side');
+{
+  const row = (o: any) => ({ record_id: 'r', ticket_cell: '', serials: [], pnr: 'ABC123', status: 'Issued', req_num: 'UAEVP711',
+    net_cost: 100, currency: 'AED', portal: 'IATA Portal (UAE)', team_member: 'X', issued_at: null, ...o });
+  const bsp = (p: string) => /IATA/.test(p);
+  const kinds = (rows: any[]) => teamFixes(rows, bsp).map(f => f.kind);
+  check('"EMD" in the ticket column of a BSP row', kinds([row({ ticket_cell: 'EMD' })]), ['NO_NUMBER']);
+  check('a flyadeal row under its PNR is how it is written', kinds([row({ ticket_cell: '00', portal: 'F3' })]), []);
+  check('but with no PNR either, it is a fault', kinds([row({ ticket_cell: '00', portal: 'F3', pnr: '' })]), ['NO_NUMBER']);
+  check('a held option needs no number', kinds([row({ status: 'On Hold' })]), []);
+  check('no request', kinds([row({ ticket_cell: '065-5513427739', serials: ['5513427739'], req_num: '' })]), ['NO_REQUEST']);
+  check('issued with no cost', kinds([row({ ticket_cell: '065-5513427739', serials: ['5513427739'], net_cost: null })]), ['NO_COST']);
+  check('one ticket issued on two rows', kinds([row({ serials: ['5513427739'] }), row({ record_id: 'r2', serials: ['5513427739'] })]), ['ISSUED_TWICE', 'ISSUED_TWICE']);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
