@@ -19,10 +19,12 @@ const KIND: Record<string, { label: string; accept: string; tone: string }> = {
   VOID:          { label: 'Voided on theirs',  accept: 'Seen',             tone: 'bg-red-100 text-red-800' },
   PRICE:         { label: 'Cost changed',      accept: 'Seen',             tone: 'bg-slate-100 text-slate-700' },
 };
-const ORDER = ['NOT_IN_BOOKS', 'ONLINE_TICKET'];
-/** The only notices that ask for a decision: a ticket on their sheet that is
- *  in nobody's books - add it or not. Names, cabins, routes and requests are
- *  filled on their own; the rest is on the Airtable page, for information. */
+const ORDER = ['REQ_CHANGED', 'NOT_IN_BOOKS', 'ONLINE_TICKET'];
+/** What the bell brings to a person: the team moved a ticket of ours to
+ *  another request (move ours, or not), and a ticket on their sheet that is
+ *  in nobody's books (add it, or not). Names, cabins, routes and missing
+ *  requests are filled on their own; refunds, voids and cost changes are on
+ *  the Airtable page, for information. */
 export const NEEDS_APPROVAL = new Set(ORDER);
 
 const ago = (iso?: string | null) => {
