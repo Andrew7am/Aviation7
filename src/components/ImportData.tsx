@@ -378,7 +378,13 @@ export const ImportData: React.FC<ImportDataProps> = ({
                       <td className={`px-3 py-2 font-bold ${t.reqNum ? 'text-blue-600' : 'text-red-400 italic'}`}>
                         {(() => {
                           const was = (t.changes ?? []).find((ch: FieldChange) => ch.field === 'Req num');
-                          if (!was) return t.reqNum || 'MISSING';
+                          // Where the request came from: the file, or the team's Airtable.
+                          const fromAirtable = (preview.reqFromAirtable ?? []).includes(t.ticketNo);
+                          if (!was) return t.reqNum
+                            ? <span className="whitespace-nowrap">{t.reqNum}{fromAirtable && (
+                                <span title="Not in the file - taken from the team's Airtable by this ticket number"
+                                  className="ml-1.5 text-[9px] font-bold uppercase bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded align-middle">Airtable</span>)}</span>
+                            : 'MISSING';
                           return (
                             <span className="whitespace-nowrap">
                               {was.from

@@ -18,6 +18,8 @@ import { requestsFor } from '../core/integrations/airtableRequests';
 export interface ImportErrorEntry { row: number; raw: string; error: string }
 
 export interface ImportPreview {
+  /** Tickets whose request came from the team's Airtable, not the file. */
+  reqFromAirtable?: string[];
   fresh:       Ticket[];
   updates:     Ticket[];
   duplicates:  Ticket[];
@@ -258,6 +260,7 @@ export function useImport(userId: string) {
         fresh, updates, duplicates, topUps, settlements, voided, exchanges,
         confirmations: proof.confirm,
         corrections: fix.correct,
+        reqFromAirtable: [...filledFromAirtable],
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
         warnings: [...reqWarnings, ...proofWarnings, ...dateWarnings,
