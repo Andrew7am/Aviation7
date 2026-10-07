@@ -273,7 +273,7 @@ export async function syncAirtable(env: {
        overnight after it was in our Voids. A waiting ticket is closed the
        moment its question is answered - it arrived, or it was voided. */
     if (!dry) {
-      const { data: waiting } = await db.from('pending_tickets').select('id, ticket_no, pnr, their_portal, their_cell, dedupe')
+      const { data: waiting } = await db.from('pending_tickets').select('id, ticket_no, pnr, their_portal, their_cell, dedupe, amount, currency, their_cost, req_num, their_req')
         .eq('origin', 'AIRTABLE').eq('state', 'PENDING');
       if (waiting?.length) {
         const nos = [...new Set(waiting.map(w => w.ticket_no).filter(Boolean))];
@@ -301,7 +301,7 @@ export async function syncAirtable(env: {
         const keys = [...new Set(rest.map(w => docKey(w.ticket_no)).filter(Boolean))];
         if (keys.length) {
           const { data: inVoids } = await db.from('void_tickets').select('ticket_no').in('ticket_no', keys);
-          const { data: theirs } = await db.from('airtable_tickets').select('serials, status').overlaps('serials', keys).eq('deleted', false);
+          const { data: theirs } = await db.from('airtable_tickets').select('serials, status, net_cost, currency, req_num').overlaps('serials', keys).eq('deleted', false);
           const voided = new Set((inVoids ?? []).map(v => docKey(v.ticket_no)));
           // Void on their sheet only when every row of theirs naming it says so.
           const theirStatus = new Map<string, string[]>();
@@ -324,6 +324,34 @@ export async function syncAirtable(env: {
           const stillCell = new Set((byCell ?? []).map(r => (r.ticket_cell || '').trim()));
           const gone = open2.filter(w => !theirStatus.has(docKey(w.ticket_no)) && !stillCell.has((w.their_cell || w.ticket_no || '').trim()));
           await close(gone, 'REJECTED', 'Their sheet no longer has this row as it was written - corrected or removed. Asked again under what it says now, if anything is missing.', 'DISMISSED');
+
+          /* Still waiting, and their row has moved since it was raised - the
+             team put 4862343317's currency right, AED to SAR. The waiting row
+             follows their sheet for as long as nobody here has touched its
+             figure; a figure somebody corrected is theirs, and stays. */
+          for (const w of open2.filter(x => !gone.includes(x))) {
+            const rowsFor = (theirs ?? []).filter(r => (r.serials ?? []).includes(docKey(w.ticket_no)) && !/void|hold/i.test(r.status ?? ''));
+            if (rowsFor.length !== 1) continue;
+            const r = rowsFor[0];
+            const untouched = w.their_cost == null || Math.abs(Math.abs(Number(w.amount)) - Math.abs(Number(w.their_cost))) < 0.005;
+            if (!untouched) continue;
+            const patch: Record<string, unknown> = {};
+            if (r.currency && r.currency !== w.currency) patch.currency = r.currency;
+            if (r.net_cost != null && Math.abs(Number(r.net_cost) - Math.abs(Number(w.amount))) >= 0.005) {
+              patch.amount = Math.sign(Number(w.amount) || 1) * Math.abs(Number(r.net_cost));
+              patch.total_doc = Math.abs(Number(r.net_cost));
+              patch.their_cost = Number(r.net_cost);
+            }
+            if (r.req_num && !r.req_num.includes(',') && r.req_num !== (w.req_num || '')) { patch.req_num = r.req_num; patch.their_req = r.req_num; }
+            if (!Object.keys(patch).length) continue;
+            await db.from('pending_tickets').update(patch).eq('id', w.id);
+            const amt = Math.abs(Number(patch.amount ?? w.amount));
+            const cur = String(patch.currency ?? w.currency);
+            const req = String(patch.req_num ?? w.req_num ?? '') || 'no request';
+            await db.from('airtable_notifications').update({
+              title: `Not in our books: ${w.ticket_no} · ${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${cur} · ${req}` })
+              .eq('dedupe_key', `MISSING|${w.dedupe}`).eq('state', 'OPEN');
+          }
         }
       }
     }

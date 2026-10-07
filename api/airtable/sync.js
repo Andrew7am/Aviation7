@@ -2075,7 +2075,7 @@ async function syncAirtable(env) {
       if (!dry) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("kind", ["NAME", "CABIN"]).eq("state", "OPEN");
     }
     if (!dry) {
-      const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, pnr, their_portal, their_cell, dedupe").eq("origin", "AIRTABLE").eq("state", "PENDING");
+      const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, pnr, their_portal, their_cell, dedupe, amount, currency, their_cost, req_num, their_req").eq("origin", "AIRTABLE").eq("state", "PENDING");
       if (waiting?.length) {
         const nos = [...new Set(waiting.map((w) => w.ticket_no).filter(Boolean))];
         const { data: arrived } = await db.from("tickets").select("ticket_no").in("ticket_no", nos);
@@ -2095,7 +2095,7 @@ async function syncAirtable(env) {
         const keys = [...new Set(rest.map((w) => docKey(w.ticket_no)).filter(Boolean))];
         if (keys.length) {
           const { data: inVoids } = await db.from("void_tickets").select("ticket_no").in("ticket_no", keys);
-          const { data: theirs } = await db.from("airtable_tickets").select("serials, status").overlaps("serials", keys).eq("deleted", false);
+          const { data: theirs } = await db.from("airtable_tickets").select("serials, status, net_cost, currency, req_num").overlaps("serials", keys).eq("deleted", false);
           const voided = new Set((inVoids ?? []).map((v) => docKey(v.ticket_no)));
           const theirStatus = /* @__PURE__ */ new Map();
           for (const r of theirs ?? []) for (const k of r.serials ?? []) theirStatus.set(k, [...theirStatus.get(k) ?? [], r.status ?? ""]);
@@ -2113,6 +2113,32 @@ async function syncAirtable(env) {
           const stillCell = new Set((byCell ?? []).map((r) => (r.ticket_cell || "").trim()));
           const gone = open2.filter((w) => !theirStatus.has(docKey(w.ticket_no)) && !stillCell.has((w.their_cell || w.ticket_no || "").trim()));
           await close(gone, "REJECTED", "Their sheet no longer has this row as it was written - corrected or removed. Asked again under what it says now, if anything is missing.", "DISMISSED");
+          for (const w of open2.filter((x) => !gone.includes(x))) {
+            const rowsFor = (theirs ?? []).filter((r2) => (r2.serials ?? []).includes(docKey(w.ticket_no)) && !/void|hold/i.test(r2.status ?? ""));
+            if (rowsFor.length !== 1) continue;
+            const r = rowsFor[0];
+            const untouched = w.their_cost == null || Math.abs(Math.abs(Number(w.amount)) - Math.abs(Number(w.their_cost))) < 5e-3;
+            if (!untouched) continue;
+            const patch = {};
+            if (r.currency && r.currency !== w.currency) patch.currency = r.currency;
+            if (r.net_cost != null && Math.abs(Number(r.net_cost) - Math.abs(Number(w.amount))) >= 5e-3) {
+              patch.amount = Math.sign(Number(w.amount) || 1) * Math.abs(Number(r.net_cost));
+              patch.total_doc = Math.abs(Number(r.net_cost));
+              patch.their_cost = Number(r.net_cost);
+            }
+            if (r.req_num && !r.req_num.includes(",") && r.req_num !== (w.req_num || "")) {
+              patch.req_num = r.req_num;
+              patch.their_req = r.req_num;
+            }
+            if (!Object.keys(patch).length) continue;
+            await db.from("pending_tickets").update(patch).eq("id", w.id);
+            const amt = Math.abs(Number(patch.amount ?? w.amount));
+            const cur = String(patch.currency ?? w.currency);
+            const req = String(patch.req_num ?? w.req_num ?? "") || "no request";
+            await db.from("airtable_notifications").update({
+              title: `Not in our books: ${w.ticket_no} \xB7 ${amt.toLocaleString("en-US", { minimumFractionDigits: 2 })} ${cur} \xB7 ${req}`
+            }).eq("dedupe_key", `MISSING|${w.dedupe}`).eq("state", "OPEN");
+          }
         }
       }
     }
