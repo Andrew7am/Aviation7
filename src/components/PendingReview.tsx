@@ -380,6 +380,23 @@ const Row = React.memo(function Row({
                         is readable. Saying it twice in half the width
                         is saying it once, badly. */}
                     {p.heldBack ? 'Held back' : blocked}
+                    {/* A person may take a hold off - knowingly. The supplier's
+                        statement, when it is imported, finds the ticket by its
+                        number and does not add it again; a different figure on
+                        it replaces this one. */}
+                    {p.heldBack && canWrite && (
+                      <button
+                        onClick={() => {
+                          if (!window.confirm(`Unlock ${p.ticketNo || p.pnr} so it can be recorded now?\n\n` + `${p.heldBackWhy || 'It was held back.'}\n\n`
+                            + "Recorded now, it counts against the wallet straight away. When the supplier's statement is "
+                            + 'imported it finds this ticket by its number and does not add it a second time; if the '
+                            + 'statement bills a different figure in the same currency, its figure replaces this one.')) return;
+                          onPatch(p, { heldBack: false, heldBackWhy: '', reviewNote: `Unlocked by hand: ${p.heldBackWhy || 'held back'}` });
+                        }}
+                        className="ml-1 text-[10px] font-bold text-amber-700 underline hover:text-amber-900">
+                        Unlock
+                      </button>
+                    )}
                   </span>
                 ) : (
                   /* mouse-down would blur the cost box first, the blur would

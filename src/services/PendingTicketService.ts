@@ -208,6 +208,7 @@ export class PendingTicketService {
       ['airlineCode', 'airline_code'], ['route', 'route'], ['status', 'status'],
       ['currency', 'currency'], ['transactionType', 'transaction_type'],
       ['vendorReference', 'vendor_reference'], ['reviewNote', 'review_note'],
+      ['heldBack', 'held_back'], ['heldBackWhy', 'held_back_why'],
     ];
     // An explicit undefined means "not part of this patch", not "clear it":
     // writing '' into `amount` would fail the column and writing it into a
