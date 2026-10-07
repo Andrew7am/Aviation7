@@ -268,7 +268,11 @@ export async function syncAirtable(env: {
     /* A ticket waiting in To Review because it was in nobody's books, that
        has since arrived with a supplier's report: its question is answered.
        The proposal is closed, and its notice with it. */
-    if (fillNow && !dry) {
+    /* Every run, because the question goes stale fast: 4862343305 was raised
+       as missing at 15:10, the team voided it at 18:12, and it sat in the bell
+       overnight after it was in our Voids. A waiting ticket is closed the
+       moment its question is answered - it arrived, or it was voided. */
+    if (!dry) {
       const { data: waiting } = await db.from('pending_tickets').select('id, ticket_no, pnr, their_portal, dedupe')
         .eq('origin', 'AIRTABLE').eq('state', 'PENDING');
       if (waiting?.length) {
@@ -284,11 +288,28 @@ export async function syncAirtable(env: {
         const heldPnr = new Set((f3Held ?? []).map(t => String(t.pnr).toUpperCase()));
         const done = waiting.filter(w => have.has(docKey(w.ticket_no))
           || (f3.includes(w) && String(w.pnr).toUpperCase().split(/[|,/\s]+/).some(p => heldPnr.has(p))));
-        if (done.length) {
-          await db.from('pending_tickets').update({ state: 'CONFIRMED', review_note: "Arrived with the supplier's report" })
-            .in('id', done.map(w => w.id));
-          await db.from('airtable_notifications').update({ state: 'ACCEPTED', decided_by: 'Airtable sync', decided_at: new Date().toISOString() })
-            .in('dedupe_key', done.flatMap(w => [`ONLINE|${w.dedupe}`, `MISSING|${w.dedupe}`])).eq('state', 'OPEN');
+        const close = async (list: typeof waiting, state: 'CONFIRMED' | 'REJECTED', note: string, noticeState: 'ACCEPTED' | 'DISMISSED') => {
+          if (!list.length) return;
+          await db.from('pending_tickets').update({ state, review_note: note }).in('id', list.map(w => w.id));
+          await db.from('airtable_notifications').update({ state: noticeState, decided_by: 'Airtable sync', decided_at: new Date().toISOString() })
+            .in('dedupe_key', list.flatMap(w => [`ONLINE|${w.dedupe}`, `MISSING|${w.dedupe}`])).eq('state', 'OPEN');
+        };
+        await close(done, 'CONFIRMED', "Arrived with the supplier's report", 'ACCEPTED');
+
+        // Voided - in our Voids, or on their sheet now - so there is nothing to add.
+        const rest = waiting.filter(w => !done.includes(w));
+        const keys = [...new Set(rest.map(w => docKey(w.ticket_no)).filter(Boolean))];
+        if (keys.length) {
+          const { data: inVoids } = await db.from('void_tickets').select('ticket_no').in('ticket_no', keys);
+          const { data: theirs } = await db.from('airtable_tickets').select('serials, status').overlaps('serials', keys).eq('deleted', false);
+          const voided = new Set((inVoids ?? []).map(v => docKey(v.ticket_no)));
+          // Void on their sheet only when every row of theirs naming it says so.
+          const theirStatus = new Map<string, string[]>();
+          for (const r of theirs ?? []) for (const k of r.serials ?? []) theirStatus.set(k, [...(theirStatus.get(k) ?? []), r.status ?? '']);
+          const voidOnTheirs = (k: string) => (theirStatus.get(k) ?? []).length > 0 && theirStatus.get(k)!.every(st => /void/i.test(st));
+          await close(rest.filter(w => voided.has(docKey(w.ticket_no))), 'REJECTED', 'Voided - it is in our Voids. Nothing to add.', 'DISMISSED');
+          await close(rest.filter(w => !voided.has(docKey(w.ticket_no)) && voidOnTheirs(docKey(w.ticket_no))), 'REJECTED',
+            'Voided on their sheet. Nothing to add.', 'DISMISSED');
         }
       }
     }

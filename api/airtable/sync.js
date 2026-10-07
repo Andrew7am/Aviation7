@@ -2074,7 +2074,7 @@ async function syncAirtable(env) {
       }
       if (!dry) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("kind", ["NAME", "CABIN"]).eq("state", "OPEN");
     }
-    if (fillNow && !dry) {
+    if (!dry) {
       const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, pnr, their_portal, dedupe").eq("origin", "AIRTABLE").eq("state", "PENDING");
       if (waiting?.length) {
         const nos = [...new Set(waiting.map((w) => w.ticket_no).filter(Boolean))];
@@ -2085,9 +2085,28 @@ async function syncAirtable(env) {
         const { data: f3Held } = f3Pnrs.length ? await db.from("tickets").select("pnr").ilike("source", "%flyadeal%").in("pnr", f3Pnrs) : { data: [] };
         const heldPnr = new Set((f3Held ?? []).map((t) => String(t.pnr).toUpperCase()));
         const done = waiting.filter((w) => have.has(docKey(w.ticket_no)) || f3.includes(w) && String(w.pnr).toUpperCase().split(/[|,/\s]+/).some((p) => heldPnr.has(p)));
-        if (done.length) {
-          await db.from("pending_tickets").update({ state: "CONFIRMED", review_note: "Arrived with the supplier's report" }).in("id", done.map((w) => w.id));
-          await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("dedupe_key", done.flatMap((w) => [`ONLINE|${w.dedupe}`, `MISSING|${w.dedupe}`])).eq("state", "OPEN");
+        const close = async (list, state, note, noticeState) => {
+          if (!list.length) return;
+          await db.from("pending_tickets").update({ state, review_note: note }).in("id", list.map((w) => w.id));
+          await db.from("airtable_notifications").update({ state: noticeState, decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("dedupe_key", list.flatMap((w) => [`ONLINE|${w.dedupe}`, `MISSING|${w.dedupe}`])).eq("state", "OPEN");
+        };
+        await close(done, "CONFIRMED", "Arrived with the supplier's report", "ACCEPTED");
+        const rest = waiting.filter((w) => !done.includes(w));
+        const keys = [...new Set(rest.map((w) => docKey(w.ticket_no)).filter(Boolean))];
+        if (keys.length) {
+          const { data: inVoids } = await db.from("void_tickets").select("ticket_no").in("ticket_no", keys);
+          const { data: theirs } = await db.from("airtable_tickets").select("serials, status").overlaps("serials", keys).eq("deleted", false);
+          const voided = new Set((inVoids ?? []).map((v) => docKey(v.ticket_no)));
+          const theirStatus = /* @__PURE__ */ new Map();
+          for (const r of theirs ?? []) for (const k of r.serials ?? []) theirStatus.set(k, [...theirStatus.get(k) ?? [], r.status ?? ""]);
+          const voidOnTheirs = (k) => (theirStatus.get(k) ?? []).length > 0 && theirStatus.get(k).every((st2) => /void/i.test(st2));
+          await close(rest.filter((w) => voided.has(docKey(w.ticket_no))), "REJECTED", "Voided - it is in our Voids. Nothing to add.", "DISMISSED");
+          await close(
+            rest.filter((w) => !voided.has(docKey(w.ticket_no)) && voidOnTheirs(docKey(w.ticket_no))),
+            "REJECTED",
+            "Voided on their sheet. Nothing to add.",
+            "DISMISSED"
+          );
         }
       }
     }
