@@ -18,8 +18,9 @@ import type { FileOutcome } from '../hooks/useTaxInvoices';
  * newer ZATCA template the number is not even printed on the invoice.
  *
  * So the reference is ignored here. A ticket is covered when its document
- * number is printed on a page we hold that calls itself a TAX INVOICE, and
- * on nothing weaker. The invoices are read once and kept; the verdict is
+ * number is printed on a final tax invoice we hold — one carrying Ibtekar's
+ * ZATCA QR code — and on nothing weaker. Their booking system heads its own
+ * printouts TAX INVOICE too; those have no QR code and do not count. The invoices are read once and kept; the verdict is
  * worked out fresh every time, because a ticket imported after its invoice
  * has to light up on its own.
  */
@@ -29,7 +30,7 @@ const fmt = (n: number) =>
 
 const BADGE: Record<Coverage, { label: string; cls: string }> = {
   COVERED: { label: 'Tax invoice held', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  NOT_TAX: { label: 'Not a tax invoice', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  NOT_TAX: { label: 'Not a final tax invoice', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   NONE:    { label: 'No invoice',        cls: 'bg-red-50 text-red-700 border-red-200' },
 };
 
@@ -75,12 +76,26 @@ const InvoiceRow: React.FC<{
           <span className="text-[10px] text-slate-400 font-mono">their no. {i.theirSerial}</span>
         )}
         <span className="text-[10px] text-slate-400 font-mono w-24">{i.invoiceDate || '—'}</span>
-        {!i.isTaxInvoice && (
-          <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-            NOT A TAX INVOICE
+        {i.kind === 'CREDIT_NOTE' && (
+          <span className="bg-purple-50 text-purple-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+            CREDIT NOTE{i.against ? ` against ${i.against}` : ''}
           </span>
         )}
-        {i.layout === 'ZATCA' && (
+        {i.isTaxInvoice ? (
+          <span className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+            title={i.qr ? `ZATCA QR: ${i.qr.seller} · VAT no. ${i.qr.vatNo} · ${i.qr.timestamp} · total ${i.qr.total} · VAT ${i.qr.vat}` : undefined}>
+            QR ✓ FINAL
+          </span>
+        ) : (
+          <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+            title="No ZATCA QR code on it. A printout headed TAX INVOICE is not a final tax invoice.">
+            NOT FINAL — NO QR
+          </span>
+        )}
+        {!i.isTaxInvoice && c.finalFor.length > 0 && (
+          <span className="text-[10px] text-emerald-700">final one held: {c.finalFor.join(', ')}</span>
+        )}
+        {i.layout === 'ZATCA' && i.kind !== 'CREDIT_NOTE' && (
           <span className="bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
             title="This template prints no per-ticket amounts — only its total can be compared.">
             TOTAL ONLY
@@ -90,7 +105,7 @@ const InvoiceRow: React.FC<{
           {i.serials.length} ticket(s)
         </span>
         <span className="font-mono text-xs text-slate-700 w-28 text-right">
-          {i.total === null ? '—' : fmt(i.total)}
+          {i.total === null ? '—' : `${i.total < 0 ? '−' : ''}${fmt(i.total)}`}
         </span>
         <span className={`font-mono text-xs w-28 text-right ${off ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
           {c.difference === null ? '—' : off ? `${c.difference > 0 ? '+' : '−'}${fmt(c.difference)}` : 'agrees'}
@@ -105,6 +120,18 @@ const InvoiceRow: React.FC<{
 
       {open && (
         <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3 space-y-2">
+          {c.credits.length > 0 && i.total !== null && (
+            <div className="text-[11px] text-purple-700">
+              {c.credits.map(cn => (
+                <span key={cn.invoiceNo} className="mr-3">
+                  less credit note {cn.theirSerial}: −{fmt(cn.total ?? 0)}
+                </span>
+              ))}
+              → net <span className="font-mono font-bold">
+                {fmt(i.total + c.credits.reduce((n, cn) => n + (cn.total ?? 0), 0))}
+              </span>
+            </div>
+          )}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
             <div><span className="text-slate-400">Net</span>{' '}
               <span className="font-mono text-slate-700">{i.net === null ? '—' : fmt(i.net)}</span></div>
@@ -202,7 +229,8 @@ export const TaxInvoices: React.FC<{
         <p className="text-[11px] text-slate-500 mt-1 max-w-3xl">
           Not the invoice number on the sales sheet. That one was typed off a statement of
           account and proves nothing. A ticket counts as covered here only when its document
-          number is printed on a page we hold that calls itself a TAX INVOICE.
+          number is printed on a final tax invoice — one with Ibtekar's ZATCA QR code. A printout
+          headed TAX INVOICE without a QR code is not one.
         </p>
       </div>
 
@@ -228,11 +256,25 @@ export const TaxInvoices: React.FC<{
                 Drop {vendorName}'s tax invoices here — as many at once as you like
               </div>
               <div className="text-[10px] text-slate-400 mt-0.5">
-                Both templates are read. A file that cannot be read is reported, never
-                counted as an absence.
+                Both templates and credit notes are read. Only a document with Ibtekar's ZATCA
+                QR code counts as a final tax invoice; anything else is flagged.
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {outcomes && outcomes.some(o => o.notFinal.length) && (
+        <div className="bg-red-50 border-2 border-red-300 rounded-lg px-4 py-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-red-700">
+            <AlertTriangle className="w-4 h-4" />
+            Not a final tax invoice — no ZATCA QR code
+          </div>
+          <div className="text-[11px] text-red-700 mt-1">
+            {outcomes.flatMap(o => o.notFinal.map(n => n.split(':')[0])).join(', ')}{' '}
+            {outcomes.flatMap(o => o.notFinal).length === 1 ? 'is' : 'are'} recorded, but cannot carry the VAT.
+            Ask {vendorName} for the e-invoice from their ZATCA system — the one with the QR code.
+          </div>
         </div>
       )}
 
@@ -249,7 +291,7 @@ export const TaxInvoices: React.FC<{
           {outcomes.map(o => (
             <div key={o.file} className="px-4 py-2 text-[11px]">
               <div className="flex items-center gap-2">
-                {o.failed || (!o.saved.length && !o.alreadyHeld.length && !o.upgraded.length)
+                {o.failed || o.notFinal.length || (!o.saved.length && !o.alreadyHeld.length && !o.upgraded.length)
                   ? <FileWarning className="w-3.5 h-3.5 text-red-500 shrink-0" />
                   : <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
                 <span className="font-mono text-slate-700">{o.file}</span>
@@ -265,6 +307,11 @@ export const TaxInvoices: React.FC<{
                   <span className="text-slate-500">already on file: {o.alreadyHeld.join(', ')}</span>
                 )}
               </div>
+              {o.notFinal.map((p, n) => (
+                <div key={`nf${n}`} className="ml-5 text-red-700 font-bold flex items-start gap-1 mt-0.5">
+                  <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" /> {p}
+                </div>
+              ))}
               {(o.failed ? [o.failed] : o.problems).map((p, n) => (
                 <div key={n} className="ml-5 text-amber-700 flex items-start gap-1 mt-0.5">
                   <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" /> {p}
@@ -273,6 +320,23 @@ export const TaxInvoices: React.FC<{
             </div>
           ))}
         </div>
+      )}
+
+      {report.awaitingFinal.length > 0 && (
+        <button onClick={() => setTab('invoices')}
+          className="w-full text-left bg-amber-50 border border-amber-300 rounded-lg px-4 py-2.5 hover:shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
+            <FileWarning className="w-4 h-4" />
+            {report.awaitingFinal.length} document(s) on file are not final tax invoices, and no final one
+            covers their tickets yet
+          </div>
+          <div className="text-[11px] text-amber-800 mt-0.5 font-mono">
+            {report.awaitingFinal.map(a => a.invoice.invoiceNo).join(', ')}
+          </div>
+          <div className="text-[10px] text-amber-700 mt-0.5">
+            Ask {vendorName} for the e-invoice (with the QR code) for these.
+          </div>
+        </button>
       )}
 
       {/* ── the answer ─────────────────────────────────────────────────── */}
@@ -285,9 +349,9 @@ export const TaxInvoices: React.FC<{
           value={String(report.covered.length)}
           sub={`${fmt(report.coveredValue)} ${currency}`}
           active={filter === 'COVERED'} onClick={() => { setTab('tickets'); setFilter('COVERED'); }} />
-        <Tile label="Not a tax invoice" tone="warn"
+        <Tile label="Not a final tax invoice" tone="warn"
           value={String(report.notTax.length)}
-          sub="on a document that cannot reclaim VAT"
+          sub="only on a document with no ZATCA QR code"
           active={filter === 'NOT_TAX'} onClick={() => { setTab('tickets'); setFilter('NOT_TAX'); }} />
         <Tile label="Invoices held" tone="plain"
           value={String(invoices.length)}
@@ -312,7 +376,7 @@ export const TaxInvoices: React.FC<{
               className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600">
               <option value="NONE">No invoice</option>
               <option value="COVERED">Covered</option>
-              <option value="NOT_TAX">Not a tax invoice</option>
+              <option value="NOT_TAX">Not a final tax invoice</option>
               <option value="ALL">All {report.tickets.length}</option>
             </select>
           )}

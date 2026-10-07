@@ -27,12 +27,26 @@ import { resolve } from 'path';
 import type { PdfWord } from '../src/core/parsers/ibtekarInvoicePdf';
 import { parseIbtekarZatcaPdf, isZatcaInvoice, zatcaSerial } from '../src/core/parsers/ibtekarZatcaPdf';
 import {
-  readIbtekarInvoices, preferReading, type ReadInvoice,
+  readIbtekarInvoices, preferReading, NO_QR, type ReadInvoice,
 } from '../src/core/parsers/ibtekarInvoiceRead';
 import {
   coverageReport, invoiceable, serialOf, HeldInvoice,
 } from '../src/core/helpers/taxInvoiceCoverage';
 import type { Ticket } from '../src/types';
+import { decodeZatcaQr, IBTEKAR_VAT } from '../src/core/parsers/zatcaQr';
+
+/** A ZATCA QR code's text: base64 of tag-length-value fields. */
+const qrText = (fields: Record<number, string>) => {
+  const parts: number[] = [];
+  for (const [tag, value] of Object.entries(fields)) {
+    const bytes = [...Buffer.from(value, 'utf8')];
+    parts.push(Number(tag), bytes.length, ...bytes);
+  }
+  return Buffer.from(parts).toString('base64');
+};
+const ibtekarQr = (total: string, vat: string, vatNo = IBTEKAR_VAT) =>
+  qrText({ 1: 'IBTEKAR CO FOR TRAVEL', 2: vatNo, 3: '2026-10-07T00:00:00', 4: total, 5: vat,
+           6: 'hash', 7: 'signature', 8: 'key' });
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -131,7 +145,7 @@ console.log('\n3. An older ZATCA invoice, with no date column, still lists its t
   check('the total still reads', i.total, 12000);
 }
 
-console.log('\n4. A document that is not a tax invoice says so');
+console.log('\n4. A document with no QR code is not a final tax invoice, whatever its heading');
 {
   const plain = words([
     ['Invoice'],
@@ -141,34 +155,42 @@ console.log('\n4. A document that is not a tax invoice says so');
   ]);
   const i = parseIbtekarZatcaPdf(plain, 'x.pdf')!;
   check('not headed as a tax invoice', i.taxInvoice, false);
-  const r = readIbtekarInvoices(plain, 'x.pdf');
-  check('and the reader raises it', r.problems.includes('it does not call itself a tax invoice'), true);
+  const r = readIbtekarInvoices(plain, 'x.pdf', []);
+  check('and the reader raises it', r.notFinal, ['IBK-1600: ' + NO_QR]);
   check('  ...while still recording it', r.invoices.length, 1);
+  check('  ...as not final', r.invoices[0].invoice.taxInvoice, false);
+
+  // Headed TAX INVOICE and still not one: INV264215 and INV264288 were.
+  const headed = readIbtekarInvoices(ZATCA, 'INV261733.pdf', []);
+  check('a heading alone does not make it final', headed.invoices[0].invoice.taxInvoice, false);
+  check('  ...and it is said', headed.notFinal.length, 1);
 }
 
 console.log('\n5. One way in, whichever template arrived');
 {
-  const zat = readIbtekarInvoices(ZATCA, 'INV261733.pdf');
+  const zat = readIbtekarInvoices(ZATCA, 'INV261733.pdf', [ibtekarQr('47633.00', '6018.38')]);
   check('ZATCA is labelled ZATCA', zat.invoices.map(i => i.layout), ['ZATCA']);
   check('  ...and carries their serial', zat.invoices[0].theirSerial, '1581');
   check('  ...with nothing to complain about', zat.problems, []);
+  check('  ...and final, by its QR code', [zat.notFinal, zat.invoices[0].invoice.taxInvoice], [[], true]);
 
-  const classic = readIbtekarInvoices(fixture('ibtekar-INV261733-words.json'), 'INV261733.pdf');
+  const classic = readIbtekarInvoices(fixture('ibtekar-INV261733-words.json'), 'INV261733.pdf', []);
   check('the real classic invoice still reads', classic.invoices.length, 1);
   check('  ...as CLASSIC', classic.invoices[0].layout, 'CLASSIC');
   check('  ...49 tickets', classic.invoices[0].invoice.lines.length, 49);
   check('  ...and it keeps its per-ticket amounts',
         classic.invoices[0].invoice.lines[0].amount !== null, true);
+  check('  ...headed TAX INVOICE, no QR code: not final', classic.invoices[0].invoice.taxInvoice, false);
 
-  const bundle = readIbtekarInvoices(fixture('ibtekar-aug-bundle-words.json'), 'aug.pdf');
+  const bundle = readIbtekarInvoices(fixture('ibtekar-aug-bundle-words.json'), 'aug.pdf', []);
   check('a bundle comes back as several invoices', bundle.invoices.length > 1, true);
 
   // The silent failure this whole file exists for.
-  const soa = readIbtekarInvoices(fixture('ibtekar-soa-words.json'), 'soa.pdf');
+  const soa = readIbtekarInvoices(fixture('ibtekar-soa-words.json'), 'soa.pdf', []);
   check('a statement is refused, not read as empty invoices', soa.invoices, []);
   check('  ...and it says why', soa.problems, ['this is a statement of account, not an invoice']);
 
-  const nothing = readIbtekarInvoices([], 'scan.pdf');
+  const nothing = readIbtekarInvoices([], 'scan.pdf', []);
   check('a scan with no text is refused', nothing.invoices, []);
   check('  ...and it says why', nothing.problems.length, 1);
 }
@@ -274,7 +296,7 @@ console.log('\n11. A net and a VAT that do not make the total are not this invoi
     ['Total', 'VAT', '', '', '110.04'],
     ['Total', '', '', '', '12,645.00'],
   ]);
-  const r = readIbtekarInvoices(bundle, 'bundle.pdf');
+  const r = readIbtekarInvoices(bundle, 'bundle.pdf', []);
   const i = r.invoices[0].invoice;
   check('the total is kept', i.total, 12645);
   check('the borrowed net is dropped', i.subTotal, null);
@@ -291,7 +313,7 @@ console.log('\n11. A net and a VAT that do not make the total are not this invoi
     ['Total', 'VAT', '', '', '442.30'],
     ['Total', '', '', '', '3,390.95'],
   ]);
-  const good = readIbtekarInvoices(ok, 'ok.pdf');
+  const good = readIbtekarInvoices(ok, 'ok.pdf', []);
   check('an invoice that foots keeps its net', good.invoices[0].invoice.subTotal, 2948.65);
   check('  ...and its VAT', good.invoices[0].invoice.vat, 442.30);
   check('  ...with nothing said', good.problems, []);
@@ -350,6 +372,83 @@ console.log('\n12. The same invoice twice: which copy is the document');
   // Identical readings: neither is better, so nothing churns.
   check('two identical readings leave the first alone',
         preferReading(ownFile, { ...ownFile }), ownFile);
+}
+
+console.log('\n13. The QR code is what makes it final');
+{
+  // Invoice 1599's own code, as read off the PDF.
+  const real = decodeZatcaQr('ARVJQlRFS0FSIENPIEZPUiBUUkFWRUwCDzMxMTY2OTkwMjgwMDAwMwMTMjAyNi0xMC0wN1QwMDowMDowMAQHMzY0MC4xMgUGNDc0LjgwBixzYzZPc2ZINTlNNE9LRGROMG0rT2dReWVHZ2d3N3cwUTdCN3dIZVdjY01nPQdgTUVZQ0lRQzB4aFNTcDhobTV2Z3c1UFpnNHNLQm1ZSHBMT0xoZVFrdjljc2ZTbnRKb2dJaEFLdWNjTG01eUxpRXB4U1lMTzdNQmpqRUVmSzZaMGlDVkx1VkcrRStIdVAzCFswWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASoiLS9shR7Ow2cxdvJu/Iu/49VH5jI7wpmE7MJrUll2hHLF0RtJI+R4oEcFU7jlnXaLOZ9+vNR76QAqDf0Pvaz');
+  check('a real code decodes', real && [real.seller, real.vatNo, real.total, real.vat, real.signed],
+        ['IBTEKAR CO FOR TRAVEL', IBTEKAR_VAT, 3640.12, 474.8, true]);
+  check('a link or junk is not a ZATCA code', [decodeZatcaQr('https://example.com/x'), decodeZatcaQr('hello')], [null, null]);
+
+  const page = words([
+    ['Tax', 'Invoice'], ['InvoNO:', '1599'],
+    ['1', '065-4862083218', 'ALZAHRANI/RAZAN', 'RUH/JED/ELQ/RUH'],
+    ['3,165.32', 'Total(ExculdingVAT)'], ['474.80', 'Total VAT'], ['3,640.12', 'TotalAmountDue'],
+  ]);
+  const ok = readIbtekarInvoices(page, 'Invoice_1599.pdf', [ibtekarQr('3640.12', '474.80')]);
+  check('its QR agrees with the page: final', ok.invoices[0].invoice.taxInvoice, true);
+  check('  ...and what the code said is kept', ok.invoices[0].qr?.total, 3640.12);
+
+  const otherSeller = readIbtekarInvoices(page, 'x.pdf', [ibtekarQr('3640.12', '474.80', '300000000000003')]);
+  check("a code naming somebody else's VAT number is not Ibtekar's invoice",
+        [otherSeller.invoices[0].invoice.taxInvoice, otherSeller.notFinal[0].includes('300000000000003')], [false, true]);
+
+  const wrongTotal = readIbtekarInvoices(page, 'x.pdf', [ibtekarQr('3000.00', '474.80')]);
+  check('a code for a different total is not this invoice',
+        [wrongTotal.invoices[0].invoice.taxInvoice, wrongTotal.notFinal[0].includes('3000.00')], [false, true]);
+
+  const unread = words([['Tax', 'Invoice'], ['InvoNO:', '1599'], ['1', '065-4862083218', 'X/Y', 'RUH/JED']]);
+  const filled = readIbtekarInvoices(unread, 'x.pdf', [ibtekarQr('3640.12', '474.80')]);
+  check('a total the page did not give up is taken from the code',
+        [filled.invoices[0].invoice.total, filled.invoices[0].invoice.vat, filled.invoices[0].invoice.subTotal],
+        [3640.12, 474.8, 3165.32]);
+}
+
+console.log('\n14. A ZATCA credit note');
+{
+  // Notice 15, against invoice 1599: the refund of 4862083218 taken off it.
+  const cn = words([
+    ['Notice', 'NO', '15'], ['Invoice', 'NO', '1599'], ['Notice', 'Date', '07-10-2026'],
+    ['1,603.68', '209.18', '15.00%', '1,394.50', 'PRO-011'],
+    ['1,394.50', 'Total(Excluding', 'VAT)'], ['209.18', 'Total', 'VAT', '15.00'],
+    ['1,603.68', 'Total', 'Amount', 'Due'],
+  ]);
+  const r = readIbtekarInvoices(cn, 'Invoice_15 - CREDIT NOTE.pdf', [ibtekarQr('1603.68', '209.18')]);
+  const c = r.invoices[0];
+  check('read as a credit note', [c.kind, c.invoice.invoice, c.theirSerial, c.against],
+        ['CREDIT_NOTE', 'IBK-CN-15', '15', '1599']);
+  check('  ...its figures negative', [c.invoice.subTotal, c.invoice.vat, c.invoice.total], [-1394.5, -209.18, -1603.68]);
+  check('  ...final, by its QR code', [c.invoice.taxInvoice, r.notFinal], [true, []]);
+  check('  ...the date', c.invoice.invoiceDate, '2026-10-07');
+
+  const bare = readIbtekarInvoices(cn, 'x.pdf', []);
+  check('a credit note with no code is flagged too', bare.notFinal, ['credit note 15: ' + NO_QR]);
+}
+
+console.log('\n15. A printout, its e-invoice, and the credit note between them');
+{
+  /* Real: INV264215 printed 4862083218 and 4862141169 with no QR code; the
+     same two came back on e-invoice 1599 (3,640.12), with credit note 15
+     (1,603.68) taking the refund off it — 2,036.44, the printout's total. */
+  const tickets = [
+    tkt({ ticketNo: '065-4862083218', amount: 1603.58 }),
+    tkt({ ticketNo: '065-4862141169', amount: 1561.74 }),
+    tkt({ ticketNo: '065-4862141183', amount: 1561.74 }),
+  ];
+  const r = coverageReport([
+    inv({ invoiceNo: 'INV264215', isTaxInvoice: false, serials: ['4862083218', '4862141169'], total: 2036.44 }),
+    inv({ invoiceNo: 'IBK-1599', theirSerial: '1599', serials: ['4862083218', '4862141169'], total: 3640.12 }),
+    inv({ invoiceNo: 'IBK-CN-15', theirSerial: '15', kind: 'CREDIT_NOTE', against: '1599', total: -1603.68 }),
+    inv({ invoiceNo: 'INV264288', isTaxInvoice: false, serials: ['4862141183'], total: 1561.74 }),
+  ], tickets);
+  const by = (n: string) => r.invoices.find(i => i.invoice.invoiceNo === n)!;
+  check('the e-invoice covers both tickets', r.covered.map(c => c.ticket.ticketNo), ['065-4862083218', '065-4862141169']);
+  check('the printout points at the final one', by('INV264215').finalFor, ['IBK-1599']);
+  check('a printout with no final one yet is owed one', r.awaitingFinal.map(a => a.invoice.invoiceNo), ['INV264288']);
+  check('the credit note sits under its invoice', by('IBK-1599').credits.map(c => c.invoiceNo), ['IBK-CN-15']);
+  check('  ...and is not held against the ledger', by('IBK-CN-15').difference, null);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

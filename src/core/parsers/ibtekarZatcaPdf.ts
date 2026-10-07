@@ -136,3 +136,40 @@ export function parseIbtekarZatcaPdf(
 export function zatcaSerial(words: PdfWord[]): string {
   return /InvoNO:?\s*(\d+)/i.exec(flatten(words).join(' '))?.[1] ?? '';
 }
+
+/**
+ * Is this a ZATCA credit note ("اشعار دائن للفاتورة الضريبية") rather than an
+ * invoice? It prints "Notice NO" and "Notice Date" where an invoice prints
+ * "InvoNO", and the number of the invoice it reduces as "Invoice NO".
+ */
+export function isZatcaCreditNote(words: PdfWord[]): boolean {
+  const text = flatten(words).join(' ');
+  return /Notice\s*NO\b/i.test(text) && /Notice\s*Date/i.test(text);
+}
+
+export interface ParsedCreditNote {
+  /** The notice's own number: 15. */
+  notice: string;
+  /** Their serial of the invoice it reduces: 1599. */
+  against: string;
+  date: string;
+  /** As printed — positive. The caller decides the sign. */
+  net: number | null;
+  vat: number | null;
+  total: number | null;
+}
+
+export function parseIbtekarZatcaCreditNote(words: PdfWord[]): ParsedCreditNote | null {
+  if (!words.length || !isZatcaCreditNote(words)) return null;
+  const flat = flatten(words);
+  const text = flat.join(' ');
+  const dmy = RE_DMY.exec(text);
+  return {
+    notice: /Notice\s*NO:?\s*(\d+)/i.exec(text)?.[1] ?? '',
+    against: /Invoice\s*NO:?\s*(\d+)/i.exec(text)?.[1] ?? '',
+    date: dmy ? `${dmy[3]}-${dmy[2]}-${dmy[1]}` : '',
+    net: moneyBefore(flat, LABELS.net),
+    vat: moneyBefore(flat, LABELS.vat),
+    total: moneyBefore(flat, LABELS.total),
+  };
+}

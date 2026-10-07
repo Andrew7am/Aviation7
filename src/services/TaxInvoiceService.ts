@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { supabase, fetchAllRows } from '../utils/supabase';
 import type { HeldInvoice } from '../core/helpers/taxInvoiceCoverage';
+import type { ZatcaQr } from '../core/parsers/zatcaQr';
 import { preferReading, type ReadInvoice } from '../core/parsers/ibtekarInvoiceRead';
 
 /**
@@ -32,6 +33,9 @@ interface InvoiceRow {
   layout: string | null;
   source_file: string | null;
   note: string | null;
+  qr: ZatcaQr | null;
+  kind: 'INVOICE' | 'CREDIT_NOTE' | null;
+  against: string | null;
   created_at: string;
 }
 
@@ -122,6 +126,9 @@ export class TaxInvoiceService {
         layout: r.layout ?? undefined,
         sourceFile: r.source_file ?? undefined,
         note: r.note ?? undefined,
+        qr: r.qr ?? null,
+        kind: r.kind ?? 'INVOICE',
+        against: r.against ?? undefined,
         createdAt: r.created_at,
         serials: ls.map(l => l.ticket_serial),
         lines: ls.map(l => ({
@@ -218,6 +225,9 @@ export class TaxInvoiceService {
       total: r.invoice.total,
       layout: r.layout,
       source_file: sourceFile || null,
+      qr: r.qr ?? null,
+      kind: r.kind ?? 'INVOICE',
+      against: r.against || null,
     }));
 
     const { error: invErr } = await supabase.from('tax_invoices').insert(invoiceRows);

@@ -10,7 +10,7 @@ import {
 } from '../core/parsers/ibtekarStatementPdf';
 import { reconcileAll, InvoiceResult, LineVerdict } from '../core/helpers/invoiceReconcile';
 import { checkStatement } from '../core/helpers/statementMath';
-import { pdfToWords } from '../core/helpers/pdfWords';
+import { pdfContent } from '../core/helpers/pdfWords';
 import { reviewStatement, Reprice, StatementReview } from '../core/helpers/statementAgainstBooks';
 
 /**
@@ -55,7 +55,7 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
         <span className="text-[10px] text-slate-400 font-mono">{inv.invoiceDate}</span>
         {!inv.taxInvoice && (
           <span className="bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-            NOT A TAX INVOICE
+            NOT HEADED TAX INVOICE
           </span>
         )}
         <span className="text-[10px] text-slate-400">{inv.lines.length} line(s)</span>
@@ -514,6 +514,10 @@ export const DocumentCheck: React.FC<{
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [fileName, setFileName] = useState('');
+  /* Whether the file carries a ZATCA QR code. This screen reads the older
+     template line by line, and that template is Ibtekar's booking-system
+     printout: headed TAX INVOICE, never through ZATCA, no QR code. */
+  const [hasQr, setHasQr] = useState(true);
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
 
@@ -525,7 +529,8 @@ export const DocumentCheck: React.FC<{
     setBusy(true); setError(''); setResults(null); setStatement(null);
     setSaved(false); setFileName(file.name);
     try {
-      const words = await pdfToWords(await file.arrayBuffer());
+      const { words, qrCodes } = await pdfContent(await file.arrayBuffer());
+      setHasQr(qrCodes.length > 0);
       if (!words.length) {
         setError('There is no text in this PDF to read. A scanned or photographed document is '
                + 'a picture of a page, not a page — ask Ibtekar for the file their system produced.');
@@ -642,6 +647,19 @@ export const DocumentCheck: React.FC<{
 
         {results && (
           <>
+            {!hasQr && (
+              <div className="bg-red-50 border-2 border-red-300 rounded-lg px-4 py-2.5">
+                <div className="flex items-center gap-2 text-xs font-bold text-red-700">
+                  <AlertTriangle className="w-4 h-4" />
+                  Not a final tax invoice — there is no ZATCA QR code on it
+                </div>
+                <div className="text-[11px] text-red-700 mt-0.5">
+                  The figures can still be checked against the ledger here, but this printout cannot
+                  carry the VAT. Ask Ibtekar for the e-invoice from their ZATCA system, the one with
+                  the QR code.
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-500">
                 <b className="text-slate-700">{fileName}</b> — {results.length} invoice(s),{' '}

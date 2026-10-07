@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { TaxInvoiceService, StoredInvoice } from '../services/TaxInvoiceService';
-import { pdfToWords } from '../core/helpers/pdfWords';
+import { pdfContent } from '../core/helpers/pdfWords';
 import { readIbtekarInvoices } from '../core/parsers/ibtekarInvoiceRead';
 
 export interface FileOutcome {
@@ -10,6 +10,8 @@ export interface FileOutcome {
   /** Already on file, replaced because this copy is the better document. */
   upgraded: string[];
   problems: string[];
+  /** Documents in the file that are not final tax invoices — no ZATCA QR code. */
+  notFinal: string[];
   failed?: string;
 }
 
@@ -39,10 +41,13 @@ export function useTaxInvoices(userId: string, vendor = 'Ibtekar') {
     const out: FileOutcome[] = [];
     for (const file of files) {
       try {
-        const words = await pdfToWords(await file.arrayBuffer());
-        const read = readIbtekarInvoices(words, file.name);
+        const { words, qrCodes } = await pdfContent(await file.arrayBuffer());
+        const read = readIbtekarInvoices(words, file.name, qrCodes);
         if (!read.invoices.length) {
-          out.push({ file: file.name, saved: [], alreadyHeld: [], upgraded: [], problems: read.problems });
+          out.push({
+            file: file.name, saved: [], alreadyHeld: [], upgraded: [],
+            problems: read.problems, notFinal: read.notFinal,
+          });
           continue;
         }
         const res = await svc.save(read.invoices, vendor, file.name);
@@ -52,10 +57,11 @@ export function useTaxInvoices(userId: string, vendor = 'Ibtekar') {
           alreadyHeld: res.alreadyHeld,
           upgraded: res.upgraded,
           problems: read.problems,
+          notFinal: read.notFinal,
         });
       } catch (e) {
         out.push({
-          file: file.name, saved: [], alreadyHeld: [], upgraded: [], problems: [],
+          file: file.name, saved: [], alreadyHeld: [], upgraded: [], problems: [], notFinal: [],
           failed: e instanceof Error ? e.message : 'the file could not be read',
         });
       }
