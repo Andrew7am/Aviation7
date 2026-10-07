@@ -34,6 +34,7 @@ import {
 } from '../src/core/helpers/taxInvoiceCoverage';
 import type { Ticket } from '../src/types';
 import { decodeZatcaQr, IBTEKAR_VAT } from '../src/core/parsers/zatcaQr';
+import { invoiceRequestList } from '../src/core/helpers/taxInvoiceRequest';
 
 /** A ZATCA QR code's text: base64 of tag-length-value fields. */
 const qrText = (fields: Record<number, string>) => {
@@ -449,6 +450,33 @@ console.log('\n15. A printout, its e-invoice, and the credit note between them')
   check('a printout with no final one yet is owed one', r.awaitingFinal.map(a => a.invoice.invoiceNo), ['INV264288']);
   check('the credit note sits under its invoice', by('IBK-1599').credits.map(c => c.invoiceNo), ['IBK-CN-15']);
   check('  ...and is not held against the ledger', by('IBK-CN-15').difference, null);
+}
+
+console.log('\n16. What to ask Ibtekar for');
+{
+  const tickets = [
+    tkt({ ticketNo: '065-4862083218', amount: 1603.58, passengerName: 'ALZAHRANI/RAZAN', reqNum: 'R1' }),
+    tkt({ ticketNo: '065-4862141183', amount: 1561.74, passengerName: 'ALNOMAN/HATEM', reqNum: 'R2' }),
+    tkt({ ticketNo: '065-4862141185', amount: 1908.90, vendorReference: 'INV264300' }),
+    tkt({ ticketNo: '065-4862141186', amount: 500 }),
+  ];
+  const r = coverageReport([
+    inv({ invoiceNo: 'IBK-1599', serials: ['4862083218'], total: 1844.12 }),
+    inv({ invoiceNo: 'INV264288', isTaxInvoice: false, serials: ['4862141183', '4862149999'], total: 9052.70,
+          invoiceDate: '2026-09-23' }),
+  ], tickets);
+  const { invoices, tickets: rows } = invoiceRequestList(r);
+  check('a ticket on a final invoice is not asked for', rows.some(t => t.ticketNo === '065-4862083218'), false);
+  check('a printout is asked for under its own number, with its total',
+        invoices.find(i => i.invoiceNo === 'INV264288'), { invoiceNo: 'INV264288', invoiceDate: '2026-09-23', tickets: 2, total: 9052.7, reason: 'NO_QR' });
+  check('  ...including what it bills that our books lack',
+        rows.filter(t => t.invoiceNo === 'INV264288').map(t => [t.ticketNo, !!t.notInOurBooks]),
+        [['065-4862141183', false], ['4862149999', true]]);
+  check('a ticket with no document quotes the number their statement gave it',
+        rows.find(t => t.ticketNo === '065-4862141185')?.invoiceNo, 'INV264300');
+  check('  ...or says it has none', rows.find(t => t.ticketNo === '065-4862141186')?.invoiceNo, '(no invoice number)');
+  check('  ...and those are a separate ask', invoices.filter(i => i.reason === 'NONE').map(i => i.invoiceNo),
+        ['(no invoice number)', 'INV264300']);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

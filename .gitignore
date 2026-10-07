@@ -32,3 +32,6 @@ backup.log
 Aviation Backups/
 backups/
 *.json.gz
+
+# Excel exports with passenger data, made for sending, never for the repo.
+/exports/

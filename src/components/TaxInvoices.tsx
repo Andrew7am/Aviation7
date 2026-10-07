@@ -1,12 +1,15 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Receipt, Upload, Loader2, AlertTriangle, CheckCircle2, X, Search, Trash2,
-  FileWarning, ChevronDown, ChevronRight,
+  FileWarning, ChevronDown, ChevronRight, Download,
 } from 'lucide-react';
 import type { Ticket } from '../types';
 import { coverageReport, Coverage } from '../core/helpers/taxInvoiceCoverage';
 import type { StoredInvoice } from '../services/TaxInvoiceService';
 import type { FileOutcome } from '../hooks/useTaxInvoices';
+import { invoiceRequestSheets } from '../core/helpers/taxInvoiceRequest';
+
+const xlsx = () => import('xlsx');
 
 /**
  * Which tickets we can actually produce a tax invoice for.
@@ -219,13 +222,35 @@ export const TaxInvoices: React.FC<{
 
   const working = reading || busy;
 
+  /** Everything still owed a final tax invoice, with the number to quote — to send to them. */
+  const exportRequest = async () => {
+    const XLSX = await xlsx();
+    const { invoices: inv, tickets: tk } = invoiceRequestSheets(report);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), 'Invoices to request');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tk), 'Tickets');
+    XLSX.writeFile(wb, `${vendorName} - tax invoices to request ${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+  const owed = report.notTax.length + report.uncovered.length;
+
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-          <Receipt className="w-4 h-4 text-purple-600" />
-          Tax Invoices — {vendorName}
-        </h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <Receipt className="w-4 h-4 text-purple-600" />
+            Tax Invoices — {vendorName}
+          </h2>
+          {owed > 0 && (
+            <button onClick={exportRequest}
+              title={`The invoices to ask ${vendorName} for, and every ticket under them, as Excel`}
+              className="ml-auto flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded border
+                border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
+              <Download className="w-3.5 h-3.5" />
+              Export what to request ({owed} tickets)
+            </button>
+          )}
+        </div>
         <p className="text-[11px] text-slate-500 mt-1 max-w-3xl">
           Not the invoice number on the sales sheet. That one was typed off a statement of
           account and proves nothing. A ticket counts as covered here only when its document
