@@ -273,7 +273,7 @@ export async function syncAirtable(env: {
        overnight after it was in our Voids. A waiting ticket is closed the
        moment its question is answered - it arrived, or it was voided. */
     if (!dry) {
-      const { data: waiting } = await db.from('pending_tickets').select('id, ticket_no, pnr, their_portal, dedupe')
+      const { data: waiting } = await db.from('pending_tickets').select('id, ticket_no, pnr, their_portal, their_cell, dedupe')
         .eq('origin', 'AIRTABLE').eq('state', 'PENDING');
       if (waiting?.length) {
         const nos = [...new Set(waiting.map(w => w.ticket_no).filter(Boolean))];
@@ -310,6 +310,20 @@ export async function syncAirtable(env: {
           await close(rest.filter(w => voided.has(docKey(w.ticket_no))), 'REJECTED', 'Voided - it is in our Voids. Nothing to add.', 'DISMISSED');
           await close(rest.filter(w => !voided.has(docKey(w.ticket_no)) && voidOnTheirs(docKey(w.ticket_no))), 'REJECTED',
             'Voided on their sheet. Nothing to add.', 'DISMISSED');
+
+          /* The row that raised it is no longer on their sheet as it was
+             written. 8TFECR had its PNR in the ticket column; the team swapped
+             the two back to 065-4862343273 / 8TFECR, a ticket we hold - and the
+             question about "8TFECR" stayed open. A row they corrected is asked
+             about afresh, under what it says now, by the next comparison. */
+          const open2 = rest.filter(w => !voided.has(docKey(w.ticket_no)) && !voidOnTheirs(docKey(w.ticket_no)));
+          const cells = [...new Set(open2.map(w => (w.their_cell || w.ticket_no || '').trim()).filter(Boolean))];
+          const { data: byCell } = cells.length
+            ? await db.from('airtable_tickets').select('ticket_cell').in('ticket_cell', cells).eq('deleted', false)
+            : { data: [] as { ticket_cell: string }[] };
+          const stillCell = new Set((byCell ?? []).map(r => (r.ticket_cell || '').trim()));
+          const gone = open2.filter(w => !theirStatus.has(docKey(w.ticket_no)) && !stillCell.has((w.their_cell || w.ticket_no || '').trim()));
+          await close(gone, 'REJECTED', 'Their sheet no longer has this row as it was written - corrected or removed. Asked again under what it says now, if anything is missing.', 'DISMISSED');
         }
       }
     }

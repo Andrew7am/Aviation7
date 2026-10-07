@@ -2075,7 +2075,7 @@ async function syncAirtable(env) {
       if (!dry) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("kind", ["NAME", "CABIN"]).eq("state", "OPEN");
     }
     if (!dry) {
-      const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, pnr, their_portal, dedupe").eq("origin", "AIRTABLE").eq("state", "PENDING");
+      const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, pnr, their_portal, their_cell, dedupe").eq("origin", "AIRTABLE").eq("state", "PENDING");
       if (waiting?.length) {
         const nos = [...new Set(waiting.map((w) => w.ticket_no).filter(Boolean))];
         const { data: arrived } = await db.from("tickets").select("ticket_no").in("ticket_no", nos);
@@ -2107,6 +2107,12 @@ async function syncAirtable(env) {
             "Voided on their sheet. Nothing to add.",
             "DISMISSED"
           );
+          const open2 = rest.filter((w) => !voided.has(docKey(w.ticket_no)) && !voidOnTheirs(docKey(w.ticket_no)));
+          const cells = [...new Set(open2.map((w) => (w.their_cell || w.ticket_no || "").trim()).filter(Boolean))];
+          const { data: byCell } = cells.length ? await db.from("airtable_tickets").select("ticket_cell").in("ticket_cell", cells).eq("deleted", false) : { data: [] };
+          const stillCell = new Set((byCell ?? []).map((r) => (r.ticket_cell || "").trim()));
+          const gone = open2.filter((w) => !theirStatus.has(docKey(w.ticket_no)) && !stillCell.has((w.their_cell || w.ticket_no || "").trim()));
+          await close(gone, "REJECTED", "Their sheet no longer has this row as it was written - corrected or removed. Asked again under what it says now, if anything is missing.", "DISMISSED");
         }
       }
     }
