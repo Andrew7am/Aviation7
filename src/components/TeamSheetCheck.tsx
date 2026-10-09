@@ -152,6 +152,61 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string; sub
   </div>
 );
 
+const DocTypeTable: React.FC<{ docTypes: TeamSheetReport['docTypes'] }> = ({ docTypes }) => {
+  const [open, setOpen] = useState<string | null>(null);
+  const kinds = [['tickets', 'Tickets'], ['refunds', 'Refunds'], ['emds', 'EMDs']] as const;
+  const chips = (xs: string[]) => (
+    <div className="flex flex-wrap gap-1 mt-1.5">
+      {xs.map(x => <span key={x} className="font-mono text-[10px] bg-slate-100 text-slate-700 rounded px-1.5 py-0.5">{x}</span>)}
+    </div>
+  );
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+      <table className="w-full text-xs">
+        <thead className="bg-slate-50 border-b border-slate-200">
+          <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <th className="px-3 py-2 text-left">Document</th>
+            <th className="px-3 py-2 text-right">In our books</th>
+            <th className="px-3 py-2 text-right">On their sheet</th>
+            <th className="px-3 py-2 text-left">Missing on their sheet</th>
+            <th className="px-3 py-2 text-left">Missing in our books</th>
+          </tr>
+        </thead>
+        <tbody>
+          {kinds.map(([k, label]) => {
+            const d = docTypes[k];
+            return (
+              <tr key={k} className="border-b border-slate-50 align-top">
+                <td className="px-3 py-2 font-bold text-slate-700">{label}</td>
+                <td className="px-3 py-2 text-right font-mono">{d.ours}</td>
+                <td className="px-3 py-2 text-right font-mono">{d.theirs}</td>
+                <td className="px-3 py-2">
+                  {d.missingOnTheirs.length
+                    ? <button onClick={() => setOpen(open === k + 'T' ? null : k + 'T')} className="font-mono font-bold text-red-600 hover:underline">
+                        {d.missingOnTheirs.length}</button>
+                    : <span className="text-emerald-600">none</span>}
+                  {open === k + 'T' && chips(d.missingOnTheirs)}
+                </td>
+                <td className="px-3 py-2">
+                  {d.missingInOurs.length
+                    ? <button onClick={() => setOpen(open === k + 'O' ? null : k + 'O')} className="font-mono font-bold text-red-600 hover:underline">
+                        {d.missingInOurs.length}</button>
+                    : <span className="text-emerald-600">none</span>}
+                  {open === k + 'O' && chips(d.missingInOurs)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <div className="px-3 py-1.5 text-[10px] text-slate-400 border-t border-slate-100">
+        A refund is money back on a ticket already counted, not another ticket. A ticket of ours their sheet carries under
+        another number of the same exchange, or by its PNR, counts as carried. Click a number to see which.
+      </div>
+    </div>
+  );
+};
+
 /**
  * One row's own button.
  *
@@ -741,7 +796,9 @@ export const TeamSheetCheck: React.FC<Props> = ({
     () => (rows && (mode === 'sheet' || reviewing.length)
       ? compareTeamSheet(mode === 'request' ? rowsForRequests(rows, reviewing) : rows, tickets,
           mode === 'request' ? reviewing : declared, { from: fromDate, to: toDate },
-          { voided: voids.map(v => v.ticketNo), chains: exchanges, explanations: mode === 'request' ? [] : explanations })
+          { voided: voids.map(v => v.ticketNo), chains: exchanges, explanations: mode === 'request' ? [] : explanations,
+            // One request's rows start where that request starts; their sheet started long before.
+            sheetStart: rows.map(r => r.issued).filter(Boolean).sort()[0] ?? '' })
       : null),
     [rows, tickets, declared, reviewing, fromDate, toDate, voids, exchanges, explanations, mode]);
 
@@ -1334,6 +1391,11 @@ export const TeamSheetCheck: React.FC<Props> = ({
             <Tile label="Needs settling" value={needsWork}
               tone={needsWork ? 'text-red-600' : 'text-emerald-600'} />
           </div>
+
+          {/* Each kind of document, counted on both sides: 30 tickets, a
+              refund and an EMD of ours should be 30 tickets, that refund and
+              that EMD on theirs - and whatever is not, named. */}
+          <DocTypeTable docTypes={report.docTypes} />
 
           {/* Their sheet has a beginning, and our ledger is older than it.
               Said out loud, because the count is also the honest measure

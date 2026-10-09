@@ -747,7 +747,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   const everyIssued = sheet.map((r) => r.issued).filter(Boolean).sort();
   const typedFrom = (periodRaw.from || "").trim();
   const typedTo = (periodRaw.to || "").trim();
-  const from = typedFrom || (everyIssued[0] ?? "");
+  const from = typedFrom || (opts.sheetStart || "") || (everyIssued[0] ?? "");
   const to = typedTo;
   const theirOutsidePeriod = sheet.filter((r) => !inPeriod(r.issued, from, to)).length;
   if (theirOutsidePeriod) sheet = sheet.filter((r) => inPeriod(r.issued, from, to));
@@ -782,7 +782,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     ourByPnr.get(k).push(t);
   }
   const theirPnrs = new Set(sheet.map((r) => pnrKey(r.pnr)).filter(Boolean));
-  const sheetFrom = sheet.map((r) => r.issued).filter(Boolean).sort()[0] ?? "";
+  const sheetFrom = opts.sheetStart || "" || (sheet.map((r) => r.issued).filter(Boolean).sort()[0] ?? "");
   const sheetHasReq = declared.length === 1 ? sheet.some((r) => reqKey(r.reqNum) && !sameReq(r.reqNum, declared[0])) : sheet.some((r) => !!reqKey(r.reqNum));
   const relations = buildRelations([
     ...ledger.map((t) => ({ reqNum: t.reqNum })),
@@ -1078,15 +1078,15 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     }
   const onlinePlace = /* @__PURE__ */ new Map();
   for (const [pnr, rs] of onlineByPnr) {
-    const held2 = /* @__PURE__ */ new Map();
+    const held3 = /* @__PURE__ */ new Map();
     for (const t of ledger) {
       if (!isTicket(t) || (t.amount || 0) <= 0) continue;
       const want = new Set(pnrParts(pnr));
       if (!pnrParts(t.pnr).some((x) => want.has(x))) continue;
       const k = ticketMatchKey(t.ticketNo || "");
-      if (k && !theirSerials.has(k) && !held2.has(k)) held2.set(k, t);
+      if (k && !theirSerials.has(k) && !held3.has(k)) held3.set(k, t);
     }
-    const oursOnPnr = [...held2.values()];
+    const oursOnPnr = [...held3.values()];
     rs.forEach((r, i) => onlinePlace.set(r, { held: oursOnPnr[i], label: rs.length > 1 ? `${pnr}-${i + 1}` : pnr }));
   }
   let onHold = neverIssued.length;
@@ -1262,13 +1262,13 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       const docs = [r.serial, ...r.siblings];
       const bigGroup = docs.length > 10;
       const inCell = docs.flatMap((d) => (ourBySerial.get(d) ?? []).filter((t) => (t.amount || 0) > 0));
-      const held2 = [...inCell, ...alsoOnPnrs(r, inCell)];
-      if (!held2.length || docs.some((d) => voidedSet.has(d))) continue;
+      const held3 = [...inCell, ...alsoOnPnrs(r, inCell)];
+      if (!held3.length || docs.some((d) => voidedSet.has(d))) continue;
       const cur = (r.currency || "").toUpperCase();
-      if (!cur || !held2.every((t) => String(t.originalCurrency || t.currency || "").toUpperCase() === cur)) continue;
+      if (!cur || !held3.every((t) => String(t.originalCurrency || t.currency || "").toUpperCase() === cur)) continue;
       const asBought = (t, v) => t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
-      const payable = held2.reduce((n, t) => n + asBought(t, t.amount || 0), 0);
-      const fare = held2.reduce((n, t) => n + asBought(t, t.totalDoc || t.amount || 0), 0);
+      const payable = held3.reduce((n, t) => n + asBought(t, t.amount || 0), 0);
+      const fare = held3.reduce((n, t) => n + asBought(t, t.totalDoc || t.amount || 0), 0);
       const each = Math.abs(r.cost ?? 0);
       const readings = bigGroup ? [each, each * docs.length] : Array.from({ length: docs.length }, (_, i) => each * (i + 1));
       const gaps = readings.flatMap((t) => [payable, fare].map((v) => t - v));
@@ -1284,8 +1284,8 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         airlineCode: r.airlineCode,
         pnr: r.pnr,
         sheet: r,
-        ours: held2,
-        reqNum: (held2[0].reqNum || "").trim(),
+        ours: held3,
+        reqNum: (held3[0].reqNum || "").trim(),
         theirReq: r.reqNum,
         note: `Their cell ${r.rawTicket.trim()} prices ${docs.length} documents at ${money2(each)} ${cur}; we hold ${money2(payable)} on them - ${money2(Math.abs(gap))} ${gap > 0 ? "short in our books" : "more in ours"}.` + (missingDocs.length ? ` ${missingDocs.join(", ")} not in our books at all.` : "") + " One of the tickets may be recorded at the wrong price, or missing."
       });
@@ -1345,6 +1345,53 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     refunds: scoped.filter((t) => (t.amount || 0) < 0).length
   };
   const unconfirmedOurs = ledger.filter((t) => isTicket(t) && inScope(t) && unconfirmed(t));
+  const emdLine = (t) => /^EMD/i.test(`${t.status || ""} ${t.transactionType || ""}`.trim());
+  const ourScoped = scoped.filter((t) => inPeriod(t.date || "", from, to));
+  const keyOf2 = (t) => ticketMatchKey(t.ticketNo || "") || pnrKey(t.pnr) || t.id;
+  const oursT = /* @__PURE__ */ new Set(), oursE = /* @__PURE__ */ new Set(), oursR = /* @__PURE__ */ new Set();
+  for (const t of ourScoped) {
+    const k = keyOf2(t);
+    if (voidedSet.has(k)) continue;
+    if ((t.amount || 0) < 0) oursR.add(k);
+    else if (emdLine(t)) oursE.add(k);
+    else oursT.add(k);
+  }
+  const theirT = /* @__PURE__ */ new Set(), theirE = /* @__PURE__ */ new Set(), theirR = /* @__PURE__ */ new Set();
+  for (const r of sheet) {
+    if (r.status === "VOID" || r.status === "ON_HOLD") continue;
+    for (const e of r.emds ?? []) if (!voidedSet.has(e)) theirE.add(e);
+    const k = r.serial || pnrKey(r.pnr);
+    if (!k || voidedSet.has(k)) continue;
+    const anEmd = !!r.serial && (/\bEMD\b/i.test(r.rawTicket || "") || (ourBySerial.get(r.serial) ?? []).some((t) => emdLine(t)));
+    if (anEmd) theirE.add(k);
+    else theirT.add(k);
+    if (r.status === "REFUNDED") theirR.add(k);
+  }
+  const carried = (k) => theirT.has(k) || theirE.has(k) || claimed.has(k) || claimedByPnr.has(k) || isReference2(k) && theirPnrs.has(k) || voidedSet.has(k);
+  const held2 = (k) => ourBySerial.has(k) || ourByPnr.has(k) || voidedSet.has(k);
+  for (const k of oursT) if (!theirT.has(k) && !theirE.has(k) && carried(k)) theirT.add(k);
+  for (const k of oursE) if (!theirE.has(k) && !theirT.has(k) && carried(k)) theirE.add(k);
+  const sorted = (xs) => [...xs].sort();
+  const docTypes = {
+    tickets: {
+      ours: oursT.size,
+      theirs: theirT.size,
+      missingOnTheirs: sorted([...oursT].filter((k) => !carried(k))),
+      missingInOurs: sorted([...theirT].filter((k) => !held2(k)))
+    },
+    refunds: {
+      ours: oursR.size,
+      theirs: theirR.size,
+      missingOnTheirs: sorted([...oursR].filter((k) => !theirR.has(k))),
+      missingInOurs: sorted([...theirR].filter((k) => !oursR.has(k) && !voidedSet.has(k)))
+    },
+    emds: {
+      ours: oursE.size,
+      theirs: theirE.size,
+      missingOnTheirs: sorted([...oursE].filter((k) => !carried(k))),
+      missingInOurs: sorted([...theirE].filter((k) => !held2(k)))
+    }
+  };
   const unaccounted = [];
   const bySerialF = /* @__PURE__ */ new Map();
   for (const f of findings) if (f.serial) {
@@ -1440,6 +1487,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     ourRows,
     ourDocs,
     unconfirmedOurs,
+    docTypes,
     matched,
     // A void and a row still on hold are states of the world, not
     // disagreements, so a sheet carrying only those is a clean sheet.

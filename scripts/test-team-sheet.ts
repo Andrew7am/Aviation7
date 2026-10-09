@@ -158,6 +158,55 @@ console.log('\n6. The comparison, on the four things that can differ');
   check('nothing typed in, nothing waiting on a supplier', r.unconfirmedOurs.length, 0);
 }
 
+console.log('\n4c. Tickets, refunds and EMDs counted on both sides');
+{
+  /* 30 tickets, a refund and an EMD of ours should be 30 tickets, that
+     refund and that EMD on theirs - and whatever is not, named. */
+  const csv = ['Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,Refund Amount,Issued Date & Time',
+    '065-5513059078,YSLM73,Issued,1430,1430 AED,,20/8/2026 12:31pm',
+    '065-5513059077,YQX75R,Cancelled/Refunded,1530,1530 AED,1190.00,20/8/2026 10:08am',
+    // An EMD their ticket column writes as a plain number.
+    '065-1949933001,YQX75R,Issued,400,400 AED,,20/8/2026 10:08am',
+    // Theirs only.
+    '065-5513059050,ABCDEF,Issued,900,900 AED,,20/8/2026 10:08am',
+    // A void: nobody's document.
+    '065-5513059099,ZZWM3X,Void,2070,2070 AED,,20/8/2026 1:16pm',
+  ].join('\n');
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', amount: 1430 }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: 1530 }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: -1190, status: 'REFUND' }),
+    tkt({ ticketNo: '1949933001', pnr: 'YQX75R', amount: 400, status: 'EMDS', transactionType: 'ISSUE' }),
+    // Ours only: a ticket and its refund.
+    tkt({ ticketNo: '5513059060', pnr: 'GHIJKL', amount: 800 }),
+    tkt({ ticketNo: '5513059060', pnr: 'GHIJKL', amount: -800, status: 'REFUND' }),
+  ];
+  const r = compareTeamSheet(parseTeamSheet(csv).rows, ledger, [], {}, { voided: ['5513059099'] });
+  check('tickets', [r.docTypes.tickets.ours, r.docTypes.tickets.theirs], [3, 3]);
+  check('  ...ours missing from theirs', r.docTypes.tickets.missingOnTheirs, ['5513059060']);
+  check('  ...theirs missing from ours', r.docTypes.tickets.missingInOurs, ['5513059050']);
+  check('refunds', [r.docTypes.refunds.ours, r.docTypes.refunds.theirs], [2, 1]);
+  check('  ...the refund their sheet does not show', r.docTypes.refunds.missingOnTheirs, ['5513059060']);
+  check('an EMD their column writes as a number is still an EMD', [r.docTypes.emds.ours, r.docTypes.emds.theirs], [1, 1]);
+  check('  ...and nothing is missing', [r.docTypes.emds.missingOnTheirs, r.docTypes.emds.missingInOurs], [[], []]);
+}
+
+console.log('\n4d. One request\'s first row is not the start of their sheet');
+{
+  /* KSAML1690's first row on their sheet is 21 May. Their sheet began in
+     January. Read as the start, it put 18 of our tickets from 19-20 May
+     "before their sheet existed" and out of the comparison. */
+  const csv = ['Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,Issued Date & Time',
+    '065-5513059078,YSLM73,Issued,1430,1430 AED,21/5/2026 12:31pm'].join('\n');
+  const ledger = [tkt({ ticketNo: '5513059078', pnr: 'YSLM73', date: '2026-05-21' }),
+                  tkt({ ticketNo: '5513059010', pnr: 'ZUXEZ8', date: '2026-05-19' })];
+  const alone = compareTeamSheet(parseTeamSheet(csv).rows, ledger);
+  check('without the sheet\'s start, the earlier ticket was set aside', alone.beforeTheirSystem, 1);
+  const r = compareTeamSheet(parseTeamSheet(csv).rows, ledger, [], {}, { sheetStart: '2026-01-04' });
+  check('with it, the earlier ticket is missing from their sheet', r.docTypes.tickets.missingOnTheirs, ['5513059010']);
+  check('  ...and nothing is set aside', r.beforeTheirSystem, 0);
+}
+
 console.log('\n4b. A ticket typed in by hand is not confirmed until its supplier reports it');
 {
   const sheet = parseTeamSheet(CSV).rows;

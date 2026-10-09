@@ -596,6 +596,15 @@ export interface Unaccounted {
   what: string;
 }
 
+export interface DocTypeCount {
+  ours: number;
+  theirs: number;
+  /** In our books, not on their sheet. */
+  missingOnTheirs: string[];
+  /** On their sheet, not in our books. */
+  missingInOurs: string[];
+}
+
 export interface TeamSheetReport {
   findings: Finding[];
   /**
@@ -643,6 +652,14 @@ export interface TeamSheetReport {
   ourDocs: { documents: number; tickets: number; emds: number; refunds: number };
   /** Ours under these requests that no supplier report has vouched for yet. */
   unconfirmedOurs: Ticket[];
+  /**
+   * Each kind of document counted on both sides, and what each side lacks.
+   * The question the team sheet answers: we hold 30 tickets, a refund and an
+   * EMD - does their sheet carry 30 tickets, that refund and that EMD?
+   * A ticket here is the document, whatever became of it; a refund is a
+   * ticket with money back on it; an EMD is a bag or a seat bought on one.
+   */
+  docTypes: Record<'tickets' | 'refunds' | 'emds', DocTypeCount>;
   matched: number;
   /**
    * The earliest ticket on their sheet, and how many of ours predate it.
@@ -774,7 +791,12 @@ export function compareTeamSheet(
   /** Documents the supplier cancelled — the Voids register. A ticket their
    *  sheet still shows as live is then a void they never updated, not a
    *  ticket missing from our books. */
-  opts: { voided?: Iterable<string>; chains?: Edge[]; explanations?: Explanation[] } = {},
+  opts: { voided?: Iterable<string>; chains?: Edge[]; explanations?: Explanation[];
+    /** Their whole sheet's first ticket, when the rows passed are one request's.
+     *  KSAML1690's first row is 21 May; their sheet began in January. Taking
+     *  the request's first row as the start put 18 of our tickets from 19-20
+     *  May "before their sheet existed", and out of the comparison. */
+    sheetStart?: string } = {},
 ): TeamSheetReport {
   const chains = chainIndex(opts.chains ?? []);
   const voidedSet = new Set([...(opts.voided ?? [])].map(v => ticketMatchKey(v || '')).filter(Boolean));
@@ -803,7 +825,7 @@ export function compareTeamSheet(
   const everyIssued = sheet.map(r => r.issued).filter(Boolean).sort();
   const typedFrom = (periodRaw.from || '').trim();
   const typedTo = (periodRaw.to || '').trim();
-  const from = typedFrom || (everyIssued[0] ?? '');
+  const from = typedFrom || (opts.sheetStart || '') || (everyIssued[0] ?? '');
   const to = typedTo;
 
   const theirOutsidePeriod = sheet.filter(r => !inPeriod(r.issued, from, to)).length;
@@ -859,7 +881,7 @@ export function compareTeamSheet(
 
   /* The day their system starts. Everything of ours older than this is
      outside the comparison rather than missing from it - see the note. */
-  const sheetFrom = sheet.map(r => r.issued).filter(Boolean).sort()[0] ?? '';
+  const sheetFrom = (opts.sheetStart || '') || (sheet.map(r => r.issued).filter(Boolean).sort()[0] ?? '');
 
   const sheetHasReq = declared.length === 1
     ? sheet.some(r => reqKey(r.reqNum) && !sameReq(r.reqNum, declared[0]))
@@ -1722,6 +1744,62 @@ export function compareTeamSheet(
   };
   const unconfirmedOurs = ledger.filter(t => isTicket(t) && inScope(t) && unconfirmed(t));
 
+  /* ── each kind of document, both sides ──────────────────────────────────
+     Ours: every document under these requests in the period, keyed by its
+     number (or its booking reference, for a purchase with no number). A
+     refund line is a refund on that document, not another ticket; an EMD is
+     its own document. Theirs: every number on a row that was not voided, a
+     row with no number keyed by its PNR, refunds from their status, EMDs
+     from their EMD column or a ticket cell that says EMD. */
+  const emdLine = (t: Ticket) => /^EMD/i.test(`${t.status || ''} ${t.transactionType || ''}`.trim());
+  const ourScoped = scoped.filter(t => inPeriod((t.date as string) || '', from, to));
+  const keyOf = (t: Ticket) => ticketMatchKey(t.ticketNo || '') || pnrKey(t.pnr) || t.id;
+  const oursT = new Set<string>(), oursE = new Set<string>(), oursR = new Set<string>();
+  // A void is nobody's document: left out on both sides.
+  for (const t of ourScoped) {
+    const k = keyOf(t);
+    if (voidedSet.has(k)) continue;
+    if ((t.amount || 0) < 0) oursR.add(k);
+    else if (emdLine(t)) oursE.add(k);
+    else oursT.add(k);
+  }
+  const theirT = new Set<string>(), theirE = new Set<string>(), theirR = new Set<string>();
+  for (const r of sheet) {
+    if (r.status === 'VOID' || r.status === 'ON_HOLD') continue;
+    for (const e of r.emds ?? []) if (!voidedSet.has(e)) theirE.add(e);
+    const k = r.serial || pnrKey(r.pnr);
+    if (!k || voidedSet.has(k)) continue;
+    /* Their ticket column rarely says EMD: EGPML1909's two EMDs sit there as
+       plain numbers. Our books know which documents are EMDs. */
+    const anEmd = !!r.serial && (/\bEMD\b/i.test(r.rawTicket || '')
+      || (ourBySerial.get(r.serial) ?? []).some(t => emdLine(t)));
+    if (anEmd) theirE.add(k); else theirT.add(k);
+    if (r.status === 'REFUNDED') theirR.add(k);
+  }
+  /* What counts as carried: the same exclusions "not on their sheet" uses,
+     so these lists and the findings below them never disagree. */
+  const carried = (k: string) => theirT.has(k) || theirE.has(k) || claimed.has(k) || claimedByPnr.has(k)
+    || (isReference(k) && theirPnrs.has(k)) || voidedSet.has(k);
+  const held = (k: string) => ourBySerial.has(k) || ourByPnr.has(k) || voidedSet.has(k);
+  /* A document of ours their sheet carries some other way - an EMD folded
+     into the price of the ticket it was bought with, a ticket on a row whose
+     number their export damaged - is on their sheet, and counted there, so
+     the two counts and the lists of what is missing always add up. */
+  for (const k of oursT) if (!theirT.has(k) && !theirE.has(k) && carried(k)) theirT.add(k);
+  for (const k of oursE) if (!theirE.has(k) && !theirT.has(k) && carried(k)) theirE.add(k);
+  const sorted = (xs: Iterable<string>) => [...xs].sort();
+  const docTypes = {
+    tickets: { ours: oursT.size, theirs: theirT.size,
+      missingOnTheirs: sorted([...oursT].filter(k => !carried(k))),
+      missingInOurs: sorted([...theirT].filter(k => !held(k))) },
+    refunds: { ours: oursR.size, theirs: theirR.size,
+      missingOnTheirs: sorted([...oursR].filter(k => !theirR.has(k))),
+      missingInOurs: sorted([...theirR].filter(k => !oursR.has(k) && !voidedSet.has(k))) },
+    emds: { ours: oursE.size, theirs: theirE.size,
+      missingOnTheirs: sorted([...oursE].filter(k => !carried(k))),
+      missingInOurs: sorted([...theirE].filter(k => !held(k))) },
+  };
+
   /* ── did every row reach a result? ───────────────────────────────────── */
   const unaccounted: Unaccounted[] = [];
   const bySerialF = new Map<string, Finding[]>();
@@ -1794,6 +1872,7 @@ export function compareTeamSheet(
     ourRows,
     ourDocs,
     unconfirmedOurs,
+    docTypes,
     matched,
     // A void and a row still on hold are states of the world, not
     // disagreements, so a sheet carrying only those is a clean sheet.
