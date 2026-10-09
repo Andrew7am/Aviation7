@@ -149,6 +149,29 @@ console.log('\n6. The comparison, on the four things that can differ');
   check('their rows counted', r.theirRows, 4);
   check('their tickets counted', r.theirTickets, 3);
   check('matched', r.matched, 2);
+
+  /* EGPML1909: 82 of our rows read against their 76 tickets looked like six
+     tickets nobody billed. They were refund lines on tickets already
+     counted. Rows and documents are said apart. */
+  check('our rows: a refund is a row', r.ourRows, 4);
+  check('...but not a document', r.ourDocs, { documents: 3, tickets: 3, emds: 0, refunds: 1 });
+  check('nothing typed in, nothing waiting on a supplier', r.unconfirmedOurs.length, 0);
+}
+
+console.log('\n4b. A ticket typed in by hand is not confirmed until its supplier reports it');
+{
+  const sheet = parseTeamSheet(CSV).rows;
+  const ledger: Ticket[] = [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73', amount: 1430 }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: 1530 }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: -1190, status: 'REFUND' }),
+    tkt({ ticketNo: 'DNRPGQ', pnr: 'DNRPGQ', source: 'FlyDubai', amount: 2850, reportName: 'Manual entry' }),
+  ];
+  const r = compareTeamSheet(sheet, ledger);
+  check('it is named, so the sheet is not called closed over it',
+        r.unconfirmedOurs.map(t => t.ticketNo), ['DNRPGQ']);
+  const vouched = compareTeamSheet(sheet, ledger.map(t => t.ticketNo === 'DNRPGQ' ? { ...t, confirmedBy: 'FlyDubai report' } : t));
+  check('once a report carries it, it is not', vouched.unconfirmedOurs.length, 0);
 }
 
 console.log('\n7. The finding that is money: a refund on their side only');
@@ -672,6 +695,24 @@ console.log('\n28. Each ticket in a shared cell becomes a row of its own');
   check('nothing is called missing', r.counts.NOT_IN_LEDGER, 0);
   check('and no refund is called unrecorded', r.counts.REFUND_NOT_ON_SHEET, 0);
   check('the sheet is clean', r.clean, true);
+}
+
+console.log('\n28b. A whole group in one cell is still priced');
+{
+  /* EGPML1909 bills 45 tickets in one cell at 139,500.00. A cell of more
+     than ten was skipped, so a group billed short could never be seen. */
+  const nums = Array.from({ length: 12 }, (_, i) => String(5513373195 + i));
+  const cell = '"' + nums.map(n => '235-' + n).join('\n') + '"';
+  const csv = (cost: string) => ['Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,Refund Amount',
+    cell + ',Y4WOD8,Issued,' + cost + ',' + cost + ' AED,'].join('\n');
+  const ledger: Ticket[] = nums.map(n => tkt({ ticketNo: n, pnr: 'Y4WOD8', amount: 3100, totalDoc: 3100, reqNum: 'EGPML1909' }));
+  const agree = compareTeamSheet(parseTeamSheet(csv('37200')).rows, ledger);
+  check('the group total agrees: nothing said', agree.counts.PRICE_DIFFERS, 0);
+  const each = compareTeamSheet(parseTeamSheet(csv('3100')).rows, ledger);
+  check('...nor when the figure is each ticket\'s', each.counts.PRICE_DIFFERS, 0);
+  const short = compareTeamSheet(parseTeamSheet(csv('34100')).rows, ledger);
+  check('billed one ticket short: said', short.counts.PRICE_DIFFERS, 1);
+  check('...with the gap', /3,100\.00/.test(short.findings.find(f => f.verdict === 'PRICE_DIFFERS')?.note ?? ''), true);
 }
 
 console.log('\n29. The money on a shared cell belongs to the booking');

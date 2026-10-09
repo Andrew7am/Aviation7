@@ -635,6 +635,14 @@ export interface TeamSheetReport {
   theirRows: number;
   theirTickets: number;
   ourRows: number;
+  /**
+   * What those rows are. 82 rows on EGPML1909 read as six tickets more than
+   * their 76 - they were 75 tickets, 2 EMDs and 5 refund lines against
+   * tickets already counted: 77 documents, the 77th on their sheet by PNR.
+   */
+  ourDocs: { documents: number; tickets: number; emds: number; refunds: number };
+  /** Ours under these requests that no supplier report has vouched for yet. */
+  unconfirmedOurs: Ticket[];
   matched: number;
   /**
    * The earliest ticket on their sheet, and how many of ours predate it.
@@ -1592,8 +1600,12 @@ export function compareTeamSheet(
       if (seenCells.has(cellKey)) continue;
       seenCells.add(cellKey);
       const docs = [r.serial, ...r.siblings];
-      // A cell naming a whole group's documents cannot be read as one price.
-      if (docs.length > 10) continue;
+      /* A cell naming a whole group - EGPML1909's 45 tickets at 139,500.00 -
+         is still a price: the group's, or each ticket's. It was skipped, so
+         a group billed short could never be seen. Read it only those two
+         ways; the in-between multiples that suit a small cell would let a
+         big one agree with almost anything. */
+      const bigGroup = docs.length > 10;
       const inCell = docs.flatMap(d => (ourBySerial.get(d) ?? []).filter(t => (t.amount || 0) > 0));
       const held = [...inCell, ...alsoOnPnrs(r, inCell)];
       if (!held.length || docs.some(d => voidedSet.has(d))) continue;
@@ -1607,7 +1619,8 @@ export function compareTeamSheet(
          agrees is agreement; the cell is a difference only when neither
          does. */
       const each = Math.abs(r.cost ?? 0);
-      const readings = Array.from({ length: docs.length }, (_, i) => each * (i + 1));
+      const readings = bigGroup ? [each, each * docs.length]
+        : Array.from({ length: docs.length }, (_, i) => each * (i + 1));
       const gaps = readings.flatMap(t => [payable, fare].map(v => t - v));
       const gap = gaps.sort((a, b) => Math.abs(a) - Math.abs(b))[0];
       // Only a gap no single ticket explains, and big enough to be a fare:
@@ -1616,6 +1629,12 @@ export function compareTeamSheet(
       if (Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
       if (findings.some(f => f.verdict === 'PRICE_DIFFERS' && docs.includes(f.serial))) continue;
       const missingDocs = docs.filter(d => !ourBySerial.has(d));
+      /* A big group with documents we do not hold is usually a cell of
+         conjunction pairs and bookings priced line by line (UAEVP420: nine
+         bookings at 6,390.00 written once), not one figure for the group.
+         Its missing documents are findings of their own; its price is not
+         readable. */
+      if (bigGroup && missingDocs.length) continue;
       findings.push({
         ...UNSOURCED, verdict: 'PRICE_DIFFERS', serial: r.serial, airlineCode: r.airlineCode, pnr: r.pnr, sheet: r,
         ours: held, reqNum: (held[0].reqNum || '').trim(), theirReq: r.reqNum,
@@ -1626,6 +1645,11 @@ export function compareTeamSheet(
       });
     }
   }
+
+  // Tallied again: the cells above were priced after the first count, and
+  // a cell's price difference was in the findings but never in the counts.
+  for (const k of Object.keys(counts)) counts[k as Verdict] = 0;
+  for (const f of findings) counts[f.verdict]++;
 
   /* Differences somebody explained, at the figures they explained them
      at, settle like a void: they stay listed, under Explained, and do not
@@ -1685,8 +1709,18 @@ export function compareTeamSheet(
   });
 
   const inScope = (t: Ticket) => reqParts(t.reqNum || '').some(k => requests.has(k));
-  const ourRows = [...ourBySerial.values()].flat().filter(inScope).length
-    + [...ourExtra.values()].flat().length;
+  /* Each row once: a row of ours their sheet never mentions sits in both
+     maps, and was counted twice - an extra ticket read as two. */
+  const scoped = [...new Map([...[...ourBySerial.values()].flat().filter(inScope), ...[...ourExtra.values()].flat()]
+    .map(t => [t.id, t] as const)).values()];
+  const ourRows = scoped.length;
+  const ourDocs = {
+    documents: new Set(scoped.map(t => ticketMatchKey(t.ticketNo || '') || t.pnr || t.id)).size,
+    tickets: scoped.filter(t => (t.amount || 0) >= 0 && !/EMD/i.test(`${t.status} ${t.transactionType}`)).length,
+    emds: scoped.filter(t => (t.amount || 0) >= 0 && /EMD/i.test(`${t.status} ${t.transactionType}`)).length,
+    refunds: scoped.filter(t => (t.amount || 0) < 0).length,
+  };
+  const unconfirmedOurs = ledger.filter(t => isTicket(t) && inScope(t) && unconfirmed(t));
 
   /* ── did every row reach a result? ───────────────────────────────────── */
   const unaccounted: Unaccounted[] = [];
@@ -1758,6 +1792,8 @@ export function compareTeamSheet(
     theirRows: allTheirRows,
     theirTickets: theirBySerial.size,
     ourRows,
+    ourDocs,
+    unconfirmedOurs,
     matched,
     // A void and a row still on hold are states of the world, not
     // disagreements, so a sheet carrying only those is a clean sheet.

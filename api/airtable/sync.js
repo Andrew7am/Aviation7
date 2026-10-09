@@ -1260,7 +1260,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       if (seenCells.has(cellKey)) continue;
       seenCells.add(cellKey);
       const docs = [r.serial, ...r.siblings];
-      if (docs.length > 10) continue;
+      const bigGroup = docs.length > 10;
       const inCell = docs.flatMap((d) => (ourBySerial.get(d) ?? []).filter((t) => (t.amount || 0) > 0));
       const held2 = [...inCell, ...alsoOnPnrs(r, inCell)];
       if (!held2.length || docs.some((d) => voidedSet.has(d))) continue;
@@ -1270,12 +1270,13 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       const payable = held2.reduce((n, t) => n + asBought(t, t.amount || 0), 0);
       const fare = held2.reduce((n, t) => n + asBought(t, t.totalDoc || t.amount || 0), 0);
       const each = Math.abs(r.cost ?? 0);
-      const readings = Array.from({ length: docs.length }, (_, i) => each * (i + 1));
+      const readings = bigGroup ? [each, each * docs.length] : Array.from({ length: docs.length }, (_, i) => each * (i + 1));
       const gaps = readings.flatMap((t) => [payable, fare].map((v) => t - v));
       const gap = gaps.sort((a, b) => Math.abs(a) - Math.abs(b))[0];
       if (Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
       if (findings.some((f) => f.verdict === "PRICE_DIFFERS" && docs.includes(f.serial))) continue;
       const missingDocs = docs.filter((d) => !ourBySerial.has(d));
+      if (bigGroup && missingDocs.length) continue;
       findings.push({
         ...UNSOURCED,
         verdict: "PRICE_DIFFERS",
@@ -1290,6 +1291,8 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       });
     }
   }
+  for (const k of Object.keys(counts)) counts[k] = 0;
+  for (const f of findings) counts[f.verdict]++;
   const explainedKeys = new Map((opts.explanations ?? []).map((e) => [e.findingKey, e]));
   for (const f of findings) {
     if (f.verdict === "OK") continue;
@@ -1333,7 +1336,15 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     };
   });
   const inScope = (t) => reqParts(t.reqNum || "").some((k) => requests.has(k));
-  const ourRows = [...ourBySerial.values()].flat().filter(inScope).length + [...ourExtra.values()].flat().length;
+  const scoped = [...new Map([...[...ourBySerial.values()].flat().filter(inScope), ...[...ourExtra.values()].flat()].map((t) => [t.id, t])).values()];
+  const ourRows = scoped.length;
+  const ourDocs = {
+    documents: new Set(scoped.map((t) => ticketMatchKey(t.ticketNo || "") || t.pnr || t.id)).size,
+    tickets: scoped.filter((t) => (t.amount || 0) >= 0 && !/EMD/i.test(`${t.status} ${t.transactionType}`)).length,
+    emds: scoped.filter((t) => (t.amount || 0) >= 0 && /EMD/i.test(`${t.status} ${t.transactionType}`)).length,
+    refunds: scoped.filter((t) => (t.amount || 0) < 0).length
+  };
+  const unconfirmedOurs = ledger.filter((t) => isTicket(t) && inScope(t) && unconfirmed(t));
   const unaccounted = [];
   const bySerialF = /* @__PURE__ */ new Map();
   for (const f of findings) if (f.serial) {
@@ -1427,6 +1438,8 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     theirRows: allTheirRows,
     theirTickets: theirBySerial.size,
     ourRows,
+    ourDocs,
+    unconfirmedOurs,
     matched,
     // A void and a row still on hold are states of the world, not
     // disagreements, so a sheet carrying only those is a clean sheet.

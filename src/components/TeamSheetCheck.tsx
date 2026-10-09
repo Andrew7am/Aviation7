@@ -143,11 +143,12 @@ const PROPOSABLE_VERDICTS = new Set<Verdict>(['NOT_IN_LEDGER', 'REFUND_NOT_IN_LE
 /** Stable, so a screen given no reissue links does not recompare on every render. */
 const NO_EXCHANGES: { ticketNo: string; replacedTicket: string }[] = [];
 
-const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
-  ({ label, value, tone }) => (
+const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string; sub?: string }> =
+  ({ label, value, tone, sub }) => (
   <div className="bg-white border border-slate-200 rounded-lg px-3 py-2.5">
     <div className={`font-mono font-bold text-lg ${tone ?? 'text-slate-700'}`}>{value}</div>
     <div className="text-[9px] uppercase text-slate-400 font-bold mt-0.5">{label}</div>
+    {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
   </div>
 );
 
@@ -964,6 +965,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
       ['Rows on their sheet', report.theirRows],
       ['Tickets on their sheet', report.theirTickets],
       ['Matched to our books', report.matched],
+      ['Our documents in scope', report.ourDocs.documents],
       ['Our rows in scope', report.ourRows],
       ['Checked', new Date().toISOString().slice(0, 16).replace('T', ' ')],
     ], { origin: -1 });
@@ -1237,7 +1239,27 @@ export const TeamSheetCheck: React.FC<Props> = ({
               )}
             </div>
           )}
-          {report.clean && !report.unaccounted.length ? (
+          {report.clean && !report.unaccounted.length && report.unconfirmedOurs.length > 0 ? (
+            /* The lists agree, but a ticket of ours was typed in and no
+               supplier report has carried it yet. "Can be closed" next to
+               "1 not confirmed" said two things at once. */
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3
+                            flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+              <span className="text-xs text-amber-900">
+                <b>Both lists agree on every ticket</b> — but{' '}
+                {report.unconfirmedOurs.length === 1 ? 'one of ours is' : `${report.unconfirmedOurs.length} of ours are`}{' '}
+                not yet confirmed by the supplier's own report:{' '}
+                {report.unconfirmedOurs.map(t => (
+                  <b key={t.id} className="font-mono">
+                    {t.ticketNo || t.pnr} ({t.source}, {Math.abs(t.amount || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })} {t.currency}){' '}
+                  </b>
+                ))}
+                — entered from their sheet or by hand. Close this sheet once that report carries{' '}
+                {report.unconfirmedOurs.length === 1 ? 'it' : 'them'}.
+              </span>
+            </div>
+          ) : report.clean && !report.unaccounted.length ? (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3
                             flex items-start gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
@@ -1302,7 +1324,13 @@ export const TeamSheetCheck: React.FC<Props> = ({
             <Tile label="Tickets on it" value={report.theirTickets} />
             <Tile label="Matched to ours" value={report.matched}
               tone={report.matched === report.theirTickets ? 'text-emerald-600' : 'text-slate-700'} />
-            <Tile label="Our rows in scope" value={report.ourRows} />
+            {/* Documents, not rows: a refund is a second row on a ticket
+                already counted. 82 rows read against their 76 tickets looked
+                like six tickets nobody billed; they were 77 documents. */}
+            <Tile label="Our documents" value={report.ourDocs.documents}
+              sub={`${report.ourRows} rows: ${report.ourDocs.tickets} tickets`
+                + (report.ourDocs.emds ? ` · ${report.ourDocs.emds} EMD${report.ourDocs.emds === 1 ? '' : 's'}` : '')
+                + (report.ourDocs.refunds ? ` · ${report.ourDocs.refunds} refund${report.ourDocs.refunds === 1 ? '' : 's'}` : '')} />
             <Tile label="Needs settling" value={needsWork}
               tone={needsWork ? 'text-red-600' : 'text-emerald-600'} />
           </div>
@@ -1363,9 +1391,11 @@ export const TeamSheetCheck: React.FC<Props> = ({
               <b className="font-mono text-slate-700">
                 {report.requests.length ? report.requests.join(', ') : 'no request'}
               </b>
-              {' '}— the requests their matched tickets belong to. Costs are shown but never
-              compared: their net and ours are recorded at different moments and often in another
-              currency, so a difference there is not a finding.
+              {' '}— the requests their matched tickets belong to. Costs are compared ticket by
+              ticket wherever both sides price it in the same currency, and a gap is listed as
+              Price differs. Their net agreeing with our fare is agreement: we often pay less than
+              the fare after commission. A refunded ticket, and tickets priced in different
+              currencies, are not compared.
             </span>
           </div>
 
