@@ -34,11 +34,11 @@ console.log('\n1. An explained difference stays explained - at its figures');
   ]);
   const ours = [tkt({ ticketNo: '5513437053', pnr: 'ZO8TOX', amount: 0, transactionType: 'REISSUE' })];
   const before = compareTeamSheet(s, ours);
-  const f = before.findings.find(x => x.verdict === 'REFUND_NOT_IN_LEDGER')!;
+  const f = before.findings.find(x => /^REFUND_(NOT_IN_LEDGER|AWAITING_BILLING)$/.test(x.verdict))!;
   check('the difference is there', !!f, true);
   const ex = [{ id: '1', findingKey: explanationKey(f), fingerprint: fingerprint(f), note: 'Staff liability, not a refund' }];
   const after = compareTeamSheet(s, ours, [], {}, { explanations: ex });
-  const g = after.findings.find(x => x.verdict === 'REFUND_NOT_IN_LEDGER')!;
+  const g = after.findings.find(x => /^REFUND_(NOT_IN_LEDGER|AWAITING_BILLING)$/.test(x.verdict))!;
   check('explained, with the reason', g.explained, 'Staff liability, not a refund');
   check('and the sheet is clean', after.clean, true);
   // Their figure changes: it comes back.
@@ -46,7 +46,7 @@ console.log('\n1. An explained difference stays explained - at its figures');
     '016-5513437053,ZO8TOX,Reissue,0.00,0 AED,,13/9/2026 7:13pm,RTS,UAEVP711',
     '016-5513437053,ZO8TOX,Cancelled/Refunded,4600.00,4600 AED,4400.00,29/9/2026 1:33pm,RTS,UAEVP711',
   ]);
-  const back = compareTeamSheet(s2, ours, [], {}, { explanations: ex }).findings.find(x => x.verdict === 'REFUND_NOT_IN_LEDGER')!;
+  const back = compareTeamSheet(s2, ours, [], {}, { explanations: ex }).findings.find(x => /^REFUND_(NOT_IN_LEDGER|AWAITING_BILLING)$/.test(x.verdict))!;
   check('a changed figure brings it back', [back.explained, back.explainedBefore], [undefined, 'Staff liability, not a refund']);
 }
 

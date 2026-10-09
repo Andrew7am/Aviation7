@@ -285,7 +285,8 @@ console.log('\n10c. Every row reaches a result');
   ]);
   const r = compareTeamSheet(s, [tkt({ ticketNo: '4815135258', pnr: 'ABCDEF', date: '2026-07-04', amount: 2555, reqNum: 'DXB', source: 'Gold Medal' })]);
   check('the misfiling is reported', r.findings.some(f => f.verdict === 'REQ_DIFFERS'), true);
-  check('and the refund still is', r.findings.some(f => f.verdict === 'REFUND_NOT_IN_LEDGER'), true);
+  // Not marked received on their side, so it is on its way with the billing - but still reported.
+  check('and the refund still is', r.findings.some(f => f.verdict === 'REFUND_NOT_IN_LEDGER' || f.verdict === 'REFUND_AWAITING_BILLING'), true);
   check('so nothing is left over', r.unaccounted, []);
   // An EMD in their EMD column that we do not hold.
   const H = 'Ticket Number,PNR,Status,Net Cost,Issued Date & Time,EMD Number,REQ No (Auto) (Trip) (from Aviation Quotations)';

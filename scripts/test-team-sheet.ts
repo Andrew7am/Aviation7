@@ -17,6 +17,7 @@ import {
   compareTeamSheet, reqKey, sameReq, reqParts, buildRelations, relatedReq,
 } from '../src/core/helpers/teamSheetCompare';
 import type { Ticket } from '../src/types';
+import { rowsForReview, whoActs as whoActsT } from '../src/core/helpers/teamSheetCompare';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -205,6 +206,42 @@ console.log('\n4d. One request\'s first row is not the start of their sheet');
   const r = compareTeamSheet(parseTeamSheet(csv).rows, ledger, [], {}, { sheetStart: '2026-01-04' });
   check('with it, the earlier ticket is missing from their sheet', r.docTypes.tickets.missingOnTheirs, ['5513059010']);
   check('  ...and nothing is set aside', r.beforeTheirSystem, 0);
+}
+
+console.log('\n4e. Our ticket under this request that they filed under another one');
+{
+  /* Reviewing KSAML1690 alone cut their sheet to KSAML1690's rows, so a
+     ticket we hold under KSAML1690 that they wrote under KSAML2340 came back
+     "not on their sheet". It is on their sheet - filed elsewhere. */
+  const csv = ['Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,Req,Issued Date & Time',
+    '065-5513059078,YSLM73,Issued,1430,1430 AED,KSAML1690,20/8/2026 12:31pm',
+    '065-5513059077,YQX75R,Issued,1530,1530 AED,KSAML2340,20/8/2026 10:08am',
+    '065-5513059011,ZZZZZZ,Issued,900,900 AED,KSAML2340,20/8/2026 10:08am'].join('\n');
+  const ledger = [tkt({ ticketNo: '5513059078', pnr: 'YSLM73', reqNum: 'KSAML1690' }),
+                  tkt({ ticketNo: '5513059077', pnr: 'YQX75R', reqNum: 'KSAML1690' })];
+  const all = parseTeamSheet(csv).rows;
+  const rows = rowsForReview(all, ['KSAML1690'], ledger);
+  check('their row elsewhere carrying our ticket is brought in', rows.map(r => r.serial), ['5513059078', '5513059077']);
+  check('...and nothing else of the other request', rows.some(r => r.serial === '5513059011'), false);
+  const r = compareTeamSheet(rows, ledger, ['KSAML1690']);
+  check('it reads as filed under a different request', r.findings.find(f => f.serial === '5513059077')?.verdict, 'REQ_DIFFERS');
+  check('...not as missing from their sheet', r.counts.NOT_ON_SHEET, 0);
+}
+
+console.log('\n4f. A refund applied on their side and not billed to us yet');
+{
+  const csv = (received: string) => ['Ticket Number,PNR,Status,Net Cost,Total Cost with Currency,Refund Amount,Refund Recieved?,Issued Date & Time',
+    '065-5513059077,YQX75R,Cancelled/Refunded,1530,1530 AED,1190.00,' + received + ',20/8/2026 10:08am'].join('\n');
+  const ledger = [tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: 1530 }),
+                  tkt({ ticketNo: '5513060000', pnr: 'OTHER1', amount: 500, date: '2026-10-05', reqNum: 'KSAML9999' })];
+  const waiting = compareTeamSheet(parseTeamSheet(csv('')).rows, ledger);
+  check('not received yet: on its way with the supplier\'s billing', waiting.counts.REFUND_AWAITING_BILLING, 1);
+  check('...not a thing to settle', whoActsT(waiting.findings.find(f => f.verdict === 'REFUND_AWAITING_BILLING')!), 'INFO');
+  check('...and it says how far our billing reaches',
+        /latest we hold runs to 2026-10-05/.test(waiting.findings.find(f => f.verdict === 'REFUND_AWAITING_BILLING')!.note), true);
+  const received = compareTeamSheet(parseTeamSheet(csv('checked')).rows, ledger);
+  check('received on their side and not in our books: missing', received.counts.REFUND_NOT_IN_LEDGER, 1);
+  check('...and it says so', /marks the refund as received/.test(received.findings.find(f => f.verdict === 'REFUND_NOT_IN_LEDGER')!.note), true);
 }
 
 console.log('\n4b. A ticket typed in by hand is not confirmed until its supplier reports it');
@@ -1358,9 +1395,10 @@ console.log('\n45. A finding carries the row it is about, not the first one');
   // built from the first row reports "no figure stated" on a refund their
   // sheet states perfectly clearly - the same trap as the void branch.
   const sheet = parseTeamSheet([
-    'Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount,Issued Date & Time',
-    '065-5513373340,YSLM80,Issued,KSAML2218,2890.00,,01/09/2026 1:00pm',
-    '065-5513373340,YSLM80,Cancelled/Refunded,KSAML2218,,2890.00,05/09/2026 1:00pm',
+    // Marked received: the money is back, so not on its way - missing.
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount,Refund Recieved?,Issued Date & Time',
+    '065-5513373340,YSLM80,Issued,KSAML2218,2890.00,,,01/09/2026 1:00pm',
+    '065-5513373340,YSLM80,Cancelled/Refunded,KSAML2218,,2890.00,checked,05/09/2026 1:00pm',
   ].join('\n')).rows;
 
   const r = compareTeamSheet(sheet, [tkt({
@@ -1376,14 +1414,14 @@ console.log('\n45. A finding carries the row it is about, not the first one');
   // Their sheet genuinely leaves the figure off sometimes - 14 of the real
   // ones - and that is a different sentence, not a bug to paper over.
   const silent = compareTeamSheet(parseTeamSheet([
-    'Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount',
-    '065-5512759923,YSLM81,Cancelled/Refunded,KSAML2218,2330.00,',
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount,Refund Recieved?',
+    '065-5512759923,YSLM81,Cancelled/Refunded,KSAML2218,2330.00,,checked',
   ].join('\n')).rows, [tkt({
     ticketNo: '5512759923', pnr: 'YSLM81', reqNum: 'KSAML2218', amount: 2300,
   })]);
   const q = silent.findings.find(x => x.verdict === 'REFUND_NOT_IN_LEDGER')!;
   check('a silent sheet is said to be silent',
-    q.note, 'Their sheet says refunded and our books hold no refund against it.');
+    q.note.startsWith('Their sheet says refunded and our books hold no refund against it.'), true);
 }
 
 console.log('\n46. Every finding says where the ticket was bought');

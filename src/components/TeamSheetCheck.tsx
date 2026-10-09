@@ -10,7 +10,7 @@ import { AirtableService } from '../services/AirtableService';
 import { rowsToCsv } from '../core/integrations/airtable';
 import { parseTeamSheet, TeamSheetRow } from '../core/parsers/teamSheet';
 import {
-  compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK, rowsForRequests, whoActs,
+  compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK, rowsForReview, whoActs,
 } from '../core/helpers/teamSheetCompare';
 import { writeClipboard } from '../utils/clipboard';
 import { addabilityByKey, findingKey, proposalsByKey, neverByHand } from '../core/helpers/addFromSheet';
@@ -43,6 +43,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   REQ_DIFFERS:          { chip: 'bg-red-100 text-red-700',        band: 'border-red-300',     money: true },
   NOT_IN_LEDGER:        { chip: 'bg-red-100 text-red-700',        band: 'border-red-200',     money: true },
   REFUND_NOT_IN_LEDGER: { chip: 'bg-red-100 text-red-700',        band: 'border-red-200',     money: true },
+  REFUND_AWAITING_BILLING: { chip: 'bg-sky-100 text-sky-700',      band: 'border-sky-200',     money: false },
   NOT_ON_SHEET:         { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REFUND_NOT_ON_SHEET:  { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REFUND_DIFFERS:       { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
@@ -73,6 +74,11 @@ const WHY: Record<Verdict, string> = {
   REFUND_NOT_IN_LEDGER:
     'They booked a refund and our books hold none. This is money we are owed and have'
     + ' not recorded receiving.',
+  REFUND_AWAITING_BILLING:
+    'A refund they have applied for and our books do not hold yet. A refund reaches us with'
+    + " the supplier's billing - for a BSP ticket, the next IATA billing - so until a billing"
+    + ' after it is imported it is on its way, not missing. Each row says how far the latest'
+    + ' billing we hold reaches; a refund applied before that date is missing.',
   NOT_ON_SHEET:
     'In our books under a request their sheet covers, and not on their sheet at all.'
     + ' Either their record is short a ticket, or ours carries one that belongs elsewhere.',
@@ -794,7 +800,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
      in must not mean finding the file again. */
   const report = useMemo<TeamSheetReport | null>(
     () => (rows && (mode === 'sheet' || reviewing.length)
-      ? compareTeamSheet(mode === 'request' ? rowsForRequests(rows, reviewing) : rows, tickets,
+      ? compareTeamSheet(mode === 'request' ? rowsForReview(rows, reviewing, tickets) : rows, tickets,
           mode === 'request' ? reviewing : declared, { from: fromDate, to: toDate },
           { voided: voids.map(v => v.ticketNo), chains: exchanges, explanations: mode === 'request' ? [] : explanations,
             // One request's rows start where that request starts; their sheet started long before.

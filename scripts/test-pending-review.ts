@@ -152,10 +152,12 @@ console.log('\n6. A refund is not a quote, so it is filled in');
   // Their refund figure is what the airline actually gave back, and it
   // matches our net or our gross to the fils. Nothing to correct, so
   // nothing to retype.
+  // Marked received on their side: the money is back and ours lacks it. One not
+  // yet received waits for the supplier's billing instead, and is not proposed.
   const rows = sheet([
-    '065-5513373340,YSLM80,Issued,2890.00,,01/09/2026 1:00pm,IATA Portal (UAE),KSAML2218',
-    '065-5513373340,YSLM80,Cancelled/Refunded,,2890.00,05/09/2026 1:00pm,IATA Portal (UAE),KSAML2218',
-  ]);
+    '065-5513373340,YSLM80,Issued,2890.00,,01/09/2026 1:00pm,IATA Portal (UAE),KSAML2218,',
+    '065-5513373340,YSLM80,Cancelled/Refunded,,2890.00,05/09/2026 1:00pm,IATA Portal (UAE),KSAML2218,checked',
+  ], 'Ticket Number,PNR,Status,Net Cost,Refund Amount,Issued Date & Time,Portal,REQ No (Auto) (MICE),Refund Recieved?');
   const ledger: Ticket[] = [{
     id: 't1', ticketNo: '5513373340', source: 'IATA', date: '2026-09-01',
     amount: 2664, commission: 226, totalDoc: 2890, reqNum: 'KSAML2218',
@@ -499,9 +501,9 @@ console.log('\n17. A price that belongs to a booking is not a ticket\'s price');
 console.log('\n18. The refund is their own column, and it is taken as it stands');
 {
   const rows = sheet([
-    '065-5513373310,YSLM97,Issued,2890.00,,01/09/2026 1:00pm,IATA Portal (UAE),KSAML2218',
-    '065-5513373310,YSLM97,Cancelled/Refunded,,2890.00,05/09/2026 1:00pm,IATA Portal (UAE),KSAML2218',
-  ]);
+    '065-5513373310,YSLM97,Issued,2890.00,,01/09/2026 1:00pm,IATA Portal (UAE),KSAML2218,',
+    '065-5513373310,YSLM97,Cancelled/Refunded,,2890.00,05/09/2026 1:00pm,IATA Portal (UAE),KSAML2218,checked',
+  ], 'Ticket Number,PNR,Status,Net Cost,Refund Amount,Issued Date & Time,Portal,REQ No (Auto) (MICE),Refund Recieved?');
   const ledger: Ticket[] = [{
     id: 't1', ticketNo: '5513373310', source: 'IATA', date: '2026-09-01',
     amount: 2664, commission: 226, totalDoc: 2890, reqNum: 'KSAML2218',

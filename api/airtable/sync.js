@@ -609,6 +609,8 @@ function whoActs(f) {
     case "REISSUE_NO_CHARGE":
     case "REQ_RELATED":
     case "CONJUNCT_ALREADY_HELD":
+    // Applied, and on its way: it arrives with the supplier's next billing.
+    case "REFUND_AWAITING_BILLING":
       return "INFO";
     case "FILED_ELSEWHERE":
     case "REFUND_NOT_ON_SHEET":
@@ -627,6 +629,7 @@ var VERDICT_RANK = {
   REQ_DIFFERS: 0,
   NOT_IN_LEDGER: 1,
   REFUND_NOT_IN_LEDGER: 2,
+  REFUND_AWAITING_BILLING: 2.6,
   NOT_ON_SHEET: 3,
   REFUND_NOT_ON_SHEET: 4,
   REFUND_DIFFERS: 5,
@@ -762,6 +765,11 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     if (!k) continue;
     if (!ourBySerial.has(k)) ourBySerial.set(k, []);
     ourBySerial.get(k).push(t);
+  }
+  const lastBilled = /* @__PURE__ */ new Map();
+  for (const t of ledger) {
+    const s = (t.source || "").trim(), d = String(t.date || "").slice(0, 10);
+    if (s && d && d > (lastBilled.get(s) ?? "")) lastBilled.set(s, d);
   }
   const theirBySerial = /* @__PURE__ */ new Map();
   const noTicket = [];
@@ -988,10 +996,21 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     if (theySayRefunded && ourRefunds.length === 0) {
       const stated = rows.find((x) => x.refund != null) ?? first2;
       const refundRow = { ...base, sheet: stated };
+      const src = (ours[0]?.source || "").trim();
+      const received = rows.some((x) => x.refundReceived);
+      if (src && !/^airline website$/i.test(src) && !received) {
+        const last = lastBilled.get(src) ?? "";
+        findings.push({
+          ...refundRow,
+          verdict: "REFUND_AWAITING_BILLING",
+          note: (stated.refund != null ? `Their sheet refunds ${money2(stated.refund)} ${stated.currency || ""}`.trim() : "Their sheet says refunded") + `; not in our books yet. A ${src} refund reaches us with ${src}'s billing` + (last ? ` - the latest we hold runs to ${last}.` : ".") + " If it was applied before that billing, it is missing rather than on its way."
+        });
+        continue;
+      }
       findings.push({
         ...refundRow,
         verdict: "REFUND_NOT_IN_LEDGER",
-        note: stated.refund != null ? `Their sheet refunds ${money2(stated.refund)} ${stated.currency || ""}`.trim() + " and our books hold none. The credit has not reached us." : "Their sheet says refunded and our books hold no refund against it."
+        note: (stated.refund != null ? `Their sheet refunds ${money2(stated.refund)} ${stated.currency || ""}`.trim() + " and our books hold none. The credit has not reached us." : "Their sheet says refunded and our books hold no refund against it.") + (received ? " Their sheet marks the refund as received." : "") + (src && lastBilled.get(src) ? ` The latest ${src} billing we hold runs to ${lastBilled.get(src)}.` : "")
       });
       continue;
     }
@@ -1401,6 +1420,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   const sheetsSeen = new Set(findings.map((f) => f.sheet).filter(Boolean));
   const REFUND_SAYS = /* @__PURE__ */ new Set([
     "REFUND_NOT_IN_LEDGER",
+    "REFUND_AWAITING_BILLING",
     "REFUND_DIFFERS",
     "TWICE_ON_THEIR_SHEET",
     "VOID_NOT_BILLED",

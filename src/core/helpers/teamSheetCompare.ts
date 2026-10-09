@@ -288,6 +288,7 @@ export type Verdict =
   | 'REISSUE_NO_CHARGE'
   | 'VOID_AND_ISSUED'
   | 'REFUND_NOT_IN_LEDGER'
+  | 'REFUND_AWAITING_BILLING'
   | 'REFUND_NOT_ON_SHEET'
   | 'REFUND_DIFFERS'
   | 'PRICE_DIFFERS'
@@ -315,6 +316,8 @@ export type Verdict =
 export function whoActs(f: Pick<Finding, 'verdict' | 'ours'>): 'US' | 'THEM' | 'INFO' {
   switch (f.verdict) {
     case 'OK': case 'VOID_NOT_BILLED': case 'REISSUE_NO_CHARGE': case 'REQ_RELATED': case 'CONJUNCT_ALREADY_HELD':
+    // Applied, and on its way: it arrives with the supplier's next billing.
+    case 'REFUND_AWAITING_BILLING':
       return 'INFO';
     case 'FILED_ELSEWHERE': case 'REFUND_NOT_ON_SHEET': case 'TWICE_ON_THEIR_SHEET':
       return 'THEM';
@@ -336,6 +339,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   REISSUE_NO_CHARGE:    'Reissued at no charge',
   VOID_AND_ISSUED:      'Voided and issued the same day',
   REFUND_NOT_IN_LEDGER: 'Refund not in our ledger',
+  REFUND_AWAITING_BILLING: 'Refund applied - waiting for the supplier\'s billing',
   REFUND_NOT_ON_SHEET:  'Refunded, their sheet does not say so',
   REFUND_DIFFERS:       'Refund differs',
   PRICE_DIFFERS:        'Price differs',
@@ -353,6 +357,7 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   REQ_DIFFERS: 0,
   NOT_IN_LEDGER: 1,
   REFUND_NOT_IN_LEDGER: 2,
+  REFUND_AWAITING_BILLING: 2.6,
   NOT_ON_SHEET: 3,
   REFUND_NOT_ON_SHEET: 4,
   REFUND_DIFFERS: 5,
@@ -420,6 +425,27 @@ export function reqParts(raw: string | undefined | null): string[] {
  * one request declared over two thousand rows never reads as "this sheet
  * is all UAEVP420".
  */
+/**
+ * The rows to review a request against: its own, and any row elsewhere on
+ * their sheet carrying a ticket our books file under it.
+ *
+ * Cutting their sheet to the request's rows alone loses the misfile in one
+ * direction. A ticket we hold under KSAML1690 that they wrote under another
+ * request was dropped with that other request's rows, and came back as "not
+ * on their sheet" - when it is on their sheet, filed elsewhere.
+ */
+export function rowsForReview<T extends { reqNum: string; serial: string; pnr?: string }>(
+  rows: T[], requests: string[], ledger: { ticketNo?: string; reqNum?: string }[],
+): T[] {
+  const own = rowsForRequests(rows, requests);
+  const want = new Set(requests.flatMap(reqParts));
+  if (!want.size || own.length === rows.length) return own;
+  const ours = new Set(ledger.filter(t => reqParts(t.reqNum || '').some(k => want.has(k)))
+    .map(t => ticketMatchKey(t.ticketNo || '')).filter(Boolean));
+  const ownSet = new Set(own);
+  return [...own, ...rows.filter(r => !ownSet.has(r) && r.serial && ours.has(r.serial))];
+}
+
 export function rowsForRequests<T extends { reqNum: string }>(rows: T[], requests: string[]): T[] {
   const want = new Set(requests.flatMap(reqParts));
   if (!want.size) return rows;
@@ -856,6 +882,13 @@ export function compareTeamSheet(
     ourBySerial.get(k)!.push(t);
   }
 
+  /* The latest day each supplier's billing reaches in our books. */
+  const lastBilled = new Map<string, string>();
+  for (const t of ledger) {
+    const s = (t.source || '').trim(), d = String(t.date || '').slice(0, 10);
+    if (s && d && d > (lastBilled.get(s) ?? '')) lastBilled.set(s, d);
+  }
+
   /* ── their side, one entry per ticket rather than per row ─────────────── */
   const theirBySerial = new Map<string, TeamSheetRow[]>();
   const noTicket: TeamSheetRow[] = [];
@@ -1200,11 +1233,34 @@ export function compareTeamSheet(
          actually about the thing being reported. */
       const stated = rows.find(x => x.refund != null) ?? first;
       const refundRow = { ...base, sheet: stated };
+      /* A refund is applied on their side the day it is asked for, and
+         reaches our books only with the supplier's billing - BSP's next
+         billing for a BSP ticket. Until a billing after it is in, it is on
+         its way rather than missing. Said with the last billing we hold, so
+         a refund older than that reads for what it is. */
+      /* Their "Refund Recieved?" box says which it is. Ticked, the money has
+         come back and our books should hold it: missing. Unticked, it was
+         applied for and is still on its way. */
+      const src = (ours[0]?.source || '').trim();
+      const received = rows.some(x => x.refundReceived);
+      if (src && !/^airline website$/i.test(src) && !received) {
+        const last = lastBilled.get(src) ?? '';
+        findings.push({ ...refundRow, verdict: 'REFUND_AWAITING_BILLING',
+          note: (stated.refund != null
+            ? `Their sheet refunds ${money(stated.refund)} ${stated.currency || ''}`.trim()
+            : 'Their sheet says refunded')
+            + `; not in our books yet. A ${src} refund reaches us with ${src}'s billing`
+            + (last ? ` - the latest we hold runs to ${last}.` : '.')
+            + ' If it was applied before that billing, it is missing rather than on its way.' });
+        continue;
+      }
       findings.push({ ...refundRow, verdict: 'REFUND_NOT_IN_LEDGER',
-        note: stated.refund != null
+        note: (stated.refund != null
           ? `Their sheet refunds ${money(stated.refund)} ${stated.currency || ''}`.trim()
             + ' and our books hold none. The credit has not reached us.'
-          : 'Their sheet says refunded and our books hold no refund against it.' });
+          : 'Their sheet says refunded and our books hold no refund against it.')
+          + (received ? ' Their sheet marks the refund as received.' : '')
+          + (src && lastBilled.get(src) ? ` The latest ${src} billing we hold runs to ${lastBilled.get(src)}.` : '') });
       continue;
     }
 
@@ -1808,7 +1864,7 @@ export function compareTeamSheet(
     bySerialF.get(f.serial)!.push(f);
   }
   const sheetsSeen = new Set(findings.map(f => f.sheet).filter(Boolean));
-  const REFUND_SAYS = new Set<Verdict>(['REFUND_NOT_IN_LEDGER', 'REFUND_DIFFERS', 'TWICE_ON_THEIR_SHEET',
+  const REFUND_SAYS = new Set<Verdict>(['REFUND_NOT_IN_LEDGER', 'REFUND_AWAITING_BILLING', 'REFUND_DIFFERS', 'TWICE_ON_THEIR_SHEET',
     'VOID_NOT_BILLED', 'VOID_AND_ISSUED', 'CONJUNCT_ALREADY_HELD', 'REISSUE_NO_CHARGE']);
   for (const r of sheet) {
     // A held booking was not issued: there is nothing it could have reached.
