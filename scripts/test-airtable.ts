@@ -161,6 +161,11 @@ console.log('\n7. A refund added as a row of its own still reaches the bell');
         missingRefunds(rows as any, ledgerIndex([sale, { id: 't2', ticketNo: '4862343302', amount: -1906.7, source: 'Ibtekar' }])).length, 0);
   check('not for a ticket we do not hold (that is "not in our books")', missingRefunds(rows as any, ledgerIndex([])).length, 0);
   check('not for a row that is not refunded', missingRefunds([rows[0]] as any, ledgerIndex([sale])).length, 0);
+  // Only refunds added from October on ring; March to August's stay quiet.
+  const old = [r({ record_id: 'a' }), r({ record_id: 'c', status: 'Cancelled/Refunded', refund_amount: 500, created_at: '2026-08-12T14:16:42Z' })];
+  check('not for a refund row added before 1 October', missingRefunds(old as any, ledgerIndex([sale])).length, 0);
+  check('1 October counts from midnight Riyadh time',
+        missingRefunds([r({ status: 'Cancelled/Refunded', created_at: '2026-09-30T21:30:00Z' })] as any, ledgerIndex([sale])).length, 1);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

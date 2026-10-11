@@ -155,12 +155,20 @@ export function noticesFor(
  * sale with no refund against it is a notice, until the refund arrives.
  *
  * A ticket we do not hold at all is NOT_IN_BOOKS's question, not this one.
+ *
+ * Only refund rows added from REFUND_NOTICES_FROM on: the older ones (March
+ * to August) were left to the request reviews rather than the bell.
  */
-export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, LedgerLite[]>): Notice[] {
+export const REFUND_NOTICES_FROM = '2026-09-30T21:00:00Z'; // 1 October 2026, Riyadh time
+
+export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, LedgerLite[]>,
+                               from: string = REFUND_NOTICES_FROM): Notice[] {
   const out: Notice[] = [];
   const seen = new Set<string>();
+  const since = Date.parse(from);
   for (const r of rows) {
     if (!/refund/i.test(r.status || '')) continue;
+    if (!(Date.parse(r.created_at || '') >= since)) continue;
     for (const s of r.serials) {
       const k = docKey(s);
       if (!k || seen.has(k)) continue;
