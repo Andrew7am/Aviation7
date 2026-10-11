@@ -117,5 +117,37 @@ console.log('\n6. What changed since their last statement');
           openingBalance: 14388.37, closingBalance: 13330.23 }]).since, null);
 }
 
+console.log('\nN. A sale and its refund on the same statement');
+{
+  /* Ibtekar's 01/10-11/10 statement bills 4862343302 at 1,917.00 and
+     refunds 1,906.70 on RFD260587 two days later; we held the sale only.
+     Netted, that read as "reprice to 10.30" - burying a 1,906.70 refund
+     inside a ticket priced at ten riyals. */
+  const mini = {
+    ...st, periodStart: '2026-10-01', periodEnd: '2026-10-11', openingBalance: 0, closingBalance: 0,
+    lines: [
+      { section: 'TICKET', date: '2026-10-06', document: 'INV264614', airline: '065', ticketNo: '4862343302', debit: 1917, credit: 0, balance: 0 },
+      { section: 'TICKET', date: '2026-10-09', document: 'RFD260587', airline: '065', ticketNo: '4862343302', debit: 0, credit: 1906.7, balance: 0 },
+      { section: 'TICKET', date: '2026-10-07', document: 'INV264666', airline: '065', ticketNo: '4862405611', debit: 827, credit: 0, balance: 0 },
+      { section: 'TICKET', date: '2026-10-09', document: 'RFD260583', airline: '065', ticketNo: '4862405611', debit: 0, credit: 586.5, balance: 0 },
+      { section: 'TICKET', date: '2026-10-07', document: 'INV264666', airline: '065', ticketNo: '4862405625', debit: 185, credit: 0, balance: 0 },
+      { section: 'TICKET', date: '2026-10-08', document: 'RFD260589', airline: '065', ticketNo: '4862405625', debit: 0, credit: 570.4, balance: 0 },
+    ],
+  } as typeof st;
+  const ours = [
+    t({ ticketNo: '4862343302', date: '2026-10-06', amount: 1906.7, totalDoc: 1906.7 }),
+    t({ ticketNo: '4862405611', date: '2026-10-07', amount: -586.5, totalDoc: 230, status: 'REFUND' }),
+    t({ ticketNo: '4862405625', date: '2026-10-07', amount: 175, totalDoc: 175 }),
+  ];
+  const r = reviewStatement(mini, 'Ibtekar', ours, []);
+  const by = (k: string) => r.lines.find(c => c.line.ticketNo === k)!;
+  check('a refund we lack is not repriced into the sale', r.reprice.map(p => p.ticketNo), []);
+  check('...it is asked, as a refund to record', [by('4862343302').verdict, /refunds 1906.70 \(RFD260587\).*Record the refund/.test(by('4862343302').why)], ['ASK', true]);
+  check('a sale we lack, beside the refund we hold, is asked as a sale to record',
+        /bills the sale at 827.00 \(INV264666\).*Record the sale/.test(by('4862405611').why), true);
+  check('a refund bigger than its sale is questioned, not recorded',
+        /larger than the sale/.test(by('4862405625').why), true);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

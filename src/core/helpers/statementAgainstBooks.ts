@@ -172,6 +172,17 @@ export function reviewStatement(
   const docLines = st.lines.filter(l => l.section !== 'RECEIPT' && ser(l.ticketNo).length === 10);
   const billed = new Map<string, number>();
   for (const l of docLines) billed.set(ser(l.ticketNo), r2((billed.get(ser(l.ticketNo)) ?? 0) + l.debit - l.credit));
+  /* Its sale and its refund apart, and the documents each came on: a line
+     netted to 10.30 is a 1,917.00 sale and a 1,906.70 refund, not a ticket
+     that costs 10.30. */
+  const parts = new Map<string, { debit: number; credit: number; refundDocs: string[]; saleDocs: string[] }>();
+  for (const l of docLines) {
+    const p = parts.get(ser(l.ticketNo)) ?? { debit: 0, credit: 0, refundDocs: [], saleDocs: [] };
+    p.debit = r2(p.debit + l.debit); p.credit = r2(p.credit + l.credit);
+    if (l.credit > 0 && l.document) p.refundDocs.push(l.document);
+    if (l.debit > 0 && l.document) p.saleDocs.push(l.document);
+    parts.set(ser(l.ticketNo), p);
+  }
 
   const seen = new Set<string>();
   const lines: LineCheck[] = [];
@@ -189,7 +200,23 @@ export function reviewStatement(
     let verdict: LineCheck['verdict'] = 'AGREES', why = '';
     if (!ours.length) { verdict = 'NOT_IN_BOOKS'; why = 'Billed on the statement; we hold no ticket with this number.'; }
     else if (Math.abs(gap) < 0.005) verdict = 'AGREES';
-    else if (ours.length === 1 && (ours[0].amount || 0) > 0 && theirs > 0) {
+    else if ((parts.get(k)?.credit ?? 0) > 0 && !ours.some(t => (t.amount || 0) < 0)) {
+      /* The statement refunds it and we hold no refund. Repricing the sale
+         to the net would bury a refund of 1,906.70 inside a 10.30 ticket. */
+      const p = parts.get(k)!;
+      verdict = 'ASK';
+      why = `The statement refunds ${p.credit.toFixed(2)}${p.refundDocs.length ? ` (${p.refundDocs.join(', ')})` : ''}`
+        + ` against a sale of ${p.debit.toFixed(2)}; our books hold the sale at ${held.toFixed(2)} and no refund.`
+        + (p.credit > p.debit + FEE_FLOOR
+          ? ' The refund is larger than the sale it is written against - ask them which ticket it belongs to before recording it.'
+          : ' Record the refund.');
+    } else if ((parts.get(k)?.debit ?? 0) > 0 && !ours.some(t => (t.amount || 0) > 0)) {
+      const p = parts.get(k)!;
+      verdict = 'ASK';
+      why = `The statement bills the sale at ${p.debit.toFixed(2)}${p.saleDocs.length ? ` (${p.saleDocs.join(', ')})` : ''}`
+        + (p.credit ? ` and refunds ${p.credit.toFixed(2)}` : '')
+        + `; our books hold ${ours.length ? `only the refund (${held.toFixed(2)})` : 'nothing'}. Record the sale.`;
+    } else if (ours.length === 1 && (ours[0].amount || 0) > 0 && theirs > 0) {
       verdict = 'REPRICE';
       why = `The statement bills ${theirs.toFixed(2)}; we hold ${held.toFixed(2)}.`;
     } else {
