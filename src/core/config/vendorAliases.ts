@@ -10,4 +10,5 @@ export const VENDOR_ALIASES: Record<string, string[]> = {
   'rts':         ['rts'],
   'riyadh air':  ['riyadh air', 'riyadhair'],
   'turkish airlines': ['turkish airlines', 'turkish', 'turkishairlines'],
+  'emirates':    ['emirates'],
 };

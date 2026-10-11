@@ -59,4 +59,4 @@ export function teamFixes(rows: FixRow[], expectsNumber: (portal: string) => boo
 }
 
 /** The suppliers whose documents carry an IATA ticket number. */
-export const NUMBERED_SOURCES = new Set(['IATA BSP', 'RTS', 'NSA', 'Ibtekar', 'Gold Medal', 'Turkish Airlines']);
+export const NUMBERED_SOURCES = new Set(['IATA BSP', 'RTS', 'NSA', 'Ibtekar', 'Gold Medal', 'Turkish Airlines', 'Emirates']);

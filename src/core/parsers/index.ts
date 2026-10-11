@@ -5,6 +5,7 @@ import { FlyAdealDXBParser } from './FlyAdealDXBParser';
 import { FlyAdealKSAParser } from './FlyAdealKSAParser';
 import { IbtekarParser } from './IbtekarParser';
 import { IbtekarV2Parser } from './IbtekarV2Parser';
+import { EmiratesParser } from './EmiratesParser';
 import { GoldMedalParser } from './GoldMedalParser';
 import { AirArabiaParser } from './AirArabiaParser';
 import { FlynasParser } from './FlynasParser';
@@ -37,6 +38,8 @@ export const ALL_PARSERS: VendorParser[] = [
   // sales report is checked first: it is the newer format and the more
   // specific signature.
   TurkishAgencySalesParser, TurkishAirlinesParser,
+  // Emirates' own sales report: settled later by the BSP invoice, like Turkish.
+  EmiratesParser,
 ];
 
 /** How far down a file a learned profile's header row is looked for. Generous

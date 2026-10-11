@@ -8,6 +8,8 @@ export function findHeaderRow(rows: string[][], maxSearch = 15): number {
     'ticketnumber', 'docnumber', 'seqno', 'paymentdate', 'recordlocator',
     'lponumber', 'customerno', 'referencecode', 'pnr2', 'invoiceno',
     'fileno', 'debit', 'pnr', 'ticket',
+    // Emirates' sales report: "DocumentNumber", and its first data cell says "Ticket".
+    'documentnumber', 'posdate',
   ];
   for (let i = 0; i < Math.min(rows.length, maxSearch); i++) {
     const rl = rows[i].map(c => (c || '').toLowerCase().replace(/[^a-z0-9]/g, '')).join('|');

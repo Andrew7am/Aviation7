@@ -51,6 +51,7 @@ const PORTALS: { match: RegExp; source: string; choices?: string[] }[] = [
   { match: /iata|bsp/,                    source: 'IATA BSP' },
   { match: /\brts\b/,                     source: 'RTS' },
   { match: /turkish/,                     source: 'Turkish Airlines' },
+  { match: /emirates/,                    source: 'Emirates' },
   { match: /riyadh\s*air/,                source: 'Riyadh Air' },
   { match: /fly\s*dubai/,                 source: 'FlyDubai' },
   { match: /air\s*arabia|\bg9\b/,         source: 'AirArabia' },
