@@ -154,6 +154,30 @@ console.log('\n9. Ibtekar pasted from their site, every line ending in a tab');
   check('the passenger in the passenger column', r.rows[0].passengerName, 'ALMUTAIRI SULTAN SALMAN');
   check('the 1970 one takes its booking\'s date', r.rows.find(t => t.ticketNo === '4862343263')!.date, '2026-10-06');
   check('and nothing dated 1970', r.rows.some(t => (t.date || '').startsWith('1970')), false);
+  check('filed under Ibtekar by its Riyadh office', [...new Set(r.rows.map(t => t.source))], ['Ibtekar']);
+  check('in riyals, as its cells say', [...new Set(r.rows.map(t => t.currency))], ['SAR']);
+}
+
+console.log('\n10. RTS Dubai prints the very same copy - its office says whose it is');
+{
+  // The paste of 2026-10-11: same booking system, same columns, issued from
+  // Dubai (DXBDN38DA) - RTS's, not Ibtekar's.
+  const H = 'Tk Date\tRecLoc\tOfficeID Bk\tOfficeID Tk\tPassenger\tPaxType\tNo\tStatus\tType\tType of issue\tVC\tRoute\tPayment\tFM\tFM equiv.\tTaxes\tMisc. fees\tFare\tFare eq.\tTotal\tNGrandTotal\tGrandTotal\tActions';
+  const rec = (d: string, pnr: string, pax: string, tk: string, pay: string, route: string, taxes: string, fare: string, total: string) =>
+    `${d}\t${pnr}\tDXBAD32AQ\tDXBDN38DA\t${pax}\t\t\n${tk}\t\nissd\tElectron\tBSP\tLH\t${route}\t${pay}\t0\t0.00 AED\t${taxes} AED\t0.00 AED\t481.00 USD\t${fare} AED\t${total} AED\t${total} AED\t${total} AED\t`;
+  const paste = [H,
+    rec('2026-10-09', 'XA65G3', 'ORTKIESE DAVID MICHAEL MR', '220-5513614321', 'CASH', 'CAI-MUC; MUC-LAX', '1550.00', '1770.00', '3320.00'),
+    rec('1970-01-01', 'XA65G3', 'GLENDENNING CAMERON MR', '220-5513614318', 'CASH', 'CAI-MUC; MUC-LAX', '1550.00', '1770.00', '3320.00'),
+    rec('2026-10-09', 'XAB57O', 'HUMPHREY KAMAL DE IRURETAGOYENA MR', '220-5513614314', 'INVC', 'CAI-MUC; MUC-LAX', '1550.00', '1770.00', '3320.00'),
+    rec('2026-10-09', 'XA9LI8', 'BEJARANO EDUARDO MR', '220-5513614313', 'INVC', 'CAI-FRA; FRA-LAS', '1590.00', '1750.00', '3340.00'),
+  ].join('\n') + '\n';
+  const r = runParser(parseGrid(paste).rows, undefined, 'SAR', 'pasted');
+  check('four tickets read', r.rows.map(t => t.ticketNo), ['5513614321', '5513614318', '5513614314', '5513614313']);
+  check('filed under RTS, not Ibtekar', [...new Set(r.rows.map(t => t.source))], ['RTS']);
+  check('in dirhams, as its cells say - not the screen\'s riyals', [...new Set(r.rows.map(t => t.currency))], ['AED']);
+  check('at their grand totals', r.rows.map(t => t.amount), [3320, 3320, 3320, 3340]);
+  check('the 1970 one takes its booking\'s date', r.rows[1].date, '2026-10-09');
+  check('Lufthansa\'s code from the ticket', r.rows[0].airlineCode, '220');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

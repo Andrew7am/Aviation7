@@ -13,7 +13,23 @@ import { parseDate } from '../helpers/parseDate';
  *
  * Distinct headers we key on: "Tk Date" + "RecLoc" + "GrandTotal" — none of
  * which appear in the legacy Ibtekar sheet or any other vendor's export.
+ *
+ * Except RTS Dubai's: the same booking system prints the same copy for them,
+ * column for column. The office that issued the ticket is the difference -
+ * "OfficeID Tk" reads RUH… for Ibtekar in Riyadh (RUHS2234T) and DXB… for RTS
+ * in Dubai (DXBDN38DA) - so each row is filed under the vendor its office
+ * belongs to, and priced in the currency its own money cells state.
  */
+export function vendorForOffice(office: string): '' | 'Ibtekar' | 'RTS' {
+  const o = (office || '').trim().toUpperCase();
+  if (o.startsWith('RUH')) return 'Ibtekar';
+  if (o.startsWith('DXB')) return 'RTS';
+  return '';
+}
+
+/** "3320.00 AED" -> "AED". */
+const currencyIn = (raw: string) => (/\b(SAR|AED|USD|EUR|EGP)\b/i.exec(raw || '')?.[1] ?? '').toUpperCase();
+
 export const IbtekarV2Parser: VendorParser = {
   id: 'IBTEKAR_V2',
   // The same vendor as the legacy sheet, not a second one. `name` becomes the
@@ -49,6 +65,9 @@ export const IbtekarV2Parser: VendorParser = {
     const iFare = col(headers, 'Fare eq.', 'Fare');
     const iTaxes = col(headers, 'Taxes');
     const iExplicitReq = findExplicitReqColumn(headers);
+    const iOfficeTk = col(headers, 'OfficeID Tk', 'Office ID Tk', 'OfficeIDTk');
+    const iOfficeBk = col(headers, 'OfficeID Bk', 'Office ID Bk', 'OfficeIDBk');
+    const offices = new Set<string>();
 
     if (iTicket === -1 || iStatus === -1 || iGrand === -1) {
       errors.push('Ibtekar (New): required columns missing (No / Status / GrandTotal).');
@@ -137,6 +156,12 @@ export const IbtekarV2Parser: VendorParser = {
       const req = resolveReq(iExplicitReq !== -1 ? cell(row, iExplicitReq) : '');
       if (!req && !isVoid) warnings.push(`Ticket ${tkClean}: Missing Req Num`);
 
+      // The issuing office decides the vendor; the booking office stands in
+      // when a copy leaves the issuing one out.
+      const office = (iOfficeTk !== -1 ? cell(row, iOfficeTk) : '') || (iOfficeBk !== -1 ? cell(row, iOfficeBk) : '');
+      const vendor = vendorForOffice(office);
+      if (office) offices.add(office.trim().toUpperCase());
+
       result.push({
         ticketNo: tkClean,
         pnr: pnrClean(cell(row, iPNR)),
@@ -150,9 +175,18 @@ export const IbtekarV2Parser: VendorParser = {
         reqNum: req,
         vendorReference: cell(row, iPNR),
         status,
-        currency: defaultCurrency,
+        currency: (currencyIn(cell(row, iGrand)) || defaultCurrency) as typeof defaultCurrency,
+        ...(vendor ? { source: vendor } : {}),
       });
     });
+
+    // Said on the preview, because the screen's vendor box may say Ibtekar.
+    const dubai = [...offices].filter(o => vendorForOffice(o) === 'RTS');
+    if (dubai.length)
+      warnings.push(`Issued from Dubai (${dubai.join(', ')}): ${result.filter(r => r.source === 'RTS').length} ticket(s) filed under RTS, not Ibtekar.`);
+    const unknown = [...offices].filter(o => !vendorForOffice(o));
+    if (unknown.length)
+      warnings.push(`Office ${unknown.join(', ')} is neither Ibtekar's (RUH) nor RTS's (DXB) - those rows take the vendor chosen on the import screen.`);
 
     return { rows: result, errors, warnings };
   },

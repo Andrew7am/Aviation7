@@ -157,7 +157,10 @@ export function useImport(userId: string) {
         cabinClass:      r.cabinClass,
         cabinRaw:        r.cabinRaw,
         relatedTicket:   r.relatedTicket,
-        reportName:      reportName || defaultSource || routedVendor || parserName,
+        // A row that names its own vendor came from that vendor's report:
+        // RTS Dubai's copy is the very same page as Ibtekar's, and the
+        // vendor picked on the screen is not proof of which one it was.
+        reportName:      r.source || reportName || defaultSource || routedVendor || parserName,
         importTime:      new Date().toISOString(),
         isDuplicate:     false,
         userId:          'temp',
@@ -241,7 +244,7 @@ export function useImport(userId: string) {
       /* What this report says about rows we recorded from their sheet or by
          hand: the same amount confirms them; a different one is said here,
          before the import, because one of the two records is wrong. */
-      const proofBy = reportName || routedVendor || parserName;
+      const proofBy = routedVendor || reportName || parserName;
       const proof = confirmationsFrom(realTkts, existingFromDB, proofBy);
       const fix = correctionsFrom(proof.differ, proofBy);
       const proofWarnings = [
@@ -280,9 +283,9 @@ export function useImport(userId: string) {
   /** Build the meta object handleImport needs, once the user confirms */
   const buildMeta = useCallback((defaultSource: string): ImportMeta | null => {
     if (!preview) return null;
-    const vendor = defaultSource === 'Auto-detect'
-      ? (preview.routedVendor || preview.parserName)
-      : defaultSource;
+    // The file's own statement of its vendor wins over the screen's choice.
+    const vendor = preview.routedVendor
+      || (defaultSource === 'Auto-detect' ? preview.parserName : defaultSource);
     return {
       parserName: preview.parserName,
       confidence: preview.confidence,
