@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Ticket } from '../types';
 import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown, FolderOpen, Copy } from 'lucide-react';
 import { writeClipboard } from '../utils/clipboard';
@@ -30,21 +30,22 @@ import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers
 interface TicketTableProps {
   tickets: Ticket[];
   title: string;
-  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED';
+  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED' | 'VOIDS' | 'FREE_REISSUE';
   /** Opens the table already narrowed to a closure state, so a view can be
    *  "the outstanding list" without the user having to find the dropdown. */
   defaultClosed?: 'ALL' | 'CLOSED' | 'NOT_CLOSED';
   /**
-   * The cancelled documents, for search only.
+   * The cancelled documents, listed among the tickets as rows of their own.
    *
-   * They are deliberately not rows in this table — a void is in no balance
-   * and no request, and mixing one in would put a document worth nothing
-   * into every total on screen. But a search that finds nothing when the
-   * document exists is worse than useless: it says the ticket was never
-   * ours, when in fact it was issued and cancelled. So the search says so,
-   * without the row joining the list.
+   * They are still not in the ledger: a void is in no balance and no
+   * request, so its row is read-only, carries 0.00, and stays out of every
+   * total, count and bulk action on screen - those are all worked off the
+   * ledger rows alone. The team asked to see them in the list all the same:
+   * a ticket missing from it reads as never issued, when it was issued and
+   * cancelled.
    */
-  voids?: { ticketNo: string; pnr?: string; passengerName?: string; date: string; period?: string }[];
+  voids?: { id?: string; ticketNo: string; pnr?: string; passengerName?: string; date: string; period?: string;
+            source?: string; airlineCode?: string; currency?: string; reportName?: string }[];
   /**
    * Tickets whose money moved after they were closed, keyed by ticket id.
    *
@@ -376,13 +377,58 @@ const CabinBadge: React.FC<{ cabin?: string; raw?: string }> = ({ cabin, raw }) 
   );
 };
 
+/**
+ * A cancelled document, listed among the tickets. Read-only and greyed: it
+ * is in no balance and no request, so nothing on it opens an editor and it
+ * has no closure state to flip.
+ */
+const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean }> = ({ ticket, withDelete }) => {
+  const dash = <span className="text-slate-300">—</span>;
+  return (
+    <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-400"
+        title="Voided at the supplier - not in the ledger, no balance or total counts it. Kept on the Voids screen.">
+      <td className="px-3 py-2">{dash}</td>
+      <td className="px-3 py-2 text-center">
+        {ticket.airlineCode
+          ? <span className="font-mono font-black text-[11px] bg-slate-100 px-1.5 py-0.5 rounded">{ticket.airlineCode}</span>
+          : dash}
+      </td>
+      <td className="px-3 py-2 font-bold select-all whitespace-nowrap line-through decoration-slate-300">{ticket.ticketNo}</td>
+      <td className="px-3 py-2">
+        <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold uppercase opacity-60 ${getSourceColor(ticket.source || '')}`}>
+          {ticket.source || 'UNKNOWN'}
+        </span>
+      </td>
+      <td className="px-3 py-2">
+        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600">VOID</span>
+      </td>
+      <td className="px-3 py-2 whitespace-nowrap">{ticket.date || dash}</td>
+      <td className="px-3 py-2">{dash}</td>
+      <td className="px-3 py-2">{dash}</td>
+      <td className="px-3 py-2">{dash}</td>
+      <td className="px-3 py-2">{dash}</td>
+      <td className="px-3 py-2">{dash}</td>
+      <td className="px-3 py-2 font-bold">0.00</td>
+      <td className="px-3 py-2">{dash}</td>
+      <td className="px-3 py-2 text-[9px] font-bold">{ticket.currency || ''}</td>
+      <td className="px-3 py-2">{ticket.pnr || dash}</td>
+      <td className="px-3 py-2 max-w-[140px]"><span className="block truncate">{ticket.passengerName || dash}</span></td>
+      <td className="px-3 py-2">{dash}</td>
+      <td className="px-3 py-2 font-mono text-[10px] whitespace-nowrap">{ticket.vendorReference || dash}</td>
+      <td className="px-3 py-2 font-bold text-[9px]">VOIDED</td>
+      <td className="px-3 py-2">{dash}</td>
+      {withDelete && <td className="px-3 py-2" />}
+    </tr>
+  );
+};
+
 export const TicketTable: React.FC<TicketTableProps> = ({
   tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, exchanges = [], onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const chainIdx = useMemo(() => chainIndex(exchanges), [exchanges]);
   const [filterMode, setFilterMode] =
-    useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED'>(defaultFilter);
+    useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED' | 'VOIDS' | 'FREE_REISSUE'>(defaultFilter);
   // Vendors are multi-select: comparing NSA against IATA, or a handful of
   // portals at once, is the normal reconciliation question. Empty = every
   // vendor, so the filter starts out of the way.
@@ -446,8 +492,35 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     return () => document.removeEventListener('mousedown', onDown);
   }, [showSources]);
 
+  /** A reissue at no charge: 0.00 because the fare is on the ticket it
+   *  replaced. Read off the transaction type, or off the reissue register -
+   *  the ones imported before the type was kept say ISSUE. */
+  const isFreeReissue = useCallback((t: Ticket) =>
+    !t.amount && !/^(VOID|FUND|EMDS?)$/i.test(t.status || '')
+    && ((t.transactionType || '').toUpperCase() === 'REISSUE'
+        || chainOf((t.ticketNo || '').replace(/\D/g, '').slice(-10), chainIdx).position > 0),
+  [chainIdx]);
+
+  const sortRows = useCallback((rows: Ticket[]) => {
+    if (!sortKey) return rows;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return rows.sort((a, b) => {
+      // Blanks always sink to the bottom regardless of direction — a row
+      // with no date or no serial is missing data, not "the earliest", and
+      // flipping the arrow shouldn't parade it to the top.
+      const av = sortValue(a, sortKey), bv = sortValue(b, sortKey);
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return av < bv ? -dir : av > bv ? dir : 0;
+    });
+  }, [sortKey, sortDir]);
+
   const filtered = useMemo(() => {
     const rows = tickets.filter(t => {
+      // Voids are rows of their own (voidShown below), never ledger rows.
+      if (filterMode === 'VOIDS') return false;
+      if (filterMode === 'FREE_REISSUE' && !isFreeReissue(t)) return false;
       if (filterMode === 'NEED_REQ' && (t.reqNum || t.status === 'FUND')) return false;
       if (filterMode === 'DUPLICATE' && !t.isDuplicate) return false;
       if (filterMode === 'ADJUSTED' && t.adjustment == null) return false;
@@ -509,21 +582,53 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       }
       return true;
     });
-    if (sortKey) {
-      const dir = sortDir === 'asc' ? 1 : -1;
-      rows.sort((a, b) => {
-        // Blanks always sink to the bottom regardless of direction — a row
-        // with no date or no serial is missing data, not "the earliest", and
-        // flipping the arrow shouldn't parade it to the top.
-        const av = sortValue(a, sortKey), bv = sortValue(b, sortKey);
-        if (av === null && bv === null) return 0;
-        if (av === null) return 1;
-        if (bv === null) return -1;
-        return av < bv ? -dir : av > bv ? dir : 0;
-      });
-    }
-    return rows;
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+    return sortRows(rows);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortRows, isFreeReissue]);
+
+  /** The voids, shaped as rows so they sort and page with the tickets. */
+  const voidRows = useMemo(() => voids.map((v, i): Ticket => ({
+    id: `void:${v.id ?? i}`, ticketNo: v.ticketNo, source: v.source || '', date: v.date || '',
+    amount: 0, commission: 0, totalDoc: 0, reqNum: '', pnr: v.pnr || '', passengerName: v.passengerName || '',
+    airlineCode: v.airlineCode || '', status: 'VOID', currency: (v.currency || undefined) as Ticket['currency'],
+    reportName: v.reportName || '', vendorReference: v.period || '', userId: '',
+  })), [voids]);
+
+  /** The voids the screen's filters let through. Only under All or Voids:
+   *  every other view asks something of ledger rows (a missing req, a
+   *  closure state, a cabin) that a void has no answer to. */
+  const voidShown = useMemo(() => {
+    if (filterMode !== 'ALL' && filterMode !== 'VOIDS') return [];
+    if (closedFilter !== 'ALL' || travelFilter !== 'ALL' || cabinFilter !== 'ALL' || officeFilter !== 'ALL') return [];
+    return voidRows.filter(t => {
+      if (sourceSel.length > 0 && !sourceSel.includes(t.source)) return false;
+      if (dateFrom || dateTo) {
+        const d = t.date || '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+        if (dateFrom && d < dateFrom) return false;
+        if (dateTo   && d > dateTo)   return false;
+      }
+      if (filterTicket) {
+        const q = ticketMatchKey(filterTicket);
+        if (!q || !t.ticketNo.toUpperCase().includes(q)) return false;
+      }
+      if (filterAL  && !(t.airlineCode || '').toLowerCase().includes(filterAL.toLowerCase())) return false;
+      if (filterPax && !(t.passengerName || '').toLowerCase().includes(filterPax.toLowerCase())) return false;
+      if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
+      if (searchTerm) {
+        const hay = `${t.ticketNo} ${t.pnr} ${t.source} ${t.passengerName} void`.toLowerCase();
+        if (!hay.includes(searchTerm.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [voidRows, filterMode, closedFilter, travelFilter, cabinFilter, officeFilter, sourceSel, dateFrom, dateTo, filterTicket, filterAL, filterPax, filterPNR, searchTerm]);
+
+  /** What the table lists: the ledger rows, then the voids - or the two
+   *  merged when a column is sorted. */
+  const shown = useMemo(
+    () => voidShown.length ? sortRows([...filtered, ...voidShown]) : filtered,
+    [filtered, voidShown, sortRows]);
+  const isVoidLine = (t: Ticket) => t.id.startsWith('void:');
+  const freeReissueCount = useMemo(() => tickets.filter(isFreeReissue).length, [tickets, isFreeReissue]);
 
   /* Only while something is being searched for. A standing list of every
      void under the ledger would be a second table nobody asked for. */
@@ -538,10 +643,10 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
   useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const paged = useMemo(
-    () => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
-    [filtered, page]
+    () => shown.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [shown, page]
   );
 
   // Tickets that will be affected by Find & Replace
@@ -739,7 +844,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       ...(has.closed ? [{ key: 'Closed', get: (t: Ticket) => t.closed ? 'Closed' : 'Not Closed', w: 11 }] : []),
     ];
 
-    const data = filtered.map(t => Object.fromEntries(cols.map(c => [c.key, c.get(t)])));
+    // The voids listed go out too, as VOID at 0.00 - and stay out of the totals.
+    const out = shown;
+    const data = out.map(t => Object.fromEntries(cols.map(c => [c.key, isVoidLine(t) && c.key === 'Closed' ? '' : c.get(t)])));
     const ws = XLSX.utils.json_to_sheet(data, { header: cols.map(c => c.key) });
 
     // Presentation: sized columns so nothing shows as ####, a filter dropdown
@@ -747,12 +854,12 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     // (negatives in red brackets) so refunds stand out while reviewing.
     ws['!cols'] = cols.map(c => ({ wch: c.w }));
     const lastCol = XLSX.utils.encode_col(cols.length - 1);
-    ws['!autofilter'] = { ref: `A1:${lastCol}${filtered.length + 1}` };
+    ws['!autofilter'] = { ref: `A1:${lastCol}${out.length + 1}` };
     // (No freeze-pane line here: this build of SheetJS writes no <pane>
     //  element, so setting !freeze would look like it worked and do nothing.)
     cols.forEach((c, ci) => {
       if (!c.money) return;
-      for (let r = 1; r <= filtered.length; r++) {
+      for (let r = 1; r <= out.length; r++) {
         const cell = ws[XLSX.utils.encode_cell({ c: ci, r })];
         if (cell && typeof cell.v === 'number') cell.z = '#,##0.00;[Red](#,##0.00)';
       }
@@ -783,6 +890,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     }
     block.push([]);
     block.push(['Total tickets', filtered.length]);
+    if (voidShown.length) block.push(['Voids listed (not in the ledger)', voidShown.length]);
     // The label names the exact filter this export was taken under, so a
     // saved file still says what it was a report OF weeks later.
     block.push(['Report filter', filenameForFilter().replace(/_/g, ' ')]);
@@ -1131,7 +1239,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       {/* Says what landed on the clipboard, not just that something did — a
           click near a cell edge could otherwise copy the neighbour without
           anyone noticing. */}
-      {voidHits.length > 0 && (
+      {voidHits.length > 0 && filterMode !== 'ALL' && filterMode !== 'VOIDS' && (
         <div className="mx-4 mt-3 bg-slate-100 border border-slate-300 rounded-lg px-3 py-2
                         text-[11px] text-slate-700 flex items-start gap-2">
           <Ban className="w-3.5 h-3.5 mt-px shrink-0 text-slate-500" />
@@ -1306,6 +1414,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             {unconfirmedCount > 0 && (
               <option value="UNCONFIRMED">Not confirmed by supplier ({unconfirmedCount})</option>
             )}
+            {voids.length > 0 && <option value="VOIDS">Voids ({voids.length})</option>}
+            {freeReissueCount > 0 && <option value="FREE_REISSUE">Free reissues ({freeReissueCount})</option>}
           </select>
 
           {/* Domestic / International — read off the itinerary, so a ticket
@@ -1569,6 +1679,11 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           pipe at the start of a wrapped line reads as a typo. */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-[10px] font-mono text-slate-500">
         <span>{filtered.length} tickets</span>
+        {voidShown.length > 0 && (
+          <span className="text-slate-400" title="Listed for reference: a void is in no balance, total or count here">
+            + {voidShown.length} void{voidShown.length === 1 ? '' : 's'}
+          </span>
+        )}
         <span className="text-slate-300 hidden sm:inline">|</span>
         {totalsByCurrency.map(([cur, t], i) => (
           <React.Fragment key={cur}>
@@ -1662,6 +1777,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               eighteen near-identical handlers. */}
           <tbody className="text-xs font-mono" onClick={handleCellClick}>
             {paged.map(ticket => {
+              if (isVoidLine(ticket)) return <VoidLine key={ticket.id} ticket={ticket} withDelete={!!onDelete} />;
               const rowCurrency = ticketCurrency(ticket);
               return (
                 <tr key={ticket.id} className={`border-b border-slate-100 hover:bg-slate-50 ${!ticket.reqNum ? 'bg-red-50/20' : ''}`}>
@@ -1706,7 +1822,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     {/* A reissue at no charge: 0.00 here because the fare
                         is on the ticket it replaced. Said, so a zero row
                         does not read as a price nobody entered. */}
-                    {(ticket.transactionType || '').toUpperCase() === 'REISSUE' && !ticket.amount && (() => {
+                    {isFreeReissue(ticket) && (() => {
                       const own = (ticket.ticketNo || '').replace(/\D/g, '').slice(-10);
                       const c = chainOf(own, chainIdx);
                       const before = c.position > 0 ? c.documents[c.position - 1] : '';
@@ -1951,7 +2067,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                 </tr>
               );
             })}
-            {filtered.length === 0 && (
+            {shown.length === 0 && (
               <tr>
                 <td colSpan={onDelete ? 18 : 17} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
                   No tickets found matching your filters.
@@ -1965,7 +2081,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-white border-t border-slate-200 text-[10px] font-mono text-slate-500">
-          <span>Page {page + 1} of {totalPages} · showing {paged.length} of {filtered.length}</span>
+          <span>Page {page + 1} of {totalPages} · showing {paged.length} of {shown.length}</span>
           <div className="flex items-center gap-1">
             <button onClick={() => setPage(0)} disabled={page === 0} className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-30">«</button>
             <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-30">‹ Prev</button>

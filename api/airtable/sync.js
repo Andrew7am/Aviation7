@@ -1635,11 +1635,14 @@ function noticesFor(rows, changes, ledger) {
   }
   return out;
 }
-function missingRefunds(rows, index) {
+var REFUND_NOTICES_FROM = "2026-09-30T21:00:00Z";
+function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
   const out = [];
   const seen = /* @__PURE__ */ new Set();
+  const since = Date.parse(from);
   for (const r of rows) {
     if (!/refund/i.test(r.status || "")) continue;
+    if (!(Date.parse(r.created_at || "") >= since)) continue;
     for (const s of r.serials) {
       const k = docKey(s);
       if (!k || seen.has(k)) continue;
