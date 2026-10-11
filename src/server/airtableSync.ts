@@ -17,7 +17,7 @@ import {
   AIRTABLE_BASE, AIRTABLE_TICKETS_TABLE, AIRTABLE_NAME_TABLES, normalize, diffRecord, rowsToCsv,
   type AirtableRecord, type AirtableTicketRow, type FieldChange, type NameMap,
 } from '../core/integrations/airtable';
-import { noticesFor, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
+import { noticesFor, missingRefunds, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
 import { parseTeamSheet } from '../core/parsers/teamSheet';
 import { compareTeamSheet } from '../core/helpers/teamSheetCompare';
 import { planSheetAdd } from '../core/helpers/addFromSheet';
@@ -168,7 +168,11 @@ export async function syncAirtable(env: {
       notices = noticesFor(full ? rows : changedRows, changes, ledgerIndex(lite));
 
       // Bought online and in nobody's books: to To Review, like the check would.
-      const all = full ? rows : (await selectAll<AirtableTicketRow>(db, 'airtable_tickets', 'record_id, sheet_row, created_at', q => q.eq('deleted', false)));
+      const all = full ? rows : (await selectAll<AirtableTicketRow>(db, 'airtable_tickets',
+        'record_id, sheet_row, created_at, status, serials, refund_amount, net_cost, currency, req_num', q => q.eq('deleted', false)));
+      // Refunds on their sheet we do not hold, read off the sheet as it stands:
+      // they add a refunded row rather than change the old one.
+      notices.push(...missingRefunds(all, ledgerIndex(lite)));
       all.sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
       const csv = rowsToCsv(all.map(r => r.sheet_row), (d: any) => {
         // A tiny CSV writer: their cells hold quotes, commas and newlines.
@@ -265,6 +269,28 @@ export async function syncAirtable(env: {
         .in('kind', ['NAME', 'CABIN']).eq('state', 'OPEN');
     }
 
+    /* A refund we were told about has arrived - or their sheet no longer
+       refunds it: the notice is answered. Every run, like the waiting
+       tickets below, because the answer comes from a supplier's report. */
+    if (!dry) {
+      const { data: openRefunds } = await db.from('airtable_notifications').select('id, ticket_no, record_id')
+        .eq('kind', 'REFUND_MISSING').eq('state', 'OPEN');
+      if (openRefunds?.length) {
+        const nos = [...new Set(openRefunds.map(n => n.ticket_no))];
+        const { data: lines } = await db.from('tickets').select('ticket_no, amount').lt('amount', 0)
+          .or(nos.map(n => `ticket_no.ilike.%${n}`).join(','));
+        const credited = new Set((lines ?? []).map(t => docKey(t.ticket_no)));
+        const { data: still } = await db.from('airtable_tickets').select('serials, status').eq('deleted', false)
+          .overlaps('serials', nos);
+        const refundedThere = new Set((still ?? []).filter(r => /refund/i.test(r.status ?? '')).flatMap(r => r.serials ?? []));
+        const now = new Date().toISOString();
+        const came = openRefunds.filter(n => credited.has(docKey(n.ticket_no))).map(n => n.id);
+        const gone = openRefunds.filter(n => !credited.has(docKey(n.ticket_no)) && !refundedThere.has(n.ticket_no)).map(n => n.id);
+        if (came.length) await db.from('airtable_notifications').update({ state: 'ACCEPTED', decided_by: 'Airtable sync', decided_at: now }).in('id', came);
+        if (gone.length) await db.from('airtable_notifications').update({ state: 'DISMISSED', decided_by: 'Airtable sync', decided_at: now }).in('id', gone);
+      }
+    }
+
     /* A ticket waiting in To Review because it was in nobody's books, that
        has since arrived with a supplier's report: its question is answered.
        The proposal is closed, and its notice with it. */
@@ -277,8 +303,14 @@ export async function syncAirtable(env: {
         .eq('origin', 'AIRTABLE').eq('state', 'PENDING');
       if (waiting?.length) {
         const nos = [...new Set(waiting.map(w => w.ticket_no).filter(Boolean))];
-        const { data: arrived } = await db.from('tickets').select('ticket_no').in('ticket_no', nos);
-        const have = new Set((arrived ?? []).map(t => docKey(t.ticket_no)));
+        /* Arrived means the document it waits for: a sale waits for a sale.
+           4862405611 waited as a sale of 816.50 and was closed "arrived" when
+           only its refund came in - the sale is still not in our books. */
+        const { data: arrived } = await db.from('tickets').select('ticket_no, amount').in('ticket_no', nos);
+        const sold = new Set((arrived ?? []).filter(t => Number(t.amount) > 0).map(t => docKey(t.ticket_no)));
+        const credited = new Set((arrived ?? []).filter(t => Number(t.amount) < 0).map(t => docKey(t.ticket_no)));
+        const arrivedFor = (w: { ticket_no: string; amount: number | string | null }) =>
+          Number(w.amount) < 0 ? credited.has(docKey(w.ticket_no)) : sold.has(docKey(w.ticket_no));
         // Flyadeal arrives under its PNR - its report has no ticket number.
         const f3 = waiting.filter(w => isFlyadealRow({ portal: w.their_portal }) && w.pnr);
         const f3Pnrs = [...new Set(f3.flatMap(w => String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean)))];
@@ -286,7 +318,7 @@ export async function syncAirtable(env: {
           ? await db.from('tickets').select('pnr').ilike('source', '%flyadeal%').in('pnr', f3Pnrs)
           : { data: [] as { pnr: string }[] };
         const heldPnr = new Set((f3Held ?? []).map(t => String(t.pnr).toUpperCase()));
-        const done = waiting.filter(w => have.has(docKey(w.ticket_no))
+        const done = waiting.filter(w => arrivedFor(w)
           || (f3.includes(w) && String(w.pnr).toUpperCase().split(/[|,/\s]+/).some(p => heldPnr.has(p))));
         const close = async (list: typeof waiting, state: 'CONFIRMED' | 'REJECTED', note: string, noticeState: 'ACCEPTED' | 'DISMISSED') => {
           if (!list.length) return;

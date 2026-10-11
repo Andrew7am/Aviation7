@@ -1635,6 +1635,36 @@ function noticesFor(rows, changes, ledger) {
   }
   return out;
 }
+function missingRefunds(rows, index) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const r of rows) {
+    if (!/refund/i.test(r.status || "")) continue;
+    for (const s of r.serials) {
+      const k = docKey(s);
+      if (!k || seen.has(k)) continue;
+      const ours = index.get(k) ?? [];
+      if (!ours.some((t) => (t.amount || 0) > 0) || ours.some((t) => (t.amount || 0) < 0)) continue;
+      seen.add(k);
+      const amount = r.refund_amount ?? (r.serials.length === 1 ? r.net_cost : null);
+      const src = ours.find((t) => (t.amount || 0) > 0)?.source || "the supplier";
+      const sale = ours.filter((t) => (t.amount || 0) > 0).reduce((n, t) => n + (t.amount || 0), 0);
+      const added = (r.created_at || "").slice(0, 10);
+      out.push({
+        kind: "REFUND_MISSING",
+        dedupe_key: `REFUND_MISSING|${k}`,
+        record_id: r.record_id,
+        ticket_no: k,
+        ticket_ids: ours.map((t) => t.id),
+        req_num: r.req_num || ours[0]?.reqNum || "",
+        title: `Refund not in our books: ${k}${amount != null ? ` \xB7 ${money3(String(amount))} ${r.currency}` : ""}${r.req_num ? ` \xB7 ${r.req_num}` : ""}`,
+        detail: `Their sheet refunds it${added ? ` (row added ${added})` : ""}; our books hold the sale (${money3(String(sale))}) and no refund. A ${src} refund reaches us with ${src}'s report or statement - if it is already on their statement, record it.`,
+        payload: { refund: amount, currency: r.currency, source: src }
+      });
+    }
+  }
+  return out;
+}
 
 // src/core/helpers/conjunction.ts
 var serial2 = (t) => (t || "").replace(/\D/g, "").slice(-10);
@@ -2028,7 +2058,13 @@ async function syncAirtable(env) {
         currency: t.currency
       }));
       notices = noticesFor(full ? rows : changedRows, changes, ledgerIndex(lite));
-      const all = full ? rows : await selectAll(db, "airtable_tickets", "record_id, sheet_row, created_at", (q) => q.eq("deleted", false));
+      const all = full ? rows : await selectAll(
+        db,
+        "airtable_tickets",
+        "record_id, sheet_row, created_at, status, serials, refund_amount, net_cost, currency, req_num",
+        (q) => q.eq("deleted", false)
+      );
+      notices.push(...missingRefunds(all, ledgerIndex(lite)));
       all.sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")));
       const csv = rowsToCsv(all.map((r) => r.sheet_row), (d) => {
         const q = (v) => /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
@@ -2157,16 +2193,33 @@ async function syncAirtable(env) {
       if (!dry) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("kind", ["NAME", "CABIN"]).eq("state", "OPEN");
     }
     if (!dry) {
+      const { data: openRefunds } = await db.from("airtable_notifications").select("id, ticket_no, record_id").eq("kind", "REFUND_MISSING").eq("state", "OPEN");
+      if (openRefunds?.length) {
+        const nos = [...new Set(openRefunds.map((n) => n.ticket_no))];
+        const { data: lines } = await db.from("tickets").select("ticket_no, amount").lt("amount", 0).or(nos.map((n) => `ticket_no.ilike.%${n}`).join(","));
+        const credited = new Set((lines ?? []).map((t) => docKey(t.ticket_no)));
+        const { data: still } = await db.from("airtable_tickets").select("serials, status").eq("deleted", false).overlaps("serials", nos);
+        const refundedThere = new Set((still ?? []).filter((r) => /refund/i.test(r.status ?? "")).flatMap((r) => r.serials ?? []));
+        const now2 = (/* @__PURE__ */ new Date()).toISOString();
+        const came = openRefunds.filter((n) => credited.has(docKey(n.ticket_no))).map((n) => n.id);
+        const gone = openRefunds.filter((n) => !credited.has(docKey(n.ticket_no)) && !refundedThere.has(n.ticket_no)).map((n) => n.id);
+        if (came.length) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: now2 }).in("id", came);
+        if (gone.length) await db.from("airtable_notifications").update({ state: "DISMISSED", decided_by: "Airtable sync", decided_at: now2 }).in("id", gone);
+      }
+    }
+    if (!dry) {
       const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, pnr, their_portal, their_cell, dedupe, amount, currency, their_cost, req_num, their_req").eq("origin", "AIRTABLE").eq("state", "PENDING");
       if (waiting?.length) {
         const nos = [...new Set(waiting.map((w) => w.ticket_no).filter(Boolean))];
-        const { data: arrived } = await db.from("tickets").select("ticket_no").in("ticket_no", nos);
-        const have = new Set((arrived ?? []).map((t) => docKey(t.ticket_no)));
+        const { data: arrived } = await db.from("tickets").select("ticket_no, amount").in("ticket_no", nos);
+        const sold = new Set((arrived ?? []).filter((t) => Number(t.amount) > 0).map((t) => docKey(t.ticket_no)));
+        const credited = new Set((arrived ?? []).filter((t) => Number(t.amount) < 0).map((t) => docKey(t.ticket_no)));
+        const arrivedFor = (w) => Number(w.amount) < 0 ? credited.has(docKey(w.ticket_no)) : sold.has(docKey(w.ticket_no));
         const f3 = waiting.filter((w) => isFlyadealRow({ portal: w.their_portal }) && w.pnr);
         const f3Pnrs = [...new Set(f3.flatMap((w) => String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean)))];
         const { data: f3Held } = f3Pnrs.length ? await db.from("tickets").select("pnr").ilike("source", "%flyadeal%").in("pnr", f3Pnrs) : { data: [] };
         const heldPnr = new Set((f3Held ?? []).map((t) => String(t.pnr).toUpperCase()));
-        const done = waiting.filter((w) => have.has(docKey(w.ticket_no)) || f3.includes(w) && String(w.pnr).toUpperCase().split(/[|,/\s]+/).some((p) => heldPnr.has(p)));
+        const done = waiting.filter((w) => arrivedFor(w) || f3.includes(w) && String(w.pnr).toUpperCase().split(/[|,/\s]+/).some((p) => heldPnr.has(p)));
         const close = async (list, state, note, noticeState) => {
           if (!list.length) return;
           await db.from("pending_tickets").update({ state, review_note: note }).in("id", list.map((w) => w.id));

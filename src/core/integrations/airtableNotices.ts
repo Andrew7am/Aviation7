@@ -10,6 +10,7 @@
  *   REFUND       their sheet refunded a ticket we hold        -> look; the supplier's report credits it
  *   VOID         their sheet voided a ticket we hold          -> look
  *   PRICE        their cost on a ticket we hold changed       -> look; the supplier's figure stands
+ *   REFUND_MISSING  their sheet refunds a ticket we hold, our books have no refund -> wait for it, or record it
  *
  * Names and cabins are offered only where the row is one passenger for
  * certain - one document, or a conjunction pair - because their row carries
@@ -19,7 +20,8 @@ import type { AirtableTicketRow, FieldChange } from './airtable';
 import { reqParts } from '../helpers/teamSheetCompare';
 import { cleanPax } from '../parsers/shared';
 
-export type NoticeKind = 'REQ_CHANGED' | 'NAME' | 'CABIN' | 'REFUND' | 'VOID' | 'PRICE' | 'ONLINE_TICKET' | 'NOT_IN_BOOKS';
+export type NoticeKind = 'REQ_CHANGED' | 'NAME' | 'CABIN' | 'REFUND' | 'VOID' | 'PRICE' | 'ONLINE_TICKET' | 'NOT_IN_BOOKS'
+  | 'REFUND_MISSING';
 
 export interface Notice {
   kind: NoticeKind;
@@ -137,6 +139,48 @@ export function noticesFor(
       title: `Cost changed on their sheet: ${label} · ${money(price.old)} → ${money(String(r.net_cost))} ${r.currency}`,
       detail: `We hold ${ours.map(t => `${money(String(t.amount ?? 0))} ${t.currency || ''}`.trim()).join(' / ')}. The supplier's figure is the one paid - nothing changes unless you correct it.`,
       payload: { from: price.old, to: r.net_cost } });
+  }
+  return out;
+}
+
+/**
+ * Refunds on their sheet that our books do not hold.
+ *
+ * The team rarely changes a row's status to refunded: they add a second row,
+ * "Cancelled/Refunded", beside the Issued one. Nothing on the old row moved,
+ * so the change-driven REFUND notice above never fired - 4862343302's
+ * 1,906.70 and 4862343309's 966.00, added on 9 October, reached Ibtekar's
+ * statement two days later without anybody here being told. This reads the
+ * sheet as it stands instead: every refunded row whose ticket we hold as a
+ * sale with no refund against it is a notice, until the refund arrives.
+ *
+ * A ticket we do not hold at all is NOT_IN_BOOKS's question, not this one.
+ */
+export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, LedgerLite[]>): Notice[] {
+  const out: Notice[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (!/refund/i.test(r.status || '')) continue;
+    for (const s of r.serials) {
+      const k = docKey(s);
+      if (!k || seen.has(k)) continue;
+      const ours = index.get(k) ?? [];
+      if (!ours.some(t => (t.amount || 0) > 0) || ours.some(t => (t.amount || 0) < 0)) continue;
+      seen.add(k);
+      const amount = r.refund_amount ?? (r.serials.length === 1 ? r.net_cost : null);
+      const src = ours.find(t => (t.amount || 0) > 0)?.source || 'the supplier';
+      const sale = ours.filter(t => (t.amount || 0) > 0).reduce((n, t) => n + (t.amount || 0), 0);
+      const added = (r.created_at || '').slice(0, 10);
+      out.push({
+        kind: 'REFUND_MISSING', dedupe_key: `REFUND_MISSING|${k}`, record_id: r.record_id, ticket_no: k,
+        ticket_ids: ours.map(t => t.id), req_num: r.req_num || ours[0]?.reqNum || '',
+        title: `Refund not in our books: ${k}${amount != null ? ` · ${money(String(amount))} ${r.currency}` : ''}${r.req_num ? ` · ${r.req_num}` : ''}`,
+        detail: `Their sheet refunds it${added ? ` (row added ${added})` : ''}; our books hold the sale (${money(String(sale))})`
+          + ` and no refund. A ${src} refund reaches us with ${src}'s report or statement - if it is already on`
+          + ' their statement, record it.',
+        payload: { refund: amount, currency: r.currency, source: src },
+      });
+    }
   }
   return out;
 }

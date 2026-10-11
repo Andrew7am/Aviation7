@@ -4,7 +4,7 @@
  *   npx tsx scripts/test-airtable.ts
  */
 import { sheetTime, toSheetRow, normalize, diffRecord, rowsToCsv, type AirtableTicketRow } from '../src/core/integrations/airtable';
-import { noticesFor, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
+import { noticesFor, missingRefunds, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
 import { teamFixes } from '../src/core/integrations/airtableFixes';
 import { requestsFor } from '../src/core/integrations/airtableRequests';
@@ -141,6 +141,26 @@ console.log('\n8. Names, cabins and routes we lack are filled, by number, withou
   check('no name from a cell of two tickets', fills({}, [live({ serials: ['5513427739', '5513427740'], ticket_cell: '065-5513427739\n065-5513427740' })]).map(f => f[0]), ['cabin_class', 'route']);
   check('two rows giving two cabins: none', fills({}, [live({}), live({ cabin: 'Business' })]).map(f => f[0]), ['passenger_name', 'route']);
   check('never by booking: a ticket their sheet does not name gets nothing', fills({ ticketNo: '5513427799' }, [live({})]), []);
+}
+
+console.log('\n7. A refund added as a row of its own still reaches the bell');
+{
+  /* 4862343302: the team added a Cancelled/Refunded row beside the Issued
+     one on 9 October. Nothing on the old row changed, so no notice was
+     raised, and the 1,906.70 surfaced on Ibtekar's statement instead. */
+  const r = (o: any) => ({ record_id: 'x', sheet_row: {}, ticket_cell: '065-4862343302', serials: ['4862343302'], pnr: 'ABCDEF',
+    status: 'Issued', req_num: 'KSAML2731', net_cost: 1917, currency: 'SAR', refund_amount: null, issued_at: null, client_name: '',
+    cabin: '', portal: 'Ibtkar RUH', airline: '', team_member: '', old_ticket: '', old_pnr: '', created_at: '2026-10-09T11:45:00Z',
+    last_modified: null, ...o });
+  const rows = [r({ record_id: 'a' }), r({ record_id: 'b', status: 'Cancelled/Refunded', net_cost: 1906.7, refund_amount: 1906.7 })];
+  const sale = { id: 't1', ticketNo: '4862343302', amount: 1906.7, source: 'Ibtekar', reqNum: 'KSAML2731' };
+  const n = missingRefunds(rows as any, ledgerIndex([sale]));
+  check('raised', n.map(x => [x.kind, x.ticket_no, x.dedupe_key]), [['REFUND_MISSING', '4862343302', 'REFUND_MISSING|4862343302']]);
+  check('with the amount and the request', /1,906.70 SAR · KSAML2731/.test(n[0].title), true);
+  check('not once the refund is in our books',
+        missingRefunds(rows as any, ledgerIndex([sale, { id: 't2', ticketNo: '4862343302', amount: -1906.7, source: 'Ibtekar' }])).length, 0);
+  check('not for a ticket we do not hold (that is "not in our books")', missingRefunds(rows as any, ledgerIndex([])).length, 0);
+  check('not for a row that is not refunded', missingRefunds([rows[0]] as any, ledgerIndex([sale])).length, 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
