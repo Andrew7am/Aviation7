@@ -50,7 +50,8 @@ import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { summariseVendor } from './core/helpers/statementMath';
 import type { Reprice } from './core/helpers/statementAgainstBooks';
 import { AirtableService, type AirtableNotice, type SyncState } from './services/AirtableService';
-import { companyIndex, companyOf, type CompanyRow } from './core/helpers/companies';
+import { companyIndex, companyOf, type CompanyRow, type CompanyAssignment } from './core/helpers/companies';
+import { CompanyService } from './services/CompanyService';
 import { AirtableBell, NEEDS_APPROVAL } from './components/AirtableBell';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
@@ -288,7 +289,22 @@ function MainApp({ user }: { user: User }) {
     airtable.companyRows().then(setCompanyRows).catch(e => console.error('companies', e))
       .finally(() => setCompaniesLoading(false));
   }, [airtable]);
-  const companyIdx = React.useMemo(() => companyIndex(companyRows), [companyRows]);
+  const companySvc = React.useMemo(() => new CompanyService(), []);
+  const [companyAssignments, setCompanyAssignments] = useState<CompanyAssignment[]>([]);
+  const loadAssignments = React.useCallback(() =>
+    companySvc.assignments().then(setCompanyAssignments).catch(e => console.error('company assignments', e)), [companySvc]);
+  useEffect(() => { loadAssignments(); }, [loadAssignments]);
+  const assignCompany = async (req: string, company: string) => {
+    await companySvc.assign(req, company, user.email ?? '');
+    importSvc.audit('UPDATE_REQ', req, `Request placed under company: ${company}`);
+    await loadAssignments();
+  };
+  const unassignCompany = async (req: string) => {
+    await companySvc.unassign(req);
+    importSvc.audit('UPDATE_REQ', req, 'Request taken back from its company');
+    await loadAssignments();
+  };
+  const companyIdx = React.useMemo(() => companyIndex(companyRows, companyAssignments), [companyRows, companyAssignments]);
   const companyFn = React.useCallback((t: Ticket) => companyOf(t, companyIdx), [companyIdx]);
   const loadAirtable = React.useCallback(async () => {
     try {
@@ -619,6 +635,7 @@ function MainApp({ user }: { user: User }) {
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
       {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} companyOf={companyRows.length ? companyFn : undefined} {...(isAdmin ? writeHandlers : {})} />}
       {view === 'companies' && <Companies tickets={tickets} rows={companyRows} loading={companiesLoading}
+        assignments={companyAssignments} {...(isAdmin ? { onAssign: assignCompany, onUnassign: unassignCompany } : {})}
         tableProps={{ afterClose, exchanges, ...(isAdmin ? writeHandlers : {}) }} />}
       {view === 'requests'  && <Requests tickets={tickets}
         {...(isAdmin ? { onUpdateClosed: handleUpdateClosed } : {})} />}

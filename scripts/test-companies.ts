@@ -69,5 +69,16 @@ console.log('\n3. Each company\'s work');
   check('a top-up is nobody\'s ticket', s.reduce((n, x) => n + x.tickets, 0), 3);
 }
 
+console.log('\n4. A request placed under a company by hand');
+{
+  // KSACO363 and KSACO379 are Sela's; their Airtable does not carry either.
+  const rows = [row({ serials: ['4862000001'], req_num: 'KSACO363', account: '', department: 'Corporate' })];
+  const idx = companyIndex(rows, [{ req_key: 'ksaco363', company: 'Sela - MICE' }, { req_key: 'KSACO379', company: 'Sela - MICE' }]);
+  check('a ticket of the request', companyOf(tkt({ ticketNo: '4862999999', reqNum: 'KSACO379' }), idx), 'Sela - MICE');
+  check('wins over what their sheet says', companyOf(tkt({ ticketNo: '4862000001', reqNum: 'KSACO363' }), idx), 'Sela - MICE');
+  const s = companySummaries([tkt({ ticketNo: '4862999999', reqNum: 'KSACO379' })], rows, idx);
+  check('their row is counted under it too', s.map(x => [x.company, x.tickets, x.notInBooks]), [['Sela - MICE', 1, 1]]);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

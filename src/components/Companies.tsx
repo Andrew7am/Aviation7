@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Building2, Search, ArrowLeft, Download, AlertTriangle } from 'lucide-react';
 import type { Ticket } from '../types';
 import {
-  companyIndex, companyOf, companySummaries, type CompanyRow, type CompanySummary, type Money,
+  companyIndex, companyOf, companySummaries, type CompanyRow, type CompanySummary, type Money, type CompanyAssignment,
 } from '../core/helpers/companies';
 import { TicketTable } from './TicketTable';
 
@@ -28,15 +28,20 @@ const nets = (m: Record<string, Money>) => Object.fromEntries(Object.entries(m).
 interface Props {
   tickets: Ticket[];
   rows: CompanyRow[];
+  /** Requests placed under a company by hand. */
+  assignments: CompanyAssignment[];
+  /** Admins only: place a request under a company, or take it back. */
+  onAssign?: (req: string, company: string) => Promise<void>;
+  onUnassign?: (req: string) => Promise<void>;
   loading: boolean;
   /** Everything All Tickets is given, so a company's list behaves the same. */
   tableProps: Omit<React.ComponentProps<typeof TicketTable>, 'tickets' | 'title'>;
 }
 
-export const Companies: React.FC<Props> = ({ tickets, rows, loading, tableProps }) => {
+export const Companies: React.FC<Props> = ({ tickets, rows, assignments, onAssign, onUnassign, loading, tableProps }) => {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
-  const idx = useMemo(() => companyIndex(rows), [rows]);
+  const idx = useMemo(() => companyIndex(rows, assignments), [rows, assignments]);
   const list = useMemo(() => companySummaries(tickets, rows, idx), [tickets, rows, idx]);
   const shown = list.filter(s => s.company.toLowerCase().includes(search.trim().toLowerCase()));
   const placed = useMemo(() => tickets.filter(t => (t.status || '').toUpperCase() !== 'FUND' && companyOf(t, idx)).length, [tickets, idx]);
@@ -126,11 +131,70 @@ export const Companies: React.FC<Props> = ({ tickets, rows, loading, tableProps 
           </tbody>
         </table>
       </div>
+      {onAssign && (
+        <AssignRequests companies={list.map(s => s.company)} assignments={assignments} tickets={tickets}
+          onAssign={onAssign} onUnassign={onUnassign} />
+      )}
+
       <p className="text-[11px] text-slate-500">
         Billed: in our books from the supplier's report or invoice. Not billed yet: recorded from the team's sheet or by
         hand, or on their sheet and in nobody's books. Closed and open are our own closure, ticket by ticket. VIP and
         Corporate tickets name no company and are grouped under their department.
       </p>
+    </div>
+  );
+};
+
+/**
+ * A request their Airtable does not carry, placed under a company by hand.
+ * KSACO363 and KSACO379 are Sela's and appear nowhere on their sheet.
+ */
+const AssignRequests: React.FC<{
+  companies: string[]; assignments: CompanyAssignment[]; tickets: Ticket[];
+  onAssign: (req: string, company: string) => Promise<void>; onUnassign?: (req: string) => Promise<void>;
+}> = ({ companies, assignments, tickets, onAssign, onUnassign }) => {
+  const [req, setReq] = useState('');
+  const [company, setCompany] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const key = req.trim().toUpperCase();
+  const held = key ? tickets.filter(t => (t.reqNum || '').toUpperCase().split(/[\s,/;|+&-]+/).includes(key)).length : 0;
+  const save = async () => {
+    setBusy(true); setMsg('');
+    try { await onAssign(key, company); setMsg(`${key} is now under ${company.trim()}.`); setReq(''); }
+    catch (e: any) { setMsg(e.message || String(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+      <div className="text-xs font-bold text-slate-700">Place a request under a company</div>
+      <div className="text-[11px] text-slate-500">For requests the team's Airtable does not carry. This wins over what their sheet says.</div>
+      <div className="flex flex-wrap items-center gap-2">
+        <input value={req} onChange={e => setReq(e.target.value)} placeholder="Request number, e.g. KSACO363"
+          className="px-2 py-1.5 text-sm border border-slate-200 rounded w-56 font-mono" />
+        <input value={company} onChange={e => setCompany(e.target.value)} list="company-names" placeholder="Company"
+          className="px-2 py-1.5 text-sm border border-slate-200 rounded w-56" />
+        <datalist id="company-names">{companies.map(c => <option key={c} value={c} />)}</datalist>
+        <button onClick={save} disabled={busy || !key || !company.trim()}
+          className="px-3 py-1.5 text-xs font-bold rounded bg-blue-600 text-white disabled:opacity-40">
+          {busy ? 'Saving…' : 'Assign'}
+        </button>
+        {key && <span className="text-[11px] text-slate-500">{held} ticket(s) of ours under {key}</span>}
+        {msg && <span className="text-[11px] text-emerald-700">{msg}</span>}
+      </div>
+      {assignments.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 pt-1">
+          {assignments.map(a => (
+            <span key={a.req_key} className="inline-flex items-center gap-1.5 text-[11px] bg-slate-100 rounded px-2 py-0.5"
+              title={a.set_by ? `Set by ${a.set_by}` : undefined}>
+              <span className="font-mono font-bold">{a.req_key}</span> → {a.company}
+              {onUnassign && (
+                <button onClick={() => onUnassign(a.req_key)} className="text-slate-400 hover:text-red-600" title="Take it back">✕</button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

@@ -42,9 +42,19 @@ const serial = (s: string) => {
   return d.length >= 10 ? d.slice(-10) : (s || '').replace(/\s+/g, '').toUpperCase();
 };
 
-export interface CompanyIndex { bySerial: Map<string, string>; byReq: Map<string, string> }
+export interface CompanyIndex {
+  bySerial: Map<string, string>; byReq: Map<string, string>;
+  /** Requests a person placed under a company by hand - they win. */
+  assigned: Map<string, string>;
+}
 
-export function companyIndex(rows: CompanyRow[]): CompanyIndex {
+/** A request placed under a company by hand: KSACO363 is Sela's, and their
+ *  Airtable does not carry it at all. */
+export interface CompanyAssignment { req_key: string; company: string; set_by?: string | null; set_at?: string }
+
+export function companyIndex(rows: CompanyRow[], assignments: CompanyAssignment[] = []): CompanyIndex {
+  const assigned = new Map<string, string>();
+  for (const a of assignments) for (const k of reqParts(a.req_key)) if (a.company.trim()) assigned.set(k, a.company.trim());
   const bySerial = new Map<string, string>();
   const reqVotes = new Map<string, Map<string, number>>();
   for (const r of rows) {
@@ -60,12 +70,13 @@ export function companyIndex(rows: CompanyRow[]): CompanyIndex {
   // A request is one company's; the most rows say which, should two ever disagree.
   const byReq = new Map<string, string>();
   for (const [k, m] of reqVotes) byReq.set(k, [...m].sort((a, b) => b[1] - a[1])[0][0]);
-  return { bySerial, byReq };
+  return { bySerial, byReq, assigned };
 }
 
 /** The company a ticket of ours was issued for, or '' when nothing says. */
 export function companyOf(t: Pick<Ticket, 'ticketNo' | 'relatedTicket' | 'reqNum' | 'pnr'>, idx: CompanyIndex): string {
-  return idx.bySerial.get(serial(t.ticketNo))
+  return reqParts(t.reqNum || '').map(k => idx.assigned.get(k)).find(Boolean)
+    || idx.bySerial.get(serial(t.ticketNo))
     || (t.relatedTicket ? idx.bySerial.get(serial(t.relatedTicket)) : undefined)
     || reqParts(t.reqNum || '').map(k => idx.byReq.get(k)).find(Boolean)
     || (t.pnr ? idx.bySerial.get(serial(t.pnr)) : undefined)
@@ -140,7 +151,7 @@ export function companySummaries(tickets: Ticket[], rows: CompanyRow[], idx = co
     }
   }
   for (const r of rows) {
-    const c = companyLabel(r);
+    const c = reqParts(r.req_num || '').map(k => idx.assigned.get(k)).find(Boolean) || companyLabel(r);
     if (c === UNASSIGNED) continue;
     if (!/issue|reissue|refund/i.test(r.status || '') || /hold|void/i.test(r.status || '')) continue;
     const mine = r.serials.filter(Boolean);
