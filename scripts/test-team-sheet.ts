@@ -1329,7 +1329,18 @@ console.log('\n43. The last thing that happened decides whether it is void');
     '065-5513373335,YSLM73,Void,KSAML2218,04/09/2026 1:00pm',
   ]), [tkt({ ticketNo: '5513373335', pnr: 'YSLM73', reqNum: 'KSAML2218' })]);
   check('a void we hold is not dropped', held.counts.VOID_NOT_BILLED, 0);
-  check('it is compared',                held.counts.OK, 1);
+  // Their last word is Void and we hold the sale: a question about money,
+  // not agreement. 4862343304 at 966.00 and 5512760114 at 3,180.00 were
+  // both called OK.
+  check('it is asked about',             [held.counts.OK, held.counts.VOID_BUT_BILLED], [0, 1]);
+  check('...and stops the sheet being clean', held.clean, false);
+  // A refund against it settles it: voided after billing comes back as one.
+  const heldBack = compareTeamSheet(sheet([
+    '065-5513373335,YSLM73,Issued,KSAML2218,03/09/2026 1:00pm',
+    '065-5513373335,YSLM73,Void,KSAML2218,04/09/2026 1:00pm',
+  ]), [tkt({ ticketNo: '5513373335', pnr: 'YSLM73', reqNum: 'KSAML2218' }),
+       tkt({ ticketNo: '5513373335', pnr: 'YSLM73', reqNum: 'KSAML2218', amount: -1000, status: 'REFUND' })]);
+  check('not once a refund is against it', heldBack.counts.VOID_BUT_BILLED, 0);
 }
 
 console.log('\n44. A held option is not a ticket; a blank number on a live one is');

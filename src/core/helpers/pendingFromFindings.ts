@@ -87,6 +87,12 @@ export interface BuildOptions {
   userId: string;
 }
 
+/** The tickets a cell prices: its numbers less a conjunction's second
+ *  booklets. "176-5512970091-92" priced at 49,240 is one ticket at 49,240;
+ *  it went to To Review at 0, as if the figure were a booking's to share. */
+const ticketsInCell = (s: { groupSize: number; cellTickets?: number; rawTicket: string }) =>
+  s.cellTickets ?? Math.max(1, s.groupSize - secondCouponsIn(s.rawTicket || '').size);
+
 export function pendingFromFindings(
   findings: Finding[],
   { origin = 'TEAM_SHEET', newId, userId }: BuildOptions,
@@ -125,11 +131,11 @@ export function pendingFromFindings(
       // only a PNR - is one purchase, and its figure is its own.
       amount: isFreeReissue ? 0 : isRefund
         ? (s.refund != null ? refundAmount(s.refund) : 0)
-        : (s.groupSize <= 1 && s.cost != null ? Math.abs(s.cost) : 0),
+        : (ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0),
       commission: 0,
       totalDoc: isFreeReissue ? 0 : isRefund
         ? (s.refund != null ? Math.abs(s.refund) : 0)
-        : (s.groupSize <= 1 && s.cost != null ? Math.abs(s.cost) : 0),
+        : (ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0),
       // We hold no row for it, so their request is the only one there is.
       // Kept in both places: this is what it would be filed under, and
       // `theirReq` is the record of where that came from.

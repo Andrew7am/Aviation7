@@ -46,6 +46,10 @@ export interface TeamSheetRow {
    * in full is two tickets and has none of this.
    */
   couponOf?: string;
+  /** How many TICKETS the cell names: its numbers less the booklets.
+   *  "176-5512970091-92" is groupSize 2 and one ticket, so its figure is
+   *  that ticket's price, not a booking's to be shared out. */
+  cellTickets?: number;
   /**
    * The cell held something that should have been a ticket number and could
    * not be read. Nearly always Excel: a 13-digit number stored as a number
@@ -468,6 +472,7 @@ export function parseTeamSheet(text: string): ParsedTeamSheet {
     const found: { serial: string; airlineCode: string; couponOf?: string }[] = docs.length ? docs : [{ serial: '', airlineCode: '' }];
     for (const { serial, airlineCode, couponOf } of found) rows.push({
       ...(couponOf ? { couponOf } : {}),
+      cellTickets: docs.filter(d => !d.couponOf).length,
       rowNo: i + 1,
       rawTicket,
       groupSize: docs.length,

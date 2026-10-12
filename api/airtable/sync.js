@@ -289,6 +289,7 @@ function parseTeamSheet(text) {
     const found = docs.length ? docs : [{ serial: "", airlineCode: "" }];
     for (const { serial: serial3, airlineCode, couponOf } of found) rows.push({
       ...couponOf ? { couponOf } : {},
+      cellTickets: docs.filter((d) => !d.couponOf).length,
       rowNo: i + 1,
       rawTicket,
       groupSize: docs.length,
@@ -641,6 +642,7 @@ var VERDICT_LABEL = {
   VOID_NOT_BILLED: "Void \u2014 never billed",
   REISSUE_NO_CHARGE: "Reissued at no charge",
   VOID_AND_ISSUED: "Voided and issued the same day",
+  VOID_BUT_BILLED: "Void on their sheet, billed in ours",
   REFUND_NOT_IN_LEDGER: "Refund not in our ledger",
   REFUND_AWAITING_BILLING: "Refund applied - waiting for the supplier's billing",
   REFUND_NOT_ON_SHEET: "Refunded, their sheet does not say so",
@@ -685,6 +687,8 @@ var VERDICT_RANK = {
   // Their sheet says both and cannot say which came last. Above a plain
   // void, because somebody has to look.
   VOID_AND_ISSUED: 3.5,
+  // Money we may be paying for a ticket that does not exist.
+  VOID_BUT_BILLED: 3.4,
   VOID_NOT_BILLED: 8,
   // Beside a void: a state of the world, not a disagreement. Nothing to
   // do about either, and both are worth counting.
@@ -761,6 +765,14 @@ function reqDiffHint(ours, theirs) {
 var pnrParts = (pnr) => String(pnr || "").toUpperCase().split(/[|/,;\s]+/).map((x) => x.trim()).filter(Boolean);
 var CONJUNCT_COVERS = 0.85;
 var COUPON_SHARE = 0.7;
+function emdNamed(r) {
+  const raw = r.rawTicket || "";
+  if (!/\bEMD\b/i.test(raw)) return false;
+  if ((r.groupSize ?? 1) <= 1) return true;
+  for (const m of raw.matchAll(/\bEMD\b[^0-9]*(?:\d{3}[-\s]?)?(\d{10})/gi))
+    if (m[1] === r.serial) return true;
+  return false;
+}
 function pricedRow(rows, skip) {
   const live = rows.filter((r) => !skip(r));
   return live.filter((r) => r.cost != null && Math.abs(r.cost) >= 5e-3).sort((a, b) => String(a.issued || "").localeCompare(String(b.issued || "")))[0] ?? live.find((r) => r.cost != null);
@@ -847,9 +859,32 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   for (const r of noTicket) addReq(r.reqNum);
   for (const d of declared) addReq(d);
   const findings = [];
+  const refundOfHeld = (rows, base) => {
+    const refunded = rows.find((x) => x.status === "REFUNDED");
+    if (!refunded) return;
+    const received = rows.some((x) => x.refundReceived);
+    findings.push({
+      ...base,
+      sheet: refunded,
+      verdict: received ? "REFUND_NOT_IN_LEDGER" : "REFUND_AWAITING_BILLING",
+      note: `Their sheet refunds it${refunded.refund != null ? ` (${money2(refunded.refund)} ${refunded.currency || ""})`.trimEnd() : ""}; its fare is held under another number of the cell, and no refund is in our books.` + (received ? " Their sheet marks the refund received - it should be here." : " Not marked received - it reaches us with the billing from the supplier.")
+    });
+  };
   const UNSOURCED = { issuedFrom: "", portal: "", heldBack: false, heldBackWhy: "" };
   const theirSerials = new Set(theirBySerial.keys());
   const claimed = /* @__PURE__ */ new Set();
+  const pnrRefund = /* @__PURE__ */ new Map();
+  const refundedByPnr = /* @__PURE__ */ new Set();
+  for (const [ref, rs] of theirBySerial) {
+    if (!isReference2(ref) || ourBySerial.has(ref) || !rs.every((r) => r.status === "REFUNDED")) continue;
+    const amount = Math.abs(rs.find((r) => r.refund != null)?.refund ?? rs.find((r) => r.cost != null)?.cost ?? 0);
+    if (!amount) continue;
+    const hits = [...new Set(ledger.filter((t) => isTicket(t) && isRefund(t) && pnrParts(t.pnr).includes(ref) && Math.abs(Math.abs(t.amount || 0) - amount) < 1).map((t) => ticketMatchKey(t.relatedTicket || "") || ticketMatchKey(t.ticketNo || "")).filter((k) => theirSerials.has(k)))];
+    if (hits.length === 1) {
+      pnrRefund.set(ref, hits[0]);
+      refundedByPnr.add(hits[0]);
+    }
+  }
   let matched = 0;
   const refundsFor = /* @__PURE__ */ new Map();
   for (const t of ledger) {
@@ -916,6 +951,16 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     };
     if (ours.length === 0) {
       const filedUnderPnr = isReference2(serial3) ? (ourByPnr.get(serial3) ?? []).filter((t) => !theirSerials.has(ticketMatchKey(t.ticketNo || ""))) : [];
+      const refundOf = pnrRefund.get(serial3);
+      if (refundOf) {
+        findings.push({
+          ...base,
+          verdict: "FILED_ELSEWHERE",
+          ours: (ourBySerial.get(refundOf) ?? []).filter(isRefund),
+          note: `Their refund row writes the booking reference ${serial3} where the ticket number goes. It is ${refundOf}'s refund, which we hold at the same amount - nothing is missing; their row needs the ticket number.`
+        });
+        continue;
+      }
       if (filedUnderPnr.length) {
         for (const t of filedUnderPnr) claimed.add(ticketMatchKey(t.ticketNo || ""));
         findings.push({
@@ -932,7 +977,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         const cell2 = pricedRow(rows, (x) => x.status === "REFUNDED" || x.status === "VOID") ?? first2;
         const heads = Math.max(1, sheet.filter((x) => x.rowNo === cell2.rowNo && x.serial && !x.couponOf).length);
         const share = Math.abs(cell2.cost ?? 0) / heads;
-        const held3 = (ourBySerial.get(head) ?? []).filter((t) => (t.amount || 0) > 0);
+        const held3 = (ourBySerial.get(head) ?? []).filter((t) => (t.amount || 0) >= 0 && !isRefund(t));
         const holds = held3.reduce((n, t) => n + (t.amount || 0), 0);
         if (held3.length && cell2.cost != null && (!share || holds >= share * COUPON_SHARE)) {
           claimed.add(head);
@@ -960,6 +1005,8 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
           reqNum: (sibs.find((t) => (t.reqNum || "").trim())?.reqNum || "").trim(),
           note: `Their cell ${priced.rawTicket} is one booking across ${priced.groupSize} documents, priced at ${money2(theirCell)} ${priced.currency}. We hold ${money2(weHold)} of it against ${sibs.map((t) => ticketMatchKey(t.ticketNo || "")).join(", ")}, so the fare is in our books and this coupon carries none of its own.`
         });
+        if (!priced.siblings.some((x) => (ourBySerial.get(x) ?? []).some(isRefund) || (refundsFor.get(x) ?? []).length))
+          refundOfHeld(rows, base);
         continue;
       }
       const theySayReissue = rows.some((r) => /reissue/i.test(r.rawStatus || "") || /reissue/i.test(r.ticketType || ""));
@@ -1005,12 +1052,14 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
           });
           continue;
         }
+        const nextOfHeld = !!head2 && (ourBySerial.get(head2) ?? []).some((t) => !isRefund(t));
         const booklets = couponsOf.get(serial3);
         findings.push({
           ...base,
           sheet: issued,
           verdict: "NOT_IN_LEDGER",
-          note: (theirReq ? `On their sheet under ${theirReq} and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it.` : "On their sheet and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it.") + (booklets?.length ? ` One ticket with its conjunction coupon ${booklets.join(", ")}.` : "")
+          note: (theirReq ? `On their sheet under ${theirReq} and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it.` : "On their sheet and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it.") + (booklets?.length ? ` One ticket with its conjunction coupon ${booklets.join(", ")}.` : ""),
+          ...nextOfHeld ? { heldBack: true, heldBackWhy: `Their cell writes it as the second booklet of ${head2}, but ${head2} holds only part of the cell's figure - most likely another passenger. Enter it with its own fare.` } : {}
         });
         const refundRow = rows.find((x) => x.status === "REFUNDED" && (x.refund ?? 0) > 0);
         if (refundRow)
@@ -1064,6 +1113,31 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       misfiled = true;
     }
     const ourRefunds = ours.filter(isRefund);
+    const ourSales = ours.filter((t) => (t.amount || 0) > 0);
+    if (theySayVoid && ourSales.length && !ourRefunds.length) {
+      const voidRow = rows.find((x) => x.status === "VOID") ?? first2;
+      const sold = ourSales.reduce((n, t) => n + (t.amount || 0), 0);
+      const src = (ourSales[0].source || "").trim() || "the supplier";
+      findings.push({
+        ...base,
+        sheet: voidRow,
+        verdict: "VOID_BUT_BILLED",
+        note: `Their sheet voids it${voidRow.issued ? ` (${voidRow.issued})` : ""}; our books hold it as a sale of ${money2(sold)} ${ourSales[0].currency || ""} from ${src}, with no refund or void against it. If ${src} billed a voided ticket, it is money to claim back; if it was not voided, their sheet needs correcting.`
+      });
+      continue;
+    }
+    const ourIssues = ours.filter((t) => !isRefund(t));
+    const saleRow = pricedRow(rows, (x) => x.status === "VOID");
+    const replaces = chainOf(serial3, chains).documents.some((d) => d !== serial3 && ourBySerial.has(d));
+    const saleMissing = !ourIssues.length && ourRefunds.length > 0 && !theySayVoid && !replaces && !!saleRow && (saleRow.cost ?? 0) > 0 && saleRow.status !== "REFUNDED";
+    if (saleMissing) {
+      findings.push({
+        ...base,
+        sheet: saleRow,
+        verdict: "NOT_IN_LEDGER",
+        note: `We hold only its refund (${ourRefunds.map((t) => `${money2(Math.abs(t.amount || 0))} on ${t.ticketNo}`).join(", ")}); the sale - ${money2(saleRow.cost ?? 0)} ${saleRow.currency || ""} on their sheet - is not in our books. Either the supplier has not billed it yet, or an import missed it.`
+      });
+    }
     if (theySayRefunded && ourRefunds.length === 0) {
       const stated = rows.find((x) => x.refund != null) ?? first2;
       const refundRow = { ...base, sheet: stated };
@@ -1085,7 +1159,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       });
       continue;
     }
-    if (!theySayRefunded && ourRefunds.length > 0) {
+    if (!theySayRefunded && !refundedByPnr.has(serial3) && ourRefunds.length > 0) {
       findings.push({
         ...base,
         verdict: "REFUND_NOT_ON_SHEET",
@@ -1108,7 +1182,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       const asBought = (t, v) => t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
       const ourNet = ourRefunds.reduce((s, t) => s + asBought(t, t.amount || 0), 0);
       const ourGross = ourRefunds.reduce((s, t) => s + asBought(t, t.totalDoc || t.amount || 0), 0);
-      const shared = rows.some((r) => r.groupSize > 1);
+      const shared = rows.some((r) => (r.cellTickets ?? r.groupSize) > 1);
       const gap = Math.abs(theirs - ourNet) <= Math.abs(theirs - ourGross) ? theirs - ourNet : theirs - ourGross;
       if (!shared && rows.some((r) => r.refund != null) && Math.abs(gap) >= REFUND_FLOOR) {
         const cur = ourRefunds[0].currency || "";
@@ -1129,7 +1203,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       const issuedOurs = [...ours.filter((t) => (t.amount || 0) > 0), ...alongside];
       const oneEvent = new Set(issuedOurs.map((t) => String(t.date || "").slice(0, 10))).size === 1;
       const refunded = rows.some((r) => r.status === "REFUNDED") || ours.some((t) => (t.amount || 0) < 0);
-      if (priced.length === 1 && priced[0].groupSize <= 1 && issuedOurs.length && oneEvent && !refunded) {
+      if (priced.length === 1 && (priced[0].cellTickets ?? priced[0].groupSize) <= 1 && issuedOurs.length && oneEvent && !refunded) {
         const cur = (priced[0].currency || "").toUpperCase();
         const asBought = (t, v) => t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
         const sameCur = issuedOurs.every((t) => String(t.originalCurrency || t.currency || "").toUpperCase() === cur);
@@ -1156,7 +1230,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         }
       }
     }
-    findings.push({ ...base, verdict: "OK", note: "" });
+    if (!saleMissing) findings.push({ ...base, verdict: "OK", note: "" });
   }
   const claimedByPnr = /* @__PURE__ */ new Set();
   const isOnline = (r) => portalSource(r.portal || "").source === "Airline Website";
@@ -1316,8 +1390,10 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     const oursSource = (f.ours[0]?.source || "").trim();
     f.portal = m.portal;
     f.issuedFrom = m.source || (m.choices.length ? m.choices.join(" or ") : "") || m.portal || oursSource;
-    f.heldBack = m.heldBack;
-    f.heldBackWhy = m.why;
+    if (!f.heldBack) {
+      f.heldBack = m.heldBack;
+      f.heldBackWhy = m.why;
+    }
   }
   const pairCount = /* @__PURE__ */ new Map();
   const pairOf = (f) => `${f.reqNum}\0${f.theirReq}`;
@@ -1345,7 +1421,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   {
     const seenCells = /* @__PURE__ */ new Set();
     for (const r of sheet) {
-      if (r.groupSize < 2 || !r.serial || r.status === "VOID" || r.status === "REFUNDED" || !(r.cost ?? 0)) continue;
+      if ((r.cellTickets ?? r.groupSize) < 2 || !r.serial || r.status === "VOID" || r.status === "REFUNDED" || !(r.cost ?? 0)) continue;
       const cellKey = `${r.rowNo}`;
       if (seenCells.has(cellKey)) continue;
       seenCells.add(cellKey);
@@ -1439,11 +1515,16 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   const ourScoped = scoped.filter((t) => inPeriod(t.date || "", from, to));
   const keyOf2 = (t) => ticketMatchKey(t.ticketNo || "") || pnrKey(t.pnr) || t.id;
   const oursT = /* @__PURE__ */ new Set(), oursE = /* @__PURE__ */ new Set(), oursR = /* @__PURE__ */ new Set();
+  const theirEmdDocs = /* @__PURE__ */ new Set();
+  for (const r of sheet) {
+    for (const e of r.emds ?? []) theirEmdDocs.add(e);
+    if (r.serial && emdNamed(r)) theirEmdDocs.add(r.serial);
+  }
   for (const t of ourScoped) {
     const k = keyOf2(t);
     if (voidedSet.has(k)) continue;
     if ((t.amount || 0) < 0) oursR.add(ticketMatchKey(t.relatedTicket || "") || k);
-    else if (emdLine(t)) oursE.add(k);
+    else if (emdLine(t) || theirEmdDocs.has(k)) oursE.add(k);
     else oursT.add(k);
   }
   const findingsAt = /* @__PURE__ */ new Map();
@@ -1452,20 +1533,27 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     if (k) findingsAt.set(k, [...findingsAt.get(k) ?? [], f]);
   }
   const coupons = /* @__PURE__ */ new Map();
-  for (const r of sheet) if (r.couponOf && r.serial && !(findingsAt.get(r.serial) ?? []).some((f) => f.verdict === "NOT_IN_LEDGER")) coupons.set(r.serial, r.couponOf);
+  for (const r of sheet) if (r.couponOf && r.serial && !ourBySerial.has(r.serial) && !(findingsAt.get(r.serial) ?? []).some((f) => f.verdict === "NOT_IN_LEDGER")) coupons.set(r.serial, r.couponOf);
   const theirT = /* @__PURE__ */ new Set(), theirE = /* @__PURE__ */ new Set(), theirR = /* @__PURE__ */ new Set();
+  const pnrOnly = /* @__PURE__ */ new Set();
   for (const r of sheet) {
     if (r.status === "VOID" || r.status === "ON_HOLD") continue;
     for (const e of r.emds ?? []) if (!voidedSet.has(e)) theirE.add(e);
+    const refundOf = r.serial ? pnrRefund.get(r.serial) : void 0;
+    if (refundOf) {
+      theirR.add(refundOf);
+      continue;
+    }
     const k = r.serial || pnrKey(r.pnr);
     if (!k || voidedSet.has(k) || coupons.has(k)) continue;
-    const anEmd = !!r.serial && (/\bEMD\b/i.test(r.rawTicket || "") || (ourBySerial.get(r.serial) ?? []).some((t) => emdLine(t)));
+    const anEmd = !!r.serial && (emdNamed(r) || (ourBySerial.get(r.serial) ?? []).some((t) => emdLine(t)));
     if (anEmd) theirE.add(k);
     else theirT.add(k);
+    if (!r.serial) pnrOnly.add(k);
     if (r.status === "REFUNDED") theirR.add(k);
   }
   const carried = (k) => theirT.has(k) || theirE.has(k) || claimed.has(k) || claimedByPnr.has(k) || isReference2(k) && theirPnrs.has(k) || voidedSet.has(k);
-  const held2 = (k) => ourBySerial.has(k) || ourByPnr.has(k) || voidedSet.has(k);
+  const held2 = (k) => voidedSet.has(k) || (ourBySerial.get(k) ?? []).some((t) => !isRefund(t)) || (isReference2(k) ? (ourByPnr.get(k) ?? []).some((t) => !theirSerials.has(ticketMatchKey(t.ticketNo || ""))) : ourByPnr.has(k));
   for (const k of oursT) if (!theirT.has(k) && !theirE.has(k) && carried(k)) theirT.add(k);
   for (const k of oursE) if (!theirE.has(k) && !theirT.has(k) && carried(k)) theirE.add(k);
   const sorted = (xs) => [...xs].sort();
@@ -1480,12 +1568,21 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     }
     return { missingInOurs, noted };
   };
+  const inOurs = /* @__PURE__ */ new Set([...oursT, ...oursE]);
+  const elsewhere = (ks) => sorted([...ks].filter((k) => (ourBySerial.get(k) ?? []).some((t) => !isRefund(t)) && !inOurs.has(k))).map((k) => {
+    const ts = (ourBySerial.get(k) ?? []).filter((t) => (t.amount || 0) >= 0);
+    const reqs = [...new Set(ts.map((t) => (t.reqNum || "").trim() || "no request"))];
+    const outside = ts.length && ts.every((t) => !inPeriod(t.date || "", from, to));
+    return `${k} - in our books ${outside ? `dated ${ts.map((t) => t.date).join(", ")}, outside the period` : `under ${reqs.join(", ")}`}`;
+  });
+  const withElsewhere = (s, ks) => ({ ...s, noted: [...s.noted, ...elsewhere(ks)] });
   const docTypes = {
     tickets: {
       ours: oursT.size,
       theirs: theirT.size,
       missingOnTheirs: sorted([...oursT].filter((k) => !carried(k))),
-      ...split(sorted([...theirT].filter((k) => !held2(k))), false),
+      ...withElsewhere(split(sorted([...theirT].filter((k) => !held2(k))), false), theirT),
+      byPnrOnly: [...theirT].filter((k) => pnrOnly.has(k)).length,
       conjunctions: sorted([...coupons].map(([c, of]) => `${c} (with ${of})`))
     },
     refunds: {
@@ -1498,7 +1595,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       ours: oursE.size,
       theirs: theirE.size,
       missingOnTheirs: sorted([...oursE].filter((k) => !carried(k))),
-      ...split(sorted([...theirE].filter((k) => !held2(k))), false)
+      ...withElsewhere(split(sorted([...theirE].filter((k) => !held2(k))), false), theirE)
     }
   };
   const unaccounted = [];
@@ -1569,7 +1666,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     }
     const ourRefund = mine.filter((t) => (t.amount || 0) < 0);
     const fs = bySerialF.get(k) ?? [];
-    const theyRefund = (theirBySerial.get(k) ?? []).some((r) => r.status === "REFUNDED");
+    const theyRefund = (theirBySerial.get(k) ?? []).some((r) => r.status === "REFUNDED") || refundedByPnr.has(k);
     if (ourRefund.length && theirBySerial.has(k) && !theyRefund && !fs.some((f) => OUR_REFUND_SAYS.has(f.verdict)))
       unaccounted.push({
         side: "ours",
@@ -1793,6 +1890,7 @@ function dedupeKey(origin, serial3, pnr, verdict) {
   return [origin, (serial3 || pnr || "").toUpperCase(), verdict].join("|");
 }
 var refundAmount = (n) => -Math.abs(n);
+var ticketsInCell = (s) => s.cellTickets ?? Math.max(1, s.groupSize - secondCouponsIn(s.rawTicket || "").size);
 function pendingFromFindings(findings, { origin = "TEAM_SHEET", newId, userId }) {
   const out = [];
   for (const f of findings) {
@@ -1816,9 +1914,9 @@ function pendingFromFindings(findings, { origin = "TEAM_SHEET", newId, userId })
       // tickets: that figure is the booking's and would treble the cost.
       // See the note above. A cell naming none - a website purchase with
       // only a PNR - is one purchase, and its figure is its own.
-      amount: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? refundAmount(s.refund) : 0 : s.groupSize <= 1 && s.cost != null ? Math.abs(s.cost) : 0,
+      amount: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? refundAmount(s.refund) : 0 : ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0,
       commission: 0,
-      totalDoc: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? Math.abs(s.refund) : 0 : s.groupSize <= 1 && s.cost != null ? Math.abs(s.cost) : 0,
+      totalDoc: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? Math.abs(s.refund) : 0 : ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0,
       // We hold no row for it, so their request is the only one there is.
       // Kept in both places: this is what it would be filed under, and
       // `theirReq` is the record of where that came from.
