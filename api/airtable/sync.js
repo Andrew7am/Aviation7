@@ -1376,12 +1376,15 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     else if (emdLine(t)) oursE.add(k);
     else oursT.add(k);
   }
+  const coupons = /* @__PURE__ */ new Map();
+  for (const f of findings) if (f.verdict === "CONJUNCT_ALREADY_HELD" && f.serial)
+    coupons.set(f.serial, (f.ours ?? []).map((t) => ticketMatchKey(t.ticketNo || "")).filter(Boolean).join(", "));
   const theirT = /* @__PURE__ */ new Set(), theirE = /* @__PURE__ */ new Set(), theirR = /* @__PURE__ */ new Set();
   for (const r of sheet) {
     if (r.status === "VOID" || r.status === "ON_HOLD") continue;
     for (const e of r.emds ?? []) if (!voidedSet.has(e)) theirE.add(e);
     const k = r.serial || pnrKey(r.pnr);
-    if (!k || voidedSet.has(k)) continue;
+    if (!k || voidedSet.has(k) || coupons.has(k)) continue;
     const anEmd = !!r.serial && (/\bEMD\b/i.test(r.rawTicket || "") || (ourBySerial.get(r.serial) ?? []).some((t) => emdLine(t)));
     if (anEmd) theirE.add(k);
     else theirT.add(k);
@@ -1397,7 +1400,8 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       ours: oursT.size,
       theirs: theirT.size,
       missingOnTheirs: sorted([...oursT].filter((k) => !carried(k))),
-      missingInOurs: sorted([...theirT].filter((k) => !held2(k)))
+      missingInOurs: sorted([...theirT].filter((k) => !held2(k))),
+      conjunctions: sorted([...coupons].map(([c, of]) => of ? `${c} (with ${of})` : c))
     },
     refunds: {
       ours: oursR.size,

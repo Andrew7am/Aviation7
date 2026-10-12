@@ -1835,6 +1835,11 @@ console.log('\n57. One fare, two documents, and we hold the other one');
   // The sibling must not ALSO be reported as one of ours they never
   // mention - it is on their sheet, in the same cell.
   check('the sibling is not double-reported', r.counts.NOT_ON_SHEET, 0);
+  // KSAML2552 read 10 on theirs against our 9, ...809 "missing in our books",
+  // beside a check that found nothing wrong. One ticket, one coupon apart.
+  check('counted as one ticket on each side',
+    [r.docTypes.tickets.ours, r.docTypes.tickets.theirs, r.docTypes.tickets.missingInOurs], [1, 1, []]);
+  check('the coupon is named apart', r.docTypes.tickets.conjunctions, ['5513058947 (with 5513058946)']);
 
   // COVERS, NOT EQUALS. Ours is net of commission and theirs sometimes
   // carries a fee: 37,053 against our 37,043 is the same booking.

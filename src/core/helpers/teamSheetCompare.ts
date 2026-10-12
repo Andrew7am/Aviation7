@@ -629,6 +629,9 @@ export interface DocTypeCount {
   missingOnTheirs: string[];
   /** On their sheet, not in our books. */
   missingInOurs: string[];
+  /** Second coupons of a conjunction on their sheet: part of a ticket
+   *  already counted, its fare held under the sibling. Not in either count. */
+  conjunctions?: string[];
 }
 
 export interface TeamSheetReport {
@@ -1819,12 +1822,20 @@ export function compareTeamSheet(
     else if (emdLine(t)) oursE.add(k);
     else oursT.add(k);
   }
+  /* The second coupon of a conjunction is not a ticket of its own:
+     "176-4861731808-09" is one passenger on one fare, billed on ...808.
+     Counted as a ticket, KSAML2552 read 10 on their sheet against our 9
+     with ...809 "missing in our books", beside a check that rightly found
+     nothing wrong. It is counted with its sibling and named apart. */
+  const coupons = new Map<string, string>();
+  for (const f of findings) if (f.verdict === 'CONJUNCT_ALREADY_HELD' && f.serial)
+    coupons.set(f.serial, (f.ours ?? []).map(t => ticketMatchKey(t.ticketNo || '')).filter(Boolean).join(', '));
   const theirT = new Set<string>(), theirE = new Set<string>(), theirR = new Set<string>();
   for (const r of sheet) {
     if (r.status === 'VOID' || r.status === 'ON_HOLD') continue;
     for (const e of r.emds ?? []) if (!voidedSet.has(e)) theirE.add(e);
     const k = r.serial || pnrKey(r.pnr);
-    if (!k || voidedSet.has(k)) continue;
+    if (!k || voidedSet.has(k) || coupons.has(k)) continue;
     /* Their ticket column rarely says EMD: EGPML1909's two EMDs sit there as
        plain numbers. Our books know which documents are EMDs. */
     const anEmd = !!r.serial && (/\bEMD\b/i.test(r.rawTicket || '')
@@ -1847,7 +1858,8 @@ export function compareTeamSheet(
   const docTypes = {
     tickets: { ours: oursT.size, theirs: theirT.size,
       missingOnTheirs: sorted([...oursT].filter(k => !carried(k))),
-      missingInOurs: sorted([...theirT].filter(k => !held(k))) },
+      missingInOurs: sorted([...theirT].filter(k => !held(k))),
+      conjunctions: sorted([...coupons].map(([c, of]) => of ? `${c} (with ${of})` : c)) },
     refunds: { ours: oursR.size, theirs: theirR.size,
       missingOnTheirs: sorted([...oursR].filter(k => !theirR.has(k))),
       missingInOurs: sorted([...theirR].filter(k => !oursR.has(k) && !voidedSet.has(k))) },

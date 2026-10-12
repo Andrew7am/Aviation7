@@ -185,7 +185,15 @@ const DocTypeTable: React.FC<{ docTypes: TeamSheetReport['docTypes'] }> = ({ doc
               <tr key={k} className="border-b border-slate-50 align-top">
                 <td className="px-3 py-2 font-bold text-slate-700">{label}</td>
                 <td className="px-3 py-2 text-right font-mono">{d.ours}</td>
-                <td className="px-3 py-2 text-right font-mono">{d.theirs}</td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {d.theirs}
+                  {!!d.conjunctions?.length && (
+                    <span className="block font-sans text-[10px] text-sky-700 whitespace-nowrap"
+                      title={`Second coupon of a conjunction ticket - one passenger, one fare, billed on the first number: ${d.conjunctions.join('; ')}`}>
+                      + {d.conjunctions.length} conjunction coupon{d.conjunctions.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   {d.missingOnTheirs.length
                     ? <button onClick={() => setOpen(open === k + 'T' ? null : k + 'T')} className="font-mono font-bold text-red-600 hover:underline">
@@ -207,7 +215,12 @@ const DocTypeTable: React.FC<{ docTypes: TeamSheetReport['docTypes'] }> = ({ doc
       </table>
       <div className="px-3 py-1.5 text-[10px] text-slate-400 border-t border-slate-100">
         A refund is money back on a ticket already counted, not another ticket. A ticket of ours their sheet carries under
-        another number of the same exchange, or by its PNR, counts as carried. Click a number to see which.
+        another number of the same exchange, or by its PNR, counts as carried. A conjunction ticket (176-4861731808-09)
+        is one ticket: its second coupon has no fare of its own and is shown beside the count, not as missing.
+        Click a number to see which.
+        {!!docTypes.tickets.conjunctions?.length && (
+          <span className="block mt-0.5 text-sky-700">Conjunction coupons: {docTypes.tickets.conjunctions.join('; ')}</span>
+        )}
       </div>
     </div>
   );
@@ -1044,6 +1057,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
   const needsWork = report
     ? report.findings.filter(f => !f.explained && whoActs(f) === 'US' && TONE[f.verdict].money).length : 0;
   const forThem = report ? report.findings.filter(f => !f.explained && whoActs(f) === 'THEM' && (!onlyNew || isNew(f))) : [];
+  const conjunctions = report?.docTypes.tickets.conjunctions?.length ?? 0;
 
   return (
     <div className="p-6 space-y-4">
@@ -1384,9 +1398,13 @@ export const TeamSheetCheck: React.FC<Props> = ({
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
             <Tile label="Rows on their sheet" value={report.theirRows} />
-            <Tile label="Tickets on it" value={report.theirTickets} />
+            {/* A conjunction's second coupon is a number on their sheet but
+                no ticket of its own: KSAML2552's "10 against 9" was one. */}
+            <Tile label="Tickets on it" value={report.theirTickets}
+              sub={conjunctions ? `incl. ${conjunctions} conjunction coupon${conjunctions === 1 ? '' : 's'} - no fare of ${conjunctions === 1 ? 'its' : 'their'} own` : undefined} />
             <Tile label="Matched to ours" value={report.matched}
-              tone={report.matched === report.theirTickets ? 'text-emerald-600' : 'text-slate-700'} />
+              sub={conjunctions ? `+ ${conjunctions} coupon${conjunctions === 1 ? '' : 's'} held under the first number` : undefined}
+              tone={report.matched + conjunctions >= report.theirTickets ? 'text-emerald-600' : 'text-slate-700'} />
             {/* Documents, not rows: a refund is a second row on a ticket
                 already counted. 82 rows read against their 76 tickets looked
                 like six tickets nobody billed; they were 77 documents. */}
