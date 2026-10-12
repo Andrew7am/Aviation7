@@ -174,7 +174,10 @@ function docsIn(piece) {
     out.push({ serial: serial3, airlineCode });
     const after = piece.slice(m.index + m[0].length);
     const range = after.match(/^-(\d{1,3})(?!\d)/);
-    if (range) for (const n of expandRange(serial3, range[1])) out.push({ serial: n, airlineCode });
+    if (range) {
+      const more = expandRange(serial3, range[1]);
+      for (const n of more) out.push({ serial: n, airlineCode, ...more.length === 1 ? { couponOf: serial3 } : {} });
+    }
   }
   return out;
 }
@@ -284,7 +287,8 @@ function parseTeamSheet(text) {
     const rawStatus = at(r, col.status);
     const totalCell = at(r, col.total);
     const found = docs.length ? docs : [{ serial: "", airlineCode: "" }];
-    for (const { serial: serial3, airlineCode } of found) rows.push({
+    for (const { serial: serial3, airlineCode, couponOf } of found) rows.push({
+      ...couponOf ? { couponOf } : {},
       rowNo: i + 1,
       rawTicket,
       groupSize: docs.length,
@@ -610,6 +614,8 @@ function whoActs(f) {
     case "REISSUE_NO_CHARGE":
     case "REQ_RELATED":
     case "CONJUNCT_ALREADY_HELD":
+    // Its ticket's own finding carries the work; this booklet adds none.
+    case "CONJUNCT_OF_MISSING":
     // Applied, and on its way: it arrives with the supplier's next billing.
     case "REFUND_AWAITING_BILLING":
       return "INFO";
@@ -624,6 +630,27 @@ function whoActs(f) {
       return "US";
   }
 }
+var VERDICT_LABEL = {
+  OK: "Agrees",
+  REQ_DIFFERS: "Filed under a different request",
+  REQ_RELATED: "A related request",
+  FILED_ELSEWHERE: "In both, in different columns",
+  CONJUNCT_ALREADY_HELD: "The other coupon holds the fare",
+  CONJUNCT_OF_MISSING: "Second coupon of a ticket not in our books",
+  NOT_IN_LEDGER: "Not in our ledger",
+  VOID_NOT_BILLED: "Void \u2014 never billed",
+  REISSUE_NO_CHARGE: "Reissued at no charge",
+  VOID_AND_ISSUED: "Voided and issued the same day",
+  REFUND_NOT_IN_LEDGER: "Refund not in our ledger",
+  REFUND_AWAITING_BILLING: "Refund applied - waiting for the supplier's billing",
+  REFUND_NOT_ON_SHEET: "Refunded, their sheet does not say so",
+  REFUND_DIFFERS: "Refund differs",
+  PRICE_DIFFERS: "Price differs",
+  TWICE_ON_THEIR_SHEET: "Their sheet refunds it twice",
+  NO_TICKET_NUMBER: "Issued with no ticket number",
+  UNREADABLE: "Their ticket column has no usable number",
+  NOT_ON_SHEET: "Not on their sheet"
+};
 var VERDICT_RANK = {
   // First, because it is the only finding that leaves both sides' counts
   // looking right while two requests are wrong.
@@ -653,6 +680,8 @@ var VERDICT_RANK = {
   // Beside it: one fare across two documents and we hold the other one.
   // A filing difference, not money anybody is missing.
   CONJUNCT_ALREADY_HELD: 7.6,
+  // The second booklet of a ticket that is itself missing: listed under it.
+  CONJUNCT_OF_MISSING: 7.7,
   // Their sheet says both and cannot say which came last. Above a plain
   // void, because somebody has to look.
   VOID_AND_ISSUED: 3.5,
@@ -731,6 +760,11 @@ function reqDiffHint(ours, theirs) {
 }
 var pnrParts = (pnr) => String(pnr || "").toUpperCase().split(/[|/,;\s]+/).map((x) => x.trim()).filter(Boolean);
 var CONJUNCT_COVERS = 0.85;
+var COUPON_SHARE = 0.7;
+function pricedRow(rows, skip) {
+  const live = rows.filter((r) => !skip(r));
+  return live.filter((r) => r.cost != null && Math.abs(r.cost) >= 5e-3).sort((a, b) => String(a.issued || "").localeCompare(String(b.issued || "")))[0] ?? live.find((r) => r.cost != null);
+}
 function inPeriod(date, from, to) {
   const d = (date || "").trim();
   if (!d) return true;
@@ -781,6 +815,11 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     }
     if (!theirBySerial.has(r.serial)) theirBySerial.set(r.serial, []);
     theirBySerial.get(r.serial).push(r);
+  }
+  const couponsOf = /* @__PURE__ */ new Map();
+  for (const r of sheet) if (r.couponOf && r.serial) {
+    const list = couponsOf.get(r.couponOf) ?? [];
+    if (!list.includes(r.serial)) couponsOf.set(r.couponOf, [...list, r.serial]);
   }
   const ourByPnr = /* @__PURE__ */ new Map();
   for (const t of ledger) {
@@ -888,7 +927,27 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         });
         continue;
       }
-      const priced = rows.find((x) => x.status !== "REFUNDED" && x.status !== "VOID" && x.cost != null) ?? first2;
+      const head = rows.find((r) => r.couponOf)?.couponOf;
+      if (head && !voidedSet.has(serial3) && !voidedSet.has(head)) {
+        const cell2 = pricedRow(rows, (x) => x.status === "REFUNDED" || x.status === "VOID") ?? first2;
+        const heads = Math.max(1, sheet.filter((x) => x.rowNo === cell2.rowNo && x.serial && !x.couponOf).length);
+        const share = Math.abs(cell2.cost ?? 0) / heads;
+        const held3 = (ourBySerial.get(head) ?? []).filter((t) => (t.amount || 0) > 0);
+        const holds = held3.reduce((n, t) => n + (t.amount || 0), 0);
+        if (held3.length && cell2.cost != null && (!share || holds >= share * COUPON_SHARE)) {
+          claimed.add(head);
+          findings.push({
+            ...base,
+            sheet: cell2,
+            verdict: "CONJUNCT_ALREADY_HELD",
+            ours: held3,
+            reqNum: (held3.find((t) => (t.reqNum || "").trim())?.reqNum || "").trim(),
+            note: `${serial3} is the second coupon of ${head} (their cell ${cell2.rawTicket}): one ticket, billed on ${head} - we hold ${money2(holds)} on it. This booklet carries no fare of its own.`
+          });
+          continue;
+        }
+      }
+      const priced = pricedRow(rows, (x) => x.status === "REFUNDED" || x.status === "VOID") ?? first2;
       const sibs = priced.siblings.flatMap((x) => ourBySerial.get(x) ?? []).filter((t) => (t.amount || 0) > 0);
       const theirCell = Math.abs(priced.cost ?? 0);
       const weHold = sibs.reduce((sum, t) => sum + (t.amount || 0), 0);
@@ -935,12 +994,23 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
           note: `Their sheet says ${both} \u2014 the same date on both, so it cannot say which came last. If it was voided there is nothing to record; if it was issued again, this is a ticket we do not have.`
         });
       } else {
-        const issued = rows.find((x) => x.status !== "REFUNDED" && x.status !== "VOID" && x.cost != null) ?? first2;
+        const issued = pricedRow(rows, (x) => x.status === "REFUNDED" || x.status === "VOID") ?? first2;
+        const head2 = rows.find((r) => r.couponOf)?.couponOf;
+        if (head2 && theirBySerial.has(head2) && !(ourBySerial.get(head2) ?? []).length) {
+          findings.push({
+            ...base,
+            sheet: issued,
+            verdict: "CONJUNCT_OF_MISSING",
+            note: `${serial3} is the second coupon of ${head2} (their cell ${issued.rawTicket}). ${head2} is not in our books either - that is the one ticket to find; this booklet has no fare of its own.`
+          });
+          continue;
+        }
+        const booklets = couponsOf.get(serial3);
         findings.push({
           ...base,
           sheet: issued,
           verdict: "NOT_IN_LEDGER",
-          note: theirReq ? `On their sheet under ${theirReq} and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it.` : "On their sheet and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it."
+          note: (theirReq ? `On their sheet under ${theirReq} and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it.` : "On their sheet and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it.") + (booklets?.length ? ` One ticket with its conjunction coupon ${booklets.join(", ")}.` : "")
         });
         const refundRow = rows.find((x) => x.status === "REFUNDED" && (x.refund ?? 0) > 0);
         if (refundRow)
@@ -1372,13 +1442,17 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   for (const t of ourScoped) {
     const k = keyOf2(t);
     if (voidedSet.has(k)) continue;
-    if ((t.amount || 0) < 0) oursR.add(k);
+    if ((t.amount || 0) < 0) oursR.add(ticketMatchKey(t.relatedTicket || "") || k);
     else if (emdLine(t)) oursE.add(k);
     else oursT.add(k);
   }
+  const findingsAt = /* @__PURE__ */ new Map();
+  for (const f of findings) {
+    const k = f.serial || pnrKey(f.pnr);
+    if (k) findingsAt.set(k, [...findingsAt.get(k) ?? [], f]);
+  }
   const coupons = /* @__PURE__ */ new Map();
-  for (const f of findings) if (f.verdict === "CONJUNCT_ALREADY_HELD" && f.serial)
-    coupons.set(f.serial, (f.ours ?? []).map((t) => ticketMatchKey(t.ticketNo || "")).filter(Boolean).join(", "));
+  for (const r of sheet) if (r.couponOf && r.serial && !(findingsAt.get(r.serial) ?? []).some((f) => f.verdict === "NOT_IN_LEDGER")) coupons.set(r.serial, r.couponOf);
   const theirT = /* @__PURE__ */ new Set(), theirE = /* @__PURE__ */ new Set(), theirR = /* @__PURE__ */ new Set();
   for (const r of sheet) {
     if (r.status === "VOID" || r.status === "ON_HOLD") continue;
@@ -1395,25 +1469,36 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   for (const k of oursT) if (!theirT.has(k) && !theirE.has(k) && carried(k)) theirT.add(k);
   for (const k of oursE) if (!theirE.has(k) && !theirT.has(k) && carried(k)) theirE.add(k);
   const sorted = (xs) => [...xs].sort();
+  const REFUND_SIDE = /* @__PURE__ */ new Set(["REFUND_NOT_IN_LEDGER", "REFUND_AWAITING_BILLING", "REFUND_DIFFERS", "REFUND_NOT_ON_SHEET"]);
+  const split = (ks, refund) => {
+    const missingInOurs = [], noted = [];
+    for (const k of ks) {
+      const fs = (findingsAt.get(k) ?? []).filter((f) => REFUND_SIDE.has(f.verdict) === refund);
+      if (fs.length && fs.every((f) => f.explained || whoActs(f) === "INFO"))
+        noted.push(`${k} - ${fs[0].explained ? `explained: ${fs[0].explained}` : VERDICT_LABEL[fs[0].verdict]}`);
+      else missingInOurs.push(k);
+    }
+    return { missingInOurs, noted };
+  };
   const docTypes = {
     tickets: {
       ours: oursT.size,
       theirs: theirT.size,
       missingOnTheirs: sorted([...oursT].filter((k) => !carried(k))),
-      missingInOurs: sorted([...theirT].filter((k) => !held2(k))),
-      conjunctions: sorted([...coupons].map(([c, of]) => of ? `${c} (with ${of})` : c))
+      ...split(sorted([...theirT].filter((k) => !held2(k))), false),
+      conjunctions: sorted([...coupons].map(([c, of]) => `${c} (with ${of})`))
     },
     refunds: {
       ours: oursR.size,
       theirs: theirR.size,
       missingOnTheirs: sorted([...oursR].filter((k) => !theirR.has(k))),
-      missingInOurs: sorted([...theirR].filter((k) => !oursR.has(k) && !voidedSet.has(k)))
+      ...split(sorted([...theirR].filter((k) => !oursR.has(k) && !voidedSet.has(k))), true)
     },
     emds: {
       ours: oursE.size,
       theirs: theirE.size,
       missingOnTheirs: sorted([...oursE].filter((k) => !carried(k))),
-      missingInOurs: sorted([...theirE].filter((k) => !held2(k)))
+      ...split(sorted([...theirE].filter((k) => !held2(k))), false)
     }
   };
   const unaccounted = [];
@@ -1431,6 +1516,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     "VOID_NOT_BILLED",
     "VOID_AND_ISSUED",
     "CONJUNCT_ALREADY_HELD",
+    "CONJUNCT_OF_MISSING",
     "REISSUE_NO_CHARGE"
   ]);
   for (const r of sheet) {
@@ -1644,6 +1730,9 @@ function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
   const out = [];
   const seen = /* @__PURE__ */ new Set();
   const since = Date.parse(from);
+  const viaApplication = /* @__PURE__ */ new Set();
+  for (const list of index.values()) for (const t of list)
+    if ((t.amount || 0) < 0 && t.relatedTicket) viaApplication.add(docKey(t.relatedTicket));
   for (const r of rows) {
     if (!/refund/i.test(r.status || "")) continue;
     if (!(Date.parse(r.created_at || "") >= since)) continue;
@@ -1651,7 +1740,7 @@ function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
       const k = docKey(s);
       if (!k || seen.has(k)) continue;
       const ours = index.get(k) ?? [];
-      if (!ours.some((t) => (t.amount || 0) > 0) || ours.some((t) => (t.amount || 0) < 0)) continue;
+      if (!ours.some((t) => (t.amount || 0) > 0) || ours.some((t) => (t.amount || 0) < 0) || viaApplication.has(k)) continue;
       seen.add(k);
       const amount = r.refund_amount ?? (r.serials.length === 1 ? r.net_cost : null);
       const src = ours.find((t) => (t.amount || 0) > 0)?.source || "the supplier";
@@ -2062,7 +2151,8 @@ async function syncAirtable(env) {
         source: t.source,
         amount: Number(t.amount ?? 0),
         status: t.status,
-        currency: t.currency
+        currency: t.currency,
+        relatedTicket: t.related_ticket ?? void 0
       }));
       notices = noticesFor(full ? rows : changedRows, changes, ledgerIndex(lite));
       const all = full ? rows : await selectAll(
@@ -2203,8 +2293,8 @@ async function syncAirtable(env) {
       const { data: openRefunds } = await db.from("airtable_notifications").select("id, ticket_no, record_id").eq("kind", "REFUND_MISSING").eq("state", "OPEN");
       if (openRefunds?.length) {
         const nos = [...new Set(openRefunds.map((n) => n.ticket_no))];
-        const { data: lines } = await db.from("tickets").select("ticket_no, amount").lt("amount", 0).or(nos.map((n) => `ticket_no.ilike.%${n}`).join(","));
-        const credited = new Set((lines ?? []).map((t) => docKey(t.ticket_no)));
+        const { data: lines } = await db.from("tickets").select("ticket_no, related_ticket, amount").lt("amount", 0).or([...nos.map((n) => `ticket_no.ilike.%${n}`), `related_ticket.in.(${nos.join(",")})`].join(","));
+        const credited = new Set((lines ?? []).flatMap((t) => [docKey(t.ticket_no), t.related_ticket ? docKey(t.related_ticket) : ""]));
         const { data: still } = await db.from("airtable_tickets").select("serials, status").eq("deleted", false).overlaps("serials", nos);
         const refundedThere = new Set((still ?? []).filter((r) => /refund/i.test(r.status ?? "")).flatMap((r) => r.serials ?? []));
         const now2 = (/* @__PURE__ */ new Date()).toISOString();

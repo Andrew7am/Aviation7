@@ -162,7 +162,7 @@ export async function syncAirtable(env: {
         'id, ticket_no, pnr, req_num, passenger_name, cabin_class, source, amount, status, currency, date, commission, total_doc, airline_code, transaction_type, closed, related_ticket, original_currency, original_amount, fx_rate, report_name, confirmed_by, user_id');
       const lite: LedgerLite[] = ledger.map(t => ({ id: t.id, ticketNo: t.ticket_no, pnr: t.pnr, reqNum: t.req_num ?? '',
         passengerName: t.passenger_name ?? '', cabinClass: t.cabin_class ?? '', source: t.source, amount: Number(t.amount ?? 0),
-        status: t.status, currency: t.currency }));
+        status: t.status, currency: t.currency, relatedTicket: t.related_ticket ?? undefined }));
       // Names and cabins are offered from any row read; requests, refunds,
       // voids and prices only from what changed.
       notices = noticesFor(full ? rows : changedRows, changes, ledgerIndex(lite));
@@ -277,9 +277,10 @@ export async function syncAirtable(env: {
         .eq('kind', 'REFUND_MISSING').eq('state', 'OPEN');
       if (openRefunds?.length) {
         const nos = [...new Set(openRefunds.map(n => n.ticket_no))];
-        const { data: lines } = await db.from('tickets').select('ticket_no, amount').lt('amount', 0)
-          .or(nos.map(n => `ticket_no.ilike.%${n}`).join(','));
-        const credited = new Set((lines ?? []).map(t => docKey(t.ticket_no)));
+        const { data: lines } = await db.from('tickets').select('ticket_no, related_ticket, amount').lt('amount', 0)
+          .or([...nos.map(n => `ticket_no.ilike.%${n}`), `related_ticket.in.(${nos.join(',')})`].join(','));
+        // Under its own number, or as an application naming it.
+        const credited = new Set((lines ?? []).flatMap(t => [docKey(t.ticket_no), t.related_ticket ? docKey(t.related_ticket) : '']));
         const { data: still } = await db.from('airtable_tickets').select('serials, status').eq('deleted', false)
           .overlaps('serials', nos);
         const refundedThere = new Set((still ?? []).filter(r => /refund/i.test(r.status ?? '')).flatMap(r => r.serials ?? []));

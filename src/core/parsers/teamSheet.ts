@@ -40,6 +40,13 @@ export interface TeamSheetRow {
   groupSize: number;
   siblings: string[];
   /**
+   * The ticket this number is a conjunction coupon of: "176-5512970091-92"
+   * is ONE ticket in two booklets, and ...092 is couponOf ...091. Written by
+   * them as a range off the first number; a cell of two numbers written out
+   * in full is two tickets and has none of this.
+   */
+  couponOf?: string;
+  /**
    * The cell held something that should have been a ticket number and could
    * not be read. Nearly always Excel: a 13-digit number stored as a number
    * comes out as "6.55512E+11" with the digits gone for good. Flagged rather
@@ -299,8 +306,8 @@ const splitCell = (text: string) =>
   text.split(/[\n\r\t,;]+|\s*\/\/\s*|\s\|\s|\s{2,}/).map(x => x.trim()).filter(Boolean);
 
 /** Documents in one piece, ranges expanded. */
-function docsIn(piece: string): { serial: string; airlineCode: string }[] {
-  const out: { serial: string; airlineCode: string }[] = [];
+function docsIn(piece: string): { serial: string; airlineCode: string; couponOf?: string }[] {
+  const out: { serial: string; airlineCode: string; couponOf?: string }[] = [];
   for (const m of piece.matchAll(DOC)) {
     const serial = m[2] ?? m[3];
     const airlineCode = m[1] ?? '';
@@ -308,16 +315,22 @@ function docsIn(piece: string): { serial: string; airlineCode: string }[] {
     // "...024-25": the tail belongs to the document just read.
     const after = piece.slice(m.index! + m[0].length);
     const range = after.match(/^-(\d{1,3})(?!\d)/);
-    if (range) for (const n of expandRange(serial, range[1])) out.push({ serial: n, airlineCode });
+    /* One number on ("-92") is a conjunction's second booklet. A longer
+       run ("-05") is as often five passengers issued in a row, so it is
+       read as tickets, each its own. */
+    if (range) {
+      const more = expandRange(serial, range[1]);
+      for (const n of more) out.push({ serial: n, airlineCode, ...(more.length === 1 ? { couponOf: serial } : {}) });
+    }
   }
   return out;
 }
 
-export function teamSerials(raw: unknown): { serial: string; airlineCode: string }[] {
+export function teamSerials(raw: unknown): { serial: string; airlineCode: string; couponOf?: string }[] {
   const text = String(raw ?? '');
-  const out: { serial: string; airlineCode: string }[] = [];
+  const out: { serial: string; airlineCode: string; couponOf?: string }[] = [];
   const seen = new Set<string>();
-  const add = (d: { serial: string; airlineCode: string }) => {
+  const add = (d: { serial: string; airlineCode: string; couponOf?: string }) => {
     if (!d.serial || seen.has(d.serial)) return;
     seen.add(d.serial);
     out.push(d);
@@ -452,8 +465,9 @@ export function parseTeamSheet(text: string): ParsedTeamSheet {
     // One row per ticket their cell named. A cell that named none still
     // produces a row - it is either a booking on hold or a number their
     // export damaged, and both have to be visible.
-    const found = docs.length ? docs : [{ serial: '', airlineCode: '' }];
-    for (const { serial, airlineCode } of found) rows.push({
+    const found: { serial: string; airlineCode: string; couponOf?: string }[] = docs.length ? docs : [{ serial: '', airlineCode: '' }];
+    for (const { serial, airlineCode, couponOf } of found) rows.push({
+      ...(couponOf ? { couponOf } : {}),
       rowNo: i + 1,
       rawTicket,
       groupSize: docs.length,

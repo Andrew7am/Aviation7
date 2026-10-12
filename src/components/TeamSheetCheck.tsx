@@ -54,6 +54,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   REQ_RELATED:          { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   FILED_ELSEWHERE:      { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   CONJUNCT_ALREADY_HELD:{ chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
+  CONJUNCT_OF_MISSING:  { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   VOID_NOT_BILLED:      { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   REISSUE_NO_CHARGE:    { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   VOID_AND_ISSUED:      { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
@@ -130,6 +131,10 @@ const WHY: Record<Verdict, string> = {
     + ' airline made. No supplier bills them, so our books are right to be without them.'
     + ' Shown in grey because there is nothing to do: a reissue that DOES carry a charge'
     + ' is real money and stays in the list above.',
+  CONJUNCT_OF_MISSING:
+    'The second booklet of a conjunction ticket whose first number is not in our books either.'
+    + ' It is one ticket: the first number is listed as missing, with the fare, and this booklet'
+    + ' carries none of its own - so it is not a second ticket to record.',
   CONJUNCT_ALREADY_HELD:
     'One passenger, one fare, two ticket numbers. Their sheet names both coupons; the'
     + ' supplier bills the fare on one of them and the other carries nothing of its own,'
@@ -207,6 +212,13 @@ const DocTypeTable: React.FC<{ docTypes: TeamSheetReport['docTypes'] }> = ({ doc
                         {d.missingInOurs.length}</button>
                     : <span className="text-emerald-600">none</span>}
                   {open === k + 'O' && chips(d.missingInOurs)}
+                  {/* Not in our books and nothing to do - each says why. */}
+                  {!!d.noted?.length && (
+                    <button onClick={() => setOpen(open === k + 'N' ? null : k + 'N')}
+                      className="block text-[10px] text-slate-500 hover:underline">
+                      + {d.noted.length} with nothing to do</button>
+                  )}
+                  {open === k + 'N' && chips(d.noted ?? [])}
                 </td>
               </tr>
             );

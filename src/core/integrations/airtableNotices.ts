@@ -38,6 +38,8 @@ export interface Notice {
 export interface LedgerLite {
   id: string; ticketNo: string; pnr?: string; reqNum?: string; passengerName?: string;
   cabinClass?: string; source?: string; amount?: number; status?: string; currency?: string;
+  /** For a refund application: the ticket it pays back. */
+  relatedTicket?: string;
 }
 
 /** A document's key: the ten-digit serial, or the reference itself (a PNR). */
@@ -166,6 +168,11 @@ export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, Led
   const out: Notice[] = [];
   const seen = new Set<string>();
   const since = Date.parse(from);
+  /* A refund that came in as an application under a number of its own -
+     0079533084 refunding 5512129240 - is a refund we hold. */
+  const viaApplication = new Set<string>();
+  for (const list of index.values()) for (const t of list)
+    if ((t.amount || 0) < 0 && t.relatedTicket) viaApplication.add(docKey(t.relatedTicket));
   for (const r of rows) {
     if (!/refund/i.test(r.status || '')) continue;
     if (!(Date.parse(r.created_at || '') >= since)) continue;
@@ -173,7 +180,7 @@ export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, Led
       const k = docKey(s);
       if (!k || seen.has(k)) continue;
       const ours = index.get(k) ?? [];
-      if (!ours.some(t => (t.amount || 0) > 0) || ours.some(t => (t.amount || 0) < 0)) continue;
+      if (!ours.some(t => (t.amount || 0) > 0) || ours.some(t => (t.amount || 0) < 0) || viaApplication.has(k)) continue;
       seen.add(k);
       const amount = r.refund_amount ?? (r.serials.length === 1 ? r.net_cost : null);
       const src = ours.find(t => (t.amount || 0) > 0)?.source || 'the supplier';

@@ -283,6 +283,7 @@ export type Verdict =
   | 'REQ_RELATED'
   | 'FILED_ELSEWHERE'
   | 'CONJUNCT_ALREADY_HELD'
+  | 'CONJUNCT_OF_MISSING'
   | 'NOT_IN_LEDGER'
   | 'VOID_NOT_BILLED'
   | 'REISSUE_NO_CHARGE'
@@ -316,6 +317,8 @@ export type Verdict =
 export function whoActs(f: Pick<Finding, 'verdict' | 'ours'>): 'US' | 'THEM' | 'INFO' {
   switch (f.verdict) {
     case 'OK': case 'VOID_NOT_BILLED': case 'REISSUE_NO_CHARGE': case 'REQ_RELATED': case 'CONJUNCT_ALREADY_HELD':
+    // Its ticket's own finding carries the work; this booklet adds none.
+    case 'CONJUNCT_OF_MISSING':
     // Applied, and on its way: it arrives with the supplier's next billing.
     case 'REFUND_AWAITING_BILLING':
       return 'INFO';
@@ -334,6 +337,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   REQ_RELATED:          'A related request',
   FILED_ELSEWHERE:      'In both, in different columns',
   CONJUNCT_ALREADY_HELD: 'The other coupon holds the fare',
+  CONJUNCT_OF_MISSING:  'Second coupon of a ticket not in our books',
   NOT_IN_LEDGER:        'Not in our ledger',
   VOID_NOT_BILLED:      'Void — never billed',
   REISSUE_NO_CHARGE:    'Reissued at no charge',
@@ -380,6 +384,8 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   // Beside it: one fare across two documents and we hold the other one.
   // A filing difference, not money anybody is missing.
   CONJUNCT_ALREADY_HELD: 7.6,
+  // The second booklet of a ticket that is itself missing: listed under it.
+  CONJUNCT_OF_MISSING: 7.7,
   // Their sheet says both and cannot say which came last. Above a plain
   // void, because somebody has to look.
   VOID_AND_ISSUED: 3.5,
@@ -632,6 +638,9 @@ export interface DocTypeCount {
   /** Second coupons of a conjunction on their sheet: part of a ticket
    *  already counted, its fare held under the sibling. Not in either count. */
   conjunctions?: string[];
+  /** Not in our books and nothing to do: "<doc> - <why>" (a reissue at no
+   *  charge, a refund on its way, a fare held under the cell's other ticket). */
+  noted?: string[];
 }
 
 export interface TeamSheetReport {
@@ -780,6 +789,26 @@ export const pnrParts = (pnr?: string | null): string[] =>
  * booking we only hold half of, which is what this must never do.
  */
 export const CONJUNCT_COVERS = 0.85;
+/** What a conjunction's first number must hold of its share of the cell.
+ *  ABKAR/HAUWA's two Turkish conjunctions sit in one cell at 8,020 and we
+ *  hold 3,390 on each first number: 85% of their share, a price question.
+ *  Two passengers issued one after the other hold half the cell on the
+ *  first - a missing ticket, and under this. */
+export const COUPON_SHARE = 0.7;
+
+/**
+ * Of a document's rows on their sheet, the one that says what it cost to
+ * issue: priced above zero, earliest first. "176-5512970091-92" is on an
+ * Issued row at 49,240 and a Reissue row at 0; taking the first row with
+ * any figure took the 0, sent the ticket to To Review at nothing, and it
+ * was turned away as having no value.
+ */
+function pricedRow(rows: TeamSheetRow[], skip: (r: TeamSheetRow) => boolean): TeamSheetRow | undefined {
+  const live = rows.filter(r => !skip(r));
+  return live.filter(r => r.cost != null && Math.abs(r.cost) >= 0.005)
+    .sort((a, b) => String(a.issued || '').localeCompare(String(b.issued || '')))[0]
+    ?? live.find(r => r.cost != null);
+}
 
 /**
  * The stretch of time a sheet is for, as yyyy-MM-dd.
@@ -899,6 +928,12 @@ export function compareTeamSheet(
     if (!r.serial) { noTicket.push(r); continue; }
     if (!theirBySerial.has(r.serial)) theirBySerial.set(r.serial, []);
     theirBySerial.get(r.serial)!.push(r);
+  }
+  /** A conjunction's first number -> its other booklets, as their cells write them. */
+  const couponsOf = new Map<string, string[]>();
+  for (const r of sheet) if (r.couponOf && r.serial) {
+    const list = couponsOf.get(r.couponOf) ?? [];
+    if (!list.includes(r.serial)) couponsOf.set(r.couponOf, [...list, r.serial]);
   }
 
   // Their FILE, not what was typed onto it: the screen has to be able to
@@ -1073,6 +1108,34 @@ export function compareTeamSheet(
         });
         continue;
       }
+      /* A conjunction's second booklet - "176-5512970091-92" - read as
+         such, not guessed at from money. With its ticket in our books it
+         is held; with its ticket missing it is that ticket's finding, not
+         a second one: UAEVP420's two Emirates bookings went to To Review
+         as four tickets, and recording them would have put each fare in
+         twice. A cell of several tickets that only LOOKS like this - two
+         passengers issued one after the other - is told apart by what we
+         hold against the first: a share of the cell, not the whole. */
+      const head = rows.find(r => r.couponOf)?.couponOf;
+      if (head && !voidedSet.has(serial) && !voidedSet.has(head)) {
+        const cell = pricedRow(rows, x => x.status === 'REFUNDED' || x.status === 'VOID') ?? first;
+        const heads = Math.max(1, sheet.filter(x => x.rowNo === cell.rowNo && x.serial && !x.couponOf).length);
+        const share = Math.abs(cell.cost ?? 0) / heads;
+        const held = (ourBySerial.get(head) ?? []).filter(t => (t.amount || 0) > 0);
+        const holds = held.reduce((n, t) => n + (t.amount || 0), 0);
+        // A cell with no figure cannot say whose share it is; one at 0 (a
+        // reissue at no charge) has nothing to cover.
+        if (held.length && cell.cost != null && (!share || holds >= share * COUPON_SHARE)) {
+          claimed.add(head);
+          findings.push({
+            ...base, sheet: cell, verdict: 'CONJUNCT_ALREADY_HELD', ours: held,
+            reqNum: (held.find(t => (t.reqNum || '').trim())?.reqNum || '').trim(),
+            note: `${serial} is the second coupon of ${head} (their cell ${cell.rawTicket}): one ticket,`
+                + ` billed on ${head} - we hold ${money(holds)} on it. This booklet carries no fare of its own.`,
+          });
+          continue;
+        }
+      }
       /* One fare across two documents, and we hold the other one. See
          the note above: their sheet names both coupons, the supplier
          bills the fare on one, and comparing numbers calls the other
@@ -1082,8 +1145,7 @@ export function compareTeamSheet(
          the refund, which states no cost - so the test silently did not
          run and a 2,960 coupon we already held was offered for entry.
          The fourth branch to need this; see the note on `first` above. */
-      const priced = rows.find(x =>
-        x.status !== 'REFUNDED' && x.status !== 'VOID' && x.cost != null) ?? first;
+      const priced = pricedRow(rows, x => x.status === 'REFUNDED' || x.status === 'VOID') ?? first;
       const sibs = priced.siblings.flatMap(x => ourBySerial.get(x) ?? [])
         .filter(t => (t.amount || 0) > 0);
       const theirCell = Math.abs(priced.cost ?? 0);
@@ -1150,14 +1212,28 @@ export function compareTeamSheet(
            were carrying a figure that belonged to a different event on
            the same document. Same trap as the void and refund branches
            above, and the same answer: carry the row the finding is about. */
-        const issued = rows.find(x =>
-          x.status !== 'REFUNDED' && x.status !== 'VOID' && x.cost != null) ?? first;
+        const issued = pricedRow(rows, x => x.status === 'REFUNDED' || x.status === 'VOID') ?? first;
+        /* Last of all, and only in place of "not in our ledger": the second
+           booklet of a ticket that is missing too is that ticket's finding.
+           A booklet a cell's other tickets already cover, or one reissued at
+           no charge, has said so above. */
+        const head = rows.find(r => r.couponOf)?.couponOf;
+        if (head && theirBySerial.has(head) && !(ourBySerial.get(head) ?? []).length) {
+          findings.push({
+            ...base, sheet: issued, verdict: 'CONJUNCT_OF_MISSING',
+            note: `${serial} is the second coupon of ${head} (their cell ${issued.rawTicket}). ${head} is not in`
+                + ' our books either - that is the one ticket to find; this booklet has no fare of its own.',
+          });
+          continue;
+        }
+        const booklets = couponsOf.get(serial);
         findings.push({ ...base, sheet: issued, verdict: 'NOT_IN_LEDGER',
-          note: theirReq
+          note: (theirReq
             ? `On their sheet under ${theirReq} and nowhere in our books — either the`
               + ' supplier has not billed it yet, or an import missed it.'
             : 'On their sheet and nowhere in our books — either the supplier has not billed'
-              + ' it yet, or an import missed it.' });
+              + ' it yet, or an import missed it.')
+            + (booklets?.length ? ` One ticket with its conjunction coupon ${booklets.join(', ')}.` : '') });
         /* And its refund, when their sheet refunds it too. U92Z3D was issued
            at 1,460.00 and refunded 700.00 the same day; reported as one
            missing ticket, adding it recorded the 1,460.00 and the refund
@@ -1818,7 +1894,11 @@ export function compareTeamSheet(
   for (const t of ourScoped) {
     const k = keyOf(t);
     if (voidedSet.has(k)) continue;
-    if ((t.amount || 0) < 0) oursR.add(k);
+    /* A refund application has a number of its own and names the ticket it
+       pays back: 0079533084 refunds 5512129240. Counted under the number
+       it refunds, or 5512129240 read "missing in ours" and 0079533084
+       "missing on theirs" beside a check that matched the two. */
+    if ((t.amount || 0) < 0) oursR.add(ticketMatchKey(t.relatedTicket || '') || k);
     else if (emdLine(t)) oursE.add(k);
     else oursT.add(k);
   }
@@ -1827,9 +1907,16 @@ export function compareTeamSheet(
      Counted as a ticket, KSAML2552 read 10 on their sheet against our 9
      with ...809 "missing in our books", beside a check that rightly found
      nothing wrong. It is counted with its sibling and named apart. */
+  const findingsAt = new Map<string, Finding[]>();
+  for (const f of findings) {
+    const k = f.serial || pnrKey(f.pnr);
+    if (k) findingsAt.set(k, [...(findingsAt.get(k) ?? []), f]);
+  }
+  /* A booklet whose ticket is counted - unless the check found it to be a
+     ticket we lack (two passengers written as a range). */
   const coupons = new Map<string, string>();
-  for (const f of findings) if (f.verdict === 'CONJUNCT_ALREADY_HELD' && f.serial)
-    coupons.set(f.serial, (f.ours ?? []).map(t => ticketMatchKey(t.ticketNo || '')).filter(Boolean).join(', '));
+  for (const r of sheet) if (r.couponOf && r.serial
+    && !(findingsAt.get(r.serial) ?? []).some(f => f.verdict === 'NOT_IN_LEDGER')) coupons.set(r.serial, r.couponOf);
   const theirT = new Set<string>(), theirE = new Set<string>(), theirR = new Set<string>();
   for (const r of sheet) {
     if (r.status === 'VOID' || r.status === 'ON_HOLD') continue;
@@ -1855,17 +1942,33 @@ export function compareTeamSheet(
   for (const k of oursT) if (!theirT.has(k) && !theirE.has(k) && carried(k)) theirT.add(k);
   for (const k of oursE) if (!theirE.has(k) && !theirT.has(k) && carried(k)) theirE.add(k);
   const sorted = (xs: Iterable<string>) => [...xs].sort();
+  /* Missing in our books, and nothing to do about it: a reissue no supplier
+     charged for, a refund applied and on its way, a document the cell's
+     other tickets hold the fare for. Red beside "no problems" is what
+     KSAML2552 was - so these are named apart, each with its reason, and
+     "missing" means a document somebody has to find. */
+  const REFUND_SIDE = new Set<Verdict>(['REFUND_NOT_IN_LEDGER', 'REFUND_AWAITING_BILLING', 'REFUND_DIFFERS', 'REFUND_NOT_ON_SHEET']);
+  const split = (ks: string[], refund: boolean) => {
+    const missingInOurs: string[] = [], noted: string[] = [];
+    for (const k of ks) {
+      const fs = (findingsAt.get(k) ?? []).filter(f => REFUND_SIDE.has(f.verdict) === refund);
+      if (fs.length && fs.every(f => f.explained || whoActs(f) === 'INFO'))
+        noted.push(`${k} - ${fs[0].explained ? `explained: ${fs[0].explained}` : VERDICT_LABEL[fs[0].verdict]}`);
+      else missingInOurs.push(k);
+    }
+    return { missingInOurs, noted };
+  };
   const docTypes = {
     tickets: { ours: oursT.size, theirs: theirT.size,
       missingOnTheirs: sorted([...oursT].filter(k => !carried(k))),
-      missingInOurs: sorted([...theirT].filter(k => !held(k))),
-      conjunctions: sorted([...coupons].map(([c, of]) => of ? `${c} (with ${of})` : c)) },
+      ...split(sorted([...theirT].filter(k => !held(k))), false),
+      conjunctions: sorted([...coupons].map(([c, of]) => `${c} (with ${of})`)) },
     refunds: { ours: oursR.size, theirs: theirR.size,
       missingOnTheirs: sorted([...oursR].filter(k => !theirR.has(k))),
-      missingInOurs: sorted([...theirR].filter(k => !oursR.has(k) && !voidedSet.has(k))) },
+      ...split(sorted([...theirR].filter(k => !oursR.has(k) && !voidedSet.has(k))), true) },
     emds: { ours: oursE.size, theirs: theirE.size,
       missingOnTheirs: sorted([...oursE].filter(k => !carried(k))),
-      missingInOurs: sorted([...theirE].filter(k => !held(k))) },
+      ...split(sorted([...theirE].filter(k => !held(k))), false) },
   };
 
   /* ── did every row reach a result? ───────────────────────────────────── */
@@ -1877,7 +1980,7 @@ export function compareTeamSheet(
   }
   const sheetsSeen = new Set(findings.map(f => f.sheet).filter(Boolean));
   const REFUND_SAYS = new Set<Verdict>(['REFUND_NOT_IN_LEDGER', 'REFUND_AWAITING_BILLING', 'REFUND_DIFFERS', 'TWICE_ON_THEIR_SHEET',
-    'VOID_NOT_BILLED', 'VOID_AND_ISSUED', 'CONJUNCT_ALREADY_HELD', 'REISSUE_NO_CHARGE']);
+    'VOID_NOT_BILLED', 'VOID_AND_ISSUED', 'CONJUNCT_ALREADY_HELD', 'CONJUNCT_OF_MISSING', 'REISSUE_NO_CHARGE']);
   for (const r of sheet) {
     // A held booking was not issued: there is nothing it could have reached.
     if (r.status === 'ON_HOLD') continue;

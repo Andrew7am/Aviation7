@@ -1867,7 +1867,13 @@ console.log('\n58. A booking we only hold part of is still a gap');
 
   // And nothing of theirs at all on the siblings.
   const none = compareTeamSheet(sheet, [], ['UAEVP566']);
-  check('holding neither reports both', none.counts.NOT_IN_LEDGER, 2);
+  // One ticket in two booklets: one missing ticket, the booklet listed under it.
+  // UAEVP420's went to To Review as four tickets, each fare twice.
+  check('holding neither reports the ticket once', none.counts.NOT_IN_LEDGER, 1);
+  check('...and its booklet under it', none.counts.CONJUNCT_OF_MISSING, 1);
+  check('...the ticket names the booklet',
+    /conjunction coupon 5513058951/.test(none.findings.find(f => f.verdict === 'NOT_IN_LEDGER')!.note), true);
+  check('...counted as one ticket', [none.docTypes.tickets.theirs, none.docTypes.tickets.missingInOurs], [1, ['5513058950']]);
   check('and claims no coupon',         none.counts.CONJUNCT_ALREADY_HELD, 0);
 
   // A cell their sheet never priced cannot be judged this way: there is
@@ -1876,6 +1882,63 @@ console.log('\n58. A booking we only hold part of is still a gap');
     parseTeamSheet('Ticket Number,PNR,Status,Req Num,Net Cost\n065-5513058960-61,QQ8,Issued,U2,').rows,
     [tkt({ ticketNo: '5513058960', pnr: 'QQ8', reqNum: 'U2', amount: 5000 })], ['U2']);
   check('no figure, no judgement', unpriced.counts.CONJUNCT_ALREADY_HELD, 0);
+
+  // 5512129240 refunded through application 0079533084: one refund, on
+  // both sides - not one missing in each direction.
+  const app = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount',
+    '057-5512129240,RA1,Cancelled/Refunded,KSAML1276,3380,500',
+  ].join('\n')).rows, [
+    tkt({ ticketNo: '5512129240', pnr: 'RA1', reqNum: 'KSAML1276', amount: 3380 }),
+    tkt({ ticketNo: '0079533084', pnr: 'RA1', reqNum: 'KSAML1276', amount: -520, status: 'REFUND', relatedTicket: '5512129240' }),
+  ], ['KSAML1276']);
+  check('a refund application counts under the ticket it refunds',
+    [app.docTypes.refunds.ours, app.docTypes.refunds.theirs, app.docTypes.refunds.missingInOurs, app.docTypes.refunds.missingOnTheirs], [1, 1, [], []]);
+
+  // Missing in our books with nothing to do is named apart, with its reason.
+  const free = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost',
+    '065-6906536994,FR1,Reissue,KSAML1685,0',
+  ].join('\n')).rows, [], ['KSAML1685']);
+  check('a reissue at no charge is not "missing"', [free.docTypes.tickets.missingInOurs, free.docTypes.tickets.noted?.length], [[], 1]);
+
+  // UAEVP420: issued at 49,240 on 29 June, a Reissue row at 0 on 1 August.
+  // The missing ticket is the 49,240 one - the 0 went to To Review and was
+  // turned away as having no value.
+  const twoRows = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost,Issued Date & Time',
+    '176-5512970091-92,ZFKZHR,Issued,UAEVP420,49240,29/6/2026 6:04pm',
+    '176 5512970091-92,ZFKZHR,Reissue,UAEVP420,0,1/8/2026 2:53pm',
+  ].join('\n')).rows, [], ['UAEVP420']);
+  const miss = twoRows.findings.find(f => f.verdict === 'NOT_IN_LEDGER')!;
+  check('the missing ticket carries the issue row, not the 0', [miss.serial, miss.sheet?.cost, miss.sheet?.issued], ['5512970091', 49240, '2026-06-29']);
+  check('...once, its booklet under it', [twoRows.counts.NOT_IN_LEDGER, twoRows.counts.CONJUNCT_OF_MISSING], [1, 1]);
+
+  // ABKAR/HAUWA: two conjunctions in one cell at 8,020; we hold 3,390 on
+  // each first number - 85% of its share. A price question, not two
+  // missing tickets.
+  const pairs = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost',
+    '"157-5511323226-27 , 157-5511323228-29",PX1,Issued,UAEVP110,8020',
+  ].join('\n')).rows, [
+    tkt({ ticketNo: '5511323226', pnr: 'PX1', reqNum: 'UAEVP110', amount: 3390 }),
+    tkt({ ticketNo: '5511323228', pnr: 'PX1', reqNum: 'UAEVP110', amount: 3390 }),
+  ], ['UAEVP110']);
+  check('two conjunctions in a cell: the booklets are held', [pairs.counts.NOT_IN_LEDGER, pairs.counts.CONJUNCT_ALREADY_HELD], [0, 2]);
+
+  // Two passengers issued one after the other, written as a range: the
+  // first holds half the cell, so the second is a ticket we lack.
+  const twoPax = compareTeamSheet(parseTeamSheet([
+    'Ticket Number,PNR,Status,Req Num,Net Cost',
+    '065-5513427701-02,PX2,Issued,KSAML1,2000',
+  ].join('\n')).rows, [tkt({ ticketNo: '5513427701', pnr: 'PX2', reqNum: 'KSAML1', amount: 1000 })], ['KSAML1']);
+  check('two passengers in a row are not a conjunction', [twoPax.counts.NOT_IN_LEDGER, twoPax.counts.CONJUNCT_ALREADY_HELD], [1, 0]);
+
+  // A longer run is read as tickets, each its own.
+  check('"-05" is five tickets, not booklets',
+    parseTeamSheet('Ticket Number,Net Cost\n065-5513427701-05,5000').rows.map(r => r.couponOf ?? ''), ['', '', '', '', '']);
+  check('"-92" is a booklet of ...091',
+    parseTeamSheet('Ticket Number,Net Cost\n176-5512970091-92,1').rows.map(r => r.couponOf ?? ''), ['', '5512970091']);
 
   // A ticket that shared no cell is never treated as a coupon.
   const solo = compareTeamSheet(
