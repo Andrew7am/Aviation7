@@ -430,6 +430,8 @@ function normalize(r, names) {
     refund_amount: num(f["Refund Amount"]),
     issued_at: str(f["Issued Date & Time"]) || null,
     client_name: str(f["Extracted Client Name"]),
+    account: (sheet["MICE Account (from Aviation Requests) (from Aviation Quotations)"] ?? "").trim(),
+    department: (sheet["Department"] ?? "").trim(),
     cabin: str(f["Cabin Class (Automated)"]),
     portal: sheet["Portal"],
     airline: sheet["Airline"],

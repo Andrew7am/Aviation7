@@ -58,6 +58,9 @@ interface TicketTableProps {
   /** Reissues — which document replaced which — so a refund of a reissue
    *  can say what the original was. */
   exchanges?: { ticketNo: string; replacedTicket: string; fee?: number | null }[];
+  /** The company a ticket was issued for (the team's Airtable) - a column,
+   *  a filter and a search term when given. */
+  companyOf?: (t: Ticket) => string;
   onDelete?: (id: string) => void;
   onUpdateReqNum?: (id: string, reqNum: string) => void;
   onUpdateTicket?: (id: string, patch: Partial<Ticket>) => void;
@@ -382,7 +385,7 @@ const CabinBadge: React.FC<{ cabin?: string; raw?: string }> = ({ cabin, raw }) 
  * is in no balance and no request, so nothing on it opens an editor and it
  * has no closure state to flip.
  */
-const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean }> = ({ ticket, withDelete }) => {
+const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean; withCompany?: boolean }> = ({ ticket, withDelete, withCompany }) => {
   const dash = <span className="text-slate-300">—</span>;
   return (
     <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-400"
@@ -414,6 +417,7 @@ const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean }> = ({ ticket, w
       <td className="px-3 py-2">{ticket.pnr || dash}</td>
       <td className="px-3 py-2 max-w-[140px]"><span className="block truncate">{ticket.passengerName || dash}</span></td>
       <td className="px-3 py-2">{dash}</td>
+      {withCompany && <td className="px-3 py-2">{dash}</td>}
       <td className="px-3 py-2 font-mono text-[10px] whitespace-nowrap">{ticket.vendorReference || dash}</td>
       <td className="px-3 py-2 font-bold text-[9px]">VOIDED</td>
       <td className="px-3 py-2">{dash}</td>
@@ -423,7 +427,7 @@ const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean }> = ({ ticket, w
 };
 
 export const TicketTable: React.FC<TicketTableProps> = ({
-  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, exchanges = [], onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
+  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, exchanges = [], companyOf, onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed,
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const chainIdx = useMemo(() => chainIndex(exchanges), [exchanges]);
@@ -441,6 +445,10 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [cabinFilter, setCabinFilter]   = useState<string>('ALL');
   /** Which office raised the request, read off the req number's prefix. */
   const [officeFilter, setOfficeFilter] = useState<string>('ALL');
+  /** Whose ticket: a company from the team's Airtable, or NONE for the ones nothing names. */
+  const [companyFilter, setCompanyFilter] = useState<string>('ALL');
+  const companies = useMemo(() => companyOf
+    ? [...new Set(tickets.map(t => companyOf(t)).filter(Boolean))].sort() : [], [tickets, companyOf]);
   const [filterTicket, setFilterTicket] = useState('');
   const [filterAL, setFilterAL]         = useState('');
   const [filterPax, setFilterPax]       = useState('');
@@ -556,6 +564,10 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       // "Other" is the useful half of this filter as much as the three
       // offices: it is how the req numbers that are markers rather than
       // requests — ADM, VOID, CREDIT MEMO, someone's name — get found.
+      if (companyOf && companyFilter !== 'ALL') {
+        const c = companyOf(t);
+        if (companyFilter === 'NONE' ? !!c : c !== companyFilter) return false;
+      }
       if (officeFilter !== 'ALL') {
         const office = classifyOffice(t.reqNum);
         if (officeFilter === 'OTHER') { if (office) return false; }
@@ -576,14 +588,14 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         // A refund is found by the ticket it refunds as well as by its own
         // number: searching the original should turn up what paid it back.
         const haystack = `${t.ticketNo} ${t.reqNum} ${vendorRef(t)} ${t.pnr} ${t.source} ${t.passengerName}`
-          + ` ${t.relatedTicket ?? ''}`;
+          + ` ${t.relatedTicket ?? ''}` + (companyOf ? ` ${companyOf(t)}` : '');
         const hay = haystack.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
     return sortRows(rows);
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortRows, isFreeReissue]);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortRows, isFreeReissue, companyOf, companyFilter]);
 
   /** The voids, shaped as rows so they sort and page with the tickets. */
   const voidRows = useMemo(() => voids.map((v, i): Ticket => ({
@@ -598,7 +610,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
    *  closure state, a cabin) that a void has no answer to. */
   const voidShown = useMemo(() => {
     if (filterMode !== 'ALL' && filterMode !== 'VOIDS') return [];
-    if (closedFilter !== 'ALL' || travelFilter !== 'ALL' || cabinFilter !== 'ALL' || officeFilter !== 'ALL') return [];
+    if (closedFilter !== 'ALL' || travelFilter !== 'ALL' || cabinFilter !== 'ALL' || officeFilter !== 'ALL' || companyFilter !== 'ALL') return [];
     return voidRows.filter(t => {
       if (sourceSel.length > 0 && !sourceSel.includes(t.source)) return false;
       if (dateFrom || dateTo) {
@@ -620,7 +632,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       }
       return true;
     });
-  }, [voidRows, filterMode, closedFilter, travelFilter, cabinFilter, officeFilter, sourceSel, dateFrom, dateTo, filterTicket, filterAL, filterPax, filterPNR, searchTerm]);
+  }, [voidRows, filterMode, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, sourceSel, dateFrom, dateTo, filterTicket, filterAL, filterPax, filterPNR, searchTerm]);
 
   /** What the table lists: the ledger rows, then the voids - or the two
    *  merged when a column is sorted. */
@@ -641,7 +653,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       || (v.passengerName || '').toLowerCase().includes(q));
   }, [voids, searchTerm]);
 
-  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const paged = useMemo(
@@ -837,6 +849,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       { key: 'Cur',         get: (t: Ticket) => ticketCurrency(t), w: 6 },
       { key: 'Bought in',   get: (t: Ticket) => t.originalCurrency ? `${t.originalCurrency} ${t.originalAmount ?? ''}` : '', w: 12 },
       { key: 'Req Num',     get: (t: Ticket) => t.reqNum || '',          w: 14 },
+      ...(companyOf ? [{ key: 'Company', get: (t: Ticket) => companyOf(t), w: 20 }] : []),
       { key: 'Vendor Ref',  get: (t: Ticket) => vendorRef(t),            w: 18 },
       ...(has.office ? [{ key: 'Office',
         get: (t: Ticket) => OFFICE_LABEL[classifyOffice(t.reqNum) as Exclude<Office, ''>] ?? '',
@@ -1471,6 +1484,23 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             <option value="OTHER">Other / not an office</option>
           </select>
 
+          {/* Whose ticket, from the team's Airtable. */}
+          {companyOf && (
+            <select
+              value={companyFilter}
+              onChange={e => setCompanyFilter(e.target.value)}
+              title="The company the ticket was issued for, from the team's Airtable"
+              className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+                companyFilter === 'ALL' ? 'bg-white text-slate-500 border-slate-200'
+                                        : 'bg-blue-50 text-blue-700 border-blue-200'
+              }`}
+            >
+              <option value="ALL">All Companies</option>
+              {companies.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="NONE">No company</option>
+            </select>
+          )}
+
           {/* Closed / Not Closed filter */}
           <select
             value={closedFilter}
@@ -1744,6 +1774,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                 ['PNR',        'pnr'],
                 ['Passenger',  'passengerName'],
                 ['Req Num',    'reqNum'],
+                // Whose ticket, from the team's Airtable - only where it is known.
+                ...(companyOf ? [['Company', null]] : []),
                 // The vendor's own reference for the document — their invoice
                 // number, where they give one. Req Num is what WE called the
                 // request; this is what THEY call the bill, and a dispute is
@@ -1777,7 +1809,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               eighteen near-identical handlers. */}
           <tbody className="text-xs font-mono" onClick={handleCellClick}>
             {paged.map(ticket => {
-              if (isVoidLine(ticket)) return <VoidLine key={ticket.id} ticket={ticket} withDelete={!!onDelete} />;
+              if (isVoidLine(ticket)) return <VoidLine key={ticket.id} ticket={ticket} withDelete={!!onDelete} withCompany={!!companyOf} />;
               const rowCurrency = ticketCurrency(ticket);
               return (
                 <tr key={ticket.id} className={`border-b border-slate-100 hover:bg-slate-50 ${!ticket.reqNum ? 'bg-red-50/20' : ''}`}>
@@ -2032,6 +2064,11 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                       </div>
                     )}
                   </td>
+                  {companyOf && (
+                    <td className="px-3 py-2 text-[10px] font-bold text-blue-700 whitespace-nowrap">
+                      {companyOf(ticket) || <span className="text-slate-300 font-normal">—</span>}
+                    </td>
+                  )}
                   <td className="px-3 py-2 font-mono text-[10px] text-slate-600 whitespace-nowrap"
                       title={ticket.vendorReference || undefined}>
                     {vendorRef(ticket) || <span className="text-slate-300">—</span>}
@@ -2069,7 +2106,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             })}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={onDelete ? 18 : 17} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
+                <td colSpan={(onDelete ? 22 : 21) + (companyOf ? 1 : 0)} className="px-4 py-10 text-center text-slate-400 font-sans text-sm">
                   No tickets found matching your filters.
                 </td>
               </tr>

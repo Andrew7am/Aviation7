@@ -95,6 +95,11 @@ export interface AirtableTicketRow {
   refund_amount: number | null;
   issued_at: string | null;
   client_name: string;
+  /** The company the ticket is issued for (their MICE Account) - Nestle,
+   *  Allergen, STADA. Blank on VIP and Corporate tickets. */
+  account: string;
+  /** MICE Local, VIP, Corporate, FIT MICE, MICE International. */
+  department: string;
   cabin: string;
   portal: string;
   airline: string;
@@ -127,6 +132,8 @@ export function normalize(r: AirtableRecord, names: NameMap): AirtableTicketRow 
     refund_amount: num(f['Refund Amount']),
     issued_at: str(f['Issued Date & Time']) || null,
     client_name: str(f['Extracted Client Name']),
+    account: (sheet['MICE Account (from Aviation Requests) (from Aviation Quotations)'] ?? '').trim(),
+    department: (sheet['Department'] ?? '').trim(),
     cabin: str(f['Cabin Class (Automated)']),
     portal: sheet['Portal'],
     airline: sheet['Airline'],

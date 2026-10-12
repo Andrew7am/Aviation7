@@ -24,6 +24,7 @@ const Requests        = React.lazy(() => import('./components/Requests').then(m 
 const ImportData      = React.lazy(() => import('./components/ImportData').then(m => ({ default: m.ImportData })));
 const AirtablePage = React.lazy(() => import('./components/AirtablePage').then(m => ({ default: m.AirtablePage })));
 const TeamSheetCheck  = React.lazy(() => import('./components/TeamSheetCheck').then(m => ({ default: m.TeamSheetCheck })));
+const Companies       = React.lazy(() => import('./components/Companies').then(m => ({ default: m.Companies })));
 const PendingReview   = React.lazy(() => import('./components/PendingReview').then(m => ({ default: m.PendingReview })));
 const VendorBalances  = React.lazy(() => import('./components/VendorBalances').then(m => ({ default: m.VendorBalances })));
 const VendorStatements = React.lazy(() => import('./components/VendorStatements').then(m => ({ default: m.VendorStatements })));
@@ -49,6 +50,7 @@ import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { summariseVendor } from './core/helpers/statementMath';
 import type { Reprice } from './core/helpers/statementAgainstBooks';
 import { AirtableService, type AirtableNotice, type SyncState } from './services/AirtableService';
+import { companyIndex, companyOf, type CompanyRow } from './core/helpers/companies';
 import { AirtableBell, NEEDS_APPROVAL } from './components/AirtableBell';
 import { useTickets } from './hooks/useTickets';
 import { useWallet } from './hooks/useWallet';
@@ -70,7 +72,7 @@ import { TicketService } from './services/TicketService';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
-  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck, Receipt, Ban, FileWarning, Table2 } from 'lucide-react';
+  ShieldCheck, Circle, Settings as SettingsIcon, FileText, FolderOpen, FileSearch, ClipboardCheck, Receipt, Ban, FileWarning, Table2, Building2 } from 'lucide-react';
 import type { User } from '@supabase/supabase-js';
 
 const LOW_PCT = 0.2;
@@ -278,6 +280,16 @@ function MainApp({ user }: { user: User }) {
   const airtable = React.useMemo(() => new AirtableService(), []);
   const [atNotices, setAtNotices] = useState<AirtableNotice[]>([]);
   const [atSync, setAtSync] = useState<SyncState | null>(null);
+  /* Whose ticket each one is - the company on the team's Airtable. Read once;
+     it changes when their sheet does, not while somebody is looking. */
+  const [companyRows, setCompanyRows] = useState<CompanyRow[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(true);
+  useEffect(() => {
+    airtable.companyRows().then(setCompanyRows).catch(e => console.error('companies', e))
+      .finally(() => setCompaniesLoading(false));
+  }, [airtable]);
+  const companyIdx = React.useMemo(() => companyIndex(companyRows), [companyRows]);
+  const companyFn = React.useCallback((t: Ticket) => companyOf(t, companyIdx), [companyIdx]);
   const loadAirtable = React.useCallback(async () => {
     try {
       const [n, s] = await Promise.all([airtable.notices(), airtable.state()]);
@@ -555,6 +567,7 @@ function MainApp({ user }: { user: User }) {
   const NAV: NavItem[] = [
     { id: 'dashboard', label: 'Dashboard',       icon: <LayoutDashboard className="w-4 h-4" /> },
     { id: 'tickets',   label: 'All Tickets',     icon: <List className="w-4 h-4" />, badge: tickets.length },
+    { id: 'companies', label: 'Companies',       icon: <Building2 className="w-4 h-4" /> },
     { id: 'requests',  label: 'Requests',        icon: <FolderOpen className="w-4 h-4" />, badge: partClosedCount || undefined, badgeColor: 'amber' },
     { id: 'missing',   label: 'Action Required', icon: <AlertTriangle className="w-4 h-4" />, badge: missingReqCount, badgeColor: 'red' },
     { id: 'notclosed', label: 'Not Closed',      icon: <Circle className="w-4 h-4" />, badge: notClosedCount || undefined, badgeColor: 'amber' },
@@ -604,7 +617,9 @@ function MainApp({ user }: { user: User }) {
       )}
 
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
-      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} {...(isAdmin ? writeHandlers : {})} />}
+      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} companyOf={companyRows.length ? companyFn : undefined} {...(isAdmin ? writeHandlers : {})} />}
+      {view === 'companies' && <Companies tickets={tickets} rows={companyRows} loading={companiesLoading}
+        tableProps={{ afterClose, exchanges, ...(isAdmin ? writeHandlers : {}) }} />}
       {view === 'requests'  && <Requests tickets={tickets}
         {...(isAdmin ? { onUpdateClosed: handleUpdateClosed } : {})} />}
       {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}

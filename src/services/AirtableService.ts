@@ -1,4 +1,5 @@
 import { supabase, fetchAllRows } from '../utils/supabase';
+import type { CompanyRow } from '../core/helpers/companies';
 
 /**
  * The team's Airtable as the app sees it: the live copy the server keeps,
@@ -52,6 +53,16 @@ export class AirtableService {
         .eq('deleted', false).order('issued_at', { ascending: false, nullsFirst: false }).range(from, to));
     return rows.map(r => ({ ...r, net_cost: r.net_cost == null ? null : Number(r.net_cost),
       refund_amount: r.refund_amount == null ? null : Number(r.refund_amount), serials: r.serials ?? [] }));
+  }
+
+  /** Whose ticket each of their rows is: the company (MICE Account) and department. */
+  async companyRows(): Promise<CompanyRow[]> {
+    const rows = await fetchAllRows<any>((from, to) =>
+      supabase.from('airtable_tickets')
+        .select('serials, req_num, account, department, status, net_cost, currency, issued_at, pnr, ticket_cell, client_name')
+        .eq('deleted', false).range(from, to));
+    return rows.map(r => ({ ...r, serials: r.serials ?? [], account: r.account ?? '', department: r.department ?? '',
+      net_cost: r.net_cost == null ? null : Number(r.net_cost) }));
   }
 
   /** What each of their rows says about requests - for filling ours. */
