@@ -14,6 +14,12 @@ import { parseDate } from '../helpers/parseDate';
  * Distinct headers we key on: "Tk Date" + "RecLoc" + "GrandTotal" — none of
  * which appear in the legacy Ibtekar sheet or any other vendor's export.
  *
+ * Their site prints a second copy of the same report (October 2026 on):
+ * "Date" for "Tk Date", "Action" - issue / refund / void - for "Status",
+ * "Grand Total" with a space, and a "Type" column saying ticket or EMD.
+ * Same rows, same offices, same money; read by the same parser, so the two
+ * copies of one ticket are one ticket.
+ *
  * Except RTS Dubai's: the same booking system prints the same copy for them,
  * column for column. The office that issued the ticket is the difference -
  * "OfficeID Tk" reads RUH… for Ibtekar in Riyadh (RUHS2234T) and DXB… for RTS
@@ -41,7 +47,8 @@ export const IbtekarV2Parser: VendorParser = {
   name: 'Ibtekar',
   detect: (headers) => {
     const hj = headers.map(c => (c || '').toLowerCase().replace(/[^a-z0-9.]/g, '')).join('|');
-    return hj.includes('tkdate') && hj.includes('recloc') && hj.includes('grandtotal') && hj.includes('route');
+    return (hj.includes('tkdate') || hj.split('|').includes('date')) && hj.includes('recloc')
+      && hj.includes('grandtotal') && hj.includes('route');
   },
   parse: (rows, headers, defaultCurrency): ParserResult => {
     const errors: string[] = [];
@@ -54,11 +61,13 @@ export const IbtekarV2Parser: VendorParser = {
     // so densify with `?? ''` before any header lookup.
     headers = Array.from({ length: headers.length }, (_, i) => headers[i] ?? '');
 
-    const iDate = col(headers, 'Tk Date');
+    const iDate = col(headers, 'Tk Date', 'Date');
     const iPNR = col(headers, 'RecLoc');
     const iPax = col(headers, 'Passenger');
     const iTicket = col(headers, 'No');
-    const iStatus = col(headers, 'Status');
+    const iStatus = col(headers, 'Status', 'Action');
+    // "ticket" or "EMD", in the newer copy only.
+    const iType = headers.findIndex(h => (h || '').trim().toLowerCase() === 'type');
     const iVC = col(headers, 'VC');
     const iRoute = col(headers, 'Route');
     const iGrand = col(headers, 'GrandTotal', 'NGrandTotal', 'Total');
@@ -70,7 +79,7 @@ export const IbtekarV2Parser: VendorParser = {
     const offices = new Set<string>();
 
     if (iTicket === -1 || iStatus === -1 || iGrand === -1) {
-      errors.push('Ibtekar (New): required columns missing (No / Status / GrandTotal).');
+      errors.push('Ibtekar (New): required columns missing (No / Status or Action / Grand Total).');
       return { rows: result, errors, warnings };
     }
 
@@ -100,8 +109,8 @@ export const IbtekarV2Parser: VendorParser = {
       // falls through to ISSUE with a warning so the row is never silently
       // dropped.
       let status: string;
-      if (/^issd|^issue/.test(rawStatus)) status = 'ISSUE';
-      else if (/^rfnd/.test(rawStatus)) status = 'REFUND';
+      if (/^issd|^issue|^exch|^reiss/.test(rawStatus)) status = 'ISSUE';
+      else if (/^rfnd|^refund/.test(rawStatus)) status = 'REFUND';
       else if (/^(void|canx|cann|rfnx)/.test(rawStatus)) status = 'VOID';
       else if (/^emd/.test(rawStatus)) status = 'EMDS';
       else if (/^adm/.test(rawStatus)) status = 'ADM';
@@ -110,6 +119,8 @@ export const IbtekarV2Parser: VendorParser = {
         warnings.push(`Ticket ${rawTk}: unknown status "${rawStatus}" — treating as ISSUE`);
         status = 'ISSUE';
       }
+      // The newer copy says EMD in its own column rather than its action.
+      if (status === 'ISSUE' && iType !== -1 && /^emd/i.test(cell(row, iType).trim())) status = 'EMDS';
 
       // Money columns come formatted like "778.55 SAR" — num() strips the
       // suffix. Void rows carry the original grand total on the sheet, but

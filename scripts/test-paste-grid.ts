@@ -180,5 +180,33 @@ console.log('\n10. RTS Dubai prints the very same copy - its office says whose i
   check('Lufthansa\'s code from the ticket', r.rows[0].airlineCode, '220');
 }
 
+console.log('\n11. Ibtekar\'s newer copy - "Date", "Action", "Grand Total", a Type column');
+{
+  // The paste of 2026-10-12. Its first data row says "ticket" in the Type
+  // column, and the header names no ticket column the finder knew - so the
+  // data row was taken for the header and every row was lost.
+  const H = 'Date \tRecLoc\tOfficeID Bk\tOfficeID Tk\tPassenger\tPaxType\tType\tNo\tAction\tType of issue\tVC\tRoute\tPayment\tFM\tFM equiv.\tTaxes\tMisc. fees\tFare\tFare eq.\tTotal\tNGrandTotal\tGrand Total\tActions';
+  const head = (d: string, pnr: string, pax: string, no: string, action: string, vc: string, route: string, pay: string) =>
+    `${d}\t${pnr}\tRUHS2242O\tRUHS2234T\t${pax}\t\tticket\t\n${no}\t\n${action}\tBSP\t${vc}\t${route}\t${pay}\t`;
+  const paste = [H,
+    head('2026-10-10', '7UIF4G', 'AL JABER ALI ABDULLAH', '065-4862405674', 'issue', 'SV', 'HOF-JED; JED-HOF', 'CASH')
+      + '0\t0.00 SAR\t303.65 SAR\t0.00 SAR\t721.00 SAR\t\t1024.65 SAR\t1024.65 SAR\t1024.65 SAR\t',
+    head('2026-10-09', '9C4U6F', 'HAFEZ SALLY FAISAL', '065-4862405604', 'refund', 'SV', 'DMM-RUH; RUH-DMM', 'CASH/SAR736.00')
+      + '\t0.00 SAR\t- 466.00 SAR\t\t- 500.00 SAR\t-\t-736.00 SAR\t-736.00 SAR\t-736.00 SAR\t',
+    // A void: one tab more than the blank money columns.
+    head('2026-10-07', '9FU5HA', 'FARRASH ABRAR HESHAM', '065-4862405618', 'void', 'SV', 'YNB-JED; JED-YNB', 'CASH') + '\t'.repeat(10),
+    head('2026-10-07', '9FZLGO', 'ABDELGAYED MOATAZ MAHMOUD', '593-4862405619', 'issue', 'XY', 'AHB-JED', 'CASH')
+      + '0\t0.00 SAR\t207.70 SAR\t0.00 SAR\t112.00 SAR\t\t319.70 SAR\t319.70 SAR\t319.70 SAR\t',
+  ].join('\n') + '\n';
+  const r = runParser(parseGrid(paste).rows, undefined, 'SAR', 'pasted');
+  check('read as Ibtekar\'s report', [r.parserName, r.confidence], ['Ibtekar', 95]);
+  check('every row, the void too', r.rows.map(t => [t.ticketNo, t.status, t.amount]),
+    [['4862405674', 'ISSUE', 1024.65], ['4862405604', 'REFUND', -736], ['4862405618', 'VOID', 0], ['4862405619', 'ISSUE', 319.7]]);
+  check('no rows lost', r.errors, []);
+  check('dated, priced in riyals, under Ibtekar', [...new Set(r.rows.map(t => `${t.currency} ${t.source}`))], ['SAR Ibtekar']);
+  check('Flynas from its own number', r.rows[3].airlineCode, '593');
+  check('the date column, not "Tk Date"', r.rows[0].date, '2026-10-10');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

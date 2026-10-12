@@ -34,7 +34,9 @@ function unwrapRows(rows) {
       return { joined, j };
     };
     const plain2 = gather(false);
-    const merged = plain2.joined.length === width ? plain2 : gather(true);
+    let merged = plain2.joined.length === width ? plain2 : gather(true);
+    if (merged.joined.length > width && merged.joined.slice(width).every((c) => !(c || "").trim()))
+      merged = { ...merged, joined: merged.joined.slice(0, width) };
     if (merged.joined.length === width) {
       out.push(merged.joined);
       i = merged.j;

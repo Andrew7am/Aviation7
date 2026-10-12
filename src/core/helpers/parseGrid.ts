@@ -89,7 +89,14 @@ export function unwrapRows(rows: string[][]): string[][] {
       return { joined, j };
     };
     const plain = gather(false);
-    const merged = plain.joined.length === width ? plain : gather(true);
+    let merged = plain.joined.length === width ? plain : gather(true);
+    /* Only when neither reading is exact: a stray tab after the last value
+       adds nothing but an empty cell - their void rows end "CASH" and one
+       tab more than the money columns they leave blank. The empty cells past
+       the end are dropped, in the reading that opens cells across the break,
+       which is how their copy wraps. */
+    if (merged.joined.length > width && merged.joined.slice(width).every(c => !(c || '').trim()))
+      merged = { ...merged, joined: merged.joined.slice(0, width) };
     if (merged.joined.length === width) { out.push(merged.joined); i = merged.j; }
     else out.push(rows[i]);   // did not add up - leave it exactly as it was
   }
