@@ -65,6 +65,18 @@ export class VoidTicketService {
     return rows.map(rowTo);
   }
 
+  /** Which of these documents are in the register - for an import to check. */
+  async voidedAmong(ticketNos: string[]): Promise<string[]> {
+    const nos = [...new Set(ticketNos.filter(Boolean))];
+    const out: string[] = [];
+    for (let i = 0; i < nos.length; i += 200) {
+      const { data, error } = await supabase.from('void_tickets').select('ticket_no').in('ticket_no', nos.slice(i, i + 200));
+      if (error) throw new Error(error.message);
+      out.push(...(data ?? []).map(r => r.ticket_no as string));
+    }
+    return out;
+  }
+
   /**
    * Record cancelled documents.
    *

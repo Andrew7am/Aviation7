@@ -11,6 +11,8 @@ import { parseGrid, gridProblem } from '../core/helpers/parseGrid';
 import { v4 as uuidv4 } from 'uuid';
 import { TicketService } from '../services/TicketService';
 import { fileUnderOriginal } from '../core/helpers/freeReissue';
+import { keepOutVoided, voidedWarning } from '../core/helpers/keepOutVoided';
+import { VoidTicketService } from '../services/VoidTicketService';
 import { confirmationsFrom, correctionsFrom, type Confirmation, type Correction } from '../core/helpers/supplierProof';
 import { AirtableService } from '../services/AirtableService';
 import { requestsFor } from '../core/integrations/airtableRequests';
@@ -212,7 +214,10 @@ export function useImport(userId: string) {
       // A report that names no replaced ticket (RTS) is filed by PNR instead.
       const pnrs = [...new Set(dup.fresh.filter(t => t.transactionType === 'REISSUE' && t.pnr).map(t => t.pnr))];
       if (pnrs.length) originals.push(...await svc.fetchByPnrs(pnrs));
-      const fresh = fileUnderOriginal(dup.fresh, [...existingFromDB, ...originals], exchanges);
+      const filed = fileUnderOriginal(dup.fresh, [...existingFromDB, ...originals], exchanges);
+      // A document in our Voids register is not sold again by a later report.
+      const voidedHere = filed.length ? await new VoidTicketService(userId).voidedAmong(filed.map(t => t.ticketNo)) : [];
+      const { kept: fresh, out: keptOutVoided } = keepOutVoided(filed, voidedHere);
       const classified = classifyAgainstExisting(realTkts, existingFromDB);
 
       /**
@@ -266,14 +271,14 @@ export function useImport(userId: string) {
         reqFromAirtable: [...filledFromAirtable],
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
-        warnings: [...reqWarnings, ...proofWarnings, ...dateWarnings,
+        warnings: [...(keptOutVoided.length ? [voidedWarning(keptOutVoided)] : []), ...reqWarnings, ...proofWarnings, ...dateWarnings,
            ...warnings.filter(w => !/Missing Req Num/i.test(w) || ![...filledFromAirtable].some(tk => w.includes(tk)))], parserName, confidence, routedVendor,
         totalRows: allRows.length,
       });
     } finally {
       setLoading(false);
     }
-  }, [svc]);
+  }, [svc, userId]);
 
   const clear = useCallback(() => {
     setPreview(null);

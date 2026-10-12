@@ -14,6 +14,7 @@
  */
 import { voidFromTicket, voidsFromImport, periodFor } from '../src/core/helpers/voidFromImport';
 import type { Ticket } from '../src/types';
+import { keepOutVoided, voidedWarning } from '../src/core/helpers/keepOutVoided';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -119,6 +120,23 @@ console.log('\n6. A date that is not a date is not kept as one');
   check('free text is refused', voidFromTicket(tkt({ date: 'Aug 2026' })).date, '');
   check('  ...so the column never holds something undateable',
         voidFromTicket(tkt({ date: '12/08/2026' })).date, '');
+}
+
+console.log('\nA later report does not sell a voided document again');
+{
+  // 4862343304 and 4862405623, voided by accounting on 12 October while
+  // Ibtekar's report still prints them issued.
+  const fresh = [
+    { ticketNo: '4862343304', amount: 966 },
+    { ticketNo: '065-4862405623', amount: 1102.85 },
+    { ticketNo: '4862405674', amount: 1024.65 },
+    { ticketNo: '4862343304', amount: -966 },
+  ];
+  const r = keepOutVoided(fresh, ['4862343304', '4862405623']);
+  check('the two sales are kept out', r.out.map(t => t.ticketNo), ['4862343304', '065-4862405623']);
+  check('the rest go in - a refund on a voided one too', r.kept.map(t => [t.ticketNo, t.amount]), [['4862405674', 1024.65], ['4862343304', -966]]);
+  check('the preview names them', /2 ticket\(s\).*4862343304, 065-4862405623/.test(voidedWarning(r.out)), true);
+  check('nothing to say when none', voidedWarning([]), '');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
