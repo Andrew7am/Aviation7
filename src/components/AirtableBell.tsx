@@ -17,12 +17,13 @@ const KIND: Record<string, { label: string; accept: string; tone: string }> = {
   CABIN:         { label: 'Cabin',             accept: 'Fill in',          tone: 'bg-emerald-100 text-emerald-800' },
   REFUND:        { label: 'Refunded on theirs', accept: 'Seen',            tone: 'bg-amber-100 text-amber-800' },
   REFUND_MISSING: { label: 'Refund not in our books', accept: 'Seen',     tone: 'bg-amber-100 text-amber-800' },
+  REQ_SPLIT:      { label: 'Sold and refunded on different requests', accept: 'Seen', tone: 'bg-violet-100 text-violet-800' },
   VOID:          { label: 'Voided on theirs',  accept: 'Seen',             tone: 'bg-red-100 text-red-800' },
   PRICE:         { label: 'Cost changed',      accept: 'Seen',             tone: 'bg-slate-100 text-slate-700' },
 };
 // A refund on their sheet that our books lack is the bell's too: it closes on
 // its own when the refund arrives with the supplier's report.
-const ORDER = ['REQ_CHANGED', 'NOT_IN_BOOKS', 'REFUND_MISSING', 'ONLINE_TICKET'];
+const ORDER = ['REQ_CHANGED', 'NOT_IN_BOOKS', 'REFUND_MISSING', 'REQ_SPLIT', 'ONLINE_TICKET'];
 /** What the bell brings to a person: the team moved a ticket of ours to
  *  another request (move ours, or not), and a ticket on their sheet that is
  *  in nobody's books (add it, or not). Names, cabins, routes and missing

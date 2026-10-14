@@ -4,7 +4,7 @@
  *   npx tsx scripts/test-airtable.ts
  */
 import { sheetTime, toSheetRow, normalize, diffRecord, rowsToCsv, type AirtableTicketRow } from '../src/core/integrations/airtable';
-import { noticesFor, missingRefunds, refundProposals, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
+import { noticesFor, missingRefunds, refundProposals, splitRequests, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
 import { teamFixes } from '../src/core/integrations/airtableFixes';
 import { requestsFor } from '../src/core/integrations/airtableRequests';
@@ -120,6 +120,20 @@ console.log('\n7. A ticket with no request takes the one their sheet gives');
   const split = [row({ serials: ['5513427844'], req_num: 'KSAML2325' }), row({ serials: ['5513427844'], req_num: 'KSAFM2466', status: 'Cancelled/Refunded' })];
   check('a refund takes its refund row\'s request', fill({ ticketNo: '5513427844', status: 'REFUND' }, split), [['KSAFM2466', 'ticket number']]);
   check('a sale takes its sale row\'s', fill({ ticketNo: '5513427844', status: 'ISSUE' }, split), [['KSAML2325', 'ticket number']]);
+  // ...and it is said: sold on one request, refunded on another.
+  const sheetRows = [
+    { record_id: 'r1', serials: ['5513427844'], status: 'Issued', req_num: 'KSAML2325', created_at: '2026-10-08T10:00:00Z' },
+    { record_id: 'r2', serials: ['5513427844'], status: 'Cancelled/Refunded', req_num: 'KSAFM2466', created_at: '2026-10-13T10:00:00Z' },
+  ];
+  const ledger = [{ id: 't1', ticketNo: '5513427844', amount: 3990, reqNum: 'KSAML2325' }, { id: 't2', ticketNo: '5513427844', amount: -3990, reqNum: 'KSAFM2466' }];
+  check('a split is told', splitRequests(sheetRows as any, ledger).map(n => [n.kind, n.ticket_no, n.title]),
+    [['REQ_SPLIT', '5513427844', 'Sold and refunded on different requests: 5513427844 · sold KSAML2325 · refunded KSAFM2466']]);
+  check('not once the refund is moved to the sale\'s request',
+    splitRequests([sheetRows[0], { ...sheetRows[1], req_num: 'KSAML2325' }] as any, [ledger[0], { ...ledger[1], reqNum: 'KSAML2325' }]).length, 0);
+  check('not for a refund row older than 1 October',
+    splitRequests([sheetRows[0], { ...sheetRows[1], created_at: '2026-08-01T10:00:00Z' }] as any, ledger).length, 0);
+  check('a marker is not a request (REFUND, ACM)',
+    splitRequests([sheetRows[0], { ...sheetRows[1], req_num: 'REFUND' }] as any, [ledger[0]]).length, 0);
   check('two sale rows on two requests still settle nothing',
     fill({ ticketNo: '5513427739', status: 'ISSUE' }, [row({ serials: ['5513427739'], req_num: 'A1' }), row({ serials: ['5513427739'], req_num: 'B2' })]), []);
 }

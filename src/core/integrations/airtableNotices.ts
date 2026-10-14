@@ -11,6 +11,7 @@
  *   VOID         their sheet voided a ticket we hold          -> look
  *   PRICE        their cost on a ticket we hold changed       -> look; the supplier's figure stands
  *   REFUND_MISSING  their sheet refunds a ticket we hold, our books have no refund -> wait for it, or record it
+ *   REQ_SPLIT    a ticket sold on one request and refunded on another -> look
  *
  * Names and cabins are offered only where the row is one passenger for
  * certain - one document, or a conjunction pair - because their row carries
@@ -23,7 +24,7 @@ import type { PendingTicket } from '../../types';
 import { dedupeKey } from '../helpers/pendingFromFindings';
 
 export type NoticeKind = 'REQ_CHANGED' | 'NAME' | 'CABIN' | 'REFUND' | 'VOID' | 'PRICE' | 'ONLINE_TICKET' | 'NOT_IN_BOOKS'
-  | 'REFUND_MISSING';
+  | 'REFUND_MISSING' | 'REQ_SPLIT';
 
 export interface Notice {
   kind: NoticeKind;
@@ -228,4 +229,58 @@ export function refundProposals(notices: Notice[], userId: string, newId: () => 
       dedupe: dedupeKey('TEAM_SHEET', n.ticket_no, '', 'REFUND_NOT_IN_LEDGER'),
     };
   });
+}
+
+/** A request number, not a marker - REFUND, ACM, CREDIT, DXB are not requests. */
+const isRequest = (k: string) => /^[A-Z]{2,6}\d{2,6}$/.test(k);
+
+/**
+ * A ticket sold on one request and refunded on another.
+ *
+ * 5513427844: sold under KSAML2325, refunded on a row the team filed under
+ * KSAFM2466. Each request then reads complete on its own - one holds a sale
+ * with nothing back on it, the other a refund of a ticket it never sold -
+ * and the client of either is billed off half the story. Read from their
+ * sheet and our books together; only refunds from REFUND_NOTICES_FROM on,
+ * like the missing-refund notice, so the old ones do not flood the bell.
+ */
+export function splitRequests(rows: AirtableTicketRow[], ledger: LedgerLite[], from: string = REFUND_NOTICES_FROM): Notice[] {
+  const since = Date.parse(from);
+  type Side = { sale: Set<string>; refund: Set<string>; recent: boolean; record: string };
+  const docs = new Map<string, Side>();
+  const get = (k: string) => docs.get(k) ?? (docs.set(k, { sale: new Set(), refund: new Set(), recent: false, record: '' }), docs.get(k)!);
+  const serial10 = (s: string) => { const d = docKey(s); return /^\d{10}$/.test(d) ? d : ''; };
+  for (const r of rows) {
+    if (/hold|void/i.test(r.status || '')) continue;
+    const refund = /refund/i.test(r.status || '');
+    for (const s of r.serials) {
+      const k = serial10(s);
+      if (!k) continue;
+      const d = get(k);
+      for (const q of reqParts(r.req_num || '').filter(isRequest)) (refund ? d.refund : d.sale).add(q);
+      if (refund && Date.parse(r.created_at || '') >= since) { d.recent = true; d.record = r.record_id; }
+    }
+  }
+  for (const t of ledger) {
+    const refund = (t.amount || 0) < 0;
+    const k = serial10(refund ? (t.relatedTicket || t.ticketNo) : t.ticketNo);
+    if (!k || !docs.has(k) && !refund) continue;
+    const d = get(k);
+    for (const q of reqParts(t.reqNum || '').filter(isRequest)) (refund ? d.refund : d.sale).add(q);
+  }
+  const out: Notice[] = [];
+  for (const [k, d] of docs) {
+    if (!d.recent || !d.sale.size || !d.refund.size || [...d.refund].some(q => d.sale.has(q))) continue;
+    const sale = [...d.sale].sort().join(', '), refund = [...d.refund].sort().join(', ');
+    out.push({
+      kind: 'REQ_SPLIT', dedupe_key: `REQ_SPLIT|${k}|${sale}|${refund}`, record_id: d.record, ticket_no: k,
+      ticket_ids: ledger.filter(t => docKey(t.ticketNo) === k || docKey(t.relatedTicket || '') === k).map(t => t.id),
+      req_num: refund,
+      title: `Sold and refunded on different requests: ${k} · sold ${sale} · refunded ${refund}`,
+      detail: `The sale is filed under ${sale} and its refund under ${refund}. Each request reads complete on its own;`
+        + ' if the refund belongs to the request it was sold on, move it there.',
+      payload: { sale: [...d.sale], refund: [...d.refund] },
+    });
+  }
+  return out;
 }

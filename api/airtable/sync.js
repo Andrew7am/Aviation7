@@ -2043,6 +2043,54 @@ function refundProposals(notices, userId, newId) {
     };
   });
 }
+var isRequest = (k) => /^[A-Z]{2,6}\d{2,6}$/.test(k);
+function splitRequests(rows, ledger, from = REFUND_NOTICES_FROM) {
+  const since = Date.parse(from);
+  const docs = /* @__PURE__ */ new Map();
+  const get = (k) => docs.get(k) ?? (docs.set(k, { sale: /* @__PURE__ */ new Set(), refund: /* @__PURE__ */ new Set(), recent: false, record: "" }), docs.get(k));
+  const serial10 = (s) => {
+    const d = docKey(s);
+    return /^\d{10}$/.test(d) ? d : "";
+  };
+  for (const r of rows) {
+    if (/hold|void/i.test(r.status || "")) continue;
+    const refund = /refund/i.test(r.status || "");
+    for (const s of r.serials) {
+      const k = serial10(s);
+      if (!k) continue;
+      const d = get(k);
+      for (const q of reqParts(r.req_num || "").filter(isRequest)) (refund ? d.refund : d.sale).add(q);
+      if (refund && Date.parse(r.created_at || "") >= since) {
+        d.recent = true;
+        d.record = r.record_id;
+      }
+    }
+  }
+  for (const t of ledger) {
+    const refund = (t.amount || 0) < 0;
+    const k = serial10(refund ? t.relatedTicket || t.ticketNo : t.ticketNo);
+    if (!k || !docs.has(k) && !refund) continue;
+    const d = get(k);
+    for (const q of reqParts(t.reqNum || "").filter(isRequest)) (refund ? d.refund : d.sale).add(q);
+  }
+  const out = [];
+  for (const [k, d] of docs) {
+    if (!d.recent || !d.sale.size || !d.refund.size || [...d.refund].some((q) => d.sale.has(q))) continue;
+    const sale = [...d.sale].sort().join(", "), refund = [...d.refund].sort().join(", ");
+    out.push({
+      kind: "REQ_SPLIT",
+      dedupe_key: `REQ_SPLIT|${k}|${sale}|${refund}`,
+      record_id: d.record,
+      ticket_no: k,
+      ticket_ids: ledger.filter((t) => docKey(t.ticketNo) === k || docKey(t.relatedTicket || "") === k).map((t) => t.id),
+      req_num: refund,
+      title: `Sold and refunded on different requests: ${k} \xB7 sold ${sale} \xB7 refunded ${refund}`,
+      detail: `The sale is filed under ${sale} and its refund under ${refund}. Each request reads complete on its own; if the refund belongs to the request it was sold on, move it there.`,
+      payload: { sale: [...d.sale], refund: [...d.refund] }
+    });
+  }
+  return out;
+}
 
 // src/core/helpers/addFromSheet.ts
 var dirOf = (t) => (t.amount ?? 0) < 0 || /REFUND/i.test(`${t.transactionType || ""} ${t.status || ""}`) ? "R" : "S";
@@ -2349,6 +2397,14 @@ async function syncAirtable(env) {
         (q) => q.eq("deleted", false)
       );
       notices.push(...missingRefunds(all, ledgerIndex(lite)));
+      const splits = splitRequests(all, lite);
+      notices.push(...splits);
+      if (!dry) {
+        const still = new Set(splits.map((n) => n.dedupe_key));
+        const { data: openSplits } = await db.from("airtable_notifications").select("id, dedupe_key").eq("kind", "REQ_SPLIT").eq("state", "OPEN");
+        const settled = (openSplits ?? []).filter((n) => !still.has(n.dedupe_key)).map((n) => n.id);
+        if (settled.length) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("id", settled);
+      }
       all.sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")));
       const csv = rowsToCsv(all.map((r) => r.sheet_row), (d) => {
         const q = (v) => /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;

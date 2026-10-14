@@ -29,11 +29,13 @@ const KIND_LABEL: Record<string, string> = {
   REQ_CHANGED: 'Request changed', ONLINE_TICKET: 'Bought online', NAME: 'Passenger name', CABIN: 'Cabin',
   REFUND: 'Refunded on theirs', VOID: 'Voided on theirs', PRICE: 'Cost changed', NOT_IN_BOOKS: 'Not in our books',
   REFUND_MISSING: 'Refund not in our books',
+  REQ_SPLIT: 'Sold and refunded on different requests',
 };
-const APPROVAL = new Set(['REQ_CHANGED', 'ONLINE_TICKET', 'NOT_IN_BOOKS', 'REFUND_MISSING']);
+const APPROVAL = new Set(['REQ_CHANGED', 'ONLINE_TICKET', 'NOT_IN_BOOKS', 'REFUND_MISSING', 'REQ_SPLIT']);
 const ACCEPT_LABEL: Record<string, string> = {
   REQ_CHANGED: 'Move ours', ONLINE_TICKET: 'Open in To Review', NOT_IN_BOOKS: 'Open in To Review', NAME: 'Fill in', CABIN: 'Fill in', REFUND: 'Seen', VOID: 'Seen', PRICE: 'Seen',
   REFUND_MISSING: 'Seen',
+  REQ_SPLIT: 'Seen',
 };
 
 export const AirtablePage: React.FC<{

@@ -17,7 +17,7 @@ import {
   AIRTABLE_BASE, AIRTABLE_TICKETS_TABLE, AIRTABLE_NAME_TABLES, normalize, diffRecord, rowsToCsv,
   type AirtableRecord, type AirtableTicketRow, type FieldChange, type NameMap,
 } from '../core/integrations/airtable';
-import { noticesFor, missingRefunds, refundProposals, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
+import { noticesFor, missingRefunds, refundProposals, splitRequests, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
 import { parseTeamSheet } from '../core/parsers/teamSheet';
 import { compareTeamSheet } from '../core/helpers/teamSheetCompare';
 import { planSheetAdd } from '../core/helpers/addFromSheet';
@@ -173,6 +173,16 @@ export async function syncAirtable(env: {
       // Refunds on their sheet we do not hold, read off the sheet as it stands:
       // they add a refunded row rather than change the old one.
       notices.push(...missingRefunds(all, ledgerIndex(lite)));
+      // Sold on one request, refunded on another - and closed once they agree.
+      const splits = splitRequests(all, lite);
+      notices.push(...splits);
+      if (!dry) {
+        const still = new Set(splits.map(n => n.dedupe_key));
+        const { data: openSplits } = await db.from('airtable_notifications').select('id, dedupe_key').eq('kind', 'REQ_SPLIT').eq('state', 'OPEN');
+        const settled = (openSplits ?? []).filter(n => !still.has(n.dedupe_key)).map(n => n.id);
+        if (settled.length) await db.from('airtable_notifications')
+          .update({ state: 'ACCEPTED', decided_by: 'Airtable sync', decided_at: new Date().toISOString() }).in('id', settled);
+      }
       all.sort((a, b) => String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')));
       const csv = rowsToCsv(all.map(r => r.sheet_row), (d: any) => {
         // A tiny CSV writer: their cells hold quotes, commas and newlines.
