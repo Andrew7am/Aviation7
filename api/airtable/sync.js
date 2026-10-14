@@ -1730,6 +1730,115 @@ function cleanPax(raw) {
   return s.replace(LEADING_TITLE, "").replace(TRAILING_TITLE, "").replace(/\s+/g, " ").toUpperCase().trim();
 }
 
+// src/core/helpers/conjunction.ts
+var serial2 = (t) => (t || "").replace(/\D/g, "").slice(-10);
+var isNext = (first2, second) => Number(second) === Number(first2) + 1;
+function conjunctionFirst(ticketNo, cell2) {
+  const me = serial2(ticketNo);
+  if (!me || !cell2) return null;
+  for (const hit of cell2.matchAll(/(?:\d{3}-?)?(\d{10})-(\d{1,2})(?!\d)/g)) {
+    const first2 = hit[1];
+    const tail = hit[2].padStart(2, "0");
+    const second = first2.slice(0, 10 - tail.length) + tail;
+    if (second === me && isNext(first2, second)) return first2;
+  }
+  return null;
+}
+function secondCouponsIn(cell2) {
+  const out = /* @__PURE__ */ new Set();
+  if (!cell2) return out;
+  for (const hit of cell2.matchAll(/(?:\d{3}-?)?(\d{10})-(\d{1,2})(?!\d)/g)) {
+    const tail = hit[2].padStart(2, "0");
+    const second = hit[1].slice(0, 10 - tail.length) + tail;
+    if (isNext(hit[1], second)) out.add(second);
+  }
+  return out;
+}
+
+// src/core/helpers/pendingFromFindings.ts
+var PROPOSABLE = /* @__PURE__ */ new Set(["NOT_IN_LEDGER", "REFUND_NOT_IN_LEDGER", "REISSUE_NO_CHARGE"]);
+function dedupeKey(origin, serial3, pnr, verdict) {
+  return [origin, (serial3 || pnr || "").toUpperCase(), verdict].join("|");
+}
+var refundAmount = (n) => -Math.abs(n);
+var ticketsInCell = (s) => s.cellTickets ?? Math.max(1, s.groupSize - secondCouponsIn(s.rawTicket || "").size);
+function pendingFromFindings(findings, { origin = "TEAM_SHEET", newId, userId }) {
+  const out = [];
+  for (const f of findings) {
+    if (!PROPOSABLE.has(f.verdict)) continue;
+    const s = f.sheet;
+    if (!s) continue;
+    const isRefund2 = f.verdict === "REFUND_NOT_IN_LEDGER";
+    const isFreeReissue = f.verdict === "REISSUE_NO_CHARGE";
+    const ticketNo = f.serial || (f.pnr || "");
+    const match = portalSource(s.portal || "");
+    out.push({
+      id: newId(),
+      userId,
+      ticketNo,
+      // Ambiguous on purpose when their portal names an airline rather than
+      // a house that bills us: FlyAdeal bills from two, and the choice is
+      // the reviewer's. An empty source is what stops the confirm.
+      source: match.source,
+      date: s.issued || "",
+      // Their net, which is a net. Zero when their cell named several
+      // tickets: that figure is the booking's and would treble the cost.
+      // See the note above. A cell naming none - a website purchase with
+      // only a PNR - is one purchase, and its figure is its own.
+      amount: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? refundAmount(s.refund) : 0 : ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0,
+      commission: 0,
+      totalDoc: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? Math.abs(s.refund) : 0 : ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0,
+      // We hold no row for it, so their request is the only one there is.
+      // Kept in both places: this is what it would be filed under, and
+      // `theirReq` is the record of where that came from.
+      reqNum: (f.theirReq || "").toUpperCase(),
+      pnr: (f.pnr || "").toUpperCase(),
+      // Their sheet names the person who booked it, not the passenger. It
+      // is left empty rather than filled with the wrong name.
+      passengerName: "",
+      airlineCode: f.airlineCode || "",
+      route: "",
+      status: isRefund2 ? "REFUND" : "ISSUE",
+      currency: s.currency || "AED",
+      transactionType: isRefund2 ? "REFUND" : isFreeReissue ? "REISSUE" : "ISSUE",
+      // A booking bought on an airline's own site will never be invoiced, so
+      // its own reference is the only one it will ever have.
+      vendorReference: "",
+      origin,
+      theirPortal: match.portal,
+      theirReq: f.theirReq || "",
+      theirCost: isRefund2 ? s.refund ?? void 0 : s.cost ?? void 0,
+      theirGroup: s.groupSize,
+      theirCell: s.rawTicket,
+      finding: f.verdict,
+      note: f.note,
+      heldBack: f.heldBack,
+      heldBackWhy: f.heldBackWhy,
+      state: "PENDING",
+      dedupe: dedupeKey(origin, f.serial, f.pnr, f.verdict)
+    });
+  }
+  return out;
+}
+function whyNotConfirmable(p) {
+  if (p.state !== "PENDING") return `Already ${p.state.toLowerCase()}.`;
+  if (p.heldBack) return p.heldBackWhy || "Held back.";
+  if (!p.source.trim()) return "Pick the vendor that billed it.";
+  if (!p.ticketNo.trim() && !(p.pnr || "").trim()) return "No ticket number and no PNR.";
+  if (!p.date.trim()) return "Give it a date.";
+  const first2 = conjunctionFirst(p.ticketNo, p.theirCell || "");
+  if (first2)
+    return `Second coupon of ${first2} \u2014 same passenger, same fare. Not a ticket of its own.`;
+  if (!p.amount && p.finding !== "REISSUE_NO_CHARGE") {
+    return passengersNamed(p) > 1 ? `Enter what it cost \u2014 their figure covers all ${passengersNamed(p)} tickets in that cell.` : "Enter what it cost \u2014 their sheet states no figure for it.";
+  }
+  return "";
+}
+function passengersNamed(p) {
+  const named = p.theirGroup ?? 1;
+  return Math.max(1, named - secondCouponsIn(p.theirCell || "").size);
+}
+
 // src/core/integrations/airtableNotices.ts
 var docKey = (t) => {
   const d = (t || "").replace(/\D/g, "");
@@ -1855,121 +1964,60 @@ function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
         ticket_ids: ours.map((t) => t.id),
         req_num: r.req_num || ours[0]?.reqNum || "",
         title: `Refund not in our books: ${k}${amount != null ? ` \xB7 ${money3(String(amount))} ${r.currency}` : ""}${r.req_num ? ` \xB7 ${r.req_num}` : ""}`,
-        detail: `Their sheet refunds it${added ? ` (row added ${added})` : ""}; our books hold the sale (${money3(String(sale))}) and no refund. A ${src} refund reaches us with ${src}'s report or statement - if it is already on their statement, record it.`,
-        payload: { refund: amount, currency: r.currency, source: src }
+        detail: `Their sheet refunds it${added ? ` (row added ${added})` : ""}; our books hold the sale (${money3(String(sale))}) and no refund. Waiting in To Review: it closes by itself when the refund comes in with ${src}'s report or statement.`,
+        payload: {
+          refund: amount,
+          currency: r.currency,
+          source: src,
+          added,
+          pnr: r.pnr,
+          portal: r.portal,
+          cell: r.ticket_cell,
+          theirReq: r.req_num,
+          airline: ours.find((t) => (t.amount || 0) > 0)?.airlineCode ?? "",
+          passenger: ours.find((t) => (t.amount || 0) > 0)?.passengerName ?? ""
+        }
       });
     }
   }
   return out;
 }
-
-// src/core/helpers/conjunction.ts
-var serial2 = (t) => (t || "").replace(/\D/g, "").slice(-10);
-var isNext = (first2, second) => Number(second) === Number(first2) + 1;
-function conjunctionFirst(ticketNo, cell2) {
-  const me = serial2(ticketNo);
-  if (!me || !cell2) return null;
-  for (const hit of cell2.matchAll(/(?:\d{3}-?)?(\d{10})-(\d{1,2})(?!\d)/g)) {
-    const first2 = hit[1];
-    const tail = hit[2].padStart(2, "0");
-    const second = first2.slice(0, 10 - tail.length) + tail;
-    if (second === me && isNext(first2, second)) return first2;
-  }
-  return null;
-}
-function secondCouponsIn(cell2) {
-  const out = /* @__PURE__ */ new Set();
-  if (!cell2) return out;
-  for (const hit of cell2.matchAll(/(?:\d{3}-?)?(\d{10})-(\d{1,2})(?!\d)/g)) {
-    const tail = hit[2].padStart(2, "0");
-    const second = hit[1].slice(0, 10 - tail.length) + tail;
-    if (isNext(hit[1], second)) out.add(second);
-  }
-  return out;
-}
-
-// src/core/helpers/pendingFromFindings.ts
-var PROPOSABLE = /* @__PURE__ */ new Set(["NOT_IN_LEDGER", "REFUND_NOT_IN_LEDGER", "REISSUE_NO_CHARGE"]);
-function dedupeKey(origin, serial3, pnr, verdict) {
-  return [origin, (serial3 || pnr || "").toUpperCase(), verdict].join("|");
-}
-var refundAmount = (n) => -Math.abs(n);
-var ticketsInCell = (s) => s.cellTickets ?? Math.max(1, s.groupSize - secondCouponsIn(s.rawTicket || "").size);
-function pendingFromFindings(findings, { origin = "TEAM_SHEET", newId, userId }) {
-  const out = [];
-  for (const f of findings) {
-    if (!PROPOSABLE.has(f.verdict)) continue;
-    const s = f.sheet;
-    if (!s) continue;
-    const isRefund2 = f.verdict === "REFUND_NOT_IN_LEDGER";
-    const isFreeReissue = f.verdict === "REISSUE_NO_CHARGE";
-    const ticketNo = f.serial || (f.pnr || "");
-    const match = portalSource(s.portal || "");
-    out.push({
+function refundProposals(notices, userId, newId) {
+  return notices.filter((n) => n.kind === "REFUND_MISSING").map((n) => {
+    const p = n.payload;
+    const amount = p.refund != null ? -Math.abs(Number(p.refund)) : 0;
+    return {
       id: newId(),
       userId,
-      ticketNo,
-      // Ambiguous on purpose when their portal names an airline rather than
-      // a house that bills us: FlyAdeal bills from two, and the choice is
-      // the reviewer's. An empty source is what stops the confirm.
-      source: match.source,
-      date: s.issued || "",
-      // Their net, which is a net. Zero when their cell named several
-      // tickets: that figure is the booking's and would treble the cost.
-      // See the note above. A cell naming none - a website purchase with
-      // only a PNR - is one purchase, and its figure is its own.
-      amount: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? refundAmount(s.refund) : 0 : ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0,
+      ticketNo: n.ticket_no,
+      source: p.source === "the supplier" ? "" : p.source || "",
+      date: p.added || "",
+      amount,
       commission: 0,
-      totalDoc: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? Math.abs(s.refund) : 0 : ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0,
-      // We hold no row for it, so their request is the only one there is.
-      // Kept in both places: this is what it would be filed under, and
-      // `theirReq` is the record of where that came from.
-      reqNum: (f.theirReq || "").toUpperCase(),
-      pnr: (f.pnr || "").toUpperCase(),
-      // Their sheet names the person who booked it, not the passenger. It
-      // is left empty rather than filled with the wrong name.
-      passengerName: "",
-      airlineCode: f.airlineCode || "",
+      totalDoc: Math.abs(amount),
+      reqNum: (n.req_num || "").toUpperCase(),
+      pnr: (p.pnr || "").toUpperCase(),
+      passengerName: p.passenger || "",
+      airlineCode: p.airline || "",
       route: "",
-      status: isRefund2 ? "REFUND" : "ISSUE",
-      currency: s.currency || "AED",
-      transactionType: isRefund2 ? "REFUND" : isFreeReissue ? "REISSUE" : "ISSUE",
-      // A booking bought on an airline's own site will never be invoiced, so
-      // its own reference is the only one it will ever have.
+      status: "REFUND",
+      currency: p.currency || "AED",
+      transactionType: "REFUND",
       vendorReference: "",
-      origin,
-      theirPortal: match.portal,
-      theirReq: f.theirReq || "",
-      theirCost: isRefund2 ? s.refund ?? void 0 : s.cost ?? void 0,
-      theirGroup: s.groupSize,
-      theirCell: s.rawTicket,
-      finding: f.verdict,
-      note: f.note,
-      heldBack: f.heldBack,
-      heldBackWhy: f.heldBackWhy,
+      origin: "AIRTABLE",
+      theirPortal: p.portal || "",
+      theirReq: p.theirReq || "",
+      theirCost: p.refund ?? void 0,
+      theirGroup: 1,
+      theirCell: p.cell || "",
+      finding: "REFUND_NOT_IN_LEDGER",
+      note: n.detail || "",
+      heldBack: false,
+      heldBackWhy: "",
       state: "PENDING",
-      dedupe: dedupeKey(origin, f.serial, f.pnr, f.verdict)
-    });
-  }
-  return out;
-}
-function whyNotConfirmable(p) {
-  if (p.state !== "PENDING") return `Already ${p.state.toLowerCase()}.`;
-  if (p.heldBack) return p.heldBackWhy || "Held back.";
-  if (!p.source.trim()) return "Pick the vendor that billed it.";
-  if (!p.ticketNo.trim() && !(p.pnr || "").trim()) return "No ticket number and no PNR.";
-  if (!p.date.trim()) return "Give it a date.";
-  const first2 = conjunctionFirst(p.ticketNo, p.theirCell || "");
-  if (first2)
-    return `Second coupon of ${first2} \u2014 same passenger, same fare. Not a ticket of its own.`;
-  if (!p.amount && p.finding !== "REISSUE_NO_CHARGE") {
-    return passengersNamed(p) > 1 ? `Enter what it cost \u2014 their figure covers all ${passengersNamed(p)} tickets in that cell.` : "Enter what it cost \u2014 their sheet states no figure for it.";
-  }
-  return "";
-}
-function passengersNamed(p) {
-  const named = p.theirGroup ?? 1;
-  return Math.max(1, named - secondCouponsIn(p.theirCell || "").size);
+      dedupe: dedupeKey("TEAM_SHEET", n.ticket_no, "", "REFUND_NOT_IN_LEDGER")
+    };
+  });
 }
 
 // src/core/helpers/addFromSheet.ts
@@ -2254,7 +2302,8 @@ async function syncAirtable(env) {
         amount: Number(t.amount ?? 0),
         status: t.status,
         currency: t.currency,
-        relatedTicket: t.related_ticket ?? void 0
+        relatedTicket: t.related_ticket ?? void 0,
+        airlineCode: t.airline_code ?? ""
       }));
       notices = noticesFor(full ? rows : changedRows, changes, ledgerIndex(lite));
       const all = full ? rows : await selectAll(
@@ -2331,6 +2380,23 @@ async function syncAirtable(env) {
           });
         }
       }
+    }
+    const refundsMissing = refundProposals(notices, "", () => crypto.randomUUID());
+    if (refundsMissing.length) {
+      const known = /* @__PURE__ */ new Set();
+      const keys = refundsMissing.map((p) => p.dedupe);
+      for (let i = 0; i < keys.length; i += 200) {
+        const { data } = await db.from("pending_tickets").select("dedupe").in("dedupe", keys.slice(i, i + 200));
+        for (const r of data ?? []) known.add(r.dedupe);
+      }
+      const fresh = refundsMissing.filter((p) => !known.has(p.dedupe));
+      if (fresh.length && !dry) {
+        const { data: who } = await db.from("tickets").select("user_id").not("user_id", "is", null).limit(1);
+        const owner = who?.[0]?.user_id ?? "";
+        const { error } = await db.from("pending_tickets").insert(fresh.map((p) => pendingRow(p, owner)));
+        if (error) throw new Error(`pending_tickets: ${error.message}`);
+      }
+      onlineQueued += fresh.length;
     }
     const preview = dry ? { notices, online: notices.filter((n) => n.kind === "ONLINE_TICKET").map((n) => n.title), changes: [...changes].slice(0, 40) } : void 0;
     for (let i = 0; i < notices.length && !dry; i += 500) {

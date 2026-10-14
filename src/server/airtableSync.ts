@@ -17,7 +17,7 @@ import {
   AIRTABLE_BASE, AIRTABLE_TICKETS_TABLE, AIRTABLE_NAME_TABLES, normalize, diffRecord, rowsToCsv,
   type AirtableRecord, type AirtableTicketRow, type FieldChange, type NameMap,
 } from '../core/integrations/airtable';
-import { noticesFor, missingRefunds, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
+import { noticesFor, missingRefunds, refundProposals, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
 import { parseTeamSheet } from '../core/parsers/teamSheet';
 import { compareTeamSheet } from '../core/helpers/teamSheetCompare';
 import { planSheetAdd } from '../core/helpers/addFromSheet';
@@ -162,7 +162,7 @@ export async function syncAirtable(env: {
         'id, ticket_no, pnr, req_num, passenger_name, cabin_class, source, amount, status, currency, date, commission, total_doc, airline_code, transaction_type, closed, related_ticket, original_currency, original_amount, fx_rate, report_name, confirmed_by, user_id');
       const lite: LedgerLite[] = ledger.map(t => ({ id: t.id, ticketNo: t.ticket_no, pnr: t.pnr, reqNum: t.req_num ?? '',
         passengerName: t.passenger_name ?? '', cabinClass: t.cabin_class ?? '', source: t.source, amount: Number(t.amount ?? 0),
-        status: t.status, currency: t.currency, relatedTicket: t.related_ticket ?? undefined }));
+        status: t.status, currency: t.currency, relatedTicket: t.related_ticket ?? undefined, airlineCode: t.airline_code ?? '' }));
       // Names and cabins are offered from any row read; requests, refunds,
       // voids and prices only from what changed.
       notices = noticesFor(full ? rows : changedRows, changes, ledgerIndex(lite));
@@ -220,6 +220,26 @@ export async function syncAirtable(env: {
             payload: { dedupe: p.dedupe } });
         }
       }
+    }
+    /* Refunds on their sheet that our books lack wait in To Review too, not
+       only in the bell: "Seen" there closed the notice and left the refund in
+       nobody's list. Each waits until the supplier's report brings it. */
+    const refundsMissing = refundProposals(notices, '', () => crypto.randomUUID());
+    if (refundsMissing.length) {
+      const known = new Set<string>();
+      const keys = refundsMissing.map(p => p.dedupe);
+      for (let i = 0; i < keys.length; i += 200) {
+        const { data } = await db.from('pending_tickets').select('dedupe').in('dedupe', keys.slice(i, i + 200));
+        for (const r of data ?? []) known.add(r.dedupe);
+      }
+      const fresh = refundsMissing.filter(p => !known.has(p.dedupe));
+      if (fresh.length && !dry) {
+        const { data: who } = await db.from('tickets').select('user_id').not('user_id', 'is', null).limit(1);
+        const owner = who?.[0]?.user_id ?? '';
+        const { error } = await db.from('pending_tickets').insert(fresh.map(p => pendingRow(p, owner)));
+        if (error) throw new Error(`pending_tickets: ${error.message}`);
+      }
+      onlineQueued += fresh.length;
     }
     const preview = dry ? { notices, online: notices.filter(n => n.kind === 'ONLINE_TICKET').map(n => n.title), changes: [...changes].slice(0, 40) } : undefined;
     for (let i = 0; i < notices.length && !dry; i += 500) {

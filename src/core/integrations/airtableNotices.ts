@@ -19,6 +19,8 @@
 import type { AirtableTicketRow, FieldChange } from './airtable';
 import { reqParts } from '../helpers/teamSheetCompare';
 import { cleanPax } from '../parsers/shared';
+import type { PendingTicket } from '../../types';
+import { dedupeKey } from '../helpers/pendingFromFindings';
 
 export type NoticeKind = 'REQ_CHANGED' | 'NAME' | 'CABIN' | 'REFUND' | 'VOID' | 'PRICE' | 'ONLINE_TICKET' | 'NOT_IN_BOOKS'
   | 'REFUND_MISSING';
@@ -36,7 +38,7 @@ export interface Notice {
 }
 
 export interface LedgerLite {
-  id: string; ticketNo: string; pnr?: string; reqNum?: string; passengerName?: string;
+  id: string; ticketNo: string; pnr?: string; reqNum?: string; passengerName?: string; airlineCode?: string;
   cabinClass?: string; source?: string; amount?: number; status?: string; currency?: string;
   /** For a refund application: the ticket it pays back. */
   relatedTicket?: string;
@@ -191,11 +193,39 @@ export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, Led
         ticket_ids: ours.map(t => t.id), req_num: r.req_num || ours[0]?.reqNum || '',
         title: `Refund not in our books: ${k}${amount != null ? ` · ${money(String(amount))} ${r.currency}` : ''}${r.req_num ? ` · ${r.req_num}` : ''}`,
         detail: `Their sheet refunds it${added ? ` (row added ${added})` : ''}; our books hold the sale (${money(String(sale))})`
-          + ` and no refund. A ${src} refund reaches us with ${src}'s report or statement - if it is already on`
-          + ' their statement, record it.',
-        payload: { refund: amount, currency: r.currency, source: src },
+          + ` and no refund. Waiting in To Review: it closes by itself when the refund comes in with ${src}'s report`
+          + ' or statement.',
+        payload: { refund: amount, currency: r.currency, source: src, added, pnr: r.pnr, portal: r.portal,
+          cell: r.ticket_cell, theirReq: r.req_num, airline: ours.find(t => (t.amount || 0) > 0)?.airlineCode ?? '',
+          passenger: ours.find(t => (t.amount || 0) > 0)?.passengerName ?? '' },
       });
     }
   }
   return out;
+}
+
+/**
+ * Each missing refund as a To Review item, waiting for the supplier.
+ *
+ * The bell said so and nothing else did: "Seen" closed the notice and the
+ * refund was in nobody's list - 2540225899 and four more of KSAML2257's,
+ * 14,000 dirhams each. In To Review it waits like a missing ticket does,
+ * and closes by itself when the refund arrives with the supplier's report.
+ * Stored negative, as every refund is, which is what that closing reads.
+ */
+export function refundProposals(notices: Notice[], userId: string, newId: () => string): PendingTicket[] {
+  return notices.filter(n => n.kind === 'REFUND_MISSING').map(n => {
+    const p = n.payload as Record<string, any>;
+    const amount = p.refund != null ? -Math.abs(Number(p.refund)) : 0;
+    return {
+      id: newId(), userId, ticketNo: n.ticket_no, source: p.source === 'the supplier' ? '' : (p.source || ''),
+      date: p.added || '', amount, commission: 0, totalDoc: Math.abs(amount), reqNum: (n.req_num || '').toUpperCase(),
+      pnr: (p.pnr || '').toUpperCase(), passengerName: p.passenger || '', airlineCode: p.airline || '', route: '',
+      status: 'REFUND', currency: (p.currency || 'AED') as PendingTicket['currency'], transactionType: 'REFUND', vendorReference: '',
+      origin: 'AIRTABLE', theirPortal: p.portal || '', theirReq: p.theirReq || '', theirCost: p.refund ?? undefined,
+      theirGroup: 1, theirCell: p.cell || '', finding: 'REFUND_NOT_IN_LEDGER', note: n.detail || '',
+      heldBack: false, heldBackWhy: '', state: 'PENDING',
+      dedupe: dedupeKey('TEAM_SHEET', n.ticket_no, '', 'REFUND_NOT_IN_LEDGER'),
+    };
+  });
 }

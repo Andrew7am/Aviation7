@@ -4,7 +4,7 @@
  *   npx tsx scripts/test-airtable.ts
  */
 import { sheetTime, toSheetRow, normalize, diffRecord, rowsToCsv, type AirtableTicketRow } from '../src/core/integrations/airtable';
-import { noticesFor, missingRefunds, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
+import { noticesFor, missingRefunds, refundProposals, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
 import { teamFixes } from '../src/core/integrations/airtableFixes';
 import { requestsFor } from '../src/core/integrations/airtableRequests';
@@ -161,6 +161,12 @@ console.log('\n7. A refund added as a row of its own still reaches the bell');
         missingRefunds(rows as any, ledgerIndex([sale, { id: 't2', ticketNo: '4862343302', amount: -1906.7, source: 'Ibtekar' }])).length, 0);
   check('not for a ticket we do not hold (that is "not in our books")', missingRefunds(rows as any, ledgerIndex([])).length, 0);
   check('not for a row that is not refunded', missingRefunds([rows[0]] as any, ledgerIndex([sale])).length, 0);
+  // And it waits in To Review, not only in the bell - "Seen" there left
+  // KSAML2257's five Turkish refunds in nobody's list.
+  const props = refundProposals(n, 'u', () => 'id1');
+  check('a To Review item: a refund, negative, from the sale\'s supplier',
+    props.map(p => [p.ticketNo, p.transactionType, p.amount, p.source, p.finding, p.origin, p.dedupe]),
+    [['4862343302', 'REFUND', -1906.7, 'Ibtekar', 'REFUND_NOT_IN_LEDGER', 'AIRTABLE', 'TEAM_SHEET|4862343302|REFUND_NOT_IN_LEDGER']]);
   // A refund that came in as an application under its own number is held.
   check('not when the refund is an application naming it',
         missingRefunds(rows as any, ledgerIndex([sale, { id: 't3', ticketNo: '0079533084', amount: -1906.7, source: 'IATA BSP', relatedTicket: '4862343302' }])).length, 0);
