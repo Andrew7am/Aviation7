@@ -359,6 +359,22 @@ export async function syncAirtable(env: {
           // Void on their sheet only when every row of theirs naming it says so.
           const theirStatus = new Map<string, string[]>();
           for (const r of theirs ?? []) for (const k of r.serials ?? []) theirStatus.set(k, [...(theirStatus.get(k) ?? []), r.status ?? '']);
+          /* A purchase on an airline's site has no ticket number: their row
+             reads "0" and it waits here under its PNR. ZF7WSS was voided on
+             their sheet and stayed open, because only numbers were looked
+             up. Their rows with no number are found by the PNR they carry. */
+          const byPnr = rest.filter(w => !theirStatus.has(docKey(w.ticket_no)) && w.pnr);
+          if (byPnr.length) {
+            const pnrs = [...new Set(byPnr.flatMap(w => String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean)))];
+            const { data: online } = await db.from('airtable_tickets').select('pnr, status, serials')
+              .eq('deleted', false).or(pnrs.map(p => `pnr.ilike.%${p}%`).join(','));
+            for (const w of byPnr) {
+              const mine = String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean);
+              const rows = (online ?? []).filter(r => !(r.serials ?? []).length
+                && String(r.pnr ?? '').toUpperCase().split(/[|,/\s]+/).some(p => mine.includes(p)));
+              if (rows.length) theirStatus.set(docKey(w.ticket_no), rows.map(r => r.status ?? ''));
+            }
+          }
           const voidOnTheirs = (k: string) => (theirStatus.get(k) ?? []).length > 0 && theirStatus.get(k)!.every(st => /void/i.test(st));
           await close(rest.filter(w => voided.has(docKey(w.ticket_no))), 'REJECTED', 'Voided - it is in our Voids. Nothing to add.', 'DISMISSED');
           await close(rest.filter(w => !voided.has(docKey(w.ticket_no)) && voidOnTheirs(docKey(w.ticket_no))), 'REJECTED',

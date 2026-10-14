@@ -2523,6 +2523,16 @@ async function syncAirtable(env) {
           const voided = new Set((inVoids ?? []).map((v) => docKey(v.ticket_no)));
           const theirStatus = /* @__PURE__ */ new Map();
           for (const r of theirs ?? []) for (const k of r.serials ?? []) theirStatus.set(k, [...theirStatus.get(k) ?? [], r.status ?? ""]);
+          const byPnr = rest.filter((w) => !theirStatus.has(docKey(w.ticket_no)) && w.pnr);
+          if (byPnr.length) {
+            const pnrs = [...new Set(byPnr.flatMap((w) => String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean)))];
+            const { data: online } = await db.from("airtable_tickets").select("pnr, status, serials").eq("deleted", false).or(pnrs.map((p) => `pnr.ilike.%${p}%`).join(","));
+            for (const w of byPnr) {
+              const mine = String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean);
+              const rows2 = (online ?? []).filter((r) => !(r.serials ?? []).length && String(r.pnr ?? "").toUpperCase().split(/[|,/\s]+/).some((p) => mine.includes(p)));
+              if (rows2.length) theirStatus.set(docKey(w.ticket_no), rows2.map((r) => r.status ?? ""));
+            }
+          }
           const voidOnTheirs = (k) => (theirStatus.get(k) ?? []).length > 0 && theirStatus.get(k).every((st2) => /void/i.test(st2));
           await close(rest.filter((w) => voided.has(docKey(w.ticket_no))), "REJECTED", "Voided - it is in our Voids. Nothing to add.", "DISMISSED");
           await close(
