@@ -43,6 +43,9 @@ const SPLIT_FORM = /^(\d{3})\s*[-–—]\s*(\d{10})$/;
 const JOINED_FORM = /^(\d{3})(\d{10})$/;
 /** "5513059068" — the serial on its own, as BSP prints it. */
 const BARE_SERIAL = /^\d{10}$/;
+/** "220-5513537502-03", "2205513537502-03", "5513537502-03" — a conjunction:
+ *  airline (optional), the ticket, and the last digits of its next booklet. */
+const CONJUNCTION_FORM = /^(?:(\d{3})[-–—]?)?(\d{10})[-–—/](\d{1,3})$/;
 
 const isAirlineCode = (s: string): boolean => /^\d{3}$/.test(s);
 
@@ -69,6 +72,18 @@ export function splitTicketNo(raw: string, explicitCode?: string): TicketIdentit
   // Prefer the stated code, but split positionally either way — the last 10
   // digits are the serial regardless of which airline claims the document.
   if (joined) return { ticketNo: joined[2], airlineCode: stated || joined[1] };
+
+  // A conjunction - one ticket on two booklets - written the industry's way:
+  // "220-5513537502-03". RTS's copy prints it so, and passed through as it
+  // was it went in as a ticket of its own beside 5513537502, the same 46,040.
+  // The ticket is the first number; the tail must be the next booklet's.
+  const conj = s.match(CONJUNCTION_FORM);
+  if (conj) {
+    const serial = conj[2], tail = conj[3];
+    const next = serial.slice(0, 10 - tail.length) + tail;
+    if (Number(next) > Number(serial) && Number(next) - Number(serial) <= 3)
+      return { ticketNo: serial, airlineCode: stated || conj[1] || '' };
+  }
 
   // A bare serial says nothing about its airline. Only the explicit column can.
   if (BARE_SERIAL.test(s)) return { ticketNo: s, airlineCode: stated };
@@ -115,5 +130,8 @@ export function ticketMatchKey(ticketNo: string): string {
   // Narrow on purpose: only a 3-and-10 digit pair is treated this way, so
   // an identifier that merely contains a dash keeps every character.
   const dashed = s.match(/^(\d{3})[-\u2013\u2014](\d{10})$/);
-  return dashed ? dashed[2] : s;
+  if (dashed) return dashed[2];
+  // A conjunction is the ticket its first number names.
+  const conj = splitTicketNo(s);
+  return CONJUNCTION_FORM.test(s) && conj.ticketNo !== s ? conj.ticketNo : s;
 }

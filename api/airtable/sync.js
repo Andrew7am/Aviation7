@@ -471,13 +471,37 @@ function rowsToCsv(rows, unparse) {
 }
 
 // src/core/helpers/ticketIdentity.ts
+var SPLIT_FORM = /^(\d{3})\s*[-–—]\s*(\d{10})$/;
 var JOINED_FORM = /^(\d{3})(\d{10})$/;
+var BARE_SERIAL = /^\d{10}$/;
+var CONJUNCTION_FORM = /^(?:(\d{3})[-–—]?)?(\d{10})[-–—/](\d{1,3})$/;
+var isAirlineCode = (s) => /^\d{3}$/.test(s);
+function splitTicketNo(raw, explicitCode) {
+  const s = (raw || "").replace(/\s+/g, "").toUpperCase();
+  const stated = isAirlineCode((explicitCode || "").trim()) ? explicitCode.trim() : "";
+  if (!s) return { ticketNo: "", airlineCode: stated };
+  const dashed = (raw || "").trim().match(SPLIT_FORM);
+  if (dashed) return { ticketNo: dashed[2], airlineCode: stated || dashed[1] };
+  const joined = s.match(JOINED_FORM);
+  if (joined) return { ticketNo: joined[2], airlineCode: stated || joined[1] };
+  const conj = s.match(CONJUNCTION_FORM);
+  if (conj) {
+    const serial3 = conj[2], tail = conj[3];
+    const next = serial3.slice(0, 10 - tail.length) + tail;
+    if (Number(next) > Number(serial3) && Number(next) - Number(serial3) <= 3)
+      return { ticketNo: serial3, airlineCode: stated || conj[1] || "" };
+  }
+  if (BARE_SERIAL.test(s)) return { ticketNo: s, airlineCode: stated };
+  return { ticketNo: s, airlineCode: stated };
+}
 function ticketMatchKey(ticketNo) {
   const s = (ticketNo || "").replace(/\s+/g, "").toUpperCase();
   const joined = s.match(JOINED_FORM);
   if (joined) return joined[2];
   const dashed = s.match(/^(\d{3})[-\u2013\u2014](\d{10})$/);
-  return dashed ? dashed[2] : s;
+  if (dashed) return dashed[2];
+  const conj = splitTicketNo(s);
+  return CONJUNCTION_FORM.test(s) && conj.ticketNo !== s ? conj.ticketNo : s;
 }
 
 // src/core/config/teamPortals.ts

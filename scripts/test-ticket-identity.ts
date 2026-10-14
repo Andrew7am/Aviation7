@@ -73,5 +73,15 @@ eq('serial + code', formatTicketNo('2540225922', '235'), '235-2540225922');
 eq('no code -> bare serial', formatTicketNo('2540225922', ''), '2540225922');
 eq('PNR unchanged', formatTicketNo('SF4JXT', '235'), 'SF4JXT');
 
+console.log('\nA conjunction is the ticket its first number names');
+// RTS's copy wrote 220-5513537502-03, and it went in beside 5513537502 -
+// the same 46,040 twice.
+eq('dashed, with the airline', splitTicketNo('220-5513537502-03'), { ticketNo: '5513537502', airlineCode: '220' });
+eq('joined', splitTicketNo('2205513537502-03'), { ticketNo: '5513537502', airlineCode: '220' });
+eq('serial alone', splitTicketNo('5513537502-03'), { ticketNo: '5513537502', airlineCode: '' });
+eq('a stated airline wins', splitTicketNo('220-5513537502-03', '176'), { ticketNo: '5513537502', airlineCode: '176' });
+eq('the match key too', ticketMatchKey('176-5512716611-12'), '5512716611');
+eq('a tail that is not the next booklet is left alone', splitTicketNo('5513059068-99').ticketNo, '5513059068-99');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);
