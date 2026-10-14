@@ -432,7 +432,7 @@ export async function syncAirtable(env: {
     if (miss?.length) {
       const live = await liveAll();
       const fills = requestsFor(
-        miss.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', pnr: t.pnr ?? '', source: t.source ?? '' })),
+        miss.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', pnr: t.pnr ?? '', source: t.source ?? '', status: t.status ?? '' })),
         live.map(r => ({ serials: r.serials ?? [], emd: r.sheet_row?.['EMD Number'] ?? '', pnr: r.pnr ?? '', req_num: r.req_num ?? '',
           status: r.status ?? '', portal: r.portal ?? '', airline: r.airline ?? '' })));
       const owner = miss.find(t => t.user_id)?.user_id;

@@ -115,6 +115,13 @@ console.log('\n7. A ticket with no request takes the one their sheet gives');
   check('not from a held booking', fill({ ticketNo: 'X', pnr: 'YFMA7K' }, [row({ pnr: 'YFMA7K', status: 'On Hold', req_num: 'KSAML1271' })]), []);
   check('a number their sheet files under two requests is not settled',
     fill({ ticketNo: '5513427739', pnr: 'P1' }, [row({ serials: ['5513427739'], pnr: 'P1', req_num: 'A1' }), row({ serials: ['5513427739'], pnr: 'P1', req_num: 'B2' })]), []);
+  // 5513427844: sold under KSAML2325, refunded on a row the team filed under
+  // KSAFM2466. The refund takes the refund row's request; a sale, the sale's.
+  const split = [row({ serials: ['5513427844'], req_num: 'KSAML2325' }), row({ serials: ['5513427844'], req_num: 'KSAFM2466', status: 'Cancelled/Refunded' })];
+  check('a refund takes its refund row\'s request', fill({ ticketNo: '5513427844', status: 'REFUND' }, split), [['KSAFM2466', 'ticket number']]);
+  check('a sale takes its sale row\'s', fill({ ticketNo: '5513427844', status: 'ISSUE' }, split), [['KSAML2325', 'ticket number']]);
+  check('two sale rows on two requests still settle nothing',
+    fill({ ticketNo: '5513427739', status: 'ISSUE' }, [row({ serials: ['5513427739'], req_num: 'A1' }), row({ serials: ['5513427739'], req_num: 'B2' })]), []);
 }
 
 console.log('\n7b. Flyadeal by its PNR - its report has no ticket number');

@@ -21,7 +21,7 @@ import { docKey } from './airtableNotices';
 export interface ReqSource { serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal?: string; airline?: string }
 /** `source` matters for one vendor: flyadeal's reports carry no ticket
  *  number, so we hold its tickets under the PNR and match them by it. */
-export interface MissingReq { id: string; ticketNo: string; pnr: string; source?: string }
+export interface MissingReq { id: string; ticketNo: string; pnr: string; source?: string; status?: string }
 export interface ReqFill { id: string; ticketNo: string; req: string; how: 'ticket number' | 'flyadeal PNR' }
 
 /** A flyadeal row of theirs, and a flyadeal ticket of ours. */
@@ -38,6 +38,13 @@ const held = (s: string) => /hold/i.test(s || '');
 
 export function requestsFor(missing: MissingReq[], rows: ReqSource[]): ReqFill[] {
   const byDoc = new Map<string, Set<string>>();
+  /* The same document under two requests: its sale on one row, its refund
+     on another. 5513427844 is sold under KSAML2325 and refunded on a row the
+     team filed under KSAFM2466, so neither was taken. A refund takes its
+     refund row's request; a sale, its sale row's - when that tells them
+     apart, and only then. */
+  const refundRows = new Map<string, Set<string>>();
+  const saleRows = new Map<string, Set<string>>();
   const byFlyadealPnr = new Map<string, Set<string>>();
   for (const r of rows) {
     if (held(r.status)) continue;
@@ -52,12 +59,21 @@ export function requestsFor(missing: MissingReq[], rows: ReqSource[]): ReqFill[]
       if (!k) continue;
       if (!byDoc.has(k)) byDoc.set(k, new Set());
       byDoc.get(k)!.add(req);
+      const side = /refund/i.test(r.status || '') ? refundRows : saleRows;
+      if (!side.has(k)) side.set(k, new Set());
+      side.get(k)!.add(req);
     }
   }
   const out: ReqFill[] = [];
   for (const t of missing) {
     const s = byDoc.get(docKey(t.ticketNo));
     if (s && s.size === 1 && !s.has('TWO')) { out.push({ id: t.id, ticketNo: t.ticketNo, req: [...s][0], how: 'ticket number' }); continue; }
+    if (s && s.size > 1 && t.status) {
+      const side = (/refund/i.test(t.status) ? refundRows : saleRows).get(docKey(t.ticketNo));
+      if (side && side.size === 1 && !side.has('TWO')) {
+        out.push({ id: t.id, ticketNo: t.ticketNo, req: [...side][0], how: 'ticket number' }); continue;
+      }
+    }
     if (!isFlyadealTicket(t.source)) continue;
     const f = new Set(pnrParts(t.pnr || t.ticketNo).flatMap(p => [...(byFlyadealPnr.get(p) ?? [])]));
     if (f.size === 1 && !f.has('TWO')) out.push({ id: t.id, ticketNo: t.ticketNo, req: [...f][0], how: 'flyadeal PNR' });

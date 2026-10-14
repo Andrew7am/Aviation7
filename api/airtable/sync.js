@@ -2131,6 +2131,8 @@ var one2 = (req) => {
 var held = (s) => /hold/i.test(s || "");
 function requestsFor(missing, rows) {
   const byDoc = /* @__PURE__ */ new Map();
+  const refundRows = /* @__PURE__ */ new Map();
+  const saleRows = /* @__PURE__ */ new Map();
   const byFlyadealPnr = /* @__PURE__ */ new Map();
   for (const r of rows) {
     if (held(r.status)) continue;
@@ -2145,6 +2147,9 @@ function requestsFor(missing, rows) {
       if (!k) continue;
       if (!byDoc.has(k)) byDoc.set(k, /* @__PURE__ */ new Set());
       byDoc.get(k).add(req);
+      const side = /refund/i.test(r.status || "") ? refundRows : saleRows;
+      if (!side.has(k)) side.set(k, /* @__PURE__ */ new Set());
+      side.get(k).add(req);
     }
   }
   const out = [];
@@ -2153,6 +2158,13 @@ function requestsFor(missing, rows) {
     if (s && s.size === 1 && !s.has("TWO")) {
       out.push({ id: t.id, ticketNo: t.ticketNo, req: [...s][0], how: "ticket number" });
       continue;
+    }
+    if (s && s.size > 1 && t.status) {
+      const side = (/refund/i.test(t.status) ? refundRows : saleRows).get(docKey(t.ticketNo));
+      if (side && side.size === 1 && !side.has("TWO")) {
+        out.push({ id: t.id, ticketNo: t.ticketNo, req: [...side][0], how: "ticket number" });
+        continue;
+      }
     }
     if (!isFlyadealTicket(t.source)) continue;
     const f = new Set(pnrParts2(t.pnr || t.ticketNo).flatMap((p) => [...byFlyadealPnr.get(p) ?? []]));
@@ -2581,7 +2593,7 @@ async function syncAirtable(env) {
     if (miss?.length) {
       const live = await liveAll();
       const fills = requestsFor(
-        miss.map((t) => ({ id: t.id, ticketNo: t.ticket_no ?? "", pnr: t.pnr ?? "", source: t.source ?? "" })),
+        miss.map((t) => ({ id: t.id, ticketNo: t.ticket_no ?? "", pnr: t.pnr ?? "", source: t.source ?? "", status: t.status ?? "" })),
         live.map((r) => ({
           serials: r.serials ?? [],
           emd: r.sheet_row?.["EMD Number"] ?? "",
