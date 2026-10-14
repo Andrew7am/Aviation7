@@ -30,7 +30,7 @@ import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers
 interface TicketTableProps {
   tickets: Ticket[];
   title: string;
-  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED' | 'VOIDS' | 'FREE_REISSUE';
+  defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED' | 'VOIDS' | 'FREE_REISSUE' | 'SPLIT_REQ';
   /** Opens the table already narrowed to a closure state, so a view can be
    *  "the outstanding list" without the user having to find the dropdown. */
   defaultClosed?: 'ALL' | 'CLOSED' | 'NOT_CLOSED';
@@ -432,7 +432,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [searchTerm, setSearchTerm]     = useState('');
   const chainIdx = useMemo(() => chainIndex(exchanges), [exchanges]);
   const [filterMode, setFilterMode] =
-    useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED' | 'VOIDS' | 'FREE_REISSUE'>(defaultFilter);
+    useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED' | 'VOIDS' | 'FREE_REISSUE' | 'SPLIT_REQ'>(defaultFilter);
   // Vendors are multi-select: comparing NSA against IATA, or a handful of
   // portals at once, is the normal reconciliation question. Empty = every
   // vendor, so the filter starts out of the way.
@@ -503,6 +503,32 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   /** A reissue at no charge: 0.00 because the fare is on the ticket it
    *  replaced. Read off the transaction type, or off the reissue register -
    *  the ones imported before the type was kept say ISSUE. */
+  /** A ticket sold on one request and refunded on another - 5513427844,
+   *  sold under KSAML2325, refunded under KSAFM2466. Said on both rows: what
+   *  the other half is filed under. Request markers (REFUND, ACM) are not
+   *  requests. */
+  const splitReq = useMemo(() => {
+    const isReq = (k: string) => /^[A-Z]{2,6}\d{2,6}$/.test(k);
+    const parts = (r: string) => (r || '').toUpperCase().split(/[\s,/;|+&-]+/).filter(isReq);
+    const by = new Map<string, { sale: Set<string>; refund: Set<string> }>();
+    for (const t of tickets) {
+      if ((t.status || '').toUpperCase() === 'FUND') continue;
+      const refund = (t.amount || 0) < 0;
+      const k = ticketMatchKey(refund ? (t.relatedTicket || t.ticketNo || '') : (t.ticketNo || ''));
+      if (!/^\d{10}$/.test(k)) continue;
+      const e = by.get(k) ?? { sale: new Set<string>(), refund: new Set<string>() };
+      for (const q of parts(t.reqNum || '')) (refund ? e.refund : e.sale).add(q);
+      by.set(k, e);
+    }
+    const out = new Map<string, { sale: string; refund: string }>();
+    for (const [k, e] of by)
+      if (e.sale.size && e.refund.size && ![...e.refund].some(q => e.sale.has(q)))
+        out.set(k, { sale: [...e.sale].join(', '), refund: [...e.refund].join(', ') });
+    return out;
+  }, [tickets]);
+  const splitOf = useCallback((t: Ticket) =>
+    splitReq.get(ticketMatchKey((t.amount || 0) < 0 ? (t.relatedTicket || t.ticketNo || '') : (t.ticketNo || ''))), [splitReq]);
+
   const isFreeReissue = useCallback((t: Ticket) =>
     !t.amount && !/^(VOID|FUND|EMDS?)$/i.test(t.status || '')
     && ((t.transactionType || '').toUpperCase() === 'REISSUE'
@@ -529,6 +555,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       // Voids are rows of their own (voidShown below), never ledger rows.
       if (filterMode === 'VOIDS') return false;
       if (filterMode === 'FREE_REISSUE' && !isFreeReissue(t)) return false;
+      if (filterMode === 'SPLIT_REQ' && !splitOf(t)) return false;
       if (filterMode === 'NEED_REQ' && (t.reqNum || t.status === 'FUND')) return false;
       if (filterMode === 'DUPLICATE' && !t.isDuplicate) return false;
       if (filterMode === 'ADJUSTED' && t.adjustment == null) return false;
@@ -595,7 +622,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       return true;
     });
     return sortRows(rows);
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortRows, isFreeReissue, companyOf, companyFilter]);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortRows, isFreeReissue, companyOf, companyFilter, splitOf]);
 
   /** The voids, shaped as rows so they sort and page with the tickets. */
   const voidRows = useMemo(() => voids.map((v, i): Ticket => ({
@@ -1428,6 +1455,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               <option value="UNCONFIRMED">Not confirmed by supplier ({unconfirmedCount})</option>
             )}
             {voids.length > 0 && <option value="VOIDS">Voids ({voids.length})</option>}
+            {splitReq.size > 0 && <option value="SPLIT_REQ">Split requests ({splitReq.size})</option>}
             {freeReissueCount > 0 && <option value="FREE_REISSUE">Free reissues ({freeReissueCount})</option>}
           </select>
 
@@ -1854,6 +1882,19 @@ export const TicketTable: React.FC<TicketTableProps> = ({
                     {/* A reissue at no charge: 0.00 here because the fare
                         is on the ticket it replaced. Said, so a zero row
                         does not read as a price nobody entered. */}
+                    {/* Sold on one request, refunded on another: what the
+                        other half is filed under, on each half. */}
+                    {(() => {
+                      const sp = splitOf(ticket);
+                      if (!sp) return null;
+                      const refund = (ticket.amount || 0) < 0;
+                      return (
+                        <span className="block text-[9px] font-bold text-violet-700 bg-violet-50 rounded px-1 mt-0.5 select-none w-fit"
+                          title={`Sold under ${sp.sale}, refunded under ${sp.refund}`}>
+                          ⇄ {refund ? `sold under ${sp.sale}` : `refunded under ${sp.refund}`}
+                        </span>
+                      );
+                    })()}
                     {isFreeReissue(ticket) && (() => {
                       const own = (ticket.ticketNo || '').replace(/\D/g, '').slice(-10);
                       const c = chainOf(own, chainIdx);
