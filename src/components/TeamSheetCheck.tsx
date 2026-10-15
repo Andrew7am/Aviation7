@@ -604,11 +604,20 @@ const Group: React.FC<{
                           {`${money(f.sheet.cost)} ${f.sheet.currency}`.trim()}
                           {/* Their cell named several tickets, so the figure
                               beside it is the booking's, not this one's. */}
-                          {f.sheet.groupSize > 1 && (
-                            <span className="block text-[9px] text-slate-400 font-sans">
-                              for {f.sheet.groupSize} tickets
-                            </span>
-                          )}
+                          {/* A conjunction's booklets are not tickets: 065-5513427706-07
+                              is one ticket on two numbers, priced as one. */}
+                          {f.sheet.groupSize > 1 && (() => {
+                            const tickets = f.sheet.cellTickets ?? f.sheet.groupSize;
+                            return (
+                              <span className="block text-[9px] text-slate-400 font-sans">
+                                {tickets <= 1
+                                  ? `one ticket on ${f.sheet.groupSize} numbers`
+                                  : tickets < f.sheet.groupSize
+                                    ? `for ${tickets} tickets (${f.sheet.groupSize} numbers)`
+                                    : `for ${tickets} tickets`}
+                              </span>
+                            );
+                          })()}
                         </>
                       ) : <span className="text-slate-300">—</span>}
                     </td>
