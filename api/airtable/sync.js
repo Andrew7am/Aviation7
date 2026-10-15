@@ -2264,7 +2264,7 @@ function detailsFor(ours, rows) {
 
 // src/server/airtableSync.ts
 var STATE_ID = "aviation_tickets";
-var FULL_EVERY_MS = 60 * 60 * 1e3;
+var FULL_EVERY_MS = 10 * 60 * 1e3;
 async function airtable(token, table, params) {
   const out = [];
   let offset = "";
@@ -2549,6 +2549,31 @@ async function syncAirtable(env) {
         }
       }
       if (!dry) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("kind", ["NAME", "CABIN"]).eq("state", "OPEN");
+    }
+    if (!dry) {
+      const { data: reqOpen } = await db.from("airtable_notifications").select("id, record_id, payload").eq("kind", "REQ_CHANGED").eq("state", "OPEN");
+      if (reqOpen?.length) {
+        const ids2 = [...new Set(reqOpen.map((n) => n.record_id).filter(Boolean))];
+        const { data: now2 } = await db.from("airtable_tickets").select("record_id, req_num, deleted").in("record_id", ids2);
+        const reqOf = new Map((now2 ?? []).map((r) => [r.record_id, r.deleted ? "" : r.req_num ?? ""]));
+        const oursIds = [...new Set(reqOpen.flatMap((n) => (n.payload?.ours ?? []).map((o) => o.id)))];
+        const { data: oursNow } = oursIds.length ? await db.from("tickets").select("id, req_num").in("id", oursIds) : { data: [] };
+        const oursReq = new Map((oursNow ?? []).map((t) => [t.id, t.req_num ?? ""]));
+        const stale = [], done = [];
+        for (const n of reqOpen) {
+          const to = reqParts(String(n.payload?.to ?? ""));
+          const sheetNow = reqParts(reqOf.get(n.record_id) ?? "");
+          if (!to.length || !to.some((k) => sheetNow.includes(k))) {
+            stale.push(n.id);
+            continue;
+          }
+          const ours = (n.payload?.ours ?? []).filter((o) => oursReq.has(o.id));
+          if (ours.length && ours.every((o) => reqParts(oursReq.get(o.id) ?? "").some((k) => to.includes(k)))) done.push(n.id);
+        }
+        const at = (/* @__PURE__ */ new Date()).toISOString();
+        if (stale.length) await db.from("airtable_notifications").update({ state: "DISMISSED", decided_by: "Airtable sync", decided_at: at }).in("id", stale);
+        if (done.length) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: at }).in("id", done);
+      }
     }
     if (!dry) {
       const { data: openRefunds } = await db.from("airtable_notifications").select("id, ticket_no, record_id").eq("kind", "REFUND_MISSING").eq("state", "OPEN");

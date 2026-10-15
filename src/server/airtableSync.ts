@@ -19,7 +19,7 @@ import {
 } from '../core/integrations/airtable';
 import { noticesFor, missingRefunds, refundProposals, splitRequests, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
 import { parseTeamSheet } from '../core/parsers/teamSheet';
-import { compareTeamSheet } from '../core/helpers/teamSheetCompare';
+import { compareTeamSheet, reqParts } from '../core/helpers/teamSheetCompare';
 import { planSheetAdd } from '../core/helpers/addFromSheet';
 import { pendingRow } from '../core/helpers/pendingRow';
 import { requestsFor, isFlyadealRow } from '../core/integrations/airtableRequests';
@@ -27,7 +27,10 @@ import { detailsFor } from '../core/integrations/airtableDetails';
 import type { Ticket } from '../types';
 
 const STATE_ID = 'aviation_tickets';
-const FULL_EVERY_MS = 60 * 60 * 1000;
+// Their request column is looked up from a linked table, and changing it does
+// not move a row's Last Modified time - so only a full read sees it. Every ten
+// minutes rather than every hour: KSAML482 -> KSAML2325 sat unseen for an hour.
+const FULL_EVERY_MS = 10 * 60 * 1000;
 
 export interface SyncResult {
   mode: 'full' | 'incremental';
@@ -297,6 +300,36 @@ export async function syncAirtable(env: {
       // Names and cabins were notices once; they are filled now, so the old ones are closed.
       if (!dry) await db.from('airtable_notifications').update({ state: 'ACCEPTED', decided_by: 'Airtable sync', decided_at: new Date().toISOString() })
         .in('kind', ['NAME', 'CABIN']).eq('state', 'OPEN');
+    }
+
+    /* A request change that is no longer what their sheet says. The team
+       moved fourteen rows to KSAML482 by mistake and back to KSAML2325 an
+       hour later; the KSAML482 notices stayed open, and accepting them
+       would have filed our tickets where nobody meant them to go. A notice
+       whose row now says something else is withdrawn; one whose tickets of
+       ours already sit under its request is done. Every run. */
+    if (!dry) {
+      const { data: reqOpen } = await db.from('airtable_notifications').select('id, record_id, payload')
+        .eq('kind', 'REQ_CHANGED').eq('state', 'OPEN');
+      if (reqOpen?.length) {
+        const ids = [...new Set(reqOpen.map(n => n.record_id).filter(Boolean))];
+        const { data: now } = await db.from('airtable_tickets').select('record_id, req_num, deleted').in('record_id', ids);
+        const reqOf = new Map((now ?? []).map(r => [r.record_id, r.deleted ? '' : (r.req_num ?? '')]));
+        const oursIds = [...new Set(reqOpen.flatMap(n => ((n.payload?.ours ?? []) as { id: string }[]).map(o => o.id)))];
+        const { data: oursNow } = oursIds.length ? await db.from('tickets').select('id, req_num').in('id', oursIds) : { data: [] as { id: string; req_num: string }[] };
+        const oursReq = new Map((oursNow ?? []).map(t => [t.id, t.req_num ?? '']));
+        const stale: string[] = [], done: string[] = [];
+        for (const n of reqOpen) {
+          const to = reqParts(String(n.payload?.to ?? ''));
+          const sheetNow = reqParts(reqOf.get(n.record_id) ?? '');
+          if (!to.length || !to.some(k => sheetNow.includes(k))) { stale.push(n.id); continue; }
+          const ours = ((n.payload?.ours ?? []) as { id: string }[]).filter(o => oursReq.has(o.id));
+          if (ours.length && ours.every(o => reqParts(oursReq.get(o.id) ?? '').some(k => to.includes(k)))) done.push(n.id);
+        }
+        const at = new Date().toISOString();
+        if (stale.length) await db.from('airtable_notifications').update({ state: 'DISMISSED', decided_by: 'Airtable sync', decided_at: at }).in('id', stale);
+        if (done.length) await db.from('airtable_notifications').update({ state: 'ACCEPTED', decided_by: 'Airtable sync', decided_at: at }).in('id', done);
+      }
     }
 
     /* A refund we were told about has arrived - or their sheet no longer
