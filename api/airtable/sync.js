@@ -1907,7 +1907,8 @@ function noticesFor(rows, changes, ledger) {
     const req = changed("req_num");
     if (req && r.req_num) {
       const want = new Set(reqParts(r.req_num));
-      const move = ours.filter((t) => !reqParts(t.reqNum).some((k) => want.has(k)));
+      const refundRow = /refund/i.test(r.status || "");
+      const move = ours.filter((t) => (t.amount || 0) < 0 === refundRow).filter((t) => !reqParts(t.reqNum).some((k) => want.has(k)));
       if (move.length) out.push({
         ...base,
         kind: "REQ_CHANGED",

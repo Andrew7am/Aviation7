@@ -106,7 +106,13 @@ export function noticesFor(
     const req = changed('req_num');
     if (req && r.req_num) {
       const want = new Set(reqParts(r.req_num));
-      const move = ours.filter(t => !reqParts(t.reqNum).some(k => want.has(k)));
+      /* Only the half of the ticket this row is about: a refund row moved
+         moves our refund, a sale row our sale. 5513427841's refund row went
+         to KSAML482 while its sale stayed on KSAML2325, and "Move ours"
+         would have taken the sale along with it. */
+      const refundRow = /refund/i.test(r.status || '');
+      const move = ours.filter(t => ((t.amount || 0) < 0) === refundRow)
+        .filter(t => !reqParts(t.reqNum).some(k => want.has(k)));
       if (move.length) out.push({ ...base, kind: 'REQ_CHANGED',
         dedupe_key: `REQ|${r.record_id}|${r.req_num}`,
         ticket_ids: move.map(t => t.id),

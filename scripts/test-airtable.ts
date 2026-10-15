@@ -73,6 +73,18 @@ console.log('\n4. What a change means for our books');
   const vd = noticesFor([{ ...row, status: 'Void' }], new Map([['recB', diffRecord(row, { ...row, status: 'Void' })]]), ledgerIndex(ours));
   check('a void on a ticket we hold as a sale', vd.some(x => x.kind === 'VOID'), true);
   check('a ticket we do not hold raises nothing here', noticesFor([row], changes, ledgerIndex([])), []);
+  // 5513427841: its refund row moved to KSAML482, its sale stayed on
+  // KSAML2325. "Move ours" moves our refund only - not the sale with it.
+  const both = [{ id: 's1', ticketNo: '5513427841', reqNum: 'KSAML2325', amount: 4066.2, currency: 'AED' },
+                { id: 'r1', ticketNo: '5513427841', reqNum: 'KSAFM2466', amount: -4120, currency: 'AED' }];
+  const refRow: AirtableTicketRow = { ...a, record_id: 'recR', ticket_cell: '235 5513427841', serials: ['5513427841'], req_num: 'KSAML482', status: 'Cancelled/Refunded' };
+  const moved = noticesFor([refRow], new Map([['recR', diffRecord({ ...refRow, req_num: 'KSAFM2466' }, refRow)]]), ledgerIndex(both as any))
+    .find(x => x.kind === 'REQ_CHANGED')!;
+  check('a refund row moved: only our refund moves', moved.ticket_ids, ['r1']);
+  const saleRow: AirtableTicketRow = { ...refRow, record_id: 'recS', status: 'Issued', req_num: 'KSAML999' };
+  const movedSale = noticesFor([saleRow], new Map([['recS', diffRecord({ ...saleRow, req_num: 'KSAML2325' }, saleRow)]]), ledgerIndex(both as any))
+    .find(x => x.kind === 'REQ_CHANGED')!;
+  check('a sale row moved: only our sale moves', movedSale.ticket_ids, ['s1']);
 }
 
 console.log('\n5. Names and cabins only where the row is one passenger');
