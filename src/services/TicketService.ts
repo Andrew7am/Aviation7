@@ -60,9 +60,12 @@ function rowToTicket(r: TicketRow): Ticket {
     ticketNo: r.ticket_no,
     source: r.source,
     date: r.date,
-    amount: r.amount,
-    commission: r.commission,
-    totalDoc: r.total_doc,
+    // Numbers whichever way the row came: a full read returns numeric
+    // columns as numbers, and a realtime event must not slip one in as text,
+    // where adding it to a total would join the digits instead.
+    amount: Number(r.amount ?? 0),
+    commission: Number(r.commission ?? 0),
+    totalDoc: Number(r.total_doc ?? 0),
     reqNum: r.req_num,
     pnr: r.pnr ?? undefined,
     passengerName: r.passenger_name ?? undefined,
@@ -76,10 +79,10 @@ function rowToTicket(r: TicketRow): Ticket {
     transactionType: r.transaction_type ?? undefined,
     reportName: r.report_name ?? undefined,
     vendorReference: r.vendor_reference ?? undefined,
-    balanceAfter: r.balance_after ?? undefined,
+    balanceAfter: r.balance_after == null ? undefined : Number(r.balance_after),
     importTime: r.import_time ?? undefined,
     createdAt: r.created_at,
-    serial: r.serial ?? undefined,
+    serial: r.serial == null ? undefined : Number(r.serial),
     closed: r.closed ?? false,
     channel: r.channel ?? undefined,
     cabinClass: r.cabin_class ?? undefined,
@@ -179,17 +182,27 @@ export class TicketService {
        one full read puts the list right. The first subscribe follows the
        read above, so it needs none. */
     let joined = false;
+    /* Back on the page after a while away - another tab, a laptop asleep -
+       the list is read once in full. Events the connection never delivered
+       would otherwise wait for a reload nobody knows to do. */
+    let lastFull = Date.now();
+    const readAll = () => { lastFull = Date.now(); return fetchAll(); };
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && Date.now() - lastFull > 5 * 60_000) readAll();
+    };
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisible);
     const channel = supabase
       .channel(`tickets-${this.userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, handler)
       .subscribe(status => {
         if (status !== 'SUBSCRIBED') return;
-        if (joined) fetchAll();
+        if (joined) readAll();
         joined = true;
       });
 
     return () => {
       cancelled = true;
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
       supabase.removeChannel(channel);
     };
   }
