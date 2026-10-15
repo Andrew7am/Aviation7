@@ -39,6 +39,9 @@ export interface ParsedRow {
   /** A reissue at no charge whose report does not say what it replaces
    *  (RTS). Filed on import under the ticket with its PNR and passenger. */
   freeReissue?:    boolean;
+  /** The file named no currency for this row - not on it, not above the table.
+   *  The import then gives it its vendor's own, not the screen's choice. */
+  currencyUnstated?: boolean;
   /** Cabin sold, read from whatever the report called it. Both are set
    *  together: the reading, and the text it was read from. */
   cabinClass?:     string;

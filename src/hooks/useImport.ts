@@ -5,6 +5,7 @@ import { runParser } from '../core/parsers';
 import type { ExchangeEdge } from '../core/parsers/types';
 import { detectDuplicates, detectDuplicatesAgainstExisting, classifyAgainstExisting, ClassifiedRow, readFileAsText } from '../core/ImportEngine';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
+import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 import { isVoidRow } from '../core/helpers/normalizeStatus';
 import { LearnedProfile } from '../core/ai/learnedProfile';
 import { parseGrid, gridProblem } from '../core/helpers/parseGrid';
@@ -149,7 +150,9 @@ export function useImport(userId: string) {
         reqNum:          r.reqNum,
         vendorReference: r.vendorReference || '',
         status:          r.status,
-        currency:        r.currency,
+        // A file that names no currency is in its vendor's: IATA's Dubai office
+        // bills in dirhams whatever the import screen was left on.
+        currency:        r.currencyUnstated ? sourceToCurrency(r.source || defaultSource || parserName) as typeof r.currency : r.currency,
         serial:          r.serial,
         // A reissue at no charge is a ticket at 0, marked so it can be filed
         // under the one it replaces and shown as what it is.

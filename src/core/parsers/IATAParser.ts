@@ -135,6 +135,12 @@ export const IATAParser: VendorParser = {
       // A currency column on the row wins; otherwise what the report itself
       // declares, and only then the default chosen on the import screen.
       const currency = resolveCurrency(row, headers, period.currency ?? defaultCurrency);
+      /* Nothing in the file says it: no currency on the row, none above the
+         table. The import screen's choice is then no evidence - 2 Sep's
+         paste of seven Dubai tickets went in as riyals because the screen
+         said SAR. The import gives such a row its vendor's own currency. */
+      const unstated = !period.currency
+        && resolveCurrency(row, headers, 'SAR') !== resolveCurrency(row, headers, 'AED');
 
       // A date on the row always wins. Only when the format carries none does
       // the report's own range stand in for it.
@@ -166,6 +172,7 @@ export const IATAParser: VendorParser = {
         vendorReference: cell(row, iReq),
         status,
         currency,
+        ...(unstated ? { currencyUnstated: true } : {}),
         serial,
       });
     });
