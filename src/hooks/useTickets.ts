@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Ticket } from '../types';
 import { TicketService } from '../services/TicketService';
+import { applyTicketChanges, type TicketChange } from '../core/helpers/applyTicketChanges';
 import { detectDuplicates, mergeImported } from '../core/ImportEngine';
 
 export function useTickets(userId: string) {
@@ -12,15 +13,28 @@ export function useTickets(userId: string) {
   // updating 100 tickets fires 100 realtime events, each triggering a full
   // 4,937-row refetch. This debounce collapses them into one.
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* The changes the events carry, applied where they land. The Airtable sync
+     fills a route or a request every two minutes, and each of those used to
+     re-download all 6,000 tickets - the screen stalling while it did. A burst
+     too big to be worth applying one by one (a large import), or an event
+     that does not carry its row, still reads the table again. */
+  const pending = useRef<{ changes: TicketChange[]; whole: boolean }>({ changes: [], whole: false });
 
   useEffect(() => {
     const unsub = svc.subscribe(data => {
       setTickets(detectDuplicates(data));
       setLoading(false);
     }, undefined, {
-      onEvent: (fetchAll) => {
+      onEvent: (fetchAll, change) => {
+        const p = pending.current;
+        if (change && p.changes.length < 300) p.changes.push(change); else p.whole = true;
         if (refetchTimer.current) clearTimeout(refetchTimer.current);
-        refetchTimer.current = setTimeout(() => fetchAll(), 400);
+        refetchTimer.current = setTimeout(() => {
+          const { changes, whole } = pending.current;
+          pending.current = { changes: [], whole: false };
+          if (whole) { fetchAll(); return; }
+          setTickets(prev => detectDuplicates(applyTicketChanges(prev, changes)));
+        }, 400);
       },
     });
     return () => {

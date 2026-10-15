@@ -110,14 +110,22 @@ function MainApp({ user }: { user: User }) {
      badge never appears. Refetched when the ledger changes, because an edit
      is exactly what moves it. */
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const auditLastRef = React.useRef('');
   React.useEffect(() => {
     if (!isAdmin) return;
     let live = true;
     /* The ledger changes in bursts — a bulk close moves forty rows and fires
        forty updates. Waiting for it to settle turns forty fetches into one. */
+    // The whole history once; after that only what was logged since the
+    // newest event already held. Ordered by time, so appending keeps order.
     const t = setTimeout(() => {
-      AuditService.closeAndMoneyEvents()
-        .then(e => { if (live) setAuditEvents(e); })
+      const last = auditLastRef.current;
+      AuditService.closeAndMoneyEvents(last || undefined)
+        .then(e => {
+          if (!live) return;
+          if (e.length) auditLastRef.current = e.reduce((m, x) => (x.performedAt > m ? x.performedAt : m), last);
+          setAuditEvents(prev => (last ? (e.length ? [...prev, ...e] : prev) : e));
+        })
         .catch(err => console.error('audit events', err));
     }, 800);
     return () => { live = false; clearTimeout(t); };

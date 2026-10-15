@@ -1,4 +1,5 @@
 import { supabase, fetchAllRows } from '../utils/supabase';
+import type { TicketChange } from '../core/helpers/applyTicketChanges';
 import { Ticket } from '../types';
 
 type TicketRow = {
@@ -39,6 +40,19 @@ type TicketRow = {
   fx_rate?: number | string | null;
   related_ticket: string | null;
 };
+
+/**
+ * One realtime event as a change to the list: a row in whole, or the id of
+ * one that went. Null when the event does not carry what is needed - the
+ * caller then reads the table again, as it always used to.
+ */
+function toChange(payload: any): TicketChange {
+  const type = payload?.eventType;
+  if ((type === 'INSERT' || type === 'UPDATE') && payload.new?.id && payload.new?.ticket_no !== undefined)
+    return { kind: 'UPSERT', ticket: rowToTicket(payload.new as TicketRow) };
+  if (type === 'DELETE' && payload.old?.id) return { kind: 'DELETE', id: payload.old.id };
+  return null;
+}
 
 function rowToTicket(r: TicketRow): Ticket {
   return {
@@ -136,7 +150,7 @@ export class TicketService {
   subscribe(
     onData: (tickets: Ticket[]) => void,
     onError?: (e: Error) => void,
-    opts?: { onEvent?: (fetchAll: () => void) => void },
+    opts?: { onEvent?: (fetchAll: () => void, change: TicketChange) => void },
   ) {
     let cancelled = false;
 
@@ -160,11 +174,19 @@ export class TicketService {
     // caller intercept (e.g. to debounce bursts from a bulk update) via
     // opts.onEvent. Passing `fetchAll` gives the caller control over when
     // to actually run the full refetch.
-    const handler = () => (opts?.onEvent ? opts.onEvent(fetchAll) : fetchAll());
+    const handler = (payload: any) => (opts?.onEvent ? opts.onEvent(fetchAll, toChange(payload)) : fetchAll());
+    /* After a dropped connection the events missed in between are gone;
+       one full read puts the list right. The first subscribe follows the
+       read above, so it needs none. */
+    let joined = false;
     const channel = supabase
       .channel(`tickets-${this.userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, handler)
-      .subscribe();
+      .subscribe(status => {
+        if (status !== 'SUBSCRIBED') return;
+        if (joined) fetchAll();
+        joined = true;
+      });
 
     return () => {
       cancelled = true;

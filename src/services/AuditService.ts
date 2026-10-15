@@ -71,17 +71,20 @@ export class AuditService {
    * the log: RLS returns nothing to anyone else, and the badge simply never
    * appears for them.
    */
-  static async closeAndMoneyEvents(): Promise<
+  /** `since`: only what was logged after it - the screen reads the whole
+   *  history once, then each time the ledger moves only what is new. */
+  static async closeAndMoneyEvents(since?: string): Promise<
     { action: string; entity: string; detail: string; performedAt: string; actorEmail?: string }[]
   > {
     const pick = 'action, entity, detail, performed_at, actor_email';
+    const after = <Q extends { gt: (c: string, v: string) => Q }>(q: Q) => (since ? q.gt('performed_at', since) : q);
     const [closes, money] = await Promise.all([
-      fetchAllRows<any>((from, to) => supabase.from('audit_log').select(pick)
-        .in('action', ['UPDATE_CLOSED', 'BULK_UPDATE_CLOSED'])
+      fetchAllRows<any>((from, to) => after(supabase.from('audit_log').select(pick)
+        .in('action', ['UPDATE_CLOSED', 'BULK_UPDATE_CLOSED']))
         .order('performed_at', { ascending: true }).range(from, to)),
-      fetchAllRows<any>((from, to) => supabase.from('audit_log').select(pick)
+      fetchAllRows<any>((from, to) => after(supabase.from('audit_log').select(pick)
         .eq('action', 'EDIT_TICKET')
-        .or('detail.ilike.%amount%,detail.ilike.%commission%,detail.ilike.%total_doc%')
+        .or('detail.ilike.%amount%,detail.ilike.%commission%,detail.ilike.%total_doc%'))
         .order('performed_at', { ascending: true }).range(from, to)),
     ]);
     return [...closes, ...money].map(r => ({
