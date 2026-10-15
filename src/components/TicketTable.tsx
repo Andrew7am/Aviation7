@@ -105,6 +105,13 @@ const ZATCA_DOC = /^\d{4}$/;
  * Nothing is deleted; the stored value stays for anyone who needs it. This
  * decides only what the column claims to be showing.
  */
+/** A request field's request numbers, whole: "KSAML43-SA1157" -> KSAML43, SA1157. */
+export function reqTokensOf(req: string): string[] {
+  // Read out of the text rather than split on separators: "UAECO201UAECO250"
+  // is two requests written with none between them.
+  return [...(req || '').toUpperCase().matchAll(/[A-Z]{2,6}\d{2,6}(?!\d)/g)].map(m => m[0]);
+}
+
 export function vendorRef(t: { vendorReference?: string }): string {
   const v = (t.vendorReference ?? '').trim();
   return VENDOR_DOC.test(v) || ZATCA_DOC.test(v) ? v : '';
@@ -535,6 +542,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         || chainOf((t.ticketNo || '').replace(/\D/g, '').slice(-10), chainIdx).position > 0),
   [chainIdx]);
 
+  /** Every request number the ledger holds, as whole tokens. */
+  const reqTokens = useMemo(() => new Set(tickets.flatMap(t => reqTokensOf(t.reqNum || ''))), [tickets]);
+
   const sortRows = useCallback((rows: Ticket[]) => {
     if (!sortKey) return rows;
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -612,6 +622,12 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
+        /* A whole request number finds that request and nothing else. Read
+           as text, "UAEVP32" also found UAEVP322 and UAEVP329 - 47 rows of
+           other requests in its list and in its exported total. Part of a
+           number, or anything that is not a request, is searched as text. */
+        const asReq = searchTerm.trim().toUpperCase();
+        if (reqTokens.has(asReq)) return reqTokensOf(t.reqNum || '').includes(asReq);
         // A refund is found by the ticket it refunds as well as by its own
         // number: searching the original should turn up what paid it back.
         const haystack = `${t.ticketNo} ${t.reqNum} ${vendorRef(t)} ${t.pnr} ${t.source} ${t.passengerName}`
@@ -622,7 +638,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       return true;
     });
     return sortRows(rows);
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortRows, isFreeReissue, companyOf, companyFilter, splitOf]);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortRows, isFreeReissue, companyOf, companyFilter, splitOf, reqTokens]);
 
   /** The voids, shaped as rows so they sort and page with the tickets. */
   const voidRows = useMemo(() => voids.map((v, i): Ticket => ({

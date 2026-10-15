@@ -6,6 +6,7 @@
  */
 import { companyIndex, companyOf, companyLabel, companySummaries, type CompanyRow } from '../src/core/helpers/companies';
 import type { Ticket } from '../src/types';
+import { reqTokensOf } from '../src/components/TicketTable';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -78,6 +79,17 @@ console.log('\n4. A request placed under a company by hand');
   check('wins over what their sheet says', companyOf(tkt({ ticketNo: '4862000001', reqNum: 'KSACO363' }), idx), 'Sela - MICE');
   const s = companySummaries([tkt({ ticketNo: '4862999999', reqNum: 'KSACO379' })], rows, idx);
   check('their row is counted under it too', s.map(x => [x.company, x.tickets, x.notInBooks]), [['Sela - MICE', 1, 1]]);
+}
+
+console.log('\n5. A request number read whole - what a request search keeps');
+{
+  // "UAEVP32" found UAEVP322 and UAEVP329 as text: 47 rows of other
+  // requests in its list and in its exported total.
+  check('whole numbers only', reqTokensOf('UAEVP322'), ['UAEVP322']);
+  check('a combined field', reqTokensOf('KSAML43-SA1157'), ['KSAML43', 'SA1157']);
+  check('two written with nothing between', reqTokensOf('UAECO201UAECO250'), ['UAECO201', 'UAECO250']);
+  check('a marker is no request', reqTokensOf('COMPANY EXPENSE'), []);
+  check('UAEVP32 is not inside UAEVP322', reqTokensOf('UAEVP322').includes('UAEVP32'), false);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
