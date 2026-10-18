@@ -657,6 +657,14 @@ export interface DocTypeCount {
   noted?: string[];
 }
 
+/** Tickets, refunds, EMDs or voids: the same number on both sides, nothing
+ *  missing on either, and nothing set aside unless a person explained it. */
+export const countsAgree = (d: DocTypeCount) =>
+  !d.missingOnTheirs.length && !d.missingInOurs.length
+  && (d.noted ?? []).every(n => n.includes(' - explained: '))
+  // A difference a person explained is accepted; any other is not.
+  && (d.ours === d.theirs || (d.noted ?? []).length > 0);
+
 export interface TeamSheetReport {
   findings: Finding[];
   /**
@@ -711,7 +719,7 @@ export interface TeamSheetReport {
    * A ticket here is the document, whatever became of it; a refund is a
    * ticket with money back on it; an EMD is a bag or a seat bought on one.
    */
-  docTypes: Record<'tickets' | 'refunds' | 'emds', DocTypeCount>;
+  docTypes: Record<'tickets' | 'refunds' | 'emds' | 'voids', DocTypeCount>;
   matched: number;
   /**
    * The earliest ticket on their sheet, and how many of ours predate it.
@@ -879,6 +887,9 @@ export function compareTeamSheet(
    *  sheet still shows as live is then a void they never updated, not a
    *  ticket missing from our books. */
   opts: { voided?: Iterable<string>; chains?: Edge[]; explanations?: Explanation[];
+    /** The Voids register with each void's booking, so a void is counted
+     *  under the request its PNR belongs to - the register names none. */
+    voidRecords?: { ticketNo: string; pnr?: string }[];
     /** Their whole sheet's first ticket, when the rows passed are one request's.
      *  KSAML1690's first row is 21 May; their sheet began in January. Taking
      *  the request's first row as the start put 18 of our tickets from 19-20
@@ -2042,6 +2053,28 @@ export function compareTeamSheet(
      Counted as a ticket, KSAML2552 read 10 on their sheet against our 9
      with ...809 "missing in our books", beside a check that rightly found
      nothing wrong. It is counted with its sibling and named apart. */
+  /* Voids, counted like everything else: 20 issues, 5 refunds, 4 EMDs and 5
+     voids on one side are the same on the other, or the sheet is not closed.
+     Ours: a void in the register whose number is on their sheet, or whose
+     booking is one of these requests'. Theirs: the rows they mark void. */
+  const theirV = new Set<string>();
+  const onSheet = new Set<string>(), bookings = new Set<string>();
+  for (const r of sheet) {
+    if (r.status === 'ON_HOLD') continue;
+    if (r.serial) onSheet.add(r.serial);
+    const p = pnrKey(r.pnr);
+    if (p) bookings.add(p);
+    if (r.status === 'VOID') { const k = r.serial || p; if (k) theirV.add(k); }
+  }
+  for (const t of ourScoped) { const p = pnrKey(t.pnr); if (p) bookings.add(p); }
+  const oursV = new Set<string>();
+  const voidList = opts.voidRecords ?? [...(opts.voided ?? [])].map(ticketNo => ({ ticketNo, pnr: '' }));
+  for (const v of voidList) {
+    const k = ticketMatchKey(v.ticketNo || '');
+    if (!k) continue;
+    if (onSheet.has(k) || theirV.has(k) || (v.pnr && bookings.has(pnrKey(v.pnr)))) oursV.add(k);
+  }
+
   const findingsAt = new Map<string, Finding[]>();
   for (const f of findings) {
     const k = f.serial || pnrKey(f.pnr);
@@ -2096,6 +2129,15 @@ export function compareTeamSheet(
      the two counts and the lists of what is missing always add up. */
   for (const k of oursT) if (!theirT.has(k) && !theirE.has(k) && carried(k)) theirT.add(k);
   for (const k of oursE) if (!theirE.has(k) && !theirT.has(k) && carried(k)) theirE.add(k);
+  /* A booking reference their row writes for documents of ours it already
+     carries by number is not a document of its own: RX12237ZB622D's one row
+     is our 2100060907 and 4200006305, and counting the reference as well
+     read 3 on their side against our 2. */
+  for (const k of [...theirT]) {
+    if (!isReference(k) && /^\d+$/.test(k)) continue;
+    const docs = (ourByPnr.get(k) ?? []).filter(t => !isRefund(t)).map(keyOf);
+    if (docs.length && docs.every(d => d !== k && (theirT.has(d) || theirE.has(d)))) theirT.delete(k);
+  }
   const sorted = (xs: Iterable<string>) => [...xs].sort();
   /* Missing in our books, and nothing to do about it: a reissue no supplier
      charged for, a refund applied and on its way, a document the cell's
@@ -2107,7 +2149,8 @@ export function compareTeamSheet(
     const missingInOurs: string[] = [], noted: string[] = [];
     for (const k of ks) {
       const fs = (findingsAt.get(k) ?? []).filter(f => REFUND_SIDE.has(f.verdict) === refund);
-      if (fs.length && fs.every(f => f.explained || whoActs(f) === 'INFO'))
+      // A refund on its way is still a refund our books do not hold.
+      if (fs.length && fs.every(f => f.explained || (whoActs(f) === 'INFO' && f.verdict !== 'REFUND_AWAITING_BILLING')))
         noted.push(`${k} - ${fs[0].explained ? `explained: ${fs[0].explained}` : VERDICT_LABEL[fs[0].verdict]}`);
       else missingInOurs.push(k);
     }
@@ -2142,6 +2185,11 @@ export function compareTeamSheet(
     emds: { ours: oursE.size, theirs: theirE.size,
       missingOnTheirs: sorted([...oursE].filter(k => !carried(k))),
       ...withElsewhere(split(sorted([...theirE].filter(k => !held(k))), false), theirE) },
+    voids: { ours: oursV.size, theirs: theirV.size,
+      // Voided with the supplier; their sheet still shows it live, or not at all.
+      missingOnTheirs: sorted([...oursV].filter(k => !theirV.has(k))),
+      // Void on their sheet, and no void of it in our register.
+      missingInOurs: sorted([...theirV].filter(k => !oursV.has(k))) },
   };
 
   /* ── did every row reach a result? ───────────────────────────────────── */
@@ -2227,6 +2275,8 @@ export function compareTeamSheet(
     // state of the world or their own sheet to tidy.
     // A refund on its way is nobody's mistake, but it is money not yet in
     // our books: KSAML2064's twelve Turkish refunds read "can be closed".
-    clean: findings.every(f => !!f.explained || (whoActs(f) !== 'US' && f.verdict !== 'REFUND_AWAITING_BILLING')),
+    clean: findings.every(f => !!f.explained || (whoActs(f) !== 'US' && f.verdict !== 'REFUND_AWAITING_BILLING'))
+      // ...and the four counts are the same on both sides, to the document.
+      && Object.values(docTypes).every(d => countsAgree(d)),
   };
 }

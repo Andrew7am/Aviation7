@@ -198,11 +198,11 @@ export async function syncAirtable(env: {
         airlineCode: t.airline_code ?? '', status: t.status ?? '', transactionType: t.transaction_type ?? '', currency: t.currency,
         closed: !!t.closed, relatedTicket: t.related_ticket, originalCurrency: t.original_currency, originalAmount: t.original_amount == null ? undefined : Number(t.original_amount),
         reportName: t.report_name ?? '', confirmedBy: t.confirmed_by, passengerName: t.passenger_name ?? '' })) as unknown as Ticket[];
-      const voids = await selectAll<{ ticket_no: string }>(db, 'void_tickets', 'ticket_no');
+      const voids = await selectAll<{ ticket_no: string; pnr: string | null }>(db, 'void_tickets', 'ticket_no, pnr');
       const chains = await selectAll<{ ticket_no: string; replaced_ticket: string }>(db, 'ticket_exchanges', 'ticket_no, replaced_ticket');
       const voided = new Set(voids.map(v => docKey(v.ticket_no)));
       const report = compareTeamSheet(sheet, tickets, [], {}, {
-        voided: voids.map(v => v.ticket_no), chains: chains.map(c => ({ ticketNo: c.ticket_no, replacedTicket: c.replaced_ticket })) });
+        voided: voids.map(v => v.ticket_no), voidRecords: voids.map(v => ({ ticketNo: v.ticket_no, pnr: v.pnr ?? '' })), chains: chains.map(c => ({ ticketNo: c.ticket_no, replacedTicket: c.replaced_ticket })) });
       // Every ticket of theirs that is in nobody's books waits for a person
       // in To Review: the one decision this integration asks of anybody.
       const online = report.findings.filter(f => f.verdict === 'NOT_IN_LEDGER'

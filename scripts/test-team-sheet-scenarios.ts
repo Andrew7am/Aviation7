@@ -48,7 +48,8 @@ function broken(rep: TeamSheetReport, rows: ReturnType<typeof parseTeamSheet>['r
   for (const f of rep.findings)
     for (const k of new Set([f.serial, f.pnr, (f.pnr || '').replace(/[^A-Z0-9]/gi, '')].filter(Boolean).map(x => x.toUpperCase())))
       byDoc.set(k, [...(byDoc.get(k) ?? []), f]);
-  const act = (f: Finding) => !f.explained && whoActs(f) !== 'INFO' && f.verdict !== 'OK';
+  // A refund on its way is INFO, but still a refund our books lack.
+  const act = (f: Finding) => !f.explained && f.verdict !== 'OK' && (whoActs(f) !== 'INFO' || f.verdict === 'REFUND_AWAITING_BILLING');
   for (const k of ['tickets', 'refunds', 'emds'] as const) {
     const d = rep.docTypes[k];
     const mo = d.ours - d.missingOnTheirs.length;
@@ -131,8 +132,9 @@ scenario('5. Refunded on their sheet, not received, our refund not in yet', [
   `065-5513059078,PNR001,Issued,REQ100,1000,,,${D},,IATA Portal (UAE)`,
   `065-5513059078,PNR001,Cancelled/Refunded,REQ100,1000,800,,22/08/2026 1:00pm,,IATA Portal (UAE)`,
 ], [tkt({})], { REFUND_AWAITING_BILLING: 1 }, rep => {
-  check('not red', rep.docTypes.refunds.missingInOurs, []);
-  check('named, with why', rep.docTypes.refunds.noted?.length, 1);
+  // On its way, but not in our books: missing, and the sheet stays open.
+  check('missing in our books', rep.docTypes.refunds.missingInOurs, ['5513059078']);
+  check('the sheet is not closed', rep.clean, false);
 });
 
 scenario('6. Refunded and marked received, our refund missing', [

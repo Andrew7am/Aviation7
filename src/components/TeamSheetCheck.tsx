@@ -9,7 +9,7 @@ import Papa from 'papaparse';
 import { AirtableService } from '../services/AirtableService';
 import { rowsToCsv } from '../core/integrations/airtable';
 import { parseTeamSheet, TeamSheetRow } from '../core/parsers/teamSheet';
-import {
+import { countsAgree,
   compareTeamSheet, TeamSheetReport, Finding, Verdict, VERDICT_LABEL, VERDICT_RANK, rowsForReview, whoActs,
 } from '../core/helpers/teamSheetCompare';
 import { writeClipboard } from '../utils/clipboard';
@@ -170,7 +170,7 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string; sub
 
 const DocTypeTable: React.FC<{ docTypes: TeamSheetReport['docTypes'] }> = ({ docTypes }) => {
   const [open, setOpen] = useState<string | null>(null);
-  const kinds = [['tickets', 'Tickets'], ['refunds', 'Refunds'], ['emds', 'EMDs']] as const;
+  const kinds = [['tickets', 'Tickets'], ['refunds', 'Refunds'], ['emds', 'EMDs'], ['voids', 'Voids']] as const;
   const chips = (xs: string[]) => (
     <div className="flex flex-wrap gap-1 mt-1.5">
       {xs.map(x => <span key={x} className="font-mono text-[10px] bg-slate-100 text-slate-700 rounded px-1.5 py-0.5">{x}</span>)}
@@ -748,7 +748,7 @@ interface Props {
    * Those look identical on this screen, and only one of them is worth
    * chasing.
    */
-  voids?: { ticketNo: string; date: string; source: string; period?: string }[];
+  voids?: { ticketNo: string; date: string; source: string; period?: string; pnr?: string }[];
   /** Reissue links, so a reissue their sheet does not carry can say whose it is. */
   exchanges?: { ticketNo: string; replacedTicket: string; fee?: number | null }[];
   /** Who is looking - for explanations and the last sheet, remembered between runs. */
@@ -849,7 +849,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
     () => (rows && (mode === 'sheet' || reviewing.length)
       ? compareTeamSheet(mode === 'request' ? rowsForReview(rows, reviewing, tickets) : rows, tickets,
           mode === 'request' ? reviewing : declared, { from: fromDate, to: toDate },
-          { voided: voids.map(v => v.ticketNo), chains: exchanges, explanations: mode === 'request' ? [] : explanations,
+          { voided: voids.map(v => v.ticketNo), voidRecords: voids.map(v => ({ ticketNo: v.ticketNo, pnr: v.pnr })), chains: exchanges, explanations: mode === 'request' ? [] : explanations,
             // One request's rows start where that request starts; their sheet started long before.
             sheetStart: rows.map(r => r.issued).filter(Boolean).sort()[0] ?? '' })
       : null),
@@ -1094,6 +1094,13 @@ export const TeamSheetCheck: React.FC<Props> = ({
   /** Refunds their sheet has and our books do not, still on their way: not
    *  a mistake to settle, but the sheet is not closed until they land. */
   const awaiting = report ? report.findings.filter(f => !f.explained && f.verdict === 'REFUND_AWAITING_BILLING') : [];
+  /** The four counts that have to be the same on both sides, where they are not. */
+  const countGaps = report ? ([['tickets', 'tickets'], ['refunds', 'refunds'], ['emds', 'EMDs'], ['voids', 'voids']] as const)
+    .filter(([k]) => !countsAgree(report.docTypes[k]))
+    .map(([k, label]) => `${label} ${report.docTypes[k].ours} in our books, ${report.docTypes[k].theirs} on their sheet`) : [];
+  const countNote = countGaps.length > 0 && (
+    <>{' '}<b>The counts are not the same:</b> {countGaps.join('; ')}. See the table of documents below.</>
+  );
   const awaitingNote = awaiting.length > 0 && (
     <>
       {' '}<b>{awaiting.length} refund{awaiting.length === 1 ? ' is' : 's are'} on their sheet and not in our books yet</b>
@@ -1397,13 +1404,13 @@ export const TeamSheetCheck: React.FC<Props> = ({
                             flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
               <span className="text-xs text-amber-900">
-                {needsWork === 0 && awaiting.length > 0 && !report.unaccounted.length ? (
-                  <><b>Not ready to close.</b>{awaitingNote}</>
+                {needsWork === 0 && (awaiting.length > 0 || countGaps.length > 0) && !report.unaccounted.length ? (
+                  <><b>Not ready to close.</b>{countNote}{awaitingNote}</>
                 ) : (<>
                   <b>{needsWork} {needsWork === 1 ? 'thing needs' : 'things need'} settling
                   before this sheet is closed.</b>{' '}
                   They are listed worst first below. Anything marked in grey is a state of the
-                  world rather than a disagreement.{awaitingNote}
+                  world rather than a disagreement.{countNote}{awaitingNote}
                 </>)}
               </span>
             </div>

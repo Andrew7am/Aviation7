@@ -370,7 +370,16 @@ console.log('\n12. A sheet where everything agrees says so');
     tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: 1530 }),
     tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: -1190, status: 'REFUND' }),
   ]);
-  check('a void and a hold do not block a sheet', withVoid.clean, true);
+  // A void counts like any document: their void must be a void of ours.
+  check('their void with no void of ours keeps the sheet open', withVoid.clean, false);
+  check('...it is a void missing in our books', withVoid.docTypes.voids.missingInOurs.length, 1);
+  const voidHeld = compareTeamSheet(parseTeamSheet(CSV).rows, [
+    tkt({ ticketNo: '5513059078', pnr: 'YSLM73' }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: 1530 }),
+    tkt({ ticketNo: '5513059077', pnr: 'YQX75R', amount: -1190, status: 'REFUND' }),
+  ], [], {}, { voided: withVoid.docTypes.voids.missingInOurs });
+  check('a void on both sides and a hold do not block a sheet', voidHeld.clean, true);
+  check('...the voids counted alike', [voidHeld.docTypes.voids.ours, voidHeld.docTypes.voids.theirs], [1, 1]);
 }
 
 console.log('\n13. A sheet that names its own request widens the boundary');
@@ -1700,8 +1709,9 @@ console.log('\n54. A reissue nobody charged for is not a gap');
   check('and not a missing ticket', free.counts.NOT_IN_LEDGER, 0);
   check('the note says why',
     free.findings[0].note.includes('the fare was paid on the original ticket'), true);
-  // Nothing to do about it, so it cannot stop a sheet being closed.
-  check('the sheet still closes',   free.clean, true);
+  // Nothing to do about it - but their sheet has a ticket our books do not,
+  // and the sheet closes only when the two counts are the same.
+  check('the counts differ, so the sheet stays open', free.clean, false);
 
   // Their word can be in either column.
   check('in the ticket type alone', compareTeamSheet(sheet([

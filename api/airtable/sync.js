@@ -774,6 +774,7 @@ var reqKey = (s) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/M
 var sameReq = (a, b) => reqKey(a) === reqKey(b);
 var isReference2 = (s) => /^[A-Z0-9]{5,15}$/.test(s) && /[A-Z]/.test(s);
 var pnrKey = (s) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+var countsAgree = (d) => !d.missingOnTheirs.length && !d.missingInOurs.length && (d.noted ?? []).every((n) => n.includes(" - explained: ")) && (d.ours === d.theirs || (d.noted ?? []).length > 0);
 var REFUND_FLOOR = 50;
 var PRICE_FLOOR = 15;
 function reqDiffHint(ours, theirs) {
@@ -1555,6 +1556,29 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     else if (emdLine(t) || theirEmdDocs.has(k)) oursE.add(k);
     else oursT.add(k);
   }
+  const theirV = /* @__PURE__ */ new Set();
+  const onSheet = /* @__PURE__ */ new Set(), bookings = /* @__PURE__ */ new Set();
+  for (const r of sheet) {
+    if (r.status === "ON_HOLD") continue;
+    if (r.serial) onSheet.add(r.serial);
+    const p = pnrKey(r.pnr);
+    if (p) bookings.add(p);
+    if (r.status === "VOID") {
+      const k = r.serial || p;
+      if (k) theirV.add(k);
+    }
+  }
+  for (const t of ourScoped) {
+    const p = pnrKey(t.pnr);
+    if (p) bookings.add(p);
+  }
+  const oursV = /* @__PURE__ */ new Set();
+  const voidList = opts.voidRecords ?? [...opts.voided ?? []].map((ticketNo) => ({ ticketNo, pnr: "" }));
+  for (const v of voidList) {
+    const k = ticketMatchKey(v.ticketNo || "");
+    if (!k) continue;
+    if (onSheet.has(k) || theirV.has(k) || v.pnr && bookings.has(pnrKey(v.pnr))) oursV.add(k);
+  }
   const findingsAt = /* @__PURE__ */ new Map();
   for (const f of findings) {
     const k = f.serial || pnrKey(f.pnr);
@@ -1584,13 +1608,18 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   const held2 = (k) => voidedSet.has(k) || (ourBySerial.get(k) ?? []).some((t) => !isRefund(t)) || (isReference2(k) ? (ourByPnr.get(k) ?? []).some((t) => !theirSerials.has(ticketMatchKey(t.ticketNo || ""))) : ourByPnr.has(k));
   for (const k of oursT) if (!theirT.has(k) && !theirE.has(k) && carried(k)) theirT.add(k);
   for (const k of oursE) if (!theirE.has(k) && !theirT.has(k) && carried(k)) theirE.add(k);
+  for (const k of [...theirT]) {
+    if (!isReference2(k) && /^\d+$/.test(k)) continue;
+    const docs = (ourByPnr.get(k) ?? []).filter((t) => !isRefund(t)).map(keyOf2);
+    if (docs.length && docs.every((d) => d !== k && (theirT.has(d) || theirE.has(d)))) theirT.delete(k);
+  }
   const sorted = (xs) => [...xs].sort();
   const REFUND_SIDE = /* @__PURE__ */ new Set(["REFUND_NOT_IN_LEDGER", "REFUND_AWAITING_BILLING", "REFUND_DIFFERS", "REFUND_NOT_ON_SHEET"]);
   const split = (ks, refund) => {
     const missingInOurs = [], noted = [];
     for (const k of ks) {
       const fs = (findingsAt.get(k) ?? []).filter((f) => REFUND_SIDE.has(f.verdict) === refund);
-      if (fs.length && fs.every((f) => f.explained || whoActs(f) === "INFO"))
+      if (fs.length && fs.every((f) => f.explained || whoActs(f) === "INFO" && f.verdict !== "REFUND_AWAITING_BILLING"))
         noted.push(`${k} - ${fs[0].explained ? `explained: ${fs[0].explained}` : VERDICT_LABEL[fs[0].verdict]}`);
       else missingInOurs.push(k);
     }
@@ -1624,6 +1653,14 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       theirs: theirE.size,
       missingOnTheirs: sorted([...oursE].filter((k) => !carried(k))),
       ...withElsewhere(split(sorted([...theirE].filter((k) => !held2(k))), false), theirE)
+    },
+    voids: {
+      ours: oursV.size,
+      theirs: theirV.size,
+      // Voided with the supplier; their sheet still shows it live, or not at all.
+      missingOnTheirs: sorted([...oursV].filter((k) => !theirV.has(k))),
+      // Void on their sheet, and no void of it in our register.
+      missingInOurs: sorted([...theirV].filter((k) => !oursV.has(k)))
     }
   };
   const unaccounted = [];
@@ -1732,7 +1769,9 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     // sheet that can be closed.
     // Closed when nothing is left for our books: what remains is either a
     // state of the world or their own sheet to tidy.
-    clean: findings.every((f) => !!f.explained || whoActs(f) !== "US")
+    // A refund on its way is nobody's mistake, but it is money not yet in
+    // our books: KSAML2064's twelve Turkish refunds read "can be closed".
+    clean: findings.every((f) => !!f.explained || whoActs(f) !== "US" && f.verdict !== "REFUND_AWAITING_BILLING") && Object.values(docTypes).every((d) => countsAgree(d))
   };
 }
 
@@ -2429,11 +2468,12 @@ async function syncAirtable(env) {
         confirmedBy: t.confirmed_by,
         passengerName: t.passenger_name ?? ""
       }));
-      const voids = await selectAll(db, "void_tickets", "ticket_no");
+      const voids = await selectAll(db, "void_tickets", "ticket_no, pnr");
       const chains = await selectAll(db, "ticket_exchanges", "ticket_no, replaced_ticket");
       const voided = new Set(voids.map((v) => docKey(v.ticket_no)));
       const report = compareTeamSheet(sheet, tickets, [], {}, {
         voided: voids.map((v) => v.ticket_no),
+        voidRecords: voids.map((v) => ({ ticketNo: v.ticket_no, pnr: v.pnr ?? "" })),
         chains: chains.map((c) => ({ ticketNo: c.ticket_no, replacedTicket: c.replaced_ticket }))
       });
       const online = report.findings.filter((f) => f.verdict === "NOT_IN_LEDGER" && f.sheet?.status === "ISSUED" && !voided.has(docKey(f.serial || f.pnr)));
