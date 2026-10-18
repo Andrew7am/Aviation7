@@ -30,7 +30,7 @@ import {
   readIbtekarInvoices, preferReading, NO_QR, type ReadInvoice,
 } from '../src/core/parsers/ibtekarInvoiceRead';
 import {
-  coverageReport, invoiceable, serialOf, HeldInvoice,
+  coverageReport, coverageInPeriod, invoiceable, serialOf, HeldInvoice,
 } from '../src/core/helpers/taxInvoiceCoverage';
 import type { Ticket } from '../src/types';
 import { decodeZatcaQr, IBTEKAR_VAT } from '../src/core/parsers/zatcaQr';
@@ -477,6 +477,32 @@ console.log('\n16. What to ask Ibtekar for');
   check('  ...or says it has none', rows.find(t => t.ticketNo === '065-4862141186')?.invoiceNo, '(no invoice number)');
   check('  ...and those are a separate ask', invoices.filter(i => i.reason === 'NONE').map(i => i.invoiceNo),
         ['(no invoice number)', 'INV264300']);
+}
+
+console.log('\n17. What to ask for, for one month');
+{
+  const tickets = [
+    tkt({ ticketNo: '065-4862000001', amount: 1000, date: '2026-09-28' }),
+    tkt({ ticketNo: '065-4862000002', amount: 700, date: '2026-10-02' }),
+    tkt({ ticketNo: '065-4862000003', amount: 300, date: '2026-10-20' }),
+    tkt({ ticketNo: '065-4862000004', amount: 400, date: '2026-10-05' }),
+  ];
+  const whole = coverageReport([
+    // One printout across September and October, billing one stranger too.
+    inv({ invoiceNo: 'INV1', isTaxInvoice: false, serials: ['4862000001', '4862000002', '4862999999'], total: 1900, invoiceDate: '2026-10-03' }),
+    // An October ticket on a final invoice dated September is still covered.
+    inv({ invoiceNo: 'IBK-1', serials: ['4862000004'], total: 400, invoiceDate: '2026-09-30' }),
+  ], tickets);
+  const oct = coverageInPeriod(whole, '2026-10-01', '2026-10-31');
+  check('only October\'s tickets', oct.tickets.map(r => r.ticket.ticketNo), ['065-4862000002', '065-4862000003', '065-4862000004']);
+  check('covered by an invoice of another month', oct.covered.map(r => r.ticket.ticketNo), ['065-4862000004']);
+  check('tiles in October\'s money', [oct.uncoveredValue, oct.coveredValue], [300, 400]);
+  const { invoices, tickets: rows } = invoiceRequestList(oct);
+  check('the export asks for October only', rows.map(t => t.ticketNo).sort(), ['065-4862000002', '065-4862000003', '4862999999']);
+  check('  ...the printout still under its own number', invoices.map(i => i.invoiceNo).sort(), ['(no invoice number)', 'INV1']);
+  check('September: the stranger goes by the invoice date, not here',
+        invoiceRequestList(coverageInPeriod(whole, '2026-09-01', '2026-09-30')).tickets.map(t => t.ticketNo), ['065-4862000001']);
+  check('no period is the whole report', coverageInPeriod(whole, '', '') === whole, true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

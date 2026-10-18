@@ -162,3 +162,36 @@ export function coverageReport(invoices: HeldInvoice[], tickets: Ticket[]): Cove
       !i.invoice.isTaxInvoice && !isCredit(i.invoice) && i.invoice.serials.length > 0 && !i.finalFor.length),
   };
 }
+
+/**
+ * The same report for the tickets issued in a period - "what do I ask them
+ * for, for October". Coverage is worked out over everything first, so a
+ * ticket of October's printed on a September invoice is still covered; only
+ * then is the list cut. A ticket is in the period by its issue date. A
+ * document an invoice bills that our books never held has no date of ours,
+ * so it goes by the invoice's. Empty bounds are open.
+ */
+export function coverageInPeriod(report: CoverageReport, from: string, to: string): CoverageReport {
+  if (!from && !to) return report;
+  const within = (d?: string) => !!d && (!from || d >= from) && (!to || d <= to);
+  const tickets = report.tickets.filter(r => within(r.ticket.date));
+  const covered = tickets.filter(r => r.coverage === 'COVERED');
+  const notTax = tickets.filter(r => r.coverage === 'NOT_TAX');
+  const uncovered = tickets.filter(r => r.coverage === 'NONE');
+  const sum = (rs: TicketCoverage[]) => round2(rs.reduce((n, r) => n + (r.ticket.amount ?? 0), 0));
+  const cut = (i: InvoiceCoverage): InvoiceCoverage => ({
+    ...i,
+    inLedger: i.inLedger.filter(t => within(t.date)),
+    notInLedger: within(i.invoice.invoiceDate) ? i.notInLedger : [],
+  });
+  const touches = (i: InvoiceCoverage) => i.inLedger.length > 0 || i.notInLedger.length > 0;
+  const invoices = report.invoices.filter(i =>
+    i.inLedger.length ? i.inLedger.some(t => within(t.date)) : within(i.invoice.invoiceDate));
+  return {
+    tickets, invoices, covered, notTax, uncovered,
+    coveredValue: sum(covered),
+    uncoveredValue: sum(uncovered),
+    billedNotHeld: [...new Set(invoices.filter(i => within(i.invoice.invoiceDate)).flatMap(i => i.notInLedger))].sort(),
+    awaitingFinal: report.awaitingFinal.map(cut).filter(touches),
+  };
+}

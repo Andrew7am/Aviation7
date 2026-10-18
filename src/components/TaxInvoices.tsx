@@ -4,7 +4,7 @@ import {
   FileWarning, ChevronDown, ChevronRight, Download,
 } from 'lucide-react';
 import type { Ticket } from '../types';
-import { coverageReport, Coverage } from '../core/helpers/taxInvoiceCoverage';
+import { coverageReport, coverageInPeriod, Coverage } from '../core/helpers/taxInvoiceCoverage';
 import type { StoredInvoice } from '../services/TaxInvoiceService';
 import type { FileOutcome } from '../hooks/useTaxInvoices';
 import { invoiceRequestSheets } from '../core/helpers/taxInvoiceRequest';
@@ -30,6 +30,9 @@ const xlsx = () => import('xlsx');
 
 const fmt = (n: number) =>
   Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const monthName = (m: string) =>
+  new Date(`${m}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 const BADGE: Record<Coverage, { label: string; cls: string }> = {
   COVERED: { label: 'Tax invoice held', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -186,11 +189,25 @@ export const TaxInvoices: React.FC<{
   const [reading, setReading] = useState(false);
   const [outcomes, setOutcomes] = useState<FileOutcome[] | null>(null);
   const [dragging, setDragging] = useState(false);
+  /* A period: 'ALL', a month ('2026-10'), or 'CUSTOM' from/to. It cuts the
+     tiles, the list and the export alike - "what to ask for, for October". */
+  const [period, setPeriod] = useState('ALL');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const input = useRef<HTMLInputElement>(null);
 
   const ours = useMemo(
     () => tickets.filter(t => t.source === vendorName), [tickets, vendorName]);
-  const report = useMemo(() => coverageReport(invoices, ours), [invoices, ours]);
+  const whole = useMemo(() => coverageReport(invoices, ours), [invoices, ours]);
+  const months = useMemo(() => [...new Set(whole.tickets.map(r => (r.ticket.date || '').slice(0, 7)).filter(m => /^\d{4}-\d{2}$/.test(m)))]
+    .sort().reverse(), [whole]);
+  const [pFrom, pTo] = period === 'ALL' ? ['', '']
+    : period === 'CUSTOM' ? [from, to]
+    : [`${period}-01`, `${period}-31`];
+  const report = useMemo(() => coverageInPeriod(whole, pFrom, pTo), [whole, pFrom, pTo]);
+  const periodLabel = period === 'ALL' ? '' : period === 'CUSTOM'
+    ? (pFrom || pTo ? ` ${pFrom || '…'} to ${pTo || '…'}` : '')
+    : ` ${monthName(period)}`;
   const currency = ours[0]?.currency ?? 'SAR';
 
   /* The uncovered list is the reason to open this screen, so it opens on it.
@@ -229,7 +246,7 @@ export const TaxInvoices: React.FC<{
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), 'Invoices to request');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tk), 'Tickets');
-    XLSX.writeFile(wb, `${vendorName} - tax invoices to request ${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `${vendorName} - tax invoices to request${periodLabel || ' ' + new Date().toISOString().slice(0, 10)}.xlsx`);
   };
   const owed = report.notTax.length + report.uncovered.length;
 
@@ -241,13 +258,27 @@ export const TaxInvoices: React.FC<{
             <Receipt className="w-4 h-4 text-purple-600" />
             Tax Invoices — {vendorName}
           </h2>
+          <div className="ml-auto flex items-center gap-1.5">
+            <select value={period} onChange={e => setPeriod(e.target.value)} title="Tickets issued in"
+              className="text-[11px] border border-slate-200 rounded px-2 py-1.5 text-slate-600 bg-white">
+              <option value="ALL">All dates</option>
+              {months.map(m => <option key={m} value={m}>{monthName(m)}</option>)}
+              <option value="CUSTOM">From / to…</option>
+            </select>
+            {period === 'CUSTOM' && (<>
+              <input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} title="Issued from"
+                className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600" />
+              <input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} title="Issued to"
+                className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600" />
+            </>)}
+          </div>
           {owed > 0 && (
             <button onClick={exportRequest}
               title={`The invoices to ask ${vendorName} for, and every ticket under them, as Excel`}
-              className="ml-auto flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded border
+              className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded border
                 border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
               <Download className="w-3.5 h-3.5" />
-              Export what to request ({owed} tickets)
+              Export what to request{periodLabel} ({owed} tickets)
             </button>
           )}
         </div>
@@ -379,7 +410,7 @@ export const TaxInvoices: React.FC<{
           sub="only on a document with no ZATCA QR code"
           active={filter === 'NOT_TAX'} onClick={() => { setTab('tickets'); setFilter('NOT_TAX'); }} />
         <Tile label="Invoices held" tone="plain"
-          value={String(invoices.length)}
+          value={String(period === 'ALL' ? invoices.length : report.invoices.length)}
           sub={report.billedNotHeld.length
             ? `${report.billedNotHeld.length} billed document(s) not in our books`
             : 'every document they bill is in our books'}
