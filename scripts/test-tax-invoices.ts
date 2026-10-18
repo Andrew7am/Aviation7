@@ -35,6 +35,7 @@ import {
 import type { Ticket } from '../src/types';
 import { decodeZatcaQr, IBTEKAR_VAT } from '../src/core/parsers/zatcaQr';
 import { invoiceRequestList } from '../src/core/helpers/taxInvoiceRequest';
+import { creditNoteReport, creditsInPeriod, creditRequestSheet } from '../src/core/helpers/creditNoteCoverage';
 
 /** A ZATCA QR code's text: base64 of tag-length-value fields. */
 const qrText = (fields: Record<number, string>) => {
@@ -523,6 +524,44 @@ console.log('\n17. What to ask for, for one month');
   check('September: the stranger goes by the invoice date, not here',
         invoiceRequestList(coverageInPeriod(whole, '2026-09-01', '2026-09-30')).tickets.map(t => t.ticketNo), ['065-4862000001']);
   check('no period is the whole report', coverageInPeriod(whole, '', '') === whole, true);
+}
+
+console.log('\n18. Refunds and the ZATCA credit notes for them');
+{
+  // A credit note names no ticket - only the invoice it reduces, by their serial.
+  const sale = (n: string, amount: number, date = '2026-09-21') => tkt({ ticketNo: n, amount, date });
+  const refund = (n: string, amount: number, date = '2026-09-25') => tkt({ ticketNo: n, amount: -amount, status: 'REFUND', date });
+  const finals = [
+    inv({ invoiceNo: 'IBK-1599', theirSerial: '1599', serials: ['4862083218', '4862141169'], total: 3640.12 }),
+    inv({ invoiceNo: 'IBK-1584', theirSerial: '1584', serials: ['6906344403', '6906344406'], total: 2609 }),
+    inv({ invoiceNo: 'IBK-1559', theirSerial: '1559', serials: ['4860316810'], total: 3073 }),
+  ];
+  const notes = [
+    inv({ invoiceNo: 'IBK-CN-15', theirSerial: '15', kind: 'CREDIT_NOTE', against: '1599', total: -1603.68, invoiceDate: '2026-10-07' }),
+    inv({ invoiceNo: 'IBK-CN-20', theirSerial: '20', kind: 'CREDIT_NOTE', against: '1584', total: -315.32, invoiceDate: '2026-10-07' }),
+    inv({ invoiceNo: 'IBK-CN-8', theirSerial: '8', kind: 'CREDIT_NOTE', against: '1559', total: -83.90, invoiceDate: '2026-10-07' }),
+    inv({ invoiceNo: 'IBK-CN-30', theirSerial: '30', kind: 'CREDIT_NOTE', against: '9999', total: -50, invoiceDate: '2026-10-07' }),
+    inv({ invoiceNo: 'RFD260326', isTaxInvoice: false, kind: 'CREDIT_NOTE', total: -42.25 }),
+  ];
+  const tickets = [
+    sale('4862083218', 1844.12), refund('4862083218', 1603.67),
+    sale('6906344403', 1975), refund('6906344403', 195.10), sale('6906344406', 634), refund('6906344406', 120.22),
+    sale('4860316810', 1193), refund('4860316810', 204.35),
+    sale('4862405604', 976), refund('4862405604', 736, '2026-10-07'),
+    sale('4862141169', 1796), refund('4862141169', 100),
+  ];
+  const r = creditNoteReport([...finals, ...notes], tickets);
+  const of = (n: string) => r.refunds.find(x => x.ticket.ticketNo === n)!;
+  check('a note for the amount refunded, against the sale\'s invoice', [of('4862083218').coverage, of('4862083218').creditNotes], ['CREDITED', ['15']]);
+  check('one note for two refunds on one invoice that add up to it', [of('6906344403').coverage, of('6906344406').coverage], ['CREDITED', 'CREDITED']);
+  check('a note against the invoice, for another amount', [of('4860316810').coverage, of('4860316810').noteTotal], ['AMOUNT_DIFFERS', 83.9]);
+  check('a sale with no e-invoice cannot have a note yet', of('4862405604').coverage, 'SALE_NOT_FINAL');
+  check('no note at all', of('4862141169').coverage, 'NONE');
+  check('a note no refund of ours accounts for', r.unmatched.map(n => n.theirSerial), ['30']);
+  check('a printout credit note is no credit note', r.credited.some(x => x.creditNotes.includes('RFD260326')), false);
+  check('only what is still owed is asked for', creditRequestSheet(r).map(x => x['Ticket No']).sort(), ['4860316810', '4862141169', '4862405604']);
+  check('...with the sale\'s invoice to quote', creditRequestSheet(r).find(x => x['Ticket No'] === '4862141169')!['Your Invoice No (sale)'], '1599');
+  check('October\'s refunds only', creditsInPeriod(r, '2026-10-01', '2026-10-31').refunds.map(x => x.ticket.ticketNo), ['4862405604']);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -8,6 +8,7 @@ import { coverageReport, coverageInPeriod, Coverage } from '../core/helpers/taxI
 import type { StoredInvoice } from '../services/TaxInvoiceService';
 import type { FileOutcome } from '../hooks/useTaxInvoices';
 import { invoiceRequestSheets } from '../core/helpers/taxInvoiceRequest';
+import { creditNoteReport, creditsInPeriod, creditRequestSheet, type RefundCoverage } from '../core/helpers/creditNoteCoverage';
 
 const xlsx = () => import('xlsx');
 
@@ -33,6 +34,13 @@ const fmt = (n: number) =>
 
 const monthName = (m: string) =>
   new Date(`${m}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+const CREDIT_BADGE: Record<RefundCoverage, { label: string; cls: string }> = {
+  CREDITED:       { label: 'Credit note held',          cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  AMOUNT_DIFFERS: { label: 'Credit note, other amount', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  NONE:           { label: 'No credit note',            cls: 'bg-red-50 text-red-700 border-red-200' },
+  SALE_NOT_FINAL: { label: 'Sale has no e-invoice yet', cls: 'bg-slate-50 text-slate-600 border-slate-200' },
+};
 
 const BADGE: Record<Coverage, { label: string; cls: string }> = {
   COVERED: { label: 'Tax invoice held', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -188,7 +196,7 @@ export const TaxInvoices: React.FC<{
   onUpload?: (files: File[]) => Promise<FileOutcome[]>;
   onDelete?: (id: string) => Promise<void>;
 }> = ({ tickets, invoices, vendorName = 'Ibtekar', busy, onUpload, onDelete }) => {
-  const [tab, setTab] = useState<'tickets' | 'invoices'>('tickets');
+  const [tab, setTab] = useState<'tickets' | 'invoices' | 'refunds'>('tickets');
   const [filter, setFilter] = useState<Coverage | 'ALL'>('NONE');
   const [search, setSearch] = useState('');
   const [reading, setReading] = useState(false);
@@ -210,6 +218,10 @@ export const TaxInvoices: React.FC<{
     : period === 'CUSTOM' ? [from, to]
     : [`${period}-01`, `${period}-31`];
   const report = useMemo(() => coverageInPeriod(whole, pFrom, pTo), [whole, pFrom, pTo]);
+  /* The money that came back, and the ZATCA credit notes for it - cut by the
+     refund's own date, the way the sales are cut by the sale's. */
+  const credits = useMemo(() => creditsInPeriod(creditNoteReport(invoices, ours), pFrom, pTo), [invoices, ours, pFrom, pTo]);
+  const [creditFilter, setCreditFilter] = useState<RefundCoverage | 'OWED' | 'ALL'>('OWED');
   const periodLabel = period === 'ALL' ? '' : period === 'CUSTOM'
     ? (pFrom || pTo ? ` ${pFrom || '…'} to ${pTo || '…'}` : '')
     : ` ${monthName(period)}`;
@@ -251,9 +263,23 @@ export const TaxInvoices: React.FC<{
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), 'Invoices to request');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tk), 'Tickets');
+    const cn = creditRequestSheet(credits);
+    if (cn.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cn), 'Credit notes to request');
     XLSX.writeFile(wb, `${vendorName} - tax invoices to request${periodLabel || ' ' + new Date().toISOString().slice(0, 10)}.xlsx`);
   };
   const owed = report.notTax.length + report.uncovered.length;
+  const creditsOwed = credits.refunds.length - credits.credited.length;
+
+  const q = search.trim().toLowerCase();
+  const refundRows = credits.refunds
+    .filter(r => creditFilter === 'ALL' || (creditFilter === 'OWED' ? r.coverage !== 'CREDITED' : r.coverage === creditFilter))
+    .filter(r => !q
+      || r.ticket.ticketNo.toLowerCase().includes(q)
+      || (r.ticket.relatedTicket || '').toLowerCase().includes(q)
+      || (r.ticket.passengerName || '').toLowerCase().includes(q)
+      || (r.ticket.reqNum || '').toLowerCase().includes(q)
+      || r.saleInvoices.some(i => i.includes(q)) || r.creditNotes.some(i => i.includes(q)))
+    .sort((a, b) => (a.ticket.date || '').localeCompare(b.ticket.date || ''));
 
   return (
     <div className="space-y-4">
@@ -277,13 +303,13 @@ export const TaxInvoices: React.FC<{
                 className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600" />
             </>)}
           </div>
-          {owed > 0 && (
+          {owed + creditsOwed > 0 && (
             <button onClick={exportRequest}
               title={`The invoices to ask ${vendorName} for, and every ticket under them, as Excel`}
               className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded border
                 border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
               <Download className="w-3.5 h-3.5" />
-              Export what to request{periodLabel} ({owed} tickets)
+              Export what to request{periodLabel} ({owed} tickets{creditsOwed ? `, ${creditsOwed} refunds` : ''})
             </button>
           )}
         </div>
@@ -424,7 +450,7 @@ export const TaxInvoices: React.FC<{
 
       {/* ── tabs ───────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-1 border-b border-slate-200">
-        {([['tickets', 'By ticket'], ['invoices', 'By invoice']] as const).map(([id, label]) => (
+        {([['tickets', 'By ticket'], ['invoices', 'By invoice'], ['refunds', `Refunds & credit notes${creditsOwed ? ` (${creditsOwed})` : ''}`]] as const).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide border-b-2 -mb-px
               ${tab === id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
@@ -439,6 +465,17 @@ export const TaxInvoices: React.FC<{
               <option value="COVERED">Covered</option>
               <option value="NOT_TAX">Not a final tax invoice</option>
               <option value="ALL">All {report.tickets.length}</option>
+            </select>
+          )}
+          {tab === 'refunds' && (
+            <select value={creditFilter} onChange={e => setCreditFilter(e.target.value as RefundCoverage | 'OWED' | 'ALL')}
+              className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600">
+              <option value="OWED">Still owed a credit note</option>
+              <option value="NONE">No credit note</option>
+              <option value="AMOUNT_DIFFERS">Credit note, other amount</option>
+              <option value="SALE_NOT_FINAL">Sale has no e-invoice yet</option>
+              <option value="CREDITED">Credit note held</option>
+              <option value="ALL">All {credits.refunds.length}</option>
             </select>
           )}
           <div className="relative">
@@ -498,6 +535,71 @@ export const TaxInvoices: React.FC<{
           {rows.length > 500 && (
             <div className="px-3 py-2 text-[10px] text-slate-400 border-t border-slate-100">
               showing the first 500 of {rows.length} — narrow it with the search
+            </div>
+          )}
+        </div>
+      ) : tab === 'refunds' ? (
+        <div className="space-y-3">
+          <p className="text-[11px] text-slate-500 max-w-3xl">
+            A refund reduces the VAT claimed on its sale, and only {vendorName}'s ZATCA credit note documents it. Their
+            credit note names no ticket - only the invoice it reduces - so a refund is matched through its sale's final
+            invoice, then by amount. A sale with no e-invoice yet cannot have a credit note against it.
+          </p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <Tile label="No credit note" tone="bad" value={String(credits.owed.length)}
+              sub={`${fmt(credits.owed.reduce((n, r) => n + Math.abs(r.ticket.amount ?? 0), 0))} ${currency}`}
+              active={creditFilter === 'NONE'} onClick={() => setCreditFilter('NONE')} />
+            <Tile label="Credit note, other amount" tone="warn" value={String(credits.differs.length)}
+              sub="a note against the sale's invoice, not for what we refunded"
+              active={creditFilter === 'AMOUNT_DIFFERS'} onClick={() => setCreditFilter('AMOUNT_DIFFERS')} />
+            <Tile label="Sale has no e-invoice yet" tone="plain" value={String(credits.saleNotFinal.length)}
+              sub="its e-invoice is owed first"
+              active={creditFilter === 'SALE_NOT_FINAL'} onClick={() => setCreditFilter('SALE_NOT_FINAL')} />
+            <Tile label="Credit note held" tone="good" value={String(credits.credited.length)}
+              sub={`${fmt(credits.credited.reduce((n, r) => n + Math.abs(r.ticket.amount ?? 0), 0))} ${currency}`}
+              active={creditFilter === 'CREDITED'} onClick={() => setCreditFilter('CREDITED')} />
+          </div>
+          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                  <th className="px-3 py-2 text-left">Refund date</th>
+                  <th className="px-3 py-2 text-left">Ticket</th>
+                  <th className="px-3 py-2 text-left">Passenger</th>
+                  <th className="px-3 py-2 text-left">Req</th>
+                  <th className="px-3 py-2 text-right">Refund</th>
+                  <th className="px-3 py-2 text-left">Sale's e-invoice</th>
+                  <th className="px-3 py-2 text-left">Credit note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {refundRows.map(r => (
+                  <tr key={r.ticket.id} className="border-b border-slate-50 hover:bg-slate-50/60">
+                    <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{r.ticket.date}</td>
+                    <td className="px-3 py-1.5 font-mono text-[11px] text-slate-700">{r.ticket.relatedTicket || r.ticket.ticketNo}</td>
+                    <td className="px-3 py-1.5 text-[11px] text-slate-600 max-w-[16rem] truncate">{r.ticket.passengerName || '—'}</td>
+                    <td className="px-3 py-1.5 font-mono text-[10px] text-blue-600">{r.ticket.reqNum || '—'}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-[11px] text-slate-700">−{fmt(r.ticket.amount ?? 0)}</td>
+                    <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{r.saleInvoices.length ? r.saleInvoices.join(', ') : '—'}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${CREDIT_BADGE[r.coverage].cls}`}>
+                        {r.creditNotes.length
+                          ? `CN ${r.creditNotes.join(', ')}${r.noteTotal !== undefined ? ` · ${fmt(r.noteTotal)}` : ''}`
+                          : CREDIT_BADGE[r.coverage].label}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {!refundRows.length && (
+                  <tr><td colSpan={7} className="px-3 py-8 text-center text-xs text-slate-400">Nothing here.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {credits.unmatched.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-[11px] text-amber-800">
+              <span className="font-bold">{credits.unmatched.length} credit note(s) no refund of ours accounts for: </span>
+              {credits.unmatched.map(n => `${n.theirSerial || n.invoiceNo} against ${n.against || '?'} (${fmt(n.total ?? 0)})`).join(', ')}
             </div>
           )}
         </div>
