@@ -12,6 +12,11 @@
  *   every row of theirs naming the document - in the ticket column, or the
  *   EMD column for an EMD - carries the same single request: it is taken.
  *
+ *   a refund takes it only from a refund row. Their sheet showing the sale
+ *   alone means the refund was never written there - H692FC was refunded
+ *   on 13 Oct, their sheet still shows only its sale, and the refund took
+ *   the sale's KSAML2706, so it never reached Missing Req to be sent back.
+ *
  * Never over a request already there, never from a row naming two
  * requests, never from a held booking, and never on a guess between two.
  */
@@ -35,48 +40,53 @@ const one = (req: string) => {
   return parts.length === 1 ? parts[0] : parts.length ? 'TWO' : '';
 };
 const held = (s: string) => /hold/i.test(s || '');
+/** Their "Cancelled/Refunded"; our REFUND. */
+const refundRow = (status: string) => /refund/i.test(status || '');
+const refundOurs = (status?: string) => /refund/i.test(status || '');
+
+type Side = { sale: string[]; refund: string[] };
+const add = (m: Map<string, Side>, k: string, refund: boolean, req: string) => {
+  const e = m.get(k) ?? { sale: [], refund: [] };
+  (refund ? e.refund : e.sale).push(req);
+  m.set(k, e);
+};
+/** The rows a ticket of ours may take its request from. A refund: refund
+ *  rows only. A sale: its sale rows - or, where the team turned the one row
+ *  to Cancelled/Refunded rather than adding one, that row. */
+const rowsFor = (e: Side | undefined, refund: boolean) =>
+  !e ? [] : refund ? e.refund : e.sale.length ? e.sale : e.refund;
+const single = (reqs: string[]) => {
+  const s = new Set(reqs);
+  return s.size === 1 && !s.has('TWO') ? [...s][0] : '';
+};
 
 export function requestsFor(missing: MissingReq[], rows: ReqSource[]): ReqFill[] {
-  const byDoc = new Map<string, Set<string>>();
   /* The same document under two requests: its sale on one row, its refund
      on another. 5513427844 is sold under KSAML2325 and refunded on a row the
-     team filed under KSAFM2466, so neither was taken. A refund takes its
-     refund row's request; a sale, its sale row's - when that tells them
-     apart, and only then. */
-  const refundRows = new Map<string, Set<string>>();
-  const saleRows = new Map<string, Set<string>>();
-  const byFlyadealPnr = new Map<string, Set<string>>();
+     team filed under KSAFM2466. A refund takes its refund row's request; a
+     sale, its sale row's. */
+  const byDoc = new Map<string, Side>();
+  const byFlyadealPnr = new Map<string, Side>();
   for (const r of rows) {
     if (held(r.status)) continue;
     const req = one(r.req_num);
     if (!req) continue;
-    if (isFlyadealRow(r)) for (const p of pnrParts(r.pnr)) {
-      if (!byFlyadealPnr.has(p)) byFlyadealPnr.set(p, new Set());
-      byFlyadealPnr.get(p)!.add(req);
-    }
-    for (const d of [...r.serials, ...teamSerials(r.emd || '').map(x => x.serial)]) {
-      const k = docKey(d);
-      if (!k) continue;
-      if (!byDoc.has(k)) byDoc.set(k, new Set());
-      byDoc.get(k)!.add(req);
-      const side = /refund/i.test(r.status || '') ? refundRows : saleRows;
-      if (!side.has(k)) side.set(k, new Set());
-      side.get(k)!.add(req);
-    }
+    const refund = refundRow(r.status);
+    if (isFlyadealRow(r)) for (const p of pnrParts(r.pnr)) add(byFlyadealPnr, p, refund, req);
+    for (const d of new Set([...r.serials, ...teamSerials(r.emd || '').map(x => x.serial)].map(docKey).filter(Boolean)))
+      add(byDoc, d, refund, req);
   }
+  /* Rows are not counted against documents: a flyadeal row of theirs may
+     hold a booking and its change together - V6MKFS's one row of 1,198 SAR
+     is our two sales of 918.71 and 254.65 AED. */
   const out: ReqFill[] = [];
   for (const t of missing) {
-    const s = byDoc.get(docKey(t.ticketNo));
-    if (s && s.size === 1 && !s.has('TWO')) { out.push({ id: t.id, ticketNo: t.ticketNo, req: [...s][0], how: 'ticket number' }); continue; }
-    if (s && s.size > 1 && t.status) {
-      const side = (/refund/i.test(t.status) ? refundRows : saleRows).get(docKey(t.ticketNo));
-      if (side && side.size === 1 && !side.has('TWO')) {
-        out.push({ id: t.id, ticketNo: t.ticketNo, req: [...side][0], how: 'ticket number' }); continue;
-      }
-    }
+    const refund = refundOurs(t.status);
+    const byNo = single(rowsFor(byDoc.get(docKey(t.ticketNo)), refund));
+    if (byNo) { out.push({ id: t.id, ticketNo: t.ticketNo, req: byNo, how: 'ticket number' }); continue; }
     if (!isFlyadealTicket(t.source)) continue;
-    const f = new Set(pnrParts(t.pnr || t.ticketNo).flatMap(p => [...(byFlyadealPnr.get(p) ?? [])]));
-    if (f.size === 1 && !f.has('TWO')) out.push({ id: t.id, ticketNo: t.ticketNo, req: [...f][0], how: 'flyadeal PNR' });
+    const f = single(pnrParts(t.pnr || t.ticketNo).flatMap(p => rowsFor(byFlyadealPnr.get(p), refund)));
+    if (f) out.push({ id: t.id, ticketNo: t.ticketNo, req: f, how: 'flyadeal PNR' });
   }
   return out;
 }

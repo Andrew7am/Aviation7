@@ -187,7 +187,7 @@ function teamSerials(raw) {
   const text = String(raw ?? "");
   const out = [];
   const seen = /* @__PURE__ */ new Set();
-  const add = (d) => {
+  const add2 = (d) => {
     if (!d.serial || seen.has(d.serial)) return;
     seen.add(d.serial);
     out.push(d);
@@ -195,18 +195,18 @@ function teamSerials(raw) {
   for (const piece of splitCell(text)) {
     const found = docsIn(piece);
     if (found.length) {
-      found.forEach(add);
+      found.forEach(add2);
       continue;
     }
     const tight = piece.replace(/\s+/g, "");
     const joined = docsIn(tight);
     if (joined.length) {
-      joined.forEach(add);
+      joined.forEach(add2);
       continue;
     }
     if (EXCEL_DAMAGE.test(tight)) continue;
     const cleanPiece = piece.trim();
-    if (isReference(cleanPiece)) add({ serial: cleanPiece.toUpperCase(), airlineCode: "" });
+    if (isReference(cleanPiece)) add2({ serial: cleanPiece.toUpperCase(), airlineCode: "" });
   }
   return out;
 }
@@ -1089,13 +1089,13 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
           note: (theirReq ? `On their sheet under ${theirReq} and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it.` : "On their sheet and nowhere in our books \u2014 either the supplier has not billed it yet, or an import missed it.") + (booklets?.length ? ` One ticket with its conjunction coupon ${booklets.join(", ")}.` : ""),
           ...nextOfHeld ? { heldBack: true, heldBackWhy: `Their cell writes it as the second booklet of ${head2}, but ${head2} holds only part of the cell's figure - most likely another passenger. Enter it with its own fare.` } : {}
         });
-        const refundRow = rows.find((x) => x.status === "REFUNDED" && (x.refund ?? 0) > 0);
-        if (refundRow)
+        const refundRow2 = rows.find((x) => x.status === "REFUNDED" && (x.refund ?? 0) > 0);
+        if (refundRow2)
           findings.push({
             ...base,
-            sheet: refundRow,
+            sheet: refundRow2,
             verdict: "REFUND_NOT_IN_LEDGER",
-            note: `Their sheet refunds ${money2(refundRow.refund ?? 0)} ${refundRow.currency}`.trimEnd() + " on this ticket, which is not in our books either. Add the ticket and its refund together."
+            note: `Their sheet refunds ${money2(refundRow2.refund ?? 0)} ${refundRow2.currency}`.trimEnd() + " on this ticket, which is not in our books either. Add the ticket and its refund together."
           });
       }
       continue;
@@ -1168,20 +1168,20 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     }
     if (theySayRefunded && ourRefunds.length === 0) {
       const stated = rows.find((x) => x.refund != null) ?? first2;
-      const refundRow = { ...base, sheet: stated };
+      const refundRow2 = { ...base, sheet: stated };
       const src = (ours[0]?.source || "").trim();
       const received = rows.some((x) => x.refundReceived);
       if (src && !/^airline website$/i.test(src) && !received) {
         const last = lastBilled.get(src) ?? "";
         findings.push({
-          ...refundRow,
+          ...refundRow2,
           verdict: "REFUND_AWAITING_BILLING",
           note: (stated.refund != null ? `Their sheet refunds ${money2(stated.refund)} ${stated.currency || ""}`.trim() : "Their sheet says refunded") + `; not in our books yet. A ${src} refund reaches us with ${src}'s billing` + (last ? ` - the latest we hold runs to ${last}.` : ".") + " If it was applied before that billing, it is missing rather than on its way."
         });
         continue;
       }
       findings.push({
-        ...refundRow,
+        ...refundRow2,
         verdict: "REFUND_NOT_IN_LEDGER",
         note: (stated.refund != null ? `Their sheet refunds ${money2(stated.refund)} ${stated.currency || ""}`.trim() + " and our books hold none. The credit has not reached us." : "Their sheet says refunded and our books hold no refund against it.") + (received ? " Their sheet marks the refund as received." : "") + (src && lastBilled.get(src) ? ` The latest ${src} billing we hold runs to ${lastBilled.get(src)}.` : "")
       });
@@ -1907,8 +1907,8 @@ function noticesFor(rows, changes, ledger) {
     const req = changed("req_num");
     if (req && r.req_num) {
       const want = new Set(reqParts(r.req_num));
-      const refundRow = /refund/i.test(r.status || "");
-      const move = ours.filter((t) => (t.amount || 0) < 0 === refundRow).filter((t) => !reqParts(t.reqNum).some((k) => want.has(k)));
+      const refundRow2 = /refund/i.test(r.status || "");
+      const move = ours.filter((t) => (t.amount || 0) < 0 === refundRow2).filter((t) => !reqParts(t.reqNum).some((k) => want.has(k)));
       if (move.length) out.push({
         ...base,
         kind: "REQ_CHANGED",
@@ -2178,46 +2178,41 @@ var one2 = (req) => {
   return parts.length === 1 ? parts[0] : parts.length ? "TWO" : "";
 };
 var held = (s) => /hold/i.test(s || "");
+var refundRow = (status) => /refund/i.test(status || "");
+var refundOurs = (status) => /refund/i.test(status || "");
+var add = (m, k, refund, req) => {
+  const e = m.get(k) ?? { sale: [], refund: [] };
+  (refund ? e.refund : e.sale).push(req);
+  m.set(k, e);
+};
+var rowsFor = (e, refund) => !e ? [] : refund ? e.refund : e.sale.length ? e.sale : e.refund;
+var single = (reqs) => {
+  const s = new Set(reqs);
+  return s.size === 1 && !s.has("TWO") ? [...s][0] : "";
+};
 function requestsFor(missing, rows) {
   const byDoc = /* @__PURE__ */ new Map();
-  const refundRows = /* @__PURE__ */ new Map();
-  const saleRows = /* @__PURE__ */ new Map();
   const byFlyadealPnr = /* @__PURE__ */ new Map();
   for (const r of rows) {
     if (held(r.status)) continue;
     const req = one2(r.req_num);
     if (!req) continue;
-    if (isFlyadealRow(r)) for (const p of pnrParts2(r.pnr)) {
-      if (!byFlyadealPnr.has(p)) byFlyadealPnr.set(p, /* @__PURE__ */ new Set());
-      byFlyadealPnr.get(p).add(req);
-    }
-    for (const d of [...r.serials, ...teamSerials(r.emd || "").map((x) => x.serial)]) {
-      const k = docKey(d);
-      if (!k) continue;
-      if (!byDoc.has(k)) byDoc.set(k, /* @__PURE__ */ new Set());
-      byDoc.get(k).add(req);
-      const side = /refund/i.test(r.status || "") ? refundRows : saleRows;
-      if (!side.has(k)) side.set(k, /* @__PURE__ */ new Set());
-      side.get(k).add(req);
-    }
+    const refund = refundRow(r.status);
+    if (isFlyadealRow(r)) for (const p of pnrParts2(r.pnr)) add(byFlyadealPnr, p, refund, req);
+    for (const d of new Set([...r.serials, ...teamSerials(r.emd || "").map((x) => x.serial)].map(docKey).filter(Boolean)))
+      add(byDoc, d, refund, req);
   }
   const out = [];
   for (const t of missing) {
-    const s = byDoc.get(docKey(t.ticketNo));
-    if (s && s.size === 1 && !s.has("TWO")) {
-      out.push({ id: t.id, ticketNo: t.ticketNo, req: [...s][0], how: "ticket number" });
+    const refund = refundOurs(t.status);
+    const byNo = single(rowsFor(byDoc.get(docKey(t.ticketNo)), refund));
+    if (byNo) {
+      out.push({ id: t.id, ticketNo: t.ticketNo, req: byNo, how: "ticket number" });
       continue;
     }
-    if (s && s.size > 1 && t.status) {
-      const side = (/refund/i.test(t.status) ? refundRows : saleRows).get(docKey(t.ticketNo));
-      if (side && side.size === 1 && !side.has("TWO")) {
-        out.push({ id: t.id, ticketNo: t.ticketNo, req: [...side][0], how: "ticket number" });
-        continue;
-      }
-    }
     if (!isFlyadealTicket(t.source)) continue;
-    const f = new Set(pnrParts2(t.pnr || t.ticketNo).flatMap((p) => [...byFlyadealPnr.get(p) ?? []]));
-    if (f.size === 1 && !f.has("TWO")) out.push({ id: t.id, ticketNo: t.ticketNo, req: [...f][0], how: "flyadeal PNR" });
+    const f = single(pnrParts2(t.pnr || t.ticketNo).flatMap((p) => rowsFor(byFlyadealPnr.get(p), refund)));
+    if (f) out.push({ id: t.id, ticketNo: t.ticketNo, req: f, how: "flyadeal PNR" });
   }
   return out;
 }
@@ -2247,17 +2242,17 @@ function detailsFor(ours, rows) {
       byDoc.set(k, e);
     }
   }
-  const single = (s) => s.size === 1 ? [...s][0] : "";
+  const single2 = (s) => s.size === 1 ? [...s][0] : "";
   const out = [];
   for (const t of ours) {
     const e = byDoc.get(docKey(t.ticketNo)) ?? (isFlyadealTicket(t.source) ? byDoc.get(`F3:${(t.pnr || t.ticketNo).toUpperCase().split(/[|,/\s]+/)[0]}`) : void 0);
     if (!e) continue;
-    const add = (field, have, v) => {
+    const add2 = (field, have, v) => {
       if (!have.trim() && v) out.push({ id: t.id, ticketNo: t.ticketNo, field, value: v });
     };
-    add("passenger_name", t.passengerName, single(e.name));
-    add("cabin_class", t.cabinClass, single(e.cabin));
-    add("route", t.route, single(e.route));
+    add2("passenger_name", t.passengerName, single2(e.name));
+    add2("cabin_class", t.cabinClass, single2(e.cabin));
+    add2("route", t.route, single2(e.route));
   }
   return out;
 }
@@ -2645,9 +2640,9 @@ async function syncAirtable(env) {
           const gone = open2.filter((w) => !theirStatus.has(docKey(w.ticket_no)) && !stillCell.has((w.their_cell || w.ticket_no || "").trim()));
           await close(gone, "REJECTED", "Their sheet no longer has this row as it was written - corrected or removed. Asked again under what it says now, if anything is missing.", "DISMISSED");
           for (const w of open2.filter((x) => !gone.includes(x))) {
-            const rowsFor = (theirs ?? []).filter((r2) => (r2.serials ?? []).includes(docKey(w.ticket_no)) && !/void|hold/i.test(r2.status ?? ""));
-            if (rowsFor.length !== 1) continue;
-            const r = rowsFor[0];
+            const rowsFor2 = (theirs ?? []).filter((r2) => (r2.serials ?? []).includes(docKey(w.ticket_no)) && !/void|hold/i.test(r2.status ?? ""));
+            if (rowsFor2.length !== 1) continue;
+            const r = rowsFor2[0];
             const untouched = w.their_cost == null || Math.abs(Math.abs(Number(w.amount)) - Math.abs(Number(w.their_cost))) < 5e-3;
             if (!untouched) continue;
             const patch = {};

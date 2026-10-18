@@ -147,6 +147,12 @@ console.log('\n7. A ticket with no request takes the one their sheet gives');
     splitRequests([sheetRows[0], { ...sheetRows[1], created_at: '2026-08-01T10:00:00Z' }] as any, ledger).length, 0);
   check('a marker is not a request (REFUND, ACM)',
     splitRequests([sheetRows[0], { ...sheetRows[1], req_num: 'REFUND' }] as any, [ledger[0]]).length, 0);
+  check('a refund their sheet shows only the sale of stays without one',
+    fill({ ticketNo: '5513427739', status: 'REFUND' }, [row({ serials: ['5513427739'], req_num: 'KSAML2053' })]), []);
+  check('a sale whose one row they turned to Cancelled/Refunded still takes it',
+    fill({ ticketNo: '5513427739', status: 'ISSUE' }, [row({ serials: ['5513427739'], req_num: 'KSAML2053', status: 'Cancelled/Refunded' })]), [['KSAML2053', 'ticket number']]);
+  check('...and so does its refund',
+    fill({ ticketNo: '5513427739', status: 'REFUND' }, [row({ serials: ['5513427739'], req_num: 'KSAML2053', status: 'Cancelled/Refunded' })]), [['KSAML2053', 'ticket number']]);
   check('two sale rows on two requests still settle nothing',
     fill({ ticketNo: '5513427739', status: 'ISSUE' }, [row({ serials: ['5513427739'], req_num: 'A1' }), row({ serials: ['5513427739'], req_num: 'B2' })]), []);
 }
@@ -156,6 +162,16 @@ console.log('\n7b. Flyadeal by its PNR - its report has no ticket number');
   const f3row = { serials: ['9152641826'], emd: '', pnr: 'H692FC', req_num: 'KSAML2706', status: 'Issued', portal: 'F3', airline: 'Flyadeal' };
   check('a flyadeal ticket of ours, held under its PNR, takes their request',
     requestsFor([{ id: 'a', ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB' }], [f3row]).map(f => [f.req, f.how]), [['KSAML2706', 'flyadeal PNR']]);
+  // 13 Oct: H692FC refunded; their sheet still shows only its sale.
+  check('a refund their sheet has not written stays without one - to be sent to them',
+    requestsFor([{ id: 'r', ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB', status: 'REFUND' }], [f3row]), []);
+  check('...and takes it once they add the refund row',
+    requestsFor([{ id: 'r', ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB', status: 'REFUND' }],
+      [f3row, { ...f3row, serials: [], status: 'Cancelled/Refunded', req_num: 'KSAML2706' }]).map(f => f.req), ['KSAML2706']);
+  // V6MKFS: one row of theirs, 1,198 SAR, holds the booking and its change.
+  const v6 = { serials: ['V6MKFS'], emd: '', pnr: 'V6MKFS', req_num: 'KSAML2706', status: 'Issued', portal: 'F3', airline: 'Flyadeal' };
+  check('a booking and its change on one row of theirs both take it',
+    requestsFor([{ id: 'a', ticketNo: 'V6MKFS', pnr: 'V6MKFS', source: 'FlyAdeal DXB', status: 'ISSUE' }, { id: 'b', ticketNo: 'V6MKFS', pnr: 'V6MKFS', source: 'FlyAdeal DXB', status: 'ISSUE' }], [v6]).map(f => f.id), ['a', 'b']);
   check('any other vendor still only by number',
     requestsFor([{ id: 'a', ticketNo: 'H692FC', pnr: 'H692FC', source: 'IATA BSP' }], [f3row]), []);
   check('and its name and cabin too',
