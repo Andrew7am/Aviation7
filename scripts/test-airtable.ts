@@ -95,6 +95,7 @@ console.log('\n5. Names and cabins only where the row is one passenger');
   check('two tickets in one cell', onePassenger(r('157-5513427794\n157-5513427795', ['5513427794', '5513427795'])), false);
   check('a placeholder is no name', [usableName('CLIENT NAME NOT FOUND'), usableName('CC'), usableName('ms Abrar Hamwah')], ['', '', 'ABRAR HAMWAH']);
   check('a cabin, or none', [usableCabin('Business'), usableCabin("Class couldn't be determined"), usableCabin('Economy; Business')], ['BUSINESS', '', '']);
+  check('premium economy in the form the database takes', usableCabin('Premium Economy'), 'PREMIUM_ECONOMY');
 }
 
 console.log('\n6. What the team has to put right on their side');

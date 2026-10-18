@@ -78,7 +78,7 @@ export function usableName(raw: string): string {
   return n.length >= 3 && !PLACEHOLDER.test(n) && /[A-Z]/.test(n) ? n : '';
 }
 
-const CABINS: [RegExp, string][] = [[/premium/i, 'PREMIUM ECONOMY'], [/first/i, 'FIRST'], [/business/i, 'BUSINESS'], [/economy/i, 'ECONOMY']];
+const CABINS: [RegExp, string][] = [[/premium/i, 'PREMIUM_ECONOMY'], [/first/i, 'FIRST'], [/business/i, 'BUSINESS'], [/economy/i, 'ECONOMY']];
 export function usableCabin(raw: string): string {
   if (!raw || /;|,|\band\b/i.test(raw) || /couldn|determin|unknown/i.test(raw)) return '';
   return CABINS.find(([re]) => re.test(raw))?.[1] ?? '';

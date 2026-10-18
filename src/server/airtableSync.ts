@@ -291,7 +291,10 @@ export async function syncAirtable(env: {
           if (dry) { detailsFilled++; continue; }
           const { data: upd, error } = await db.from('tickets').update({ [f.field]: f.value })
             .eq('id', f.id).or(`${f.field}.is.null,${f.field}.eq.`).select('id');
-          if (error) throw new Error(`tickets: ${error.message}`);
+          /* A blank left blank costs nothing; a whole sync stopped over one
+             costs every notice and request behind it - 17 Oct, one Premium
+             Economy cabin the database would not take held them all. */
+          if (error) { console.warn(`detail fill skipped: ${f.ticketNo} ${f.field}=${f.value}: ${error.message}`); continue; }
           if (!upd?.length) continue;
           detailsFilled++;
           await audit(owner, f.ticketNo, `${f.field === 'passenger_name' ? 'Passenger name' : f.field === 'cabin_class' ? 'Cabin' : 'Route'} ${f.value} from the team's Airtable`);

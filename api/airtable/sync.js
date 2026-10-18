@@ -1889,7 +1889,7 @@ function usableName(raw) {
   const n = cleanPax(raw || "").toUpperCase().replace(/\s+/g, " ").trim().replace(/^(MR|MRS|MS|MISS|MSTR|DR)\s+|\s+(MR|MRS|MS|MISS|MSTR)$/g, "").trim();
   return n.length >= 3 && !PLACEHOLDER.test(n) && /[A-Z]/.test(n) ? n : "";
 }
-var CABINS = [[/premium/i, "PREMIUM ECONOMY"], [/first/i, "FIRST"], [/business/i, "BUSINESS"], [/economy/i, "ECONOMY"]];
+var CABINS = [[/premium/i, "PREMIUM_ECONOMY"], [/first/i, "FIRST"], [/business/i, "BUSINESS"], [/economy/i, "ECONOMY"]];
 function usableCabin(raw) {
   if (!raw || /;|,|\band\b/i.test(raw) || /couldn|determin|unknown/i.test(raw)) return "";
   return CABINS.find(([re]) => re.test(raw))?.[1] ?? "";
@@ -2542,7 +2542,10 @@ async function syncAirtable(env) {
             continue;
           }
           const { data: upd, error } = await db.from("tickets").update({ [f.field]: f.value }).eq("id", f.id).or(`${f.field}.is.null,${f.field}.eq.`).select("id");
-          if (error) throw new Error(`tickets: ${error.message}`);
+          if (error) {
+            console.warn(`detail fill skipped: ${f.ticketNo} ${f.field}=${f.value}: ${error.message}`);
+            continue;
+          }
           if (!upd?.length) continue;
           detailsFilled++;
           await audit(owner, f.ticketNo, `${f.field === "passenger_name" ? "Passenger name" : f.field === "cabin_class" ? "Cabin" : "Route"} ${f.value} from the team's Airtable`);
