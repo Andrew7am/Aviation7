@@ -69,7 +69,12 @@ const InvoiceRow: React.FC<{
 }> = ({ c, currency, onDelete }) => {
   const [open, setOpen] = useState(false);
   const i = c.invoice;
-  const off = c.difference !== null && Math.abs(c.difference) >= 0.02;
+  /* A printout its e-invoice has replaced is no longer what is billed: the
+     e-invoice is, and is compared on its own row. INV264215 printed 2,036.44,
+     its tickets' sale net of a refund that IBK-1599 bills in full and credit
+     note 15 takes back - the red +1,603.68 on it was that refund, not a fault. */
+  const replaced = !i.isTaxInvoice && c.finalFor.length > 0;
+  const off = !replaced && c.difference !== null && Math.abs(c.difference) >= 0.02;
 
   return (
     <div className="border border-slate-200 rounded-lg bg-white overflow-hidden">
@@ -114,7 +119,7 @@ const InvoiceRow: React.FC<{
           {i.total === null ? '—' : `${i.total < 0 ? '−' : ''}${fmt(i.total)}`}
         </span>
         <span className={`font-mono text-xs w-28 text-right ${off ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
-          {c.difference === null ? '—' : off ? `${c.difference > 0 ? '+' : '−'}${fmt(c.difference)}` : 'agrees'}
+          {replaced ? 'replaced' : c.difference === null ? '—' : off ? `${c.difference > 0 ? '+' : '−'}${fmt(c.difference)}` : 'agrees'}
         </span>
         {onDelete && (
           <button onClick={onDelete} title="Remove this invoice from the tracker"
