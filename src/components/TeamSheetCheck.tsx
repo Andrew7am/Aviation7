@@ -1469,8 +1469,10 @@ export const TeamSheetCheck: React.FC<Props> = ({
               sub={`${report.ourRows} rows: ${report.ourDocs.tickets} tickets`
                 + (report.ourDocs.emds ? ` · ${report.ourDocs.emds} EMD${report.ourDocs.emds === 1 ? '' : 's'}` : '')
                 + (report.ourDocs.refunds ? ` · ${report.ourDocs.refunds} refund${report.ourDocs.refunds === 1 ? '' : 's'}` : '')} />
-            <Tile label="Needs settling" value={needsWork}
-              tone={needsWork ? 'text-red-600' : 'text-emerald-600'} />
+            {/* A refund on its way is still one to settle: KSAML2064 read 0 here
+                beside 11 refunds missing from our books. */}
+            <Tile label="Needs settling" value={needsWork + awaiting.length}
+              tone={needsWork + awaiting.length || countGaps.length ? 'text-red-600' : 'text-emerald-600'} />
           </div>
 
           {/* Each kind of document, counted on both sides: 30 tickets, a
