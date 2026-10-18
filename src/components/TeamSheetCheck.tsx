@@ -1091,6 +1091,18 @@ export const TeamSheetCheck: React.FC<Props> = ({
   const needsWork = report
     ? report.findings.filter(f => !f.explained && whoActs(f) === 'US' && TONE[f.verdict].money).length : 0;
   const forThem = report ? report.findings.filter(f => !f.explained && whoActs(f) === 'THEM' && (!onlyNew || isNew(f))) : [];
+  /** Refunds their sheet has and our books do not, still on their way: not
+   *  a mistake to settle, but the sheet is not closed until they land. */
+  const awaiting = report ? report.findings.filter(f => !f.explained && f.verdict === 'REFUND_AWAITING_BILLING') : [];
+  const awaitingNote = awaiting.length > 0 && (
+    <>
+      {' '}<b>{awaiting.length} refund{awaiting.length === 1 ? ' is' : 's are'} on their sheet and not in our books yet</b>
+      {' '}({[...new Set(awaiting.map(f => f.sheet?.currency || ''))].map(cur =>
+        `${awaiting.filter(f => (f.sheet?.currency || '') === cur).reduce((n, f) => n + (f.sheet?.refund ?? 0), 0)
+          .toLocaleString('en-US', { minimumFractionDigits: 2 })} ${cur}`.trim()).join(' + ')})
+      {' '}- applied, waiting for the supplier's billing. The sheet is closed once they arrive.
+    </>
+  );
   const conjunctions = report?.docTypes.tickets.conjunctions?.length ?? 0;
 
   return (
@@ -1385,10 +1397,14 @@ export const TeamSheetCheck: React.FC<Props> = ({
                             flex items-start gap-2.5">
               <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
               <span className="text-xs text-amber-900">
-                <b>{needsWork} {needsWork === 1 ? 'thing needs' : 'things need'} settling
-                before this sheet is closed.</b>{' '}
-                They are listed worst first below. Anything marked in grey is a state of the
-                world rather than a disagreement.
+                {needsWork === 0 && awaiting.length > 0 && !report.unaccounted.length ? (
+                  <><b>Not ready to close.</b>{awaitingNote}</>
+                ) : (<>
+                  <b>{needsWork} {needsWork === 1 ? 'thing needs' : 'things need'} settling
+                  before this sheet is closed.</b>{' '}
+                  They are listed worst first below. Anything marked in grey is a state of the
+                  world rather than a disagreement.{awaitingNote}
+                </>)}
               </span>
             </div>
           )}

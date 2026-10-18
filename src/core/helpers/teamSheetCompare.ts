@@ -2225,6 +2225,8 @@ export function compareTeamSheet(
     // sheet that can be closed.
     // Closed when nothing is left for our books: what remains is either a
     // state of the world or their own sheet to tidy.
-    clean: findings.every(f => !!f.explained || whoActs(f) !== 'US'),
+    // A refund on its way is nobody's mistake, but it is money not yet in
+    // our books: KSAML2064's twelve Turkish refunds read "can be closed".
+    clean: findings.every(f => !!f.explained || (whoActs(f) !== 'US' && f.verdict !== 'REFUND_AWAITING_BILLING')),
   };
 }

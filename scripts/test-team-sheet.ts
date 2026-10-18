@@ -237,6 +237,8 @@ console.log('\n4f. A refund applied on their side and not billed to us yet');
   const waiting = compareTeamSheet(parseTeamSheet(csv('')).rows, ledger);
   check('not received yet: on its way with the supplier\'s billing', waiting.counts.REFUND_AWAITING_BILLING, 1);
   check('...not a thing to settle', whoActsT(waiting.findings.find(f => f.verdict === 'REFUND_AWAITING_BILLING')!), 'INFO');
+  // KSAML2064: twelve Turkish refunds on their sheet, none in our books, and it read "can be closed".
+  check('...but the sheet is not ready to close until it lands', waiting.clean, false);
   check('...and it says how far our billing reaches',
         /latest we hold runs to 2026-10-05/.test(waiting.findings.find(f => f.verdict === 'REFUND_AWAITING_BILLING')!.note), true);
   const received = compareTeamSheet(parseTeamSheet(csv('checked')).rows, ledger);
