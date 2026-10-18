@@ -204,10 +204,22 @@ export class TaxInvoiceService {
                           have.net == null ? null : Number(have.net),
                           have.vat == null ? null : Number(have.vat));
       if (!replace && !beats(mine, theirs)) { alreadyHeld.push(r.invoice.invoice); continue; }
+      /* The e-invoice for a printout is the same document made final. When
+         it prints no tickets of its own, the printout's list is still the
+         list it bills - and deleting the printout deleted it: 1625 and 1637
+         replaced INV261733 and INV261934 and left 105 tickets uncovered. */
+      let carried: ReadInvoice = r;
+      if (!r.invoice.lines.length && (heldLines.get(have.id) ?? 0) > 0) {
+        const { data: old } = await supabase.from('tax_invoice_lines').select('*').eq('invoice_id', have.id);
+        carried = { ...r, invoice: { ...r.invoice, lines: (old ?? []).map((l: LineRow) => ({
+          airline: l.airline_code ?? '', ticketNo: l.ticket_serial, passenger: l.passenger ?? '', sector: l.sector ?? '',
+          carrier: '', pnr: l.pnr ?? '', cabin: '', amount: l.amount == null ? null : Number(l.amount),
+          travelDate: l.travel_date ?? '', issueDate: l.issue_date ?? '' })) } };
+      }
       // The lines go with it: `on delete cascade`.
       await supabase.from('tax_invoices').delete().eq('id', have.id);
       if (!replace) upgraded.push(r.invoice.invoice);
-      toWrite.push(r);
+      toWrite.push(carried);
     }
     if (!toWrite.length) return { saved: [], alreadyHeld, upgraded };
 

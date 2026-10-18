@@ -146,6 +146,26 @@ console.log('\n3. An older ZATCA invoice, with no date column, still lists its t
   check('the total still reads', i.total, 12000);
 }
 
+console.log('\n3b. The October run: a bare number, a slashed date, then the passenger');
+{
+  // 1625 and 1637 read as naming no ticket at all, and replaced their
+  // printouts' lists with nothing.
+  const oct = words([
+    ['Tax', 'Invoice'],
+    ['InvoNO:', '1625'],
+    ['Unified', 'National', 'Number', '7016566270', 'الرقم'],
+    ['Phone', '0544872222', 'الهاتف'],
+    ['47,633.00', 'TotalAmountDue'],
+    ['6905958941', 'SHALABY/AMAL', 'MED/DMM'],
+    ['6906030951', '03/06/2026', 'MOHAMED/MOHAMED', 'WAGIH', 'AHB/RUH/AHB'],
+    ['6906030952', '03/06/2026', 'AL', 'GHADAM/KHALID', 'AHB/RUH/AHB'],
+  ]);
+  const i = parseIbtekarZatcaPdf(oct, 'Invoice_1625 - INV261733.pdf')!;
+  check('every ticket, the phone and unified numbers not', i.lines.map(l => l.ticketNo), ['6905958941', '6906030951', '6906030952']);
+  check('the slashed date as ISO', i.lines[1].issueDate, '2026-06-03');
+  check('no airline invented', i.lines[0].airline, '');
+}
+
 console.log('\n4. A document with no QR code is not a final tax invoice, whatever its heading');
 {
   const plain = words([

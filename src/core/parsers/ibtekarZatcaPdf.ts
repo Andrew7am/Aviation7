@@ -28,6 +28,9 @@ const RE_MONEY_ONLY = /^-?[\d,]+\.\d\d$/;
 const RE_TICKET = /(\d{3})\s*-\s*(\d{10})/g;
 const RE_ISO = /^(20\d{2})-(\d{2})-(\d{2})$/;
 const RE_DMY = /\b(\d{2})-(\d{2})-(20\d{2})\b/;
+const RE_BARE = /^\d{10}$/;
+const RE_SLASH_DMY = /^(\d{2})\/(\d{2})\/(20\d{2})$/;
+const RE_PAX = /^[A-Z][A-Z' .-]*\/[A-Z]/;
 
 const num = (s: string) => Number(s.replace(/,/g, ''));
 
@@ -111,6 +114,30 @@ export function parseIbtekarZatcaPdf(
       amount: null,
       travelDate: '',
       issueDate: RE_ISO.test(next) ? next : '',
+    });
+  }
+
+  /* The October run (1625 to 1637) prints the bare serial with no airline,
+     then a dd/mm/yyyy date, then the passenger: "6906030951 03/06/2026
+     MOHAMED/MOHAMED WAGIH". Read as above, 1625's 56 tickets came out as
+     none, and replacing printout INV261733 with it left them uncovered. A bare
+     ten digits is a ticket only when a passenger (SURNAME/NAME) follows -
+     the page's phone and unified numbers are followed by Arabic. */
+  for (let i = 0; i < flat.length; i++) {
+    const ticketNo = flat[i];
+    if (!RE_BARE.test(ticketNo) || seen.has(ticketNo)) continue;
+    const dated = RE_SLASH_DMY.exec(flat[i + 1] ?? '');
+    // "AL GHADAM/KHALID" is drawn as two words: the name starts in Latin
+    // capitals straight after, and its slash comes within a word or two.
+    const from = i + (dated ? 2 : 1);
+    if (!/^[A-Z]/.test(flat[from] ?? '') || !flat.slice(from, from + 3).some(w => RE_PAX.test(w))) continue;
+    seen.add(ticketNo);
+    lines.push({
+      airline: '', ticketNo,
+      passenger: '', sector: '', carrier: '', pnr: '', cabin: '',
+      amount: null,
+      travelDate: '',
+      issueDate: dated ? `${dated[3]}-${dated[2]}-${dated[1]}` : '',
     });
   }
 
