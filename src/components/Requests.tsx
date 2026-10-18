@@ -511,8 +511,35 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
             {office !== 'ALL' && <> in {office === 'NONE' ? 'the unfiled group'
               : OFFICE_LABEL[office as Exclude<Office, ''>]}</>}.
           </p>
-        ) : (
-          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        ) : (<>
+          {/* A phone: a card per request, the money in view. The table is
+              880px wide and kept Outstanding and Net off a 375px screen. */}
+          <div className="sm:hidden space-y-2">
+            {shown.map(r => (
+              <button key={r.reqNum} type="button" onClick={() => setOpenReq(r.reqNum)}
+                className={`w-full text-left bg-white border border-slate-200 rounded-lg px-3 py-2.5 ${STATE_STYLE[r.state].row}`}>
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="w-4 h-4 text-purple-400 shrink-0" />
+                  <span className="font-mono font-bold text-[13px] text-purple-700">{r.reqNum}</span>
+                  <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${STATE_STYLE[r.state].chip}`}>
+                    {STATE_STYLE[r.state].label}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-[11px] text-slate-500">
+                  {r.office && <span>{OFFICE_LABEL[r.office as Exclude<Office, ''>]}</span>}
+                  <span>{r.rows} rows</span>
+                  {r.open > 0 && <span className="font-bold text-orange-600">{r.open} not closed</span>}
+                  <span className="font-mono">{r.lastDate || 'no date'}</span>
+                </div>
+                <div className="flex items-baseline gap-3 mt-1.5 font-mono">
+                  <span className="text-[13px] font-bold text-slate-800">{show(r.net)}</span>
+                  {r.open > 0 && <span className="text-[11px] text-orange-600">open {show(r.openValue)}</span>}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1 truncate">{r.sources.join(', ')}</div>
+              </button>
+            ))}
+          </div>
+          <div className="hidden sm:block bg-white border border-slate-200 rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left min-w-[880px]">
                 <thead>
@@ -588,7 +615,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
               </table>
             </div>
           </div>
-        )}
+        </>)}
       </div>
 
       <div className="px-4 py-2 bg-white border-t border-slate-200 shrink-0 text-[10px]

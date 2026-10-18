@@ -35,6 +35,12 @@
     min-height: 30px;
   }
 
+  /* A strip of figures, each one a tap-to-copy button: at 36px apiece the
+     ticket list's totals took a third of a phone before the first ticket. */
+  .touch-compact button {
+    min-height: 0;
+  }
+
   /* No 300ms wait for a double-tap that this app never listens for. */
   button, a, [role="button"] {
     touch-action: manipulation;

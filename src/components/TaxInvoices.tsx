@@ -282,14 +282,14 @@ export const TaxInvoices: React.FC<{
     .sort((a, b) => (a.ticket.date || '').localeCompare(b.ticket.date || ''));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-3 sm:p-0">
       <div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <Receipt className="w-4 h-4 text-purple-600" />
             Tax Invoices — {vendorName}
           </h2>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="sm:ml-auto flex flex-wrap items-center gap-1.5">
             <select value={period} onChange={e => setPeriod(e.target.value)} title="Tickets issued in"
               className="text-[11px] border border-slate-200 rounded px-2 py-1.5 text-slate-600 bg-white">
               <option value="ALL">All dates</option>
@@ -449,7 +449,7 @@ export const TaxInvoices: React.FC<{
       </div>
 
       {/* ── tabs ───────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1 border-b border-slate-200">
+      <div className="flex flex-wrap items-center gap-1 border-b border-slate-200">
         {([['tickets', 'By ticket'], ['invoices', 'By invoice'], ['refunds', `Refunds & credit notes${creditsOwed ? ` (${creditsOwed})` : ''}`]] as const).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
             className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide border-b-2 -mb-px
@@ -457,7 +457,7 @@ export const TaxInvoices: React.FC<{
             {label}
           </button>
         ))}
-        <div className="ml-auto flex items-center gap-2 pb-1">
+        <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center gap-2 pb-1">
           {tab === 'tickets' && (
             <select value={filter} onChange={e => setFilter(e.target.value as Coverage | 'ALL')}
               className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600">
@@ -478,17 +478,17 @@ export const TaxInvoices: React.FC<{
               <option value="ALL">All {credits.refunds.length}</option>
             </select>
           )}
-          <div className="relative">
+          <div className="relative flex-1 sm:flex-none">
             <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="ticket, passenger, req, invoice"
-              className="text-[11px] border border-slate-200 rounded pl-6 pr-2 py-1 w-56 text-slate-700" />
+              className="text-[11px] border border-slate-200 rounded pl-6 pr-2 py-1 w-full sm:w-56 text-slate-700" />
           </div>
         </div>
       </div>
 
       {tab === 'tickets' ? (
-        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
@@ -559,7 +559,7 @@ export const TaxInvoices: React.FC<{
               sub={`${fmt(credits.credited.reduce((n, r) => n + Math.abs(r.ticket.amount ?? 0), 0))} ${currency}`}
               active={creditFilter === 'CREDITED'} onClick={() => setCreditFilter('CREDITED')} />
           </div>
-          <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">

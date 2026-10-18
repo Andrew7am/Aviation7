@@ -461,6 +461,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [filterPax, setFilterPax]       = useState('');
   const [filterPNR, setFilterPNR]       = useState('');
   const [showColFilters, setShowColFilters] = useState(false);
+  /** On a phone the filters fold behind one button: seven rows of them
+   *  filled the first screen, and not one ticket showed until you scrolled. */
+  const [mobileFilters, setMobileFilters] = useState(false);
   const [showFindReplace, setShowFindReplace] = useState(false);
   const [findVal, setFindVal]           = useState('');
   const [replaceVal, setReplaceVal]     = useState('');
@@ -1285,6 +1288,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   );
 
   const activeColFilters = [filterTicket, filterAL, filterPax, filterPNR].filter(Boolean).length;
+  const activeFilterCount = [sourceSel.length > 0, dateFrom || dateTo, filterMode !== 'ALL', closedFilter !== 'ALL',
+    travelFilter !== 'ALL', cabinFilter !== 'ALL', officeFilter !== 'ALL', companyFilter !== 'ALL', activeColFilters > 0].filter(Boolean).length;
 
   return (
     <div className="flex flex-col h-full bg-slate-100">
@@ -1321,18 +1326,28 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       {/* Header */}
       <div className="p-4 flex flex-wrap justify-between items-center gap-2 shrink-0 bg-white border-b border-slate-200">
         <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">{title}</h2>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* General search */}
-          <div className="relative">
+          <div className="relative flex-1 sm:flex-none min-w-0">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
             <input
               type="text"
               placeholder="Search ticket, PNR, req, invoice..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-48"
+              className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-full sm:w-48"
             />
           </div>
+          <button type="button" onClick={() => setMobileFilters(v => !v)}
+            className={`sm:hidden px-3 py-1.5 rounded text-[11px] font-bold uppercase border flex items-center gap-1.5 ${
+              mobileFilters ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>
+            <Filter className="w-3.5 h-3.5" /> Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
+          </button>
+
+          {/* Everything else: always there from sm up (the wrapper is
+              display: contents, so the desktop row is as it was), and behind
+              the Filters button on a phone. */}
+          <div className={`${mobileFilters ? 'flex' : 'hidden'} sm:contents w-full flex-wrap items-center gap-2`}>
 
           {/* Vendor filter — multi-select, so several portals can be compared
               against IATA in one view. */}
@@ -1394,7 +1409,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
 
           {/* Date range — a month quick-pick for the common case, explicit
               from/to for anything else. Both drive the same two values. */}
-          <div className="flex items-center gap-1">
+          <div className="flex flex-wrap items-center gap-1">
             <div className="relative">
               <Calendar className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400 pointer-events-none" />
               <select
@@ -1656,6 +1671,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             <Download className="w-3 h-3" />
             Export XLS
           </button>
+          </div>
         </div>
       </div>
 
@@ -1751,7 +1767,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           than the screen, which took the "not closed" count and the hint about
           clicking a cell off the edge entirely. The dividers go with it: a
           pipe at the start of a wrapped line reads as a typo. */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-[10px] font-mono text-slate-500">
+      <div className="touch-compact flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-[10px] font-mono text-slate-500">
         <span>{filtered.length} tickets</span>
         {voidShown.length > 0 && (
           <span className="text-slate-400" title="Listed for reference: a void is in no balance, total or count here">
@@ -1761,8 +1777,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         <span className="text-slate-300 hidden sm:inline">|</span>
         {totalsByCurrency.map(([cur, t], i) => (
           <React.Fragment key={cur}>
-            {i > 0 && <span className="text-slate-300">|</span>}
-            <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            {i > 0 && <span className="text-slate-300 hidden sm:inline">|</span>}
+            <span className="inline-flex flex-wrap sm:flex-nowrap items-center gap-x-1.5 sm:whitespace-nowrap">
               <b><CopyableAmount label={`Net ${cur}`} value={t.net} fmt={fmt} /></b>
               {t.refundCount > 0 && <>
                 <span className="text-slate-300">·</span>
@@ -1793,8 +1809,71 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         </span>
       </div>
 
+      {/* A phone: one card per ticket. The table is 900px of twenty columns;
+          at 375px it showed serial, airline, number, source and status, and
+          the passenger, the money and the request were off the edge. */}
+      <div className="sm:hidden flex-1 px-3 py-3 space-y-2">
+        {paged.map(ticket => {
+          const cur = ticketCurrency(ticket);
+          const voided = isVoidLine(ticket);
+          return (
+            <div key={ticket.id} className={`bg-white border rounded-lg px-3 py-2.5 ${
+              voided ? 'border-slate-200 opacity-60' : !ticket.reqNum ? 'border-red-200' : 'border-slate-200'}`}>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-[13px] text-slate-800">{ticket.airlineCode ? `${ticket.airlineCode}-` : ''}{ticket.ticketNo}</span>
+                <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-bold ${voided ? STATUS_COLORS.VOID : STATUS_COLORS[ticket.status] ?? 'bg-slate-100 text-slate-500'}`}>
+                  {voided ? 'VOID' : ticket.status}
+                </span>
+              </div>
+              <div className="text-[12px] text-slate-700 mt-1 truncate">{ticket.passengerName || '—'}</div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[11px] text-slate-500">
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${getSourceColor(ticket.source || '')}`}>{ticket.source}</span>
+                <span className="font-mono">{ticket.date || 'no date'}</span>
+                {ticket.route && <span className="font-mono">{ticket.route}</span>}
+                {ticket.pnr && <span className="font-mono">{ticket.pnr}</span>}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                {isEditing(ticket.id, 'reqNum') ? <div className="flex-1">{editorInput}</div> : ticket.reqNum ? (
+                  <button onClick={() => setProfileReq(ticket.reqNum)}
+                    className="font-mono font-bold text-[12px] text-blue-600 underline flex items-center gap-1">
+                    <FolderOpen className="w-3.5 h-3.5" /> {ticket.reqNum}
+                  </button>
+                ) : canEdit && !voided ? (
+                  <button onClick={() => startEdit(ticket, 'reqNum')}
+                    className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">+ Add REQ</button>
+                ) : (
+                  <span className="text-[11px] font-bold text-red-600">No REQ</span>
+                )}
+                <span className={`ml-auto font-mono font-bold text-[14px] ${(ticket.amount ?? 0) < 0 ? 'text-red-600' : 'text-slate-800'}`}>
+                  {fmt(ticket.amount ?? 0)} <span className="text-[10px] text-slate-400">{cur}</span>
+                </span>
+              </div>
+              {!voided && ticket.status !== 'FUND' && (
+                <div className="mt-2">
+                  {onUpdateClosed ? (
+                    <button onClick={() => onUpdateClosed(ticket.id, !ticket.closed)}
+                      className={`px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 ${
+                        ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                      {ticket.closed ? <CheckCircle2 className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
+                      {ticket.closed ? 'Closed' : 'Not Closed'}
+                    </button>
+                  ) : (
+                    <span className={`px-2 py-1 rounded text-[11px] font-bold ${ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                      {ticket.closed ? 'Closed' : 'Not Closed'}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {shown.length === 0 && (
+          <div className="py-10 text-center text-slate-400 text-sm">No tickets found matching your filters.</div>
+        )}
+      </div>
+
       {/* Table */}
-      <div className="flex-1 mx-4 my-4 bg-white border border-slate-200 rounded-lg overflow-auto">
+      <div className="hidden sm:block flex-1 mx-4 my-4 bg-white border border-slate-200 rounded-lg overflow-auto">
         <table className="w-full text-left border-collapse min-w-[900px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
