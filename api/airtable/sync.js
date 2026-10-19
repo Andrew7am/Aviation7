@@ -1598,7 +1598,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     }
     const k = r.serial || pnrKey(r.pnr);
     if (!k || voidedSet.has(k) || coupons.has(k)) continue;
-    const anEmd = !!r.serial && (emdNamed(r) || (ourBySerial.get(r.serial) ?? []).some((t) => emdLine(t)));
+    const anEmd = !!r.serial && (emdNamed(r) || theirEmdDocs.has(r.serial) || (ourBySerial.get(r.serial) ?? []).some((t) => emdLine(t)));
     if (anEmd) theirE.add(k);
     else theirT.add(k);
     if (!r.serial) pnrOnly.add(k);
@@ -1637,6 +1637,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     tickets: {
       ours: oursT.size,
       theirs: theirT.size,
+      docs: { ours: sorted(oursT), theirs: sorted(theirT) },
       missingOnTheirs: sorted([...oursT].filter((k) => !carried(k))),
       ...withElsewhere(split(sorted([...theirT].filter((k) => !held2(k))), false), theirT),
       byPnrOnly: [...theirT].filter((k) => pnrOnly.has(k)).length,
@@ -1645,18 +1646,21 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     refunds: {
       ours: oursR.size,
       theirs: theirR.size,
+      docs: { ours: sorted(oursR), theirs: sorted(theirR) },
       missingOnTheirs: sorted([...oursR].filter((k) => !theirR.has(k))),
       ...split(sorted([...theirR].filter((k) => !oursR.has(k) && !voidedSet.has(k))), true)
     },
     emds: {
       ours: oursE.size,
       theirs: theirE.size,
+      docs: { ours: sorted(oursE), theirs: sorted(theirE) },
       missingOnTheirs: sorted([...oursE].filter((k) => !carried(k))),
       ...withElsewhere(split(sorted([...theirE].filter((k) => !held2(k))), false), theirE)
     },
     voids: {
       ours: oursV.size,
       theirs: theirV.size,
+      docs: { ours: sorted(oursV), theirs: sorted(theirV) },
       // Voided with the supplier; their sheet still shows it live, or not at all.
       missingOnTheirs: sorted([...oursV].filter((k) => !theirV.has(k))),
       // Void on their sheet, and no void of it in our register.

@@ -655,6 +655,9 @@ export interface DocTypeCount {
   /** Not in our books and nothing to do: "<doc> - <why>" (a reissue at no
    *  charge, a refund on its way, a fare held under the cell's other ticket). */
   noted?: string[];
+  /** The documents behind each count, so a count that differs with nothing
+   *  missing either side can be read rather than guessed at. */
+  docs?: { ours: string[]; theirs: string[] };
 }
 
 /** Tickets, refunds, EMDs or voids: the same number on both sides, nothing
@@ -2102,7 +2105,10 @@ export function compareTeamSheet(
     if (!k || voidedSet.has(k) || coupons.has(k)) continue;
     /* Their ticket column rarely says EMD: EGPML1909's two EMDs sit there as
        plain numbers. Our books know which documents are EMDs. */
-    const anEmd = !!r.serial && (emdNamed(r)
+    /* ...or their EMD column names the same number: KSAML2257's 1949933388
+       is in both columns of one row, and counted as a ticket and an EMD it
+       read 32 tickets on their side against our 31. */
+    const anEmd = !!r.serial && (emdNamed(r) || theirEmdDocs.has(r.serial)
       || (ourBySerial.get(r.serial) ?? []).some(t => emdLine(t)));
     if (anEmd) theirE.add(k); else theirT.add(k);
     if (!r.serial) pnrOnly.add(k);
@@ -2174,18 +2180,18 @@ export function compareTeamSheet(
   const withElsewhere = (s: { missingInOurs: string[]; noted: string[] }, ks: Set<string>) =>
     ({ ...s, noted: [...s.noted, ...elsewhere(ks)] });
   const docTypes = {
-    tickets: { ours: oursT.size, theirs: theirT.size,
+    tickets: { ours: oursT.size, theirs: theirT.size, docs: { ours: sorted(oursT), theirs: sorted(theirT) },
       missingOnTheirs: sorted([...oursT].filter(k => !carried(k))),
       ...withElsewhere(split(sorted([...theirT].filter(k => !held(k))), false), theirT),
       byPnrOnly: [...theirT].filter(k => pnrOnly.has(k)).length,
       conjunctions: sorted([...coupons].map(([c, of]) => `${c} (with ${of})`)) },
-    refunds: { ours: oursR.size, theirs: theirR.size,
+    refunds: { ours: oursR.size, theirs: theirR.size, docs: { ours: sorted(oursR), theirs: sorted(theirR) },
       missingOnTheirs: sorted([...oursR].filter(k => !theirR.has(k))),
       ...split(sorted([...theirR].filter(k => !oursR.has(k) && !voidedSet.has(k))), true) },
-    emds: { ours: oursE.size, theirs: theirE.size,
+    emds: { ours: oursE.size, theirs: theirE.size, docs: { ours: sorted(oursE), theirs: sorted(theirE) },
       missingOnTheirs: sorted([...oursE].filter(k => !carried(k))),
       ...withElsewhere(split(sorted([...theirE].filter(k => !held(k))), false), theirE) },
-    voids: { ours: oursV.size, theirs: theirV.size,
+    voids: { ours: oursV.size, theirs: theirV.size, docs: { ours: sorted(oursV), theirs: sorted(theirV) },
       // Voided with the supplier; their sheet still shows it live, or not at all.
       missingOnTheirs: sorted([...oursV].filter(k => !theirV.has(k))),
       // Void on their sheet, and no void of it in our register.
