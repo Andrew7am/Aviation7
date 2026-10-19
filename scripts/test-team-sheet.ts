@@ -1970,5 +1970,17 @@ console.log('\n58. A booking we only hold part of is still a gap');
   check('a lone ticket is not a coupon', solo.counts.CONJUNCT_ALREADY_HELD, 0);
 }
 
+console.log('\nAn EMD written in both their ticket and EMD columns is one EMD');
+{
+  // KSAML2257's 1949933388: counted as a ticket and an EMD, 32 tickets against our 31.
+  const sheet = parseTeamSheet(['Ticket Number,PNR,Status,Req Num,EMD Number',
+    '077-1949933388,ZN79YV,Reissue,KSAML2257,077-1949933388',
+    '077-5513427701,ZN79YV,Issued,KSAML2257,'].join('\n')).rows;
+  const r = compareTeamSheet(sheet, [tkt({ ticketNo: '1949933388', pnr: 'ZN79YV', reqNum: 'KSAML2257', amount: 280 }),
+    tkt({ ticketNo: '5513427701', pnr: 'ZN79YV', reqNum: 'KSAML2257', amount: 8546 })], ['KSAML2257']);
+  check('one ticket each side', [r.docTypes.tickets.ours, r.docTypes.tickets.theirs], [1, 1]);
+  check('one EMD each side', [r.docTypes.emds.ours, r.docTypes.emds.theirs], [1, 1]);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
