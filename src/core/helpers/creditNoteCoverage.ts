@@ -28,6 +28,10 @@ export interface RefundRow {
   creditNotes: string[];
   /** For AMOUNT_DIFFERS: what the credit note says against what we refunded. */
   noteTotal?: number;
+  /** Their numbers off the statement: the refund's credit note (RFD...) and
+   *  its sale's invoice (INV...) - what they look a request up by. */
+  creditNoteNo?: string;
+  saleInvoiceNo?: string;
 }
 
 export interface CreditReport {
@@ -53,9 +57,13 @@ export function creditNoteReport(invoices: HeldInvoice[], tickets: Ticket[]): Cr
     for (const s of new Set(f.serials)) billedBy.set(s, [...(billedBy.get(s) ?? []), f.theirSerial!]);
   const notes = invoices.filter(i => i.kind === 'CREDIT_NOTE' && i.isTaxInvoice);
 
+  const saleInv = new Map<string, string>();
+  for (const t of tickets) if ((t.amount ?? 0) > 0 && /^INV\d/i.test(t.vendorReference || '')) saleInv.set(serialOf(t.ticketNo), t.vendorReference!.trim().toUpperCase());
   const rows: RefundRow[] = tickets.filter(isRefund).map(ticket => ({
     ticket, coverage: 'NONE', creditNotes: [],
     saleInvoices: billedBy.get(serialOf(ticket.relatedTicket || ticket.ticketNo)) ?? [],
+    creditNoteNo: /^RFD\d/i.test(ticket.vendorReference || '') ? ticket.vendorReference!.trim().toUpperCase() : undefined,
+    saleInvoiceNo: saleInv.get(serialOf(ticket.relatedTicket || ticket.ticketNo)),
   }));
   const value = (r: RefundRow) => Math.abs(r.ticket.amount ?? 0);
   const noteValue = (n: HeldInvoice) => Math.abs(n.total ?? 0);
@@ -124,7 +132,8 @@ export function creditRequestSheet(report: CreditReport) {
       'PNR': r.ticket.pnr || '',
       'Refund Amount': Math.abs(r.ticket.amount ?? 0),
       'Currency': r.ticket.currency || 'SAR',
-      'Your Invoice No (sale)': r.saleInvoices.join(', '),
+      'Your Credit Note No': r.creditNoteNo ?? '',
+      'Your Invoice No (sale)': r.saleInvoices.length ? r.saleInvoices.join(', ') : (r.saleInvoiceNo ?? ''),
       'Credit Note': r.creditNotes.join(', '),
       'Credit Note Amount': r.noteTotal ?? '',
       'Request No': r.ticket.reqNum || '',
