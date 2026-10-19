@@ -16,6 +16,7 @@ import { RequestProfile } from './RequestProfile';
  */
 const xlsx = () => import('xlsx');
 
+import { costMatches } from '../core/helpers/costMatch';
 import { ticketMatchKey } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import { extractRoute } from '../core/helpers/extractRoute';
@@ -460,6 +461,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [filterAL, setFilterAL]         = useState('');
   const [filterPax, setFilterPax]       = useState('');
   const [filterPNR, setFilterPNR]       = useState('');
+  /** A cost to find: an exact figure, a whole number, or a range (costMatch.ts). */
+  const [filterCost, setFilterCost]     = useState('');
   const [showColFilters, setShowColFilters] = useState(false);
   /** On a phone the filters fold behind one button: seven rows of them
    *  filled the first screen, and not one ticket showed until you scrolled. */
@@ -623,6 +626,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterAL  && !(t.airlineCode || '').toLowerCase().includes(filterAL.toLowerCase())) return false;
       if (filterPax && !(t.passengerName || '').toLowerCase().includes(filterPax.toLowerCase())) return false;
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
+      if (filterCost && !costMatches(filterCost, [t.amount, t.totalDoc])) return false;
       if (searchTerm) {
         const q = searchTerm.toLowerCase();
         /* A whole request number finds that request and nothing else. Read
@@ -641,7 +645,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       return true;
     });
     return sortRows(rows);
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, sortRows, isFreeReissue, companyOf, companyFilter, splitOf, reqTokens]);
+  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, filterCost, sortRows, isFreeReissue, companyOf, companyFilter, splitOf, reqTokens]);
 
   /** The voids, shaped as rows so they sort and page with the tickets. */
   const voidRows = useMemo(() => voids.map((v, i): Ticket => ({
@@ -672,13 +676,14 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterAL  && !(t.airlineCode || '').toLowerCase().includes(filterAL.toLowerCase())) return false;
       if (filterPax && !(t.passengerName || '').toLowerCase().includes(filterPax.toLowerCase())) return false;
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
+      if (filterCost && !costMatches(filterCost, [t.amount, t.totalDoc])) return false;
       if (searchTerm) {
         const hay = `${t.ticketNo} ${t.pnr} ${t.source} ${t.passengerName} void`.toLowerCase();
         if (!hay.includes(searchTerm.toLowerCase())) return false;
       }
       return true;
     });
-  }, [voidRows, filterMode, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, sourceSel, dateFrom, dateTo, filterTicket, filterAL, filterPax, filterPNR, searchTerm]);
+  }, [voidRows, filterMode, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, sourceSel, dateFrom, dateTo, filterTicket, filterAL, filterPax, filterPNR, filterCost, searchTerm]);
 
   /** What the table lists: the ledger rows, then the voids - or the two
    *  merged when a column is sorted. */
@@ -699,7 +704,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       || (v.passengerName || '').toLowerCase().includes(q));
   }, [voids, searchTerm]);
 
-  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, filterTicket, filterAL, filterPax, filterPNR, sortKey, sortDir]);
+  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, filterTicket, filterAL, filterPax, filterPNR, filterCost, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const paged = useMemo(
@@ -818,6 +823,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterPNR) parts.push('PNR_' + sanitize(filterPNR));
       if (filterPax) parts.push('PAX_' + sanitize(filterPax));
       if (filterAL)  parts.push('AL_'  + sanitize(filterAL));
+      if (filterCost) parts.push('COST_' + sanitize(filterCost));
       // Name every selected vendor, up to a point — an export filtered to
       // three portals should say so, but not run to a 200-character filename.
       if (sourceSel.length > 0) {
@@ -1287,7 +1293,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     </select>
   );
 
-  const activeColFilters = [filterTicket, filterAL, filterPax, filterPNR].filter(Boolean).length;
+  const activeColFilters = [filterTicket, filterAL, filterPax, filterPNR, filterCost].filter(Boolean).length;
   const activeFilterCount = [sourceSel.length > 0, dateFrom || dateTo, filterMode !== 'ALL', closedFilter !== 'ALL',
     travelFilter !== 'ALL', cabinFilter !== 'ALL', officeFilter !== 'ALL', companyFilter !== 'ALL', activeColFilters > 0].filter(Boolean).length;
 
@@ -1576,7 +1582,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
           </select>
 
           {/* Bulk close / reopen — operates on entire filtered set */}
-          {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || travelFilter !== 'ALL' || filterTicket || filterAL || filterPax || filterPNR || sourceSel.length > 0 || dateFrom || dateTo) && (
+          {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || travelFilter !== 'ALL' || filterTicket || filterAL || filterPax || filterPNR || filterCost || sourceSel.length > 0 || dateFrom || dateTo) && (
             <>
               <button
                 onClick={() => applyBulkClosed(true)}
@@ -1714,9 +1720,18 @@ export const TicketTable: React.FC<TicketTableProps> = ({
               className="w-24 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
             />
           </div>
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] text-blue-400 font-mono uppercase">Cost</span>
+            <input
+              type="text" inputMode="decimal" placeholder="2,320 or 1000-2000"
+              title="Balance payable or fare. 2,320.50 finds that figure; 2320 finds any 2,320.xx; 1000-2000 finds a range. Refunds are found by their size."
+              value={filterCost} onChange={e => setFilterCost(e.target.value)}
+              className="w-32 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
+            />
+          </div>
           {activeColFilters > 0 && (
             <button
-              onClick={() => { setFilterTicket(''); setFilterAL(''); setFilterPax(''); setFilterPNR(''); }}
+              onClick={() => { setFilterTicket(''); setFilterAL(''); setFilterPax(''); setFilterPNR(''); setFilterCost(''); }}
               className="text-[9px] text-blue-500 hover:text-blue-700 font-bold underline"
             >
               Clear all
