@@ -1,4 +1,5 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { invoiceNumbersFromStatement, type InvoiceNoFill, type InvoiceNoConflict } from '../core/helpers/statementInvoiceNos';
 import { Ticket, VendorStatement, BalanceTopUp, VendorBalance } from '../types';
 import {
   Upload, FileCheck2, AlertTriangle, CheckCircle2, X, Loader2, ChevronDown, ChevronRight,
@@ -507,7 +508,9 @@ export const DocumentCheck: React.FC<{
   wallets?: VendorBalance[];
   /** Put tickets right to the statement's figure. Absent for a viewer. */
   onReprice?: (list: Reprice[]) => Promise<void>;
-}> = ({ tickets, vendorName = 'Ibtekar', onSaveStatement, topUps = [], statements = [], wallets = [], onReprice }) => {
+  /** Write the statement's invoice numbers onto our tickets. Absent for a viewer. */
+  onFillInvoiceNos?: (list: InvoiceNoFill[], period: string) => Promise<void>;
+}> = ({ tickets, vendorName = 'Ibtekar', onSaveStatement, topUps = [], statements = [], wallets = [], onReprice, onFillInvoiceNos }) => {
   const [results, setResults] = useState<InvoiceResult[] | null>(null);
   const [statement, setStatement] = useState<ParsedStatement | null>(null);
   const [saved, setSaved] = useState(false);
@@ -520,9 +523,24 @@ export const DocumentCheck: React.FC<{
   const [hasQr, setHasQr] = useState(true);
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  /* Reading a statement files each ticket under the invoice number it is
+     billed on - what a request for its ZATCA tax invoice has to quote. Done
+     as the file is read, once per file, and said here. */
+  const [invoiceNos, setInvoiceNos] = useState<{ filled: InvoiceNoFill[]; conflicts: InvoiceNoConflict[] } | null>(null);
+  const filledFor = useRef('');
+  useEffect(() => {
+    if (!statement || !onFillInvoiceNos) return;
+    const key = `${fileName}|${statement.periodStart}|${statement.periodEnd}|${statement.closingBalance}`;
+    if (filledFor.current === key) return;
+    filledFor.current = key;
+    const { fill, conflicts } = invoiceNumbersFromStatement(statement, tickets, vendorName);
+    setInvoiceNos({ filled: fill, conflicts });
+    if (fill.length) void onFillInvoiceNos(fill, `${statement.periodStart} to ${statement.periodEnd}`)
+      .catch(() => setInvoiceNos({ filled: [], conflicts }));
+  }, [statement, fileName, tickets, vendorName, onFillInvoiceNos]);
 
   const clear = () => {
-    setResults(null); setStatement(null); setFileName(''); setError(''); setSaved(false);
+    setResults(null); setStatement(null); setFileName(''); setError(''); setSaved(false); setInvoiceNos(null);
   };
 
   const read = async (file: File) => {
@@ -677,6 +695,24 @@ export const DocumentCheck: React.FC<{
           </>
         )}
 
+        {statement && invoiceNos && (invoiceNos.filled.length > 0 || invoiceNos.conflicts.length > 0) && (
+          <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-[11px] text-emerald-900">
+            {invoiceNos.filled.length > 0 && (
+              <div>
+                <b>Invoice numbers filled on {invoiceNos.filled.length} ticket{invoiceNos.filled.length === 1 ? '' : 's'}</b> from
+                this statement ({[...new Set(invoiceNos.filled.map(f => f.doc))].length} document{[...new Set(invoiceNos.filled.map(f => f.doc))].length === 1 ? '' : 's'}),
+                so the Tax Invoices request quotes them.
+              </div>
+            )}
+            {invoiceNos.conflicts.length > 0 && (
+              <div className="text-amber-800 mt-0.5">
+                {invoiceNos.conflicts.length} kept as they were - they already name another document:{' '}
+                <span className="font-mono">{invoiceNos.conflicts.slice(0, 8).map(c => `${c.ticketNo} has ${c.has}, statement ${c.statement}`).join('; ')}
+                {invoiceNos.conflicts.length > 8 ? ` and ${invoiceNos.conflicts.length - 8} more` : ''}</span>
+              </div>
+            )}
+          </div>
+        )}
         {statement && (
           <StatementPanel
             st={statement} fileName={fileName} tickets={tickets} vendorName={vendorName}

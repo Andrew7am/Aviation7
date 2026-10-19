@@ -10,6 +10,7 @@ import {
 import { DocumentCheck } from './DocumentCheck';
 import type { Reprice } from '../core/helpers/statementAgainstBooks';
 import { BalanceRange } from './BalanceRange';
+import type { InvoiceNoFill } from '../core/helpers/statementInvoiceNos';
 
 /**
  * The vendors whose account is settled on their figures rather than ours.
@@ -51,6 +52,8 @@ interface Props {
   canEdit?: boolean;
   /** Put tickets right to a statement's figure. */
   onReprice?: (list: Reprice[]) => Promise<void>;
+  /** File tickets under the invoice numbers a statement bills them on. */
+  onFillInvoiceNos?: (list: InvoiceNoFill[], period: string) => Promise<void>;
 }
 
 const blank = (vendor: string): VendorStatement => ({
@@ -416,7 +419,7 @@ const PeriodRow: React.FC<{
 };
 
 export const VendorStatements: React.FC<Props> = ({
-  statements, tickets, topUps, wallets, onSave, onDelete, canEdit = false, onReprice,
+  statements, tickets, topUps, wallets, onSave, onDelete, canEdit = false, onReprice, onFillInvoiceNos,
 }) => {
   const [editing, setEditing] = useState<VendorStatement | null>(null);
 
@@ -469,7 +472,8 @@ export const VendorStatements: React.FC<Props> = ({
 
       <DocumentCheck tickets={tickets} onSaveStatement={canEdit ? onSave : undefined}
         topUps={topUps} statements={statements} wallets={wallets}
-        onReprice={canEdit ? onReprice : undefined} />
+        onReprice={canEdit ? onReprice : undefined}
+        onFillInvoiceNos={canEdit ? onFillInvoiceNos : undefined} />
 
       {accounts.map(a => (
         <div key={a.vendorName} className="bg-white border border-slate-200 rounded-xl overflow-hidden">

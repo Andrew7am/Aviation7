@@ -58,6 +58,7 @@ import { useWallet } from './hooks/useWallet';
 import { useStatements } from './hooks/useStatements';
 import { usePending } from './hooks/usePending';
 import { useTaxInvoices } from './hooks/useTaxInvoices';
+import type { InvoiceNoFill } from './core/helpers/statementInvoiceNos';
 import { useVoids } from './hooks/useVoids';
 import { admKind } from './core/helpers/admRegister';
 import { VoidTicketService } from './services/VoidTicketService';
@@ -403,6 +404,15 @@ function MainApp({ user }: { user: User }) {
       importSvc.audit('EDIT_TICKET', x.ticketNo, `amount: ${x.was} -> ${x.amount} (the vendor's statement of account)`);
     }
   };
+  /* The invoice number each ticket is billed on, off the statement: what a
+     request for its ZATCA tax invoice quotes. Blanks and booking references
+     only - statementInvoiceNos.ts. */
+  const handleFillInvoiceNos = useCallback(async (list: InvoiceNoFill[], period: string) => {
+    for (const x of list) {
+      await updateTicket(x.id, { vendorReference: x.doc });
+      importSvc.audit('EDIT_TICKET', x.ticketNo, `vendor_reference: ${x.was || '-'} -> ${x.doc} (the vendor's statement of account, ${period})`);
+    }
+  }, [updateTicket, importSvc]);
   const handleDeleteStatement = (id: string) => {
     deleteStatement(id);
     importSvc.audit('DELETE_STATEMENT', id, 'Statement deleted');
@@ -708,7 +718,7 @@ function MainApp({ user }: { user: User }) {
         <VendorStatements statements={statements} tickets={tickets} canEdit={isAdmin}
           topUps={topUps} wallets={vendorBalancesLive}
           onSave={handleSaveStatement} onDelete={handleDeleteStatement}
-          onReprice={handleRepriceFromStatement} />
+          onReprice={handleRepriceFromStatement} onFillInvoiceNos={handleFillInvoiceNos} />
       )}
       {view === 'taxinvoices' && (
         <TaxInvoices tickets={tickets} invoices={taxInvoices}
