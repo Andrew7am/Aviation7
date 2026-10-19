@@ -14,7 +14,7 @@
  */
 import { voidFromTicket, voidsFromImport, periodFor } from '../src/core/helpers/voidFromImport';
 import type { Ticket } from '../src/types';
-import { keepOutVoided, voidedWarning } from '../src/core/helpers/keepOutVoided';
+import { keepOutVoided, voidedWarning, salesVoided, salesVoidedWarning } from '../src/core/helpers/keepOutVoided';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -137,6 +137,25 @@ console.log('\nA later report does not sell a voided document again');
   check('the rest go in - a refund on a voided one too', r.kept.map(t => [t.ticketNo, t.amount]), [['4862405674', 1024.65], ['4862343304', -966]]);
   check('the preview names them', /2 ticket\(s\).*4862343304, 065-4862405623/.test(voidedWarning(r.out)), true);
   check('nothing to say when none', voidedWarning([]), '');
+}
+
+console.log('\nA sale we already hold, voided by a later report');
+{
+  // BSP 12 Oct: 5513427890 and ...891 sold at 16,670 AED. BSP 13 Oct: both VOID.
+  const held = [
+    { id: 'a', ticketNo: '5513427890', amount: 16670, source: 'IATA BSP', status: 'ISSUE', currency: 'AED', reqNum: 'KSAML2257' },
+    { id: 'b', ticketNo: '5513427891', amount: 16670, source: 'IATA BSP', status: 'ISSUE', currency: 'AED', reqNum: 'KSAML2257' },
+    { id: 'c', ticketNo: '5513427892', amount: 900, source: 'IATA BSP', status: 'ISSUE' },
+    { id: 'd', ticketNo: '5513427892', amount: -900, source: 'IATA BSP', status: 'REFUND' },
+    { id: 'e', ticketNo: '4862000001', amount: 500, source: 'Ibtekar', status: 'ISSUE' },
+  ];
+  const voids = [{ ticketNo: '176-5513427890', source: 'IATA BSP' }, { ticketNo: '5513427891', source: 'IATA BSP' },
+                 { ticketNo: '5513427892', source: 'IATA BSP' }, { ticketNo: '4862000001', source: 'IATA BSP' }];
+  const out = salesVoided(voids, held);
+  check('both sales leave the ledger', out.map(t => t.id), ['a', 'b']);
+  check('not one with its money already refunded', out.some(t => t.id === 'c'), false);
+  check('not another supplier\'s sale', out.some(t => t.id === 'e'), false);
+  check('the preview says which and how much', /2 ticket\(s\).*5513427890 \(16670 AED, KSAML2257\)/.test(salesVoidedWarning(out)), true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

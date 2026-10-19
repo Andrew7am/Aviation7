@@ -154,7 +154,8 @@ function MainApp({ user }: { user: User }) {
     voidedTickets: Ticket[],
     exchanges: ExchangeEdge[],
     meta?: { parserName: string; confidence: number; totalRows: number; warnings: number; errors: { row: number; raw: string; error: string }[]; vendor: string; reportName: string; confirmations?: { id: string; ticketNo: string; by: string }[];
-      corrections?: { id: string; ticketNo: string; by: string; amount: number; totalDoc: number; commission: number; was: { amount: number } }[] }
+      corrections?: { id: string; ticketNo: string; by: string; amount: number; totalDoc: number; commission: number; was: { amount: number } }[];
+      voidedSales?: Ticket[] }
   ) => {
     const startTime = Date.now();
     try {
@@ -211,16 +212,30 @@ function MainApp({ user }: { user: User }) {
         } catch (e) { console.error('exchanges not recorded', e); }
       }
 
-      let voidsKept = 0;
+      let voidsKept = 0, voidsRecorded = false;
       if (voidedTickets?.length) {
         try {
           voidsKept = await new VoidTicketService(user.id)
             .record(voidsFromImport(voidedTickets, meta?.reportName ?? ''));
+          voidsRecorded = true;
           await refreshVoids();
         } catch (e) {
           // Never fail an import over the register: the tickets are saved
           // and the voids can be re-read from the same file.
           console.error('voids not recorded', e);
+        }
+      }
+
+      /* A sale already in our books that this report voids leaves them -
+         5513427890 and 5513427891 stayed as 33,340 AED of sales after BSP's
+         next report voided both. Only once the void is in the register. */
+      if (voidsRecorded && meta?.voidedSales?.length) {
+        for (const t of meta.voidedSales) {
+          try {
+            await ticketSvc.delete(t.id);
+            importSvc.audit('DELETE', t.ticketNo,
+              `${t.source} ${t.ticketNo} (${t.amount} ${t.currency}${t.reqNum ? `, ${t.reqNum}` : ''}): VOID in ${meta.reportName || t.source}'s report - the sale left the ledger.`);
+          } catch (e) { console.error('voided sale not removed', t.ticketNo, e); }
         }
       }
 

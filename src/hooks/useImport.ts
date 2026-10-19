@@ -12,7 +12,7 @@ import { parseGrid, gridProblem } from '../core/helpers/parseGrid';
 import { v4 as uuidv4 } from 'uuid';
 import { TicketService } from '../services/TicketService';
 import { fileUnderOriginal } from '../core/helpers/freeReissue';
-import { keepOutVoided, voidedWarning } from '../core/helpers/keepOutVoided';
+import { keepOutVoided, voidedWarning, salesVoided, salesVoidedWarning } from '../core/helpers/keepOutVoided';
 import { VoidTicketService } from '../services/VoidTicketService';
 import { confirmationsFrom, correctionsFrom, type Confirmation, type Correction } from '../core/helpers/supplierProof';
 import { AirtableService } from '../services/AirtableService';
@@ -32,6 +32,8 @@ export interface ImportPreview {
   settlements: Ticket[];
   /** Voided documents found in the file and discarded — never saved. */
   voided:      Ticket[];
+  /** Sales already in our books that this file voids: they leave the ledger. */
+  voidedSales?: Ticket[];
   /** Reissues the file records — kept in their own register, not the
    *  ledger, because the zero-value ones never become ledger rows. */
   exchanges:   ExchangeEdge[];
@@ -67,6 +69,8 @@ export interface ImportMeta {
   reportName: string;
   confirmations?: Confirmation[];
   corrections?: Correction[];
+  /** Sales in our books this file voids - they leave the ledger on import. */
+  voidedSales?: Ticket[];
 }
 
 /**
@@ -220,6 +224,10 @@ export function useImport(userId: string) {
       const filed = fileUnderOriginal(dup.fresh, [...existingFromDB, ...originals], exchanges);
       // A document in our Voids register is not sold again by a later report.
       const voidedHere = filed.length ? await new VoidTicketService(userId).voidedAmong(filed.map(t => t.ticketNo)) : [];
+      // ...and a sale already in our books that this file voids leaves them.
+      const voidedSales = voided.length
+        ? salesVoided(voided.map(v => ({ ticketNo: v.ticketNo, source: v.source })), await svc.fetchByTicketNos(voided.map(v => v.ticketNo)))
+        : [];
       const { kept: fresh, out: keptOutVoided } = keepOutVoided(filed, voidedHere);
       const classified = classifyAgainstExisting(realTkts, existingFromDB);
 
@@ -268,13 +276,14 @@ export function useImport(userId: string) {
           + ' report at the same amount and will be marked confirmed.');
 
       setPreview({
-        fresh, updates, duplicates, topUps, settlements, voided, exchanges,
+        fresh, updates, duplicates, topUps, settlements, voided, exchanges, voidedSales,
         confirmations: proof.confirm,
         corrections: fix.correct,
         reqFromAirtable: [...filledFromAirtable],
         classified,
         errors: errors.map((e, i) => ({ row: i, raw: e, error: e })),
-        warnings: [...(keptOutVoided.length ? [voidedWarning(keptOutVoided)] : []), ...reqWarnings, ...proofWarnings, ...dateWarnings,
+        warnings: [...(voidedSales.length ? [salesVoidedWarning(voidedSales)] : []),
+           ...(keptOutVoided.length ? [voidedWarning(keptOutVoided)] : []), ...reqWarnings, ...proofWarnings, ...dateWarnings,
            ...warnings.filter(w => !/Missing Req Num/i.test(w) || ![...filledFromAirtable].some(tk => w.includes(tk)))], parserName, confidence, routedVendor,
         totalRows: allRows.length,
       });
@@ -304,6 +313,7 @@ export function useImport(userId: string) {
       reportName: vendor,
       confirmations: (preview.confirmations ?? []).map(c => ({ ...c, by: vendor || c.by })),
       corrections: (preview.corrections ?? []).map(c => ({ ...c, by: vendor || c.by })),
+      voidedSales: preview.voidedSales ?? [],
     };
   }, [preview]);
 
