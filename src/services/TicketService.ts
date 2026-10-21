@@ -1,4 +1,6 @@
 import { supabase, fetchAllRows } from '../utils/supabase';
+import { cacheGet, cachePut } from '../utils/ledgerCache';
+import { applyDelta, changedSince, cursorOf, type HeldLedger } from '../core/helpers/ledgerDelta';
 import type { TicketChange } from '../core/helpers/applyTicketChanges';
 import { Ticket } from '../types';
 
@@ -25,6 +27,7 @@ type TicketRow = {
   vendor_reference: string | null;
   balance_after: number | null;
   import_time: string | null;
+  updated_at?: string | null;
   created_at: string;
   serial: number | null;
   closed: boolean | null;
@@ -157,15 +160,54 @@ export class TicketService {
   ) {
     let cancelled = false;
 
+    /* The ledger is kept on the device and read as what changed since.
+       Read whole, it was 1.8 MB on every open and every return to the tab -
+       with the Airtable sync, enough to put the project over Supabase's 5 GB
+       egress quota on 21 Oct 2026. Now: the device's copy, then the rows
+       whose updated_at is past the last one seen (a minute's overlap, for a
+       write that committed late), then the ids deleted since. A whole read
+       still happens on a device's first open, once a day, and whenever the
+       count on the server and the count held disagree. */
+    const KEY = `tickets:v1:${this.userId}`;
+    const OVERLAP_MS = 60_000;
+    const FULL_EVERY_MS = 24 * 60 * 60_000;
+    type Held = HeldLedger<TicketRow>;
+    let held: Held | null = null;
+
+    const readWhole = async (): Promise<Held> => {
+      // `count: 'exact'` costs one cheap COUNT on the server and tells
+      // fetchAllRows how many pages there are, so it can ask for all of
+      // them at once instead of discovering the end a page at a time.
+      const rows = await fetchAllRows<TicketRow>((from, to) =>
+        supabase.from('tickets').select('*', { count: 'exact' }).range(from, to)
+      );
+      return { byId: new Map(rows.map(r => [r.id, r])), cursor: cursorOf(rows), fullAt: Date.now() };
+    };
+    const readChanged = async (h: Held): Promise<Held> => {
+      const since = changedSince(h.cursor, OVERLAP_MS);
+      const rows = await fetchAllRows<TicketRow>((from, to) =>
+        supabase.from('tickets').select('*', { count: 'exact' }).gt('updated_at', since).order('id').range(from, to)
+      );
+      const gone = await fetchAllRows<{ id: string; deleted_at: string }>((from, to) =>
+        supabase.from('ticket_deletions').select('id, deleted_at', { count: 'exact' }).gt('deleted_at', since).order('id').range(from, to)
+      );
+      const next = applyDelta(h, rows, gone);
+      // Held and server disagreeing on how many there are is a read gone
+      // wrong somewhere: start again from the whole ledger.
+      const { count, error } = await supabase.from('tickets').select('id', { count: 'exact', head: true });
+      if (error) throw new Error(error.message);
+      return count != null && count !== next.byId.size ? readWhole() : next;
+    };
+
     const fetchAll = async () => {
       try {
-        // `count: 'exact'` costs one cheap COUNT on the server and tells
-        // fetchAllRows how many pages there are, so it can ask for all of
-        // them at once instead of discovering the end a page at a time.
-        const rows = await fetchAllRows<TicketRow>((from, to) =>
-          supabase.from('tickets').select('*', { count: 'exact' }).range(from, to)
-        );
-        if (!cancelled) onData(rows.map(rowToTicket));
+        if (!held) {
+          const c = await cacheGet<{ cursor: string; fullAt: number; rows: TicketRow[] }>(KEY);
+          if (c?.cursor && Array.isArray(c.rows)) held = { byId: new Map(c.rows.map(r => [r.id, r])), cursor: c.cursor, fullAt: c.fullAt || 0 };
+        }
+        held = !held || !held.cursor || Date.now() - held.fullAt > FULL_EVERY_MS ? await readWhole() : await readChanged(held);
+        if (!cancelled) onData([...held.byId.values()].map(rowToTicket));
+        void cachePut(KEY, { cursor: held.cursor, fullAt: held.fullAt, rows: [...held.byId.values()] });
       } catch (e) {
         onError?.(e instanceof Error ? e : new Error(String(e)));
       }

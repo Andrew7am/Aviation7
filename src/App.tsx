@@ -58,6 +58,7 @@ import { useWallet } from './hooks/useWallet';
 import { useStatements } from './hooks/useStatements';
 import { usePending } from './hooks/usePending';
 import { useTaxInvoices } from './hooks/useTaxInvoices';
+import { cacheGet, cachePut } from './utils/ledgerCache';
 import type { InvoiceNoFill } from './core/helpers/statementInvoiceNos';
 import { useVoids } from './hooks/useVoids';
 import { admKind } from './core/helpers/admRegister';
@@ -309,9 +310,17 @@ function MainApp({ user }: { user: User }) {
      it changes when their sheet does, not while somebody is looking. */
   const [companyRows, setCompanyRows] = useState<CompanyRow[]>([]);
   const [companiesLoading, setCompaniesLoading] = useState(true);
+  /* Kept on the device for six hours: 300 KB read on every open, for a
+     list that moves when their sheet does. */
   useEffect(() => {
-    airtable.companyRows().then(setCompanyRows).catch(e => console.error('companies', e))
-      .finally(() => setCompaniesLoading(false));
+    const KEY = 'companyRows:v1';
+    (async () => {
+      const held = await cacheGet<{ at: number; rows: CompanyRow[] }>(KEY);
+      if (held && Date.now() - held.at < 6 * 60 * 60_000) { setCompanyRows(held.rows); return; }
+      const rows = await airtable.companyRows();
+      setCompanyRows(rows);
+      void cachePut(KEY, { at: Date.now(), rows });
+    })().catch(e => console.error('companies', e)).finally(() => setCompaniesLoading(false));
   }, [airtable]);
   const companySvc = React.useMemo(() => new CompanyService(), []);
   const [companyAssignments, setCompanyAssignments] = useState<CompanyAssignment[]>([]);
@@ -336,10 +345,15 @@ function MainApp({ user }: { user: User }) {
       setAtNotices(n); setAtSync(s);
     } catch (e) { console.error('airtable notices', e); }
   }, [airtable]);
+  /* Every five minutes, and only while the page is in view - read every
+     minute in every open tab, the bell alone was ~100 MB a day of egress. */
   useEffect(() => {
     loadAirtable();
-    const t = window.setInterval(loadAirtable, 60_000);
-    return () => window.clearInterval(t);
+    const tick = () => { if (document.visibilityState === 'visible') loadAirtable(); };
+    const t = window.setInterval(tick, 5 * 60_000);
+    const back = () => { if (document.visibilityState === 'visible') loadAirtable(); };
+    document.addEventListener('visibilitychange', back);
+    return () => { window.clearInterval(t); document.removeEventListener('visibilitychange', back); };
   }, [loadAirtable]);
 
   const acceptNotices = async (list: AirtableNotice[]) => {
