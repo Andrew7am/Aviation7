@@ -72,6 +72,8 @@ import { pendingFromFindings, ticketFromPending, whyNotConfirmable } from './cor
 import { planSheetAdd, waitingReasons, neverByHand } from './core/helpers/addFromSheet';
 import type { Finding } from './core/helpers/teamSheetCompare';
 import { TicketService } from './services/TicketService';
+import { EMIRATES_IATA, limitUse, limitWeek, localDate, type SheetRow } from './core/helpers/airlineLimit';
+import { LimitBanner } from './components/LimitBanner';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
@@ -339,12 +341,19 @@ function MainApp({ user }: { user: User }) {
   };
   const companyIdx = React.useMemo(() => companyIndex(companyRows, companyAssignments), [companyRows, companyAssignments]);
   const companyFn = React.useCallback((t: Ticket) => companyOf(t, companyIdx), [companyIdx]);
+  /* Emirates' weekly IATA limit. Their sheet's rows for the week ride along
+     with the bell - a few dozen rows, read only from the week's first day. */
+  const [ekWeek, setEkWeek] = useState<{ today: string; rows: SheetRow[] }>({ today: localDate(new Date().toISOString()), rows: [] });
   const loadAirtable = React.useCallback(async () => {
     try {
-      const [n, s] = await Promise.all([airtable.notices(), airtable.state()]);
-      setAtNotices(n); setAtSync(s);
+      const today = localDate(new Date().toISOString());
+      const { from } = limitWeek(today, EMIRATES_IATA.weekFrom);
+      const [n, s, ek] = await Promise.all([airtable.notices(), airtable.state(),
+        airtable.iataRowsSince(EMIRATES_IATA.airline, `${from}T00:00:00+03:00`)]);
+      setAtNotices(n); setAtSync(s); setEkWeek({ today, rows: ek });
     } catch (e) { console.error('airtable notices', e); }
   }, [airtable]);
+  const ekUse = React.useMemo(() => limitUse(EMIRATES_IATA, tickets, ekWeek.rows, ekWeek.today), [tickets, ekWeek]);
   /* Every five minutes, and only while the page is in view - read every
      minute in every open tab, the bell alone was ~100 MB a day of egress. */
   useEffect(() => {
@@ -667,7 +676,7 @@ function MainApp({ user }: { user: User }) {
       onLogout={logout}
       headerExtra={<AirtableBell notices={atNotices} sync={atSync} canEdit={isAdmin}
         onAccept={acceptNotices} onDismiss={dismissNotices} onSyncNow={syncAirtableNow} />}
-      banner={<AlertBanner alerts={alerts} onDismiss={dismissAlert} />}
+      banner={<><LimitBanner cfg={EMIRATES_IATA} use={ekUse} /><AlertBanner alerts={alerts} onDismiss={dismissAlert} /></>}
     >
       <React.Suspense fallback={<Loading />}>
       {showManualEntry && (

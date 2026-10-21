@@ -65,6 +65,16 @@ export class AirtableService {
       net_cost: r.net_cost == null ? null : Number(r.net_cost) }));
   }
 
+  /** One airline's IATA rows issued since a moment - a week's worth, a few
+   *  dozen rows, for the weekly sales limit. */
+  async iataRowsSince(airline: string, since: string): Promise<{ serials: string[]; status: string | null; portal: string | null; airline: string | null; net_cost: number | null; issued_at: string | null }[]> {
+    const { data, error } = await supabase.from('airtable_tickets')
+      .select('serials, status, portal, airline, net_cost, issued_at')
+      .eq('deleted', false).ilike('portal', '%IATA%').ilike('airline', airline).gte('issued_at', since);
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(r => ({ ...r, serials: r.serials ?? [], net_cost: r.net_cost == null ? null : Number(r.net_cost) }));
+  }
+
   /** What each of their rows says about requests - for filling ours. */
   async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal: string; airline: string }[]> {
     const rows = await fetchAllRows<any>((from, to) =>
