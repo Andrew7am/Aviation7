@@ -40,9 +40,13 @@ export function unconfirmed(t: Ticket): boolean {
 }
 
 const dir = (t: Ticket) => ((t.amount || 0) < 0 ? 'R' : 'S');
+/* What is owed must agree, not just the fare. 2540225941 went in from their
+   sheet at 1,570.00 and Turkish refunded 1,534.00 - the same 1,570.00 fare
+   less the 36.00 commission it took back. Agreeing on the fare confirmed
+   the row at 1,570.00, 36.00 more than was ever refunded. */
 const sameMoney = (a: Ticket, b: Ticket) => {
   const x = Math.abs(a.originalAmount ?? a.amount ?? 0), y = Math.abs(b.amount ?? 0);
-  return Math.abs(x - y) < 0.01 || Math.abs(Math.abs(a.totalDoc ?? 0) - Math.abs(b.totalDoc ?? 0)) < 0.01 && (a.totalDoc ?? 0) !== 0;
+  return Math.abs(x - y) < 0.01;
 };
 
 export interface Confirmation { id: string; ticketNo: string; by: string }

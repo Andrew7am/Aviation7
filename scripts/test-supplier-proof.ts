@@ -70,6 +70,12 @@ console.log('\n3. The supplier\'s figure goes in');
     [t({ id: 'o', source: 'RTS', amount: 320, totalDoc: 320, status: 'ISSUE', ticketNo: '5513303522' })], 'BSP');
   check('another supplier\'s figure is asked, not copied', correctionsFrom(other.differ, 'BSP').correct.length, 0);
   check('a website purchase never waits for a report', awaitsSupplier(t({ source: 'Airline Website', amount: 0 })), false);
+  // 2540225941: 1,570.00 from their sheet; Turkish refunded the same fare less its 36.00 commission.
+  const comm = confirmationsFrom(
+    [t({ id: '', reportName: 'Turkish Airlines', source: 'Turkish Airlines', ticketNo: '2540225941', amount: -1534, totalDoc: 1570, commission: -36 })],
+    [t({ id: 'k', source: 'Turkish Airlines', ticketNo: '2540225941', amount: -1570, totalDoc: 1570, commission: 0 })], 'Turkish Airlines');
+  check('the same fare at a different amount owed is not confirmed', comm.confirm.length, 0);
+  check('the commission the supplier took back goes in', correctionsFrom(comm.differ, 'Turkish Airlines').correct.map(c => [c.amount, c.commission]), [[-1534, -36]]);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
