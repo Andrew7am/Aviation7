@@ -2302,7 +2302,7 @@ function detailsFor(ours, rows) {
 
 // src/server/airtableSync.ts
 var STATE_ID = "aviation_tickets";
-var FULL_EVERY_MS = 10 * 60 * 1e3;
+var FULL_EVERY_MS = 6 * 60 * 60 * 1e3;
 async function airtable(token, table, params) {
   const out = [];
   let offset = "";
@@ -2407,13 +2407,30 @@ async function syncAirtable(env) {
       const { error } = await db.from("airtable_changes").insert(log.slice(i, i + 500));
       if (error) throw new Error(`airtable_changes: ${error.message}`);
     }
+    const scope = full ? null : {
+      serials: [...new Set(changedRows.flatMap((r) => r.serials ?? []).filter(Boolean))],
+      pnrs: [...new Set(changedRows.flatMap((r) => String(r.pnr || "").toUpperCase().split(/[|,/\s]+/)).filter(Boolean))]
+    };
+    const LEDGER_COLS = "id, ticket_no, pnr, req_num, passenger_name, cabin_class, source, amount, status, currency, date, commission, total_doc, airline_code, transaction_type, closed, related_ticket, original_currency, original_amount, fx_rate, report_name, confirmed_by, user_id";
+    const ledgerIn = async (cols, extra) => {
+      const seen = /* @__PURE__ */ new Map();
+      const pick2 = async (col, vals) => {
+        for (let i = 0; i < vals.length; i += 150) {
+          let q = db.from("tickets").select(cols).in(col, vals.slice(i, i + 150));
+          if (extra) q = extra(q);
+          const { data, error } = await q;
+          if (error) throw new Error(`tickets: ${error.message}`);
+          for (const t of data ?? []) seen.set(t.id, t);
+        }
+      };
+      await pick2("ticket_no", scope.serials);
+      await pick2("related_ticket", scope.serials);
+      await pick2("pnr", scope.pnrs);
+      return [...seen.values()];
+    };
     let notices = [], onlineQueued = 0;
     if (changedRows.length || full) {
-      const ledger = await selectAll(
-        db,
-        "tickets",
-        "id, ticket_no, pnr, req_num, passenger_name, cabin_class, source, amount, status, currency, date, commission, total_doc, airline_code, transaction_type, closed, related_ticket, original_currency, original_amount, fx_rate, report_name, confirmed_by, user_id"
-      );
+      const ledger = full ? await selectAll(db, "tickets", LEDGER_COLS) : await ledgerIn(LEDGER_COLS);
       const lite = ledger.map((t) => ({
         id: t.id,
         ticketNo: t.ticket_no,
@@ -2429,16 +2446,11 @@ async function syncAirtable(env) {
         airlineCode: t.airline_code ?? ""
       }));
       notices = noticesFor(full ? rows : changedRows, changes, ledgerIndex(lite));
-      const all = full ? rows : await selectAll(
-        db,
-        "airtable_tickets",
-        "record_id, sheet_row, created_at, status, serials, refund_amount, net_cost, currency, req_num",
-        (q) => q.eq("deleted", false)
-      );
+      const all = full ? rows : changedRows;
       notices.push(...missingRefunds(all, ledgerIndex(lite)));
       const splits = splitRequests(all, lite);
       notices.push(...splits);
-      if (!dry) {
+      if (!dry && full) {
         const still = new Set(splits.map((n) => n.dedupe_key));
         const { data: openSplits } = await db.from("airtable_notifications").select("id, dedupe_key").eq("kind", "REQ_SPLIT").eq("state", "OPEN");
         const settled = (openSplits ?? []).filter((n) => !still.has(n.dedupe_key)).map((n) => n.id);
@@ -2538,7 +2550,7 @@ async function syncAirtable(env) {
     let reqFilled = 0, detailsFilled = 0;
     const fillNow = full || changedRows.length > 0 || !!env.fillNow;
     let liveRows = null;
-    const liveAll = async () => liveRows ??= full ? rows : await selectAll(
+    const liveAll = async () => liveRows ??= full ? rows : !env.fillNow ? changedRows : await selectAll(
       db,
       "airtable_tickets",
       "serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, sheet_row",
@@ -2558,12 +2570,9 @@ async function syncAirtable(env) {
       });
     };
     if (fillNow) {
-      const lacking = await selectAll(
-        db,
-        "tickets",
-        "id, ticket_no, passenger_name, cabin_class, route, user_id, pnr, source",
-        (q) => q.neq("status", "FUND").or("passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.")
-      );
+      const LACK_COLS = "id, ticket_no, passenger_name, cabin_class, route, user_id, pnr, source";
+      const lackingOnly = (q) => q.neq("status", "FUND").or("passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.");
+      const lacking = full || env.fillNow ? await selectAll(db, "tickets", LACK_COLS, lackingOnly) : await ledgerIn(LACK_COLS, lackingOnly);
       if (lacking.length) {
         const fills = detailsFor(lacking.map((t) => ({
           id: t.id,

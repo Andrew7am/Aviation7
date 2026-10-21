@@ -30,7 +30,12 @@ const STATE_ID = 'aviation_tickets';
 // Their request column is looked up from a linked table, and changing it does
 // not move a row's Last Modified time - so only a full read sees it. Every ten
 // minutes rather than every hour: KSAML482 -> KSAML2325 sat unseen for an hour.
-const FULL_EVERY_MS = 10 * 60 * 1000;
+/* Every six hours, not ten minutes. A full run reads their whole table and
+   our whole ledger - about 6 MB out of the database - and at 144 a day it
+   alone was some 860 MB a day: on 21 Oct 2026 the project passed Supabase's
+   5 GB egress quota and was shut off. What changed in between is read
+   without it (see `scope` below). */
+const FULL_EVERY_MS = 6 * 60 * 60 * 1000;
 
 export interface SyncResult {
   mode: 'full' | 'incremental';
@@ -158,11 +163,38 @@ export async function syncAirtable(env: {
       if (error) throw new Error(`airtable_changes: ${error.message}`);
     }
 
+    /* Between full runs only the rows that changed are looked at, against
+       only the tickets they name - by number, as a refund application, or by
+       booking - rather than the whole ledger and their whole table (4.5 MB a
+       time, 69 times on a busy day). The whole-table questions - a split
+       request closing, a ticket filling from a row that did not change - wait
+       for the full run. */
+    const scope = full ? null : {
+      serials: [...new Set(changedRows.flatMap(r => r.serials ?? []).filter(Boolean))],
+      pnrs: [...new Set(changedRows.flatMap(r => String(r.pnr || '').toUpperCase().split(/[|,/\s]+/)).filter(Boolean))],
+    };
+    const LEDGER_COLS = 'id, ticket_no, pnr, req_num, passenger_name, cabin_class, source, amount, status, currency, date, commission, total_doc, airline_code, transaction_type, closed, related_ticket, original_currency, original_amount, fx_rate, report_name, confirmed_by, user_id';
+    const ledgerIn = async (cols: string, extra?: (q: any) => any) => {
+      const seen = new Map<string, Record<string, any>>();
+      const pick = async (col: string, vals: string[]) => {
+        for (let i = 0; i < vals.length; i += 150) {
+          let q = db.from('tickets').select(cols).in(col, vals.slice(i, i + 150));
+          if (extra) q = extra(q);
+          const { data, error } = await q;
+          if (error) throw new Error(`tickets: ${error.message}`);
+          for (const t of (data ?? []) as unknown as Record<string, any>[]) seen.set(t.id, t);
+        }
+      };
+      await pick('ticket_no', scope!.serials);
+      await pick('related_ticket', scope!.serials);
+      await pick('pnr', scope!.pnrs);
+      return [...seen.values()];
+    };
+
     // What it means for our books - only worth the ledger read when something moved.
     let notices: Notice[] = [], onlineQueued = 0;
     if (changedRows.length || full) {
-      const ledger = await selectAll<Record<string, any>>(db, 'tickets',
-        'id, ticket_no, pnr, req_num, passenger_name, cabin_class, source, amount, status, currency, date, commission, total_doc, airline_code, transaction_type, closed, related_ticket, original_currency, original_amount, fx_rate, report_name, confirmed_by, user_id');
+      const ledger = full ? await selectAll<Record<string, any>>(db, 'tickets', LEDGER_COLS) : await ledgerIn(LEDGER_COLS);
       const lite: LedgerLite[] = ledger.map(t => ({ id: t.id, ticketNo: t.ticket_no, pnr: t.pnr, reqNum: t.req_num ?? '',
         passengerName: t.passenger_name ?? '', cabinClass: t.cabin_class ?? '', source: t.source, amount: Number(t.amount ?? 0),
         status: t.status, currency: t.currency, relatedTicket: t.related_ticket ?? undefined, airlineCode: t.airline_code ?? '' }));
@@ -171,15 +203,16 @@ export async function syncAirtable(env: {
       notices = noticesFor(full ? rows : changedRows, changes, ledgerIndex(lite));
 
       // Bought online and in nobody's books: to To Review, like the check would.
-      const all = full ? rows : (await selectAll<AirtableTicketRow>(db, 'airtable_tickets',
-        'record_id, sheet_row, created_at, status, serials, refund_amount, net_cost, currency, req_num', q => q.eq('deleted', false)));
+      const all = full ? rows : changedRows;
       // Refunds on their sheet we do not hold, read off the sheet as it stands:
       // they add a refunded row rather than change the old one.
       notices.push(...missingRefunds(all, ledgerIndex(lite)));
       // Sold on one request, refunded on another - and closed once they agree.
       const splits = splitRequests(all, lite);
       notices.push(...splits);
-      if (!dry) {
+      // Settled only on a full run: a run that looked at a few rows cannot
+      // say a split elsewhere is gone.
+      if (!dry && full) {
         const still = new Set(splits.map(n => n.dedupe_key));
         const { data: openSplits } = await db.from('airtable_notifications').select('id, dedupe_key').eq('kind', 'REQ_SPLIT').eq('state', 'OPEN');
         const settled = (openSplits ?? []).filter(n => !still.has(n.dedupe_key)).map(n => n.id);
@@ -269,8 +302,12 @@ export async function syncAirtable(env: {
     type LiveRow = { serials: string[]; ticket_cell: string; pnr: string; req_num: string; status: string; client_name: string; cabin: string; portal: string; airline: string; sheet_row: Record<string, string> };
     let liveRows: LiveRow[] | null = null;
     // On a full run their whole table was just read; on any other, read our copy.
-    const liveAll = async () => liveRows ??= full ? rows as unknown as LiveRow[] : await selectAll<LiveRow>(db, 'airtable_tickets',
-      'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, sheet_row', q => q.eq('deleted', false));
+    // After an import (fill=1) our copy of their whole table; between full
+    // runs, only what just changed.
+    const liveAll = async () => liveRows ??= full ? rows as unknown as LiveRow[]
+      : !env.fillNow ? changedRows as unknown as LiveRow[]
+      : await selectAll<LiveRow>(db, 'airtable_tickets',
+        'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, sheet_row', q => q.eq('deleted', false));
     // The log lines, written together at the end rather than one round trip each.
     const auditRows: Record<string, unknown>[] = [];
     const audit = async (owner: string | undefined, entity: string, detail: string) => { auditRows.push({
@@ -280,9 +317,12 @@ export async function syncAirtable(env: {
     // Names, cabins and routes we lack, filled from the row that names the
     // same document. Nobody is asked; nothing already there is touched.
     if (fillNow) {
-      const lacking = await selectAll<{ id: string; ticket_no: string; passenger_name: string | null; cabin_class: string | null; route: string | null; user_id: string; pnr: string | null; source: string | null }>(
-        db, 'tickets', 'id, ticket_no, passenger_name, cabin_class, route, user_id, pnr, source',
-        q => q.neq('status', 'FUND').or('passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.'));
+      type Lacking = { id: string; ticket_no: string; passenger_name: string | null; cabin_class: string | null; route: string | null; user_id: string; pnr: string | null; source: string | null };
+      const LACK_COLS = 'id, ticket_no, passenger_name, cabin_class, route, user_id, pnr, source';
+      const lackingOnly = (q: any) => q.neq('status', 'FUND').or('passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.');
+      const lacking = (full || env.fillNow
+        ? await selectAll<Lacking>(db, 'tickets', LACK_COLS, lackingOnly)
+        : await ledgerIn(LACK_COLS, lackingOnly)) as Lacking[];
       if (lacking.length) {
         const fills = detailsFor(lacking.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', passengerName: t.passenger_name ?? '',
           cabinClass: t.cabin_class ?? '', route: t.route ?? '', pnr: t.pnr ?? '', source: t.source ?? '' })), await liveAll());
