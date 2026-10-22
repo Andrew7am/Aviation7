@@ -4,6 +4,7 @@ import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, C
 import { writeClipboard } from '../utils/clipboard';
 import { ticketLine, ticketLines, copyableTickets } from '../core/helpers/ticketClipboard';
 import { ticketCurrency, byCurrencyOrder } from '../core/helpers/sourceCurrency';
+import { totalsByVendor } from '../core/helpers/vendorTotals';
 import { unconfirmed } from '../core/helpers/supplierProof';
 import { RequestProfile } from './RequestProfile';
 
@@ -805,6 +806,9 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     }
     return [...m].sort((a, b) => byCurrencyOrder(a[0], b[0]));
   }, [filtered]);
+  // And how much of it each vendor holds, in that vendor's own currency -
+  // said only when the rows on screen come from more than one.
+  const vendorTotals = useMemo(() => totalsByVendor(filtered), [filtered]);
 
   /** Build a filename that reflects what the user filtered by, so an export
    *  saved off a search for "REQ12345" lands as "REQ12345_Export.xlsx" not a
@@ -952,6 +956,11 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     block.push(['Currency', 'Tickets', 'Issued', 'Refunds', 'Net']);
     for (const t of totals) {
       block.push([t.cur, t.count, Number(t.issued.toFixed(2)), Number(t.refunds.toFixed(2)), Number(t.net.toFixed(2))]);
+    }
+    const vendors = totalsByVendor(filtered);
+    if (vendors.length > 1) {
+      block.push([], ['TOTALS BY VENDOR'], ['Vendor', 'Currency', 'Tickets', 'Issued', 'Refunds', 'Net']);
+      for (const v of vendors) block.push([v.vendor, v.currency, v.count, v.issued, Math.abs(v.refunds), v.net]);
     }
     block.push([]);
     block.push(['Total tickets', filtered.length]);
@@ -1808,6 +1817,21 @@ export const TicketTable: React.FC<TicketTableProps> = ({
             </span>
           </React.Fragment>
         ))}
+        {vendorTotals.length > 1 && <>
+          <span className="text-slate-300 hidden sm:inline">|</span>
+          <span className="inline-flex flex-wrap items-center gap-x-1.5">
+            <span className="text-slate-400">by vendor:</span>
+            {vendorTotals.map((v, i) => (
+              <React.Fragment key={`${v.vendor}|${v.currency}`}>
+                {i > 0 && <span className="text-slate-300">·</span>}
+                <span className="whitespace-nowrap">
+                  <span className="font-bold text-slate-600">{v.vendor}</span>{' '}
+                  <CopyableAmount label={`${v.currency} (${v.count})`} value={v.net} fmt={fmt} />
+                </span>
+              </React.Fragment>
+            ))}
+          </span>
+        </>}
         <span className="text-slate-300 hidden sm:inline">|</span>
         <span className="text-red-500">{filtered.filter(t => !t.reqNum).length} missing req</span>
         <span className="text-slate-300 hidden sm:inline">|</span>
