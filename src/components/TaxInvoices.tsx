@@ -8,7 +8,7 @@ import { coverageReport, coverageInPeriod, Coverage } from '../core/helpers/taxI
 import type { StoredInvoice } from '../services/TaxInvoiceService';
 import type { FileOutcome } from '../hooks/useTaxInvoices';
 import { invoiceRequestSheets } from '../core/helpers/taxInvoiceRequest';
-import { creditNoteReport, creditsInPeriod, creditRequestSheet, type RefundCoverage } from '../core/helpers/creditNoteCoverage';
+import { creditNoteReport, creditsInPeriod, type RefundCoverage } from '../core/helpers/creditNoteCoverage';
 
 const xlsx = () => import('xlsx');
 
@@ -256,15 +256,15 @@ export const TaxInvoices: React.FC<{
 
   const working = reading || busy;
 
-  /** Everything still owed a final tax invoice, with the number to quote — to send to them. */
+  /** Everything still owed a final tax invoice, with the number to quote — to send to them.
+   *  Sales only: refunds are not asked for here (the user, 22 Oct 2026) - they
+   *  stay on the Refunds & credit notes tab. */
   const exportRequest = async () => {
     const XLSX = await xlsx();
     const { invoices: inv, tickets: tk } = invoiceRequestSheets(report);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), 'Invoices to request');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tk), 'Tickets');
-    const cn = creditRequestSheet(credits);
-    if (cn.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cn), 'Credit notes to request');
     XLSX.writeFile(wb, `${vendorName} - tax invoices to request${periodLabel || ' ' + new Date().toISOString().slice(0, 10)}.xlsx`);
   };
   const owed = report.notTax.length + report.uncovered.length;
