@@ -34,7 +34,7 @@ import {
 } from '../src/core/helpers/taxInvoiceCoverage';
 import type { Ticket } from '../src/types';
 import { decodeZatcaQr, IBTEKAR_VAT } from '../src/core/parsers/zatcaQr';
-import { invoiceRequestList } from '../src/core/helpers/taxInvoiceRequest';
+import { invoiceRequestList, refundedTickets } from '../src/core/helpers/taxInvoiceRequest';
 import { creditNoteReport, creditsInPeriod, creditRequestSheet } from '../src/core/helpers/creditNoteCoverage';
 
 /** A ZATCA QR code's text: base64 of tag-length-value fields. */
@@ -498,6 +498,13 @@ console.log('\n16. What to ask Ibtekar for');
   check('  ...or says it has none', rows.find(t => t.ticketNo === '065-4862141186')?.invoiceNo, '(no invoice number)');
   check('  ...and those are a separate ask', invoices.filter(i => i.reason === 'NONE').map(i => i.invoiceNo),
         ['(no invoice number)', 'INV264300']);
+  // A refunded ticket is not asked for - its refund goes on the credit notes sheet.
+  const refunded = refundedTickets([...tickets,
+    tkt({ ticketNo: '065-4862141183', amount: -1200, status: 'REFUND', transactionType: 'REFUND' }),
+    tkt({ ticketNo: '065-4862149999', amount: -100, status: 'REFUND', transactionType: 'REFUND' })]);
+  const kept = invoiceRequestList(r, refunded);
+  check('a refunded ticket is left out of the request', kept.tickets.map(t => t.ticketNo).sort(), ['065-4862141185', '065-4862141186']);
+  check('  ...and a printout with nothing left to ask for goes too', kept.invoices.some(i => i.invoiceNo === 'INV264288'), false);
 }
 
 console.log('\n17. What to ask for, for one month');
