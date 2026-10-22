@@ -74,6 +74,7 @@ import type { Finding } from './core/helpers/teamSheetCompare';
 import { TicketService } from './services/TicketService';
 import { EMIRATES_IATA, limitUse, limitWeek, localDate, type SheetRow } from './core/helpers/airlineLimit';
 import { LimitBanner } from './components/LimitBanner';
+import { LimitChip } from './components/LimitChip';
 import { ImportService, ImportRecord } from './services/ImportService';
 import {
   LayoutDashboard, List, AlertTriangle, Upload, Wallet, BarChart2, History,
@@ -674,8 +675,8 @@ function MainApp({ user }: { user: User }) {
       onAddManually={() => setShowManualEntry(true)}
       onImport={() => setView('import')}
       onLogout={logout}
-      headerExtra={<AirtableBell notices={atNotices} sync={atSync} canEdit={isAdmin}
-        onAccept={acceptNotices} onDismiss={dismissNotices} onSyncNow={syncAirtableNow} />}
+      headerExtra={<><LimitChip cfg={EMIRATES_IATA} use={ekUse} /><AirtableBell notices={atNotices} sync={atSync} canEdit={isAdmin}
+        onAccept={acceptNotices} onDismiss={dismissNotices} onSyncNow={syncAirtableNow} /></>}
       banner={<><LimitBanner cfg={EMIRATES_IATA} use={ekUse} /><AlertBanner alerts={alerts} onDismiss={dismissAlert} /></>}
     >
       <React.Suspense fallback={<Loading />}>

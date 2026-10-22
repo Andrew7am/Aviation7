@@ -41,6 +41,8 @@ export interface LimitUse {
   fromBooks: number;
   fromSheet: number;
   docs: number;
+  /** What was counted, newest first. */
+  items: { ticketNo: string; date: string; amount: number; from: 'BOOKS' | 'SHEET' }[];
   left: number;
   level: 'OK' | 'WARN' | 'OVER';
 }
@@ -66,17 +68,21 @@ export function limitUse(cfg: AirlineLimit, books: BookRow[], sheet: SheetRow[],
   const iata = books.filter(t => t.source === 'IATA BSP' && t.airlineCode === cfg.airlineCode);
   const held = new Set(iata.map(t => ticketMatchKey(t.ticketNo)).filter(Boolean));
   let fromBooks = 0, fromSheet = 0, docs = 0;
+  const items: LimitUse['items'] = [];
   for (const t of iata) {
     if ((t.status !== 'ISSUE' && t.status !== 'EMDS') || t.amount <= 0 || !inWeek(t.date)) continue;
     fromBooks += t.totalDoc || t.amount; docs++;
+    items.push({ ticketNo: t.ticketNo, date: t.date!, amount: t.totalDoc || t.amount, from: 'BOOKS' });
   }
   for (const r of sheet) {
     if (!SHEET_ISSUED.test(r.status ?? '') || !/IATA/i.test(r.portal ?? '') || (r.airline ?? '').trim().toLowerCase() !== cfg.airline.toLowerCase()) continue;
     if (!r.issued_at || !inWeek(localDate(r.issued_at)) || !r.net_cost || r.net_cost <= 0) continue;
     if (!r.serials.length || r.serials.some(s => held.has(ticketMatchKey(s)))) continue;
     fromSheet += r.net_cost; docs++;
+    items.push({ ticketNo: r.serials[0], date: localDate(r.issued_at), amount: r.net_cost, from: 'SHEET' });
   }
   const used = Math.round((fromBooks + fromSheet) * 100) / 100;
-  return { from, to, used, fromBooks, fromSheet, docs, left: Math.round((cfg.limit - used) * 100) / 100,
+  items.sort((a, b) => b.date.localeCompare(a.date) || a.ticketNo.localeCompare(b.ticketNo));
+  return { from, to, used, fromBooks, fromSheet, docs, items, left: Math.round((cfg.limit - used) * 100) / 100,
     level: used >= cfg.limit ? 'OVER' : used >= cfg.warnAt ? 'WARN' : 'OK' };
 }
