@@ -1,5 +1,6 @@
 import { supabase, fetchAllRows } from '../utils/supabase';
 import { cacheGet, cachePut } from '../utils/ledgerCache';
+import { vendorCurrency } from '../core/helpers/sourceCurrency';
 import { applyDelta, changedSince, cursorOf, type HeldLedger } from '../core/helpers/ledgerDelta';
 import type { TicketChange } from '../core/helpers/applyTicketChanges';
 import { Ticket } from '../types';
@@ -117,7 +118,7 @@ function ticketToRow(t: Ticket, userId: string) {
     airline_code: t.airlineCode || '',
     route: t.route || '',
     status: t.status || '',
-    currency: t.currency || 'SAR',
+    currency: vendorCurrency(t.source) ?? (t.currency || 'SAR'),
     transaction_type: t.transactionType || t.status || '',
     vendor_reference: t.vendorReference || '',
     report_name: t.reportName || '',

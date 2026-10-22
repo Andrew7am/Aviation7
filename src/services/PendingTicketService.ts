@@ -3,6 +3,7 @@ import { pendingRow } from '../core/helpers/pendingRow';
 import { PendingTicket, Ticket } from '../types';
 import { SupportedCurrency } from '../core/helpers/resolveCurrency';
 import { whyNotConfirmable, ticketFromPending } from '../core/helpers/pendingFromFindings';
+import { vendorCurrency } from '../core/helpers/sourceCurrency';
 
 type Row = {
   id: string;
@@ -272,7 +273,7 @@ export class PendingTicketService {
       route: ticket.route,
       status: ticket.status,
       is_duplicate: false,
-      currency: ticket.currency,
+      currency: vendorCurrency(ticket.source) ?? ticket.currency,
       transaction_type: ticket.transactionType,
       report_name: ticket.reportName,
       vendor_reference: ticket.vendorReference,

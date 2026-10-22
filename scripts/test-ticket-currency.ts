@@ -8,7 +8,7 @@
  * list, in "Net SAR" and in every export, because the list read the
  * currency off the vendor and "Airline Website" is not an AED vendor.
  */
-import { ticketCurrency, sourceToCurrency, byCurrencyOrder } from '../src/core/helpers/sourceCurrency';
+import { ticketCurrency, vendorCurrency, sourceToCurrency, byCurrencyOrder } from '../src/core/helpers/sourceCurrency';
 import { toDirhams } from '../src/core/helpers/toDirhams';
 import { ticketFromPending } from '../src/core/helpers/pendingFromFindings';
 import type { Ticket } from '../src/types';
@@ -24,7 +24,10 @@ const check = (label: string, got: unknown, want: unknown) => {
 console.log('\n1. Its own currency wins');
 check('the JetBlue ticket is dollars', ticketCurrency({ source: 'Airline Website', currency: 'USD' }), 'USD');
 check('the vendor alone would have said riyals', sourceToCurrency('Airline Website'), 'SAR');
-check('an AED vendor ticket billed in riyals stays riyals', ticketCurrency({ source: 'RTS', currency: 'SAR' }), 'SAR');
+// The user (22 Oct 2026): a vendor's ticket is in the vendor's currency, whatever the row says.
+check('an RTS ticket written in riyals is in dirhams, as RTS bills', ticketCurrency({ source: 'RTS', currency: 'SAR' }), 'AED');
+check('an NSA refund the sheet put in dirhams is in riyals', ticketCurrency({ source: 'NSA', currency: 'AED' }), 'SAR');
+check('an airline website purchase keeps its own', vendorCurrency('Airline Website'), null);
 check('euros', ticketCurrency({ source: 'Airline Website', currency: 'eur' }), 'EUR');
 
 console.log('\n2. No currency recorded — the vendor\'s, as before');
