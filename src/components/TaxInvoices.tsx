@@ -7,7 +7,7 @@ import type { Ticket } from '../types';
 import { coverageReport, coverageInPeriod, Coverage } from '../core/helpers/taxInvoiceCoverage';
 import type { StoredInvoice } from '../services/TaxInvoiceService';
 import type { FileOutcome } from '../hooks/useTaxInvoices';
-import { invoiceRequestSheets, refundedTickets } from '../core/helpers/taxInvoiceRequest';
+import { invoiceRequestSheets } from '../core/helpers/taxInvoiceRequest';
 import { creditNoteReport, creditsInPeriod, creditRequestSheet, type RefundCoverage } from '../core/helpers/creditNoteCoverage';
 
 const xlsx = () => import('xlsx');
@@ -256,11 +256,10 @@ export const TaxInvoices: React.FC<{
 
   const working = reading || busy;
 
-  /** Everything still owed a final tax invoice, with the number to quote — to send to them.
-   *  Tickets that were refunded are left out; their refunds are on the credit notes sheet. */
+  /** Everything still owed a final tax invoice, with the number to quote — to send to them. */
   const exportRequest = async () => {
     const XLSX = await xlsx();
-    const { invoices: inv, tickets: tk } = invoiceRequestSheets(report, refundedTickets(tickets));
+    const { invoices: inv, tickets: tk } = invoiceRequestSheets(report);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv), 'Invoices to request');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tk), 'Tickets');
