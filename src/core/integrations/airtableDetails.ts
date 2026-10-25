@@ -16,7 +16,7 @@
  */
 import type { AirtableTicketRow } from './airtable';
 import { docKey, onePassenger, usableName, usableCabin } from './airtableNotices';
-import { isFlyadealRow, isFlyadealTicket } from './airtableRequests';
+import { pnrVendorOfRow, pnrVendorOfTicket } from './airtableRequests';
 
 export interface DetailRow extends Pick<AirtableTicketRow, 'serials' | 'ticket_cell' | 'status' | 'client_name' | 'cabin'> {
   sheet_row: Record<string, string>;
@@ -40,10 +40,11 @@ export function detailsFor(ours: OursLacking[], rows: DetailRow[]): DetailFill[]
     const name = onePassenger(r as AirtableTicketRow) ? usableName(r.client_name) : '';
     const cabin = usableCabin(r.cabin);
     const route = routeOf(r);
-    // Flyadeal: we hold its tickets under the PNR, so its rows are found by it too.
-    const keys = [...r.serials, ...(isFlyadealRow(r) ? (r.pnr || '').split(/[|,/\s]+/).filter(Boolean).map(p => `F3:${p.toUpperCase()}`) : [])];
+    // flyadeal and flydubai: we hold their tickets under the PNR, so their rows are found by it too.
+    const v = pnrVendorOfRow(r);
+    const keys = [...r.serials, ...(v ? (r.pnr || '').split(/[|,/\s]+/).filter(Boolean).map(p => `${v}:${p.toUpperCase()}`) : [])];
     for (const s of keys) {
-      const k = s.startsWith('F3:') ? s : docKey(s);
+      const k = /^(F3|FZ):/.test(s) ? s : docKey(s);
       if (!k) continue;
       const e = byDoc.get(k) ?? { name: new Set(), cabin: new Set(), route: new Set() };
       if (name) e.name.add(name);
@@ -56,7 +57,7 @@ export function detailsFor(ours: OursLacking[], rows: DetailRow[]): DetailFill[]
   const out: DetailFill[] = [];
   for (const t of ours) {
     const e = byDoc.get(docKey(t.ticketNo))
-      ?? (isFlyadealTicket(t.source) ? byDoc.get(`F3:${(t.pnr || t.ticketNo).toUpperCase().split(/[|,/\s]+/)[0]}`) : undefined);
+      ?? (pnrVendorOfTicket(t.source) ? byDoc.get(`${pnrVendorOfTicket(t.source)}:${(t.pnr || t.ticketNo).toUpperCase().split(/[|,/\s]+/)[0]}`) : undefined);
     if (!e) continue;
     const add = (field: DetailField, have: string, v: string) => { if (!have.trim() && v) out.push({ id: t.id, ticketNo: t.ticketNo, field, value: v }); };
     add('passenger_name', t.passengerName, single(e.name));

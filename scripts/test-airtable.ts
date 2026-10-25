@@ -180,6 +180,18 @@ console.log('\n7b. Flyadeal by its PNR - its report has no ticket number');
       .map(f => [f.field, f.value]), [['passenger_name', 'ZAKI ATTAR'], ['cabin_class', 'ECONOMY']]);
 }
 
+console.log('\n7c. flydubai by its PNR, the same way');
+{
+  // Y4TG8S: one booking of ours, 3,920 AED; two rows of theirs, one a passenger, no ticket number.
+  const fz = { serials: [], emd: '', pnr: 'Y4TG8S', req_num: 'UAEML2830', status: 'Issued', portal: 'flydubai', airline: 'Flydubai' };
+  check('a flydubai booking of ours takes their request by the PNR',
+    requestsFor([{ id: 'a', ticketNo: 'Y4TG8S', pnr: 'Y4TG8S', source: 'FlyDubai' }], [fz, { ...fz }]).map(f => [f.req, f.how]), [['UAEML2830', 'flydubai PNR']]);
+  check('a refund with no refund row of theirs stays without one',
+    requestsFor([{ id: 'r', ticketNo: 'Y4TG8S', pnr: 'Y4TG8S', source: 'FlyDubai', status: 'REFUND' }], [fz]), []);
+  check('a flyadeal row never answers for a flydubai booking',
+    requestsFor([{ id: 'a', ticketNo: 'Y4TG8S', pnr: 'Y4TG8S', source: 'FlyDubai' }], [{ ...fz, portal: 'F3', airline: 'Flyadeal' }]), []);
+}
+
 console.log('\n8. Names, cabins and routes we lack are filled, by number, without asking');
 {
   const live = (o: any) => ({ serials: ['5513427739'], ticket_cell: '065-5513427739', status: 'Issued', client_name: 'SALEEM KHADER ELDADAH',
