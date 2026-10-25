@@ -10,6 +10,7 @@ import { GoldMedalParser } from './GoldMedalParser';
 import { AirArabiaParser } from './AirArabiaParser';
 import { FlynasParser } from './FlynasParser';
 import { FlyDubaiParser } from './FlyDubaiParser';
+import { FlyDubaiTAParser } from './FlyDubaiTAParser';
 import { RTSParser } from './RTSParser';
 import { RiyadhAirParser } from './RiyadhAirParser';
 import { TurkishAirlinesParser } from './TurkishAirlinesParser';
@@ -32,7 +33,7 @@ export const ALL_PARSERS: VendorParser[] = [
   FlyAdealDXBParser, FlyAdealKSAParser,
   IbtekarV2Parser, IbtekarParser, GoldMedalParser,
   AirArabiaParser, FlynasParser,
-  FlyDubaiParser, RTSParser,
+  FlyDubaiTAParser, FlyDubaiParser, RTSParser,
   RiyadhAirParser,
   // Both Turkish exports, each matching only its own header set. The agency
   // sales report is checked first: it is the newer format and the more
