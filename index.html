@@ -8,7 +8,11 @@
       /* Dark or light before the first paint, so the page never flashes the other one. */
       try {
         var t = localStorage.getItem('theme');
-        if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark');
+        if (!t && matchMedia('(prefers-color-scheme: dark)').matches) t = 'dimmed';
+        if (t && t !== 'light') {
+          document.documentElement.classList.add('dark');
+          if (t === 'graphite' || t === 'warm') document.documentElement.dataset.dark = t;
+        }
       } catch (e) {}
     </script>
   </head>
