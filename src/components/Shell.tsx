@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Plane, Upload, LogOut, PlusCircle, Eye, Menu } from 'lucide-react';
+import { Plane, Upload, LogOut, PlusCircle, Eye, Menu, Moon, Sun } from 'lucide-react';
+import { useTheme } from '../utils/theme';
 
 /**
  * The frame every screen sits in: header, navigation, footer.
@@ -45,6 +46,7 @@ export const Shell: React.FC<Props> = ({
   navItems, view, onView, isAdmin, email, stats,
   onAddManually, onImport, onLogout, banner, children, headerExtra,
 }) => {
+  const { dark, toggleTheme } = useTheme();
   // Closed by default so a phone opens on the ledger rather than on a menu.
   const [navOpen, setNavOpen] = useState(false);
 
@@ -53,8 +55,8 @@ export const Shell: React.FC<Props> = ({
        has with the browser's own chrome HIDDEN, so the footer and the last row
        of every screen sit under the address bar until you scroll. dvh tracks
        what is actually visible. */
-    <div className="h-[100dvh] bg-[#f8fafc] flex flex-col overflow-hidden select-none">
-      <header className="h-14 bg-[#0f172a] text-white flex items-center justify-between px-3 sm:px-6 border-b border-white/10 shrink-0 z-30 gap-2">
+    <div className="h-[100dvh] bg-slate-50 flex flex-col overflow-hidden select-none">
+      <header className="keep-palette h-14 bg-[#0f172a] text-white flex items-center justify-between px-3 sm:px-6 border-b border-white/10 shrink-0 z-30 gap-2">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           {/* The only way back to the drawer once it is closed. */}
           <button onClick={() => setNavOpen(true)}
@@ -75,6 +77,9 @@ export const Shell: React.FC<Props> = ({
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          <button onClick={toggleTheme} title={dark ? 'Light mode' : 'Dark mode'} className="text-white/70 hover:text-white p-1.5">
+            {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
           {/* Adding and importing both write. A viewer gets a badge instead,
               so the read-only role is stated rather than just felt as a
               missing button.
@@ -163,7 +168,7 @@ export const Shell: React.FC<Props> = ({
         </main>
       </div>
 
-      <footer className="h-7 bg-slate-800 text-slate-500 flex items-center justify-between px-3 sm:px-4 text-[9px] font-mono shrink-0">
+      <footer className="keep-palette h-7 bg-slate-800 text-slate-500 flex items-center justify-between px-3 sm:px-4 text-[9px] font-mono shrink-0">
         <span className="hidden sm:inline">NET = TOTAL − COMM · REFUND→NEGATIVE · FUND→POSITIVE</span>
         <span className="sm:hidden">NET = TOTAL − COMM</span>
         <div className="flex items-center space-x-2">

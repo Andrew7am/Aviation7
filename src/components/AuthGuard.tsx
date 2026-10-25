@@ -25,7 +25,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   if (loading) {
     return (
-      <div className="h-screen bg-[#0f172a] flex items-center justify-center">
+      <div className="keep-palette h-screen bg-[#0f172a] flex items-center justify-center">
         <div className="w-4 h-4 bg-blue-500 rounded-full animate-ping"></div>
       </div>
     );
@@ -33,7 +33,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   if (!user) {
     return (
-      <div className="h-screen bg-[#0f172a] flex items-center justify-center font-sans text-white relative overflow-hidden">
+      <div className="keep-palette h-screen bg-[#0f172a] flex items-center justify-center font-sans text-white relative overflow-hidden">
         {/* Background visual */}
         <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500 rounded-full mix-blend-screen filter blur-3xl opacity-50 animate-blob"></div>

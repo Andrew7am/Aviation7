@@ -26,7 +26,7 @@ export const LimitChip: React.FC<{ cfg: AirlineLimit; use: LimitUse }> = ({ cfg,
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50" onClick={() => setOpen(false)}>
+        <div className="follow-theme fixed inset-0 z-50" onClick={() => setOpen(false)}>
           <div onClick={e => e.stopPropagation()}
             className="absolute right-2 sm:right-16 top-14 w-[calc(100vw-1rem)] sm:w-[380px] max-h-[80vh] bg-white text-slate-800 rounded-lg shadow-2xl border border-slate-200 flex flex-col">
             <div className="px-4 py-3 border-b border-slate-100 flex items-start gap-2">
