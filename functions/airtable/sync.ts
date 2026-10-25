@@ -6,6 +6,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { syncAirtable } from '../../src/server/airtableSync';
+import { checkRequestAlerts } from '../../src/server/requestAlerts';
 
 export const config = { maxDuration: 60 };
 
@@ -35,7 +36,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const result = await syncAirtable({ airtableToken, supabaseUrl, serviceKey, forceFull: req.query.full === '1', fillNow: req.query.fill === '1' });
-    res.status(200).json(result);
+    // A request reaching its figure - KSAML2771 at 2,000,000 - emailed once.
+    const alerts = await checkRequestAlerts(createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } }), {
+      host: process.env.SMTP_HOST, port: process.env.SMTP_PORT, user: process.env.SMTP_USER, pass: process.env.SMTP_PASS, from: process.env.ALERT_FROM,
+    }).catch(e => ({ checked: 0, emailed: [], errors: [String(e)] }));
+    res.status(200).json({ ...result, alerts });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

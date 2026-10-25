@@ -91,6 +91,7 @@
     "jsqr": "^1.4.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "nodemailer": "^6.9.16",
     "papaparse": "^5.5.3",
     "pdfjs-dist": "^4.10.38",
     "pg": "^8.22.0",
@@ -103,6 +104,7 @@
   "devDependencies": {
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/nodemailer": "^6.4.17",
     "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.3.0",

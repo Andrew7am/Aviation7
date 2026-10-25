@@ -75,6 +75,14 @@ export class AirtableService {
     return (data ?? []).map(r => ({ ...r, serials: r.serials ?? [], net_cost: r.net_cost == null ? null : Number(r.net_cost) }));
   }
 
+  /** Requests watched for a figure (KSAML2771 at 2,000,000) - a row or two. */
+  async requestAlerts() {
+    const { data, error } = await supabase.from('request_alerts')
+      .select('id, req_num, threshold, currency, recipients, last_total, reached_at, emailed_at, last_error');
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  }
+
   /** What each of their rows says about requests - for filling ours. */
   async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal: string; airline: string }[]> {
     const rows = await fetchAllRows<any>((from, to) =>
