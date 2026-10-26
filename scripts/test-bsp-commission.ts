@@ -88,7 +88,8 @@ console.log('\n5-6  credit-card rows settle nothing, and carry no phantom commis
     stdRate: 0, stdAmt: 0, suppRate: 0, suppAmt: 0, taxOnComm: 0, payable: 0,
   })]).rows[0];
   check('5  card sale: commission is the printed 0.00', t?.commission, 0);
-  check('   payable is 0.00', t?.amount, 0);
+  // The company's card paid the fare: the ticket costs it, BSP or not.
+  check('   held at what it cost, not the 0.00 payable', t?.amount, 20);
   check('   the transaction amount is still recorded', t?.totalDoc, 20.00);
   check('   the row is kept, not skipped', t !== undefined, true);
 }
@@ -105,6 +106,23 @@ console.log('\n5-6  credit-card rows settle nothing, and carry no phantom commis
   check('   none carries the phantom -48,890.00', r.rows.some(t => Math.abs(t.commission ?? 0) > 0.005), false);
   check('   the refund value itself is preserved', r.rows[0]?.totalDoc, 48890.00);
   check('   status is REFUND', r.rows[0]?.status, 'REFUND');
+  check('   the money comes back to the card: held at -48,890.00', r.rows[0]?.amount, -48890);
+}
+{
+  // 5513658343, 16-23 Oct 2026: a card sale that earns commission. BSP pays
+  // the 551.00 back; the card paid 34,130.00. Once, at 33,579.00.
+  const t = parse(['*** ISSUES', txn({
+    air: '235', trnc: 'TKTT', doc: '5513658343', date: '22OCT26', cpui: 'FFFF', fop: 'CC',
+    txn: 34130.00, fare: 27550.00, stdRate: 0, stdAmt: 0, suppRate: 0, suppAmt: 551.00, taxOnComm: 0, payable: -551.00,
+  })]).rows[0];
+  check('6b card sale with commission: fare less commission', t?.amount, 33579);
+  check('   the commission is kept', t?.commission, 551);
+  // A cash sale still books the payable.
+  const c = parse(['*** ISSUES', txn({
+    air: '235', trnc: 'TKTT', doc: '5513658300', date: '22OCT26', fop: 'CA',
+    txn: 1000.00, fare: 800.00, stdRate: 0, stdAmt: 0, suppRate: 0, suppAmt: 30.00, taxOnComm: 0, payable: 970.00,
+  })]).rows[0];
+  check('   a cash sale still books its payable', c?.amount, 970);
 }
 
 /* ── 7-9: memos, fees and signs ─────────────────────────────────────────── */
@@ -211,14 +229,14 @@ async function realInvoices() {
   // The 18 card rows must now carry no commission at all.
   const cardDocs = ['5512129174', '5512129175', '5512129176', '5512129177', '5512129178',
                     '5512129179', '5512129180', '1930576214', '1930576215', '1930576216', '1930576217'];
-  const card = all.filter(t => cardDocs.includes(t.ticketNo) && t.amount === 0 && (t.totalDoc ?? 0) !== 0);
+  const card = all.filter(t => cardDocs.includes(t.ticketNo) && (t.totalDoc ?? 0) !== 0);
   check('   the card rows are present', card.length, 18);
   check('   and every one carries commission 0.00', card.every(t => (t.commission ?? 0) === 0), true);
   const phantom = card.reduce((s, t) => s + Math.abs(t.commission ?? 0), 0);
   check('   no phantom commission anywhere in them', phantom, 0);
 
   // The invoice's own formula, on the rows it applies to.
-  const cash = all.filter(t => t.status !== 'VOID' && t.amount !== 0);
+  const cash = all.filter(t => t.status !== 'VOID' && t.amount !== 0 && !cardDocs.includes(t.ticketNo));
   const holds = cash.filter(t => {
     const fareSigned = t.amount < 0 ? -(t.totalDoc ?? 0) : (t.totalDoc ?? 0);
     return Math.abs(fareSigned - (t.commission ?? 0) - t.amount) < 0.011;

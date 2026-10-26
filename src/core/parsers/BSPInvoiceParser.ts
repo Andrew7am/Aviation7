@@ -33,6 +33,12 @@ import { decodeRuns, type PdfRun } from '../helpers/pdfText';
  *   commission = Std Comm + Supp Comm, as printed
  *   amount     = Balance Payable  (what is actually owed — the ledger figure)
  *
+ * except on a card sale, where the card is the company's own (26 Oct 2026):
+ * the airline takes the fare from it, so the ticket still costs the fare less
+ * its commission, and that is what the ledger holds. Booked at the payable,
+ * the 16-23 Oct billing took fifteen card tickets to 0.00 (53,095.00 AED)
+ * and booked four more twice - at the fare, and again at the commission.
+ *
  * Each row arrives as two CSV fields (see readFileAsText): the row's text, and
  * its runs with their x positions. The positions are what make the columns
  * readable — a PDF row has no delimiters, and the tax/fee columns vary in
@@ -149,6 +155,8 @@ const cents = (n: number): number => Math.round(n * 100) / 100;
  */
 interface Columns {
   txn: number; fare: number; cobl: number;
+  /** Form of payment; absent on a grid whose heading does not print it. */
+  fop?: number;
   taxCols: number[];
   stdRate: number; stdAmt: number;
   suppRate: number; suppAmt: number;
@@ -170,7 +178,7 @@ function findColumns(runsPerRow: PdfRun[][]): Columns | null {
     if (amounts.length < 3 || amts.length < 2 || rates.length < 2 || !payable.length || !taxOnComm.length) continue;
     const taxCols = [...at('TAX'), ...at('F&C'), ...at('PEN')];
     return {
-      txn: amounts[0], fare: amounts[1], cobl: amounts[2], taxCols,
+      txn: amounts[0], fare: amounts[1], cobl: amounts[2], taxCols, fop: at('FOP')[0],
       stdRate: rates[0], stdAmt: amts[0],
       suppRate: rates[1], suppAmt: amts[1],
       taxOnComm: taxOnComm[0], payable: payable[0],
@@ -344,8 +352,14 @@ export const BSPInvoiceParser: VendorParser = {
       // Signs come from the invoice itself — a refund line already carries
       // negative figures, so they are used as-is rather than being re-derived
       // with Math.abs, which would silently turn a refund into a sale.
-      const finalPayable = isVoid ? 0 : payable;
       const finalFare = isVoid ? 0 : fare;
+      // Paid with the company's card: BSP settles only the commission, the
+      // card paid the fare. The cost is the fare less the commission.
+      const runs = runsPerRow[lineIdx] ?? [];
+      const card = columns.fop !== undefined
+        ? runs.some(r => /^CC/i.test(r.text.trim()) && Math.abs(r.x - columns.fop!) < 20)
+        : /^\s*(?:\S+\s+){0,3}CC\b/i.test(rest);
+      const finalPayable = isVoid ? 0 : card ? cents(finalFare - commission) : payable;
 
       // Now that commission is read rather than derived, these guards test
       // something real: a commission is a cut of the fare, so it cannot exceed
@@ -455,7 +469,7 @@ export const BSPInvoiceParser: VendorParser = {
         airlineCode: airlineCode(docNo, airline),
         route: '',
         date: bspDate(dateRaw),
-        amount: finalPayable,      // ledger figure: what is actually owed
+        amount: finalPayable,      // ledger figure: what is actually owed (a card sale: what it cost)
         totalDoc: Math.abs(finalFare),
         commission,
         reqNum: '',
