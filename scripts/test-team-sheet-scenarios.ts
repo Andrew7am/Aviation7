@@ -95,12 +95,12 @@ function broken(rep: TeamSheetReport, rows: ReturnType<typeof parseTeamSheet>['r
 /** One scenario: their rows, our rows, the request; what it must say. */
 function scenario(name: string, lines: string[], ours: Ticket[], want: Partial<Record<Verdict, number>>,
                   more?: (rep: TeamSheetReport, props: ReturnType<typeof pendingFromFindings>) => void,
-                  req = 'REQ100', voided: string[] = []) {
+                  req = 'REQ100', voided: string[] = [], chains: { ticketNo: string; replacedTicket: string }[] = []) {
   console.log(`\n${name}`);
   // Their export always carries the currency beside the cost.
   const rows = parseTeamSheet([HEAD, ...lines.map(l => l + (/Ibtkar|NSA/.test(l) ? ',SAR' : ',AED'))].join('\n')).rows;
   const rep = compareTeamSheet(rowsForReview(rows, [req], ours), ours, [req], {},
-    { voided, sheetStart: rows.map(r => r.issued).filter(Boolean).sort()[0] ?? '' });
+    { voided, chains, sheetStart: rows.map(r => r.issued).filter(Boolean).sort()[0] ?? '' });
   for (const [v, n] of Object.entries(want)) check(`${v} x${n}`, rep.counts[v as Verdict], n);
   check('keeps every rule', broken(rep, rows), []);
   more?.(rep, pendingFromFindings(rep.findings, { newId: () => 'x', userId: 'u' }));
@@ -309,6 +309,24 @@ scenario('37. A reissue refunded; the fare sits on the original', [
 ], [tkt({}), tkt({ ticketNo: '5513059200', amount: 20, totalDoc: 20, date: '2026-08-21' }),
     tkt({ ticketNo: '0079500001', amount: -900, totalDoc: 900, status: 'REFUND', relatedTicket: '5513059200', date: '2026-08-25' })],
 { NOT_IN_LEDGER: 0, REFUND_NOT_IN_LEDGER: 0, NOT_ON_SHEET: 0 });
+
+// KSAML2257: 2540225901 reissued as 2540225912; BSP put the 30.00 left over on
+// EMD 4126662045, issued in exchange for 2540225901, and refunded it.
+const residualSheet = [
+  `235-2540225901,U43QUL,Issued,REQ100,14790,,,${D},,IATA Portal (UAE)`,
+  `235-2540225912,U43QUL,Reissue,REQ100,580,,,21/08/2026 1:00pm,,IATA Portal (UAE)`,
+];
+const residualOurs = [tkt({ ticketNo: '2540225901', airlineCode: '235', pnr: 'U43QUL', amount: 14790, totalDoc: 14790 }),
+  tkt({ ticketNo: '2540225912', airlineCode: '235', pnr: 'U43QUL', amount: 580, totalDoc: 580, date: '2026-08-21' }),
+  tkt({ ticketNo: '4126662045', airlineCode: '235', pnr: '', amount: -30, totalDoc: 30, status: 'REFUND', relatedTicket: '4126662045', date: '2026-08-21' })];
+scenario('38. The residual of a reissue, paid back', residualSheet, residualOurs,
+{ NOT_ON_SHEET: 0, REISSUE_RESIDUAL: 1 }, rep => {
+  check('not counted a refund', rep.docTypes.refunds.ours, 0);
+  check('nothing missing on theirs', rep.docTypes.refunds.missingOnTheirs, []);
+}, 'REQ100', [], [{ ticketNo: '4126662045', replacedTicket: '2540225901' }]);
+
+scenario('38b. A refund outside any chain their sheet carries is still missing', residualSheet, residualOurs,
+{ NOT_ON_SHEET: 1, REISSUE_RESIDUAL: 0 }, rep => check('counted a refund', rep.docTypes.refunds.ours, 1));
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

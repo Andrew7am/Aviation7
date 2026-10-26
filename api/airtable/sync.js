@@ -641,6 +641,7 @@ function whoActs(f) {
     case "OK":
     case "VOID_NOT_BILLED":
     case "REISSUE_NO_CHARGE":
+    case "REISSUE_RESIDUAL":
     case "REQ_RELATED":
     case "CONJUNCT_ALREADY_HELD":
     // Its ticket's own finding carries the work; this booklet adds none.
@@ -669,6 +670,7 @@ var VERDICT_LABEL = {
   NOT_IN_LEDGER: "Not in our ledger",
   VOID_NOT_BILLED: "Void \u2014 never billed",
   REISSUE_NO_CHARGE: "Reissued at no charge",
+  REISSUE_RESIDUAL: "Part of a reissue - its residual paid back",
   VOID_AND_ISSUED: "Voided and issued the same day",
   VOID_BUT_BILLED: "Void on their sheet, billed in ours",
   REFUND_NOT_IN_LEDGER: "Refund not in our ledger",
@@ -721,6 +723,8 @@ var VERDICT_RANK = {
   // Beside a void: a state of the world, not a disagreement. Nothing to
   // do about either, and both are worth counting.
   REISSUE_NO_CHARGE: 8.5,
+  // Part of a reissue their sheet carries; nothing to chase.
+  REISSUE_RESIDUAL: 8.6,
   OK: 9
 };
 var REQ_PART = /[A-Z]+\d+/g;
@@ -1404,18 +1408,23 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       return `In our books under ${req}: PNR ${ours[0].pnr} is on their sheet, but not this ticket - another passenger or another trip on the same booking.`;
     return `In our books under ${req} and not on their sheet at all.`;
   };
-  for (const [serial3, ours] of ourExtra)
+  const residuals = /* @__PURE__ */ new Set();
+  const residualOf = (serial3, ours) => (ourBySerial.get(serial3) ?? ours).every(isRefund) ? chainOf(serial3, chains).documents.find((d) => d !== serial3 && theirSerials.has(d)) : void 0;
+  for (const [serial3, ours] of ourExtra) {
+    const of = residualOf(serial3, ours);
+    if (of) residuals.add(serial3);
     findings.push({
       ...UNSOURCED,
-      verdict: "NOT_ON_SHEET",
+      verdict: of ? "REISSUE_RESIDUAL" : "NOT_ON_SHEET",
       serial: serial3,
       airlineCode: ours[0].airlineCode || "",
       pnr: ours[0].pnr || "",
       ours,
       reqNum: (ours[0].reqNum || "").trim(),
       theirReq: "",
-      note: whyMissing(serial3, ours)
+      note: of ? `The residual of the reissue of ${of}, which their sheet carries: issued in exchange for it and paid back (${money2(ours.reduce((n, t) => n + (t.amount || 0), 0))}). Part of that reissue, not a refund of its own.` : whyMissing(serial3, ours)
     });
+  }
   for (const f of findings) {
     const m = portalSource(f.sheet?.portal || "");
     const oursSource = (f.ours[0]?.source || "").trim();
@@ -1554,8 +1563,9 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   for (const t of ourScoped) {
     const k = keyOf2(t);
     if (voidedSet.has(k)) continue;
-    if ((t.amount || 0) < 0) oursR.add(ticketMatchKey(t.relatedTicket || "") || k);
-    else if (emdLine(t) || theirEmdDocs.has(k)) oursE.add(k);
+    if ((t.amount || 0) < 0) {
+      if (!residuals.has(k)) oursR.add(ticketMatchKey(t.relatedTicket || "") || k);
+    } else if (emdLine(t) || theirEmdDocs.has(k)) oursE.add(k);
     else oursT.add(k);
   }
   const theirV = /* @__PURE__ */ new Set();

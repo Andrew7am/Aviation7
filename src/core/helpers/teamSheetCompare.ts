@@ -287,6 +287,7 @@ export type Verdict =
   | 'NOT_IN_LEDGER'
   | 'VOID_NOT_BILLED'
   | 'REISSUE_NO_CHARGE'
+  | 'REISSUE_RESIDUAL'
   | 'VOID_AND_ISSUED'
   | 'VOID_BUT_BILLED'
   | 'REFUND_NOT_IN_LEDGER'
@@ -317,7 +318,7 @@ export type Verdict =
  */
 export function whoActs(f: Pick<Finding, 'verdict' | 'ours'>): 'US' | 'THEM' | 'INFO' {
   switch (f.verdict) {
-    case 'OK': case 'VOID_NOT_BILLED': case 'REISSUE_NO_CHARGE': case 'REQ_RELATED': case 'CONJUNCT_ALREADY_HELD':
+    case 'OK': case 'VOID_NOT_BILLED': case 'REISSUE_NO_CHARGE': case 'REISSUE_RESIDUAL': case 'REQ_RELATED': case 'CONJUNCT_ALREADY_HELD':
     // Its ticket's own finding carries the work; this booklet adds none.
     case 'CONJUNCT_OF_MISSING':
     // Applied, and on its way: it arrives with the supplier's next billing.
@@ -342,6 +343,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   NOT_IN_LEDGER:        'Not in our ledger',
   VOID_NOT_BILLED:      'Void — never billed',
   REISSUE_NO_CHARGE:    'Reissued at no charge',
+  REISSUE_RESIDUAL:     'Part of a reissue - its residual paid back',
   VOID_AND_ISSUED:      'Voided and issued the same day',
   VOID_BUT_BILLED:      'Void on their sheet, billed in ours',
   REFUND_NOT_IN_LEDGER: 'Refund not in our ledger',
@@ -397,6 +399,8 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   // Beside a void: a state of the world, not a disagreement. Nothing to
   // do about either, and both are worth counting.
   REISSUE_NO_CHARGE: 8.5,
+  // Part of a reissue their sheet carries; nothing to chase.
+  REISSUE_RESIDUAL: 8.6,
   OK: 9,
 };
 
@@ -1827,13 +1831,31 @@ export function compareTeamSheet(
         + ' - another passenger or another trip on the same booking.';
     return `In our books under ${req} and not on their sheet at all.`;
   };
-  for (const [serial, ours] of ourExtra)
+  /* The residual of a reissue, paid back. When a reissue costs less than the
+     ticket it replaces, the airline holds the difference on a document of its
+     own and refunds it: KSAML2257's 2540225901 was reissued as 2540225912 on
+     9 Aug, BSP issued EMD 4126662045 at nothing in exchange for 2540225901
+     and refunded it the same day at 30.00. Their sheet carries the reissue
+     and, rightly, no refund of its own - counted as one, the request read
+     16 refunds against their 15. A document we hold only as a refund - its sale nowhere in our books - in the
+     exchange chain of a ticket their sheet carries. */
+  const residuals = new Set<string>();
+  const residualOf = (serial: string, ours: Ticket[]) =>
+    (ourBySerial.get(serial) ?? ours).every(isRefund)
+      ? chainOf(serial, chains).documents.find(d => d !== serial && theirSerials.has(d)) : undefined;
+  for (const [serial, ours] of ourExtra) {
+    const of = residualOf(serial, ours);
+    if (of) residuals.add(serial);
     findings.push({
       ...UNSOURCED,
-      verdict: 'NOT_ON_SHEET', serial, airlineCode: ours[0].airlineCode || '',
+      verdict: of ? 'REISSUE_RESIDUAL' : 'NOT_ON_SHEET', serial, airlineCode: ours[0].airlineCode || '',
       pnr: ours[0].pnr || '', ours, reqNum: (ours[0].reqNum || '').trim(), theirReq: '',
-      note: whyMissing(serial, ours),
+      note: of
+        ? `The residual of the reissue of ${of}, which their sheet carries: issued in exchange for it and paid back`
+          + ` (${money(ours.reduce((n, t) => n + (t.amount || 0), 0))}). Part of that reissue, not a refund of its own.`
+        : whyMissing(serial, ours),
     });
+  }
 
   /* ── where each one was bought ────────────────────────────────────────
      One pass over the finished list rather than a field set at fifteen
@@ -2054,7 +2076,7 @@ export function compareTeamSheet(
        pays back: 0079533084 refunds 5512129240. Counted under the number
        it refunds, or 5512129240 read "missing in ours" and 0079533084
        "missing on theirs" beside a check that matched the two. */
-    if ((t.amount || 0) < 0) oursR.add(ticketMatchKey(t.relatedTicket || '') || k);
+    if ((t.amount || 0) < 0) { if (!residuals.has(k)) oursR.add(ticketMatchKey(t.relatedTicket || '') || k); }
     else if (emdLine(t) || theirEmdDocs.has(k)) oursE.add(k);
     else oursT.add(k);
   }

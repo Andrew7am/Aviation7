@@ -57,6 +57,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   CONJUNCT_OF_MISSING:  { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
   VOID_NOT_BILLED:      { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   REISSUE_NO_CHARGE:    { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
+  REISSUE_RESIDUAL:     { chip: 'bg-slate-100 text-slate-500',    band: 'border-slate-200',   money: false },
   VOID_AND_ISSUED:      { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   VOID_BUT_BILLED:      { chip: 'bg-red-100 text-red-700',        band: 'border-red-200',     money: true },
   OK:                   { chip: 'bg-emerald-100 text-emerald-700',band: 'border-emerald-200', money: false },
@@ -136,6 +137,11 @@ const WHY: Record<Verdict, string> = {
     + ' airline made. No supplier bills them, so our books are right to be without them.'
     + ' Shown in grey because there is nothing to do: a reissue that DOES carry a charge'
     + ' is real money and stays in the list above.',
+  REISSUE_RESIDUAL:
+    'A reissue that cost less than the ticket it replaced: the airline held the difference on a'
+    + ' document of its own (an EMD issued in exchange for the old ticket) and paid it back. Their'
+    + ' sheet carries the reissue; this refund is part of it, not a refund of a ticket of its own,'
+    + ' so it is left out of the refund count on both sides.',
   CONJUNCT_OF_MISSING:
     'The second booklet of a conjunction ticket whose first number is not in our books either.'
     + ' It is one ticket: the first number is listed as missing, with the fare, and this booklet'
