@@ -1576,9 +1576,10 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   }
   const oursV = /* @__PURE__ */ new Set();
   const voidList = opts.voidRecords ?? [...opts.voided ?? []].map((ticketNo) => ({ ticketNo, pnr: "" }));
+  const secondCoupon = new Set(sheet.filter((r) => r.couponOf && r.serial && (ourBySerial.get(r.couponOf) ?? []).some((t) => !isRefund(t))).map((r) => r.serial));
   for (const v of voidList) {
     const k = ticketMatchKey(v.ticketNo || "");
-    if (!k) continue;
+    if (!k || secondCoupon.has(k)) continue;
     if (onSheet.has(k) || theirV.has(k) || v.pnr && bookings.has(pnrKey(v.pnr))) oursV.add(k);
   }
   const findingsAt = /* @__PURE__ */ new Map();

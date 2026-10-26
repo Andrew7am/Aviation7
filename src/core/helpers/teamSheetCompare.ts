@@ -2079,9 +2079,16 @@ export function compareTeamSheet(
   for (const t of ourScoped) { const p = pnrKey(t.pnr); if (p) bookings.add(p); }
   const oursV = new Set<string>();
   const voidList = opts.voidRecords ?? [...(opts.voided ?? [])].map(ticketNo => ({ ticketNo, pnr: '' }));
+  /* A conjunction's second booklet is not a void. BSP prints it on a line
+     of its own with no type and no money, which reads as a cancellation:
+     KSAML2771's 5513658188 is the second coupon of 157-5513658187-88, a
+     ticket we hold at 4,530.00, and counted as a void it read 20 voids in
+     our books against their 10. Their cell says which number is a coupon. */
+  const secondCoupon = new Set(sheet.filter(r => r.couponOf && r.serial
+    && (ourBySerial.get(r.couponOf) ?? []).some(t => !isRefund(t))).map(r => r.serial));
   for (const v of voidList) {
     const k = ticketMatchKey(v.ticketNo || '');
-    if (!k) continue;
+    if (!k || secondCoupon.has(k)) continue;
     if (onSheet.has(k) || theirV.has(k) || (v.pnr && bookings.has(pnrKey(v.pnr)))) oursV.add(k);
   }
 
