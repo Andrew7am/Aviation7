@@ -1789,11 +1789,19 @@ export function compareTeamSheet(
   for (const r of sheet) for (const e of r.emds ?? []) claimed.add(e);
 
   /* ── our side: anything under those requests they never mention ───────── */
+  /* One request reviewed: ours is what is filed under it. The boundary above
+     widens to every request a matched ticket is filed under, which is right
+     for finding the ticket - but taken as "ours", it brought in the whole of
+     that other request without its rows. KSAFM2175's 5512759981 is on their
+     sheet under KSAML1533, and every KSAML1533 ticket of ours then read "not
+     on their sheet": 12 against 2, and 106 such across the open requests,
+     each on their sheet under its own request. */
+  const ourReqs = declaredKeys.size ? declaredKeys : requests;
   const ourExtra = new Map<string, Ticket[]>();
   const tooOld = new Set<string>();
   for (const t of ledger) {
     if (!isTicket(t)) continue;
-    if (!reqParts(t.reqNum || '').some(x => requests.has(x))) continue;
+    if (!reqParts(t.reqNum || '').some(x => ourReqs.has(x))) continue;
     const k = ticketMatchKey(t.ticketNo || '');
     // claimedByPnr: their sheet does carry it, on a row whose number their
     // export damaged. Reporting it as missing as well would be counting the
@@ -2035,7 +2043,11 @@ export function compareTeamSheet(
     };
   });
 
-  const inScope = (t: Ticket) => reqParts(t.reqNum || '').some(k => requests.has(k));
+  // Reviewing one request: what is filed under it, and whatever of ours their rows name -
+  // in the ticket column or in their EMD Number column (UAEVP343's 8 EMDs are ours under UAEVP504).
+  const theirDocs = new Set([...theirSerials, ...sheet.flatMap(r => r.emds ?? [])]);
+  const inScope = (t: Ticket) => reqParts(t.reqNum || '').some(k => ourReqs.has(k))
+    || (ourReqs !== requests && [t.ticketNo, t.relatedTicket].some(n => theirDocs.has(ticketMatchKey(n || ''))));
   /* Each row once: a row of ours their sheet never mentions sits in both
      maps, and was counted twice - an extra ticket read as two. */
   const scoped = [...new Map([...[...ourBySerial.values()].flat().filter(inScope), ...[...ourExtra.values()].flat()]

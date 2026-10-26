@@ -328,5 +328,14 @@ scenario('38. The residual of a reissue, paid back', residualSheet, residualOurs
 scenario('38b. A refund outside any chain their sheet carries is still missing', residualSheet, residualOurs,
 { NOT_ON_SHEET: 1, REISSUE_RESIDUAL: 0 }, rep => check('counted a refund', rep.docTypes.refunds.ours, 1));
 
+// KSAFM2175: our ticket filed "REQ100 - REQ200" sits on their sheet under REQ200.
+// Reviewing REQ100 must not take every REQ200 ticket of ours as missing.
+scenario('39. One request reviewed; a shared ticket does not bring in the other request', [
+  `065-5513059078,PNR001,Issued,REQ200,1000,,,${D},,IATA Portal (UAE)`,
+], [tkt({ reqNum: 'REQ100 - REQ200' }),
+    tkt({ ticketNo: '5513059300', pnr: 'PNR300', reqNum: 'REQ200' }),
+    tkt({ ticketNo: '5513059301', pnr: 'PNR301', reqNum: 'REQ200' })],
+{ NOT_ON_SHEET: 0 }, rep => check('ours is the one ticket', rep.docTypes.tickets.ours, 1));
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

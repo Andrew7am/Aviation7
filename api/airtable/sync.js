@@ -1379,11 +1379,12 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     if (covers) for (const t of emds) claimed.add(ticketMatchKey(t.ticketNo || ""));
   }
   for (const r of sheet) for (const e of r.emds ?? []) claimed.add(e);
+  const ourReqs = declaredKeys.size ? declaredKeys : requests;
   const ourExtra = /* @__PURE__ */ new Map();
   const tooOld = /* @__PURE__ */ new Set();
   for (const t of ledger) {
     if (!isTicket(t)) continue;
-    if (!reqParts(t.reqNum || "").some((x) => requests.has(x))) continue;
+    if (!reqParts(t.reqNum || "").some((x) => ourReqs.has(x))) continue;
     const k = ticketMatchKey(t.ticketNo || "");
     if (!k || theirSerials.has(k) || claimedByPnr.has(k) || claimed.has(k)) continue;
     if (isReference2(k) && theirPnrs.has(k)) continue;
@@ -1541,7 +1542,8 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0 && priceDiffers === 0 && unconf === 0
     };
   });
-  const inScope = (t) => reqParts(t.reqNum || "").some((k) => requests.has(k));
+  const theirDocs = /* @__PURE__ */ new Set([...theirSerials, ...sheet.flatMap((r) => r.emds ?? [])]);
+  const inScope = (t) => reqParts(t.reqNum || "").some((k) => ourReqs.has(k)) || ourReqs !== requests && [t.ticketNo, t.relatedTicket].some((n) => theirDocs.has(ticketMatchKey(n || "")));
   const scoped = [...new Map([...[...ourBySerial.values()].flat().filter(inScope), ...[...ourExtra.values()].flat()].map((t) => [t.id, t])).values()];
   const ourRows = scoped.length;
   const ourDocs = {
