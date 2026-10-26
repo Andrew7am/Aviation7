@@ -2938,7 +2938,13 @@ function reqTokensOf(req) {
 // src/core/helpers/requestTotal.ts
 var SHEET_ISSUED = /^(issued|reissue)$/i;
 var r2 = (n) => Math.round(n * 100) / 100;
-function requestIssued(req, currency, books, sheet) {
+function sheetOnlySerials(req, books, sheet) {
+  const want = req.trim().toUpperCase();
+  const held2 = new Set(books.map((t) => ticketMatchKey(t.ticketNo)).filter(Boolean));
+  return [...new Set(sheet.filter((r) => reqTokensOf(r.req_num || "").includes(want)).flatMap((r) => r.serials).filter((s) => !held2.has(ticketMatchKey(s))))];
+}
+function requestIssued(req, currency, books, sheet, voided = []) {
+  const gone = new Set([...voided].map(ticketMatchKey).filter(Boolean));
   const want = req.trim().toUpperCase();
   const mine = books.filter((t) => reqTokensOf(t.reqNum || "").includes(want));
   const held2 = new Set(mine.map((t) => ticketMatchKey(t.ticketNo)).filter(Boolean));
@@ -2953,6 +2959,7 @@ function requestIssued(req, currency, books, sheet) {
     if (!reqTokensOf(r.req_num || "").includes(want) || !SHEET_ISSUED.test(r.status ?? "")) continue;
     if ((r.currency || "").toUpperCase() !== currency || !r.net_cost || r.net_cost <= 0) continue;
     if (!r.serials.length || r.serials.some((s) => held2.has(ticketMatchKey(s)))) continue;
+    if (r.serials.every((s) => gone.has(ticketMatchKey(s)))) continue;
     fromSheet += r.net_cost;
     docs++;
   }
@@ -3004,12 +3011,11 @@ async function checkRequestAlerts(db, mail) {
           db.from("tickets").select("ticket_no, status, amount, total_doc, currency, req_num").ilike("req_num", like),
           db.from("airtable_tickets").select("serials, status, net_cost, currency, req_num").eq("deleted", false).ilike("req_num", like)
         ]);
-        total = requestIssued(
-          a.req_num,
-          a.currency,
-          (books ?? []).map((t2) => ({ ticketNo: t2.ticket_no, status: t2.status, amount: Number(t2.amount), totalDoc: t2.total_doc == null ? null : Number(t2.total_doc), currency: t2.currency, reqNum: t2.req_num })),
-          (sheet ?? []).map((r) => ({ serials: r.serials ?? [], status: r.status, net_cost: r.net_cost == null ? null : Number(r.net_cost), currency: r.currency, req_num: r.req_num }))
-        );
+        const bookRows = (books ?? []).map((t2) => ({ ticketNo: t2.ticket_no, status: t2.status, amount: Number(t2.amount), totalDoc: t2.total_doc == null ? null : Number(t2.total_doc), currency: t2.currency, reqNum: t2.req_num }));
+        const sheetRows = (sheet ?? []).map((r) => ({ serials: r.serials ?? [], status: r.status, net_cost: r.net_cost == null ? null : Number(r.net_cost), currency: r.currency, req_num: r.req_num }));
+        const onlyTheirs = sheetOnlySerials(a.req_num, bookRows, sheetRows);
+        const { data: voids } = onlyTheirs.length ? await db.from("void_tickets").select("ticket_no").in("ticket_no", onlyTheirs) : { data: [] };
+        total = requestIssued(a.req_num, a.currency, bookRows, sheetRows, (voids ?? []).map((v) => v.ticket_no));
         const reached = total.total >= Number(a.threshold);
         await db.from("request_alerts").update({ last_total: total.total, checked_at: now.toISOString(), ...reached ? { reached_at: now.toISOString() } : {} }).eq("id", a.id);
         if (!reached) continue;

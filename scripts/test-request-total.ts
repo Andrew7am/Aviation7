@@ -2,7 +2,7 @@
  * A request's issued total, for the email when it reaches its figure
  * (KSAML2771 at 2,000,000 AED).
  */
-import { requestIssued } from '../src/core/helpers/requestTotal';
+import { requestIssued, sheetOnlySerials } from '../src/core/helpers/requestTotal';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -28,6 +28,13 @@ check('sales and EMDs at full fare; a refund gives nothing back', r.fromBooks, 1
 check('another request stays out, the same request written longer stays in, riyals stay out', r.docs, 6);
 check('their issued rows not in our books count; On Hold, Void and unnumbered rows do not', r.fromSheet, 3440);
 check('the total', r.total, 38060);
+
+// KSAML2771's YC24LS: their sheet still says Issued, the supplier voided all three.
+const books = [bk('5513658379', 2271)];
+const sheet = [{ serials: ['5513658381', '5513658384', '5513658387'], status: 'Issued', net_cost: 6260, currency: 'AED', req_num: 'KSAML2771' }];
+check('their numbers not in our books are the ones looked up', sheetOnlySerials('KSAML2771', books, sheet), ['5513658381', '5513658384', '5513658387']);
+check('a row voided with the supplier is not issued', requestIssued('KSAML2771', 'AED', books, sheet, ['5513658381', '5513658384', '5513658387']).fromSheet, 0);
+check('one of three still live keeps the row', requestIssued('KSAML2771', 'AED', books, sheet, ['5513658381']).fromSheet, 6260);
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

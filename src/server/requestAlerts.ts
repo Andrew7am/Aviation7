@@ -13,7 +13,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
-import { requestIssued } from '../core/helpers/requestTotal';
+import { requestIssued, sheetOnlySerials } from '../core/helpers/requestTotal';
 
 export interface MailEnv { host?: string; port?: string; user?: string; pass?: string; from?: string }
 
@@ -68,9 +68,14 @@ export async function checkRequestAlerts(db: SupabaseClient, mail: MailEnv): Pro
           db.from('tickets').select('ticket_no, status, amount, total_doc, currency, req_num').ilike('req_num', like),
           db.from('airtable_tickets').select('serials, status, net_cost, currency, req_num').eq('deleted', false).ilike('req_num', like),
         ]);
-        total = requestIssued(a.req_num, a.currency,
-          (books ?? []).map(t => ({ ticketNo: t.ticket_no, status: t.status, amount: Number(t.amount), totalDoc: t.total_doc == null ? null : Number(t.total_doc), currency: t.currency, reqNum: t.req_num })),
-          (sheet ?? []).map(r => ({ serials: r.serials ?? [], status: r.status, net_cost: r.net_cost == null ? null : Number(r.net_cost), currency: r.currency, req_num: r.req_num })));
+        const bookRows = (books ?? []).map(t => ({ ticketNo: t.ticket_no, status: t.status, amount: Number(t.amount), totalDoc: t.total_doc == null ? null : Number(t.total_doc), currency: t.currency, reqNum: t.req_num }));
+        const sheetRows = (sheet ?? []).map(r => ({ serials: r.serials ?? [], status: r.status, net_cost: r.net_cost == null ? null : Number(r.net_cost), currency: r.currency, req_num: r.req_num }));
+        // Only the numbers their sheet has and our books do not: a handful, not the register.
+        const onlyTheirs = sheetOnlySerials(a.req_num, bookRows, sheetRows);
+        const { data: voids } = onlyTheirs.length
+          ? await db.from('void_tickets').select('ticket_no').in('ticket_no', onlyTheirs)
+          : { data: [] as { ticket_no: string }[] };
+        total = requestIssued(a.req_num, a.currency, bookRows, sheetRows, (voids ?? []).map(v => v.ticket_no));
         const reached = total.total >= Number(a.threshold);
         await db.from('request_alerts').update({ last_total: total.total, checked_at: now.toISOString(), ...(reached ? { reached_at: now.toISOString() } : {}) }).eq('id', a.id);
         if (!reached) continue;
