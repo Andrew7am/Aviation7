@@ -2307,6 +2307,97 @@ function detailsFor(ours, rows) {
   return out;
 }
 
+// src/core/integrations/airtableCsv.ts
+var str2 = (v) => (v ?? "").trim();
+var num2 = (v) => {
+  const n = Number(str2(v).replace(/,/g, ""));
+  return str2(v) === "" || Number.isNaN(n) ? null : n;
+};
+function sheetOf(raw) {
+  return Object.fromEntries(SHEET_HEADERS.map((h) => [h, raw[h] ?? ""]));
+}
+var printed = (s) => SHEET_HEADERS.map((h) => s[h] ?? "").join("");
+var sameRow = (s) => [s["Ticket Number"], s["PNR"], s["Issued Date & Time"], s["EMD Number"]].join("");
+function fromSheetTime(t) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4}) (\d{1,2}):(\d{2})(am|pm)$/i.exec(str2(t));
+  if (!m) return null;
+  let h = Number(m[4]) % 12;
+  if (m[6].toLowerCase() === "pm") h += 12;
+  for (const off of [3, 2]) {
+    const d = new Date(Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1]), h - off, Number(m[5])));
+    if (sheetTime(d.toISOString()) === str2(t)) return d.toISOString();
+  }
+  return null;
+}
+function contentId(s) {
+  let h = 2166136261;
+  for (const c of printed(s)) {
+    h ^= c.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  return `csv_${(h >>> 0).toString(36)}`;
+}
+function rowFromSheet(s, id, was, now = (/* @__PURE__ */ new Date()).toISOString()) {
+  const reqs = [s["REQ No (Auto) (MICE) (from Aviation Quotations)"], s["REQ No (Auto) (Trip) (from Aviation Quotations)"]].flatMap((x) => (x ?? "").split(",")).map((x) => x.trim()).filter(Boolean);
+  const issued = was && was.sheet_row?.["Issued Date & Time"] === s["Issued Date & Time"] ? was.issued_at : fromSheetTime(s["Issued Date & Time"]);
+  const unchanged = !!was && printed(was.sheet_row ?? {}) === printed(s);
+  return {
+    record_id: id,
+    sheet_row: s,
+    ticket_cell: s["Ticket Number"],
+    serials: [...new Set(teamSerials(s["Ticket Number"]).map((d) => d.serial).filter(Boolean))],
+    pnr: s["PNR"].replace(/\s+/g, "").toUpperCase(),
+    status: s["Status"],
+    req_num: [...new Set(reqs)].join(", ").toUpperCase(),
+    // The export prints two decimals; the API gave 89.008. Printed the same, it is the same.
+    net_cost: was && was.sheet_row?.["Net Cost"] === s["Net Cost"] ? was.net_cost : num2(s["Net Cost"]),
+    currency: /\b([A-Z]{3})\b/.exec(s["Total Cost with Currency"])?.[1] ?? was?.currency ?? "",
+    refund_amount: was && was.sheet_row?.["Refund Amount"] === s["Refund Amount"] ? was.refund_amount : num2(s["Refund Amount"]),
+    issued_at: issued,
+    client_name: s["Extracted Client Name"],
+    account: s["MICE Account (from Aviation Requests) (from Aviation Quotations)"],
+    department: s["Department"],
+    cabin: s["Cabin Class (Automated)"],
+    portal: s["Portal"],
+    airline: s["Airline"],
+    team_member: s["TEAM MEMBERS"],
+    old_ticket: was?.old_ticket ?? "",
+    old_pnr: was?.old_pnr ?? "",
+    created_at: was?.created_at ?? issued ?? now,
+    last_modified: unchanged ? was?.last_modified ?? null : now
+  };
+}
+function matchExport(raw, held2, now = (/* @__PURE__ */ new Date()).toISOString()) {
+  const live = held2.filter((r) => !r.deleted);
+  const byPrinted = /* @__PURE__ */ new Map(), bySame = /* @__PURE__ */ new Map();
+  for (const r of live) {
+    const s = r.sheet_row ?? {};
+    (byPrinted.get(printed(s)) ?? byPrinted.set(printed(s), []).get(printed(s))).push(r);
+    (bySame.get(sameRow(s)) ?? bySame.set(sameRow(s), []).get(sameRow(s))).push(r);
+  }
+  const used = /* @__PURE__ */ new Set();
+  const take = (list) => list?.find((r) => !used.has(r.record_id));
+  const sheets = raw.map(sheetOf).filter((s) => SHEET_HEADERS.some((h) => str2(s[h])));
+  const rows = [];
+  const pending = [];
+  for (const s of sheets) {
+    const r = take(byPrinted.get(printed(s)));
+    if (r) {
+      used.add(r.record_id);
+      rows.push(rowFromSheet(s, r.record_id, r, now));
+    } else pending.push(s);
+  }
+  for (const s of pending) {
+    const r = take(bySame.get(sameRow(s)));
+    let id = r?.record_id ?? contentId(s);
+    while (!r && used.has(id)) id += "_";
+    used.add(id);
+    rows.push(rowFromSheet(s, id, r, now));
+  }
+  const whole = live.length === 0 || sheets.length >= live.length * 0.9;
+  return { rows, whole, gone: whole ? live.filter((r) => !used.has(r.record_id)) : [] };
+}
+
 // src/server/airtableSync.ts
 var STATE_ID = "aviation_tickets";
 var FULL_EVERY_MS = 6 * 60 * 60 * 1e3;
@@ -2355,29 +2446,46 @@ async function syncAirtable(env) {
   const db = createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false } });
   const { data: st } = await db.from("airtable_sync_state").select("*").eq("id", STATE_ID).maybeSingle();
   const now = /* @__PURE__ */ new Date();
-  const full = env.forceFull || !st?.cursor || !st?.last_full_at || now.getTime() - new Date(st.last_full_at).getTime() > FULL_EVERY_MS;
+  let full = env.forceFull || !st?.cursor || !st?.last_full_at || now.getTime() - new Date(st.last_full_at).getTime() > FULL_EVERY_MS;
   const dry = !!env.dryRun;
   if (!dry) await db.from("airtable_sync_state").upsert({ id: STATE_ID, last_run_at: now.toISOString() });
   try {
     let names = st?.names ?? {};
-    if (full || !Object.keys(names).length) names = await fetchNames(env.airtableToken);
-    const since = st?.cursor ? new Date(new Date(st.cursor).getTime() - 5e3).toISOString() : "";
-    const recs = await airtable(
-      env.airtableToken,
-      AIRTABLE_TICKETS_TABLE,
-      full ? {} : { filterByFormula: `IS_AFTER(LAST_MODIFIED_TIME(), DATETIME_PARSE('${since}'))` }
-    );
-    if (!full && recs.some((r) => usesUnknownLink(r, names))) names = await fetchNames(env.airtableToken);
-    const nameMap = new Map(Object.entries(names));
-    const rows = recs.map((r) => normalize(r, nameMap));
-    const ids = rows.map((r) => r.record_id);
+    const csv = !!env.csvRows;
+    let recs = [];
+    let rows;
     const before = /* @__PURE__ */ new Map();
-    if (full) for (const r of await selectAll(db, "airtable_tickets", "*")) before.set(r.record_id, r);
-    else for (let i = 0; i < ids.length; i += 200) {
-      const { data, error } = await db.from("airtable_tickets").select("*").in("record_id", ids.slice(i, i + 200));
-      if (error) throw new Error(error.message);
-      for (const r of data ?? []) before.set(r.record_id, r);
+    if (csv) {
+      const held2 = await selectAll(db, "airtable_tickets", "*");
+      for (const r of held2) before.set(r.record_id, r);
+      const m = matchExport(env.csvRows, held2.map((r) => ({
+        ...r,
+        net_cost: r.net_cost == null ? null : Number(r.net_cost),
+        refund_amount: r.refund_amount == null ? null : Number(r.refund_amount)
+      })), now.toISOString());
+      rows = m.rows;
+      full = m.whole;
+    } else {
+      if (full || !Object.keys(names).length) names = await fetchNames(env.airtableToken);
+      const since = st?.cursor ? new Date(new Date(st.cursor).getTime() - 5e3).toISOString() : "";
+      const got = await airtable(
+        env.airtableToken,
+        AIRTABLE_TICKETS_TABLE,
+        full ? {} : { filterByFormula: `IS_AFTER(LAST_MODIFIED_TIME(), DATETIME_PARSE('${since}'))` }
+      );
+      if (!full && got.some((r) => usesUnknownLink(r, names))) names = await fetchNames(env.airtableToken);
+      const nameMap = new Map(Object.entries(names));
+      recs = got;
+      rows = got.map((r) => normalize(r, nameMap));
+      const ids0 = rows.map((r) => r.record_id);
+      if (full) for (const r of await selectAll(db, "airtable_tickets", "*")) before.set(r.record_id, r);
+      else for (let i = 0; i < ids0.length; i += 200) {
+        const { data, error } = await db.from("airtable_tickets").select("*").in("record_id", ids0.slice(i, i + 200));
+        if (error) throw new Error(error.message);
+        for (const r of data ?? []) before.set(r.record_id, r);
+      }
     }
+    const ids = rows.map((r) => r.record_id);
     const changes = /* @__PURE__ */ new Map();
     const log = [];
     let added = 0;
@@ -2464,11 +2572,11 @@ async function syncAirtable(env) {
         if (settled.length) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: (/* @__PURE__ */ new Date()).toISOString() }).in("id", settled);
       }
       all.sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")));
-      const csv = rowsToCsv(all.map((r) => r.sheet_row), (d) => {
+      const csv2 = rowsToCsv(all.map((r) => r.sheet_row), (d) => {
         const q = (v) => /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
         return [d.fields.map(q).join(","), ...d.data.map((r) => r.map(q).join(","))].join("\n");
       });
-      const sheet = parseTeamSheet(csv).rows;
+      const sheet = parseTeamSheet(csv2).rows;
       const tickets = ledger.map((t) => ({
         id: t.id,
         ticketNo: t.ticket_no,
@@ -2763,7 +2871,15 @@ async function syncAirtable(env) {
     }
     const newest = [st?.cursor, ...rows.map((r) => r.last_modified), ...rows.map((r) => r.created_at)].filter(Boolean).map((x) => new Date(x).getTime()).reduce((a, b) => Math.max(a, b), 0);
     const { count } = await db.from("airtable_tickets").select("record_id", { count: "exact", head: true }).eq("deleted", false);
-    if (!dry) await db.from("airtable_sync_state").upsert({
+    if (!dry) await db.from("airtable_sync_state").upsert(csv ? {
+      id: STATE_ID,
+      last_full_at: null,
+      last_run_at: stamp,
+      last_ok_at: (/* @__PURE__ */ new Date()).toISOString(),
+      last_error: null,
+      record_count: count ?? null,
+      last_changed: changedRows.length
+    } : {
       id: STATE_ID,
       cursor: newest ? new Date(newest).toISOString() : now.toISOString(),
       last_full_at: full ? stamp : st?.last_full_at,
@@ -2775,8 +2891,8 @@ async function syncAirtable(env) {
       names
     });
     return {
-      mode: full ? "full" : "incremental",
-      fetched: recs.length,
+      mode: csv ? "csv" : full ? "full" : "incremental",
+      fetched: csv ? rows.length : recs.length,
       changedRecords: changes.size,
       fieldChanges: log.length,
       added,
@@ -2922,19 +3038,41 @@ async function handler(req, res) {
     res.status(401).json({ error: "Not allowed" });
     return;
   }
+  const db = createClient2(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+  const alerts = () => checkRequestAlerts(db, {
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+    from: process.env.ALERT_FROM
+  }).catch((e) => ({ checked: 0, emailed: [], errors: [String(e)] }));
+  const upload = typeof req.query.upload === "string" ? req.query.upload : "";
+  let csvRows;
+  if (upload) {
+    csvRows = [];
+    for (let from = 0; ; from += 1e3) {
+      const { data, error } = await db.from("airtable_csv_rows").select("row").eq("upload_id", upload).order("idx").range(from, from + 999);
+      if (error) {
+        res.status(500).json({ error: error.message });
+        return;
+      }
+      csvRows.push(...(data ?? []).map((r) => r.row));
+      if (!data || data.length < 1e3) break;
+    }
+    if (!csvRows.length) {
+      res.status(400).json({ error: "Nothing was uploaded under that id" });
+      return;
+    }
+  }
   try {
-    const result = await syncAirtable({ airtableToken, supabaseUrl, serviceKey, forceFull: req.query.full === "1", fillNow: req.query.fill === "1" });
-    const alerts = await checkRequestAlerts(createClient2(supabaseUrl, serviceKey, { auth: { persistSession: false } }), {
-      host: process.env.SMTP_HOST,
-      port: process.env.SMTP_PORT,
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-      from: process.env.ALERT_FROM
-    }).catch((e) => ({ checked: 0, emailed: [], errors: [String(e)] }));
-    res.status(200).json({ ...result, alerts });
+    const result = await syncAirtable({ airtableToken, supabaseUrl, serviceKey, forceFull: req.query.full === "1", fillNow: req.query.fill === "1" || !!upload, csvRows });
+    res.status(200).json({ ...result, alerts: await alerts() });
   } catch (err) {
     console.error(err);
+    await alerts();
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+  } finally {
+    if (upload) await db.from("airtable_csv_rows").delete().eq("upload_id", upload);
   }
 }
 export {

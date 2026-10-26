@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, Loader2, Search, Download, CheckCircle2, AlertTriangle, ArrowRight, Table2 } from 'lucide-react';
+import { RefreshCw, Loader2, Search, Download, CheckCircle2, AlertTriangle, ArrowRight, Table2, Upload } from 'lucide-react';
+import Papa from 'papaparse';
 import type { Ticket } from '../types';
 import { AirtableService, type AirtableNotice, type SyncState, type LiveRecord, type ChangeRow } from '../services/AirtableService';
 import { docKey } from '../core/integrations/airtableNotices';
@@ -47,7 +48,9 @@ export const AirtablePage: React.FC<{
   onDismiss: (list: AirtableNotice[]) => Promise<void>;
   onSyncNow: () => Promise<void>;
   onOpenSheetCheck: () => void;
-}> = ({ tickets, notices, sync, canEdit, onAccept, onDismiss, onSyncNow, onOpenSheetCheck }) => {
+  /** Read the bell and the sync state again - after an export is uploaded. */
+  onRefresh?: () => Promise<void>;
+}> = ({ tickets, notices, sync, canEdit, onAccept, onDismiss, onSyncNow, onOpenSheetCheck, onRefresh }) => {
   const svc = useMemo(() => new AirtableService(), []);
   const [tab, setTab] = useState<Tab>('overview');
   const [records, setRecords] = useState<LiveRecord[] | null>(null);
@@ -58,6 +61,21 @@ export const AirtablePage: React.FC<{
   const [onlyMissing, setOnlyMissing] = useState(false);
   const [noticeState, setNoticeState] = useState<'OPEN' | 'INFO' | 'DECIDED'>('OPEN');
   const [fixKind, setFixKind] = useState<FixKind | 'ALL'>('ALL');
+  const [uploaded, setUploaded] = useState('');
+  /* Their CSV export in place of the API (26 Oct 2026: the token stopped
+     working). The whole table, or part of it: each row is matched to the
+     record we hold and goes through the same sync - the bell, requests,
+     names and cabins filled, the Emirates limit, the request alerts. */
+  const uploadExport = (file: File) => act('csv', async () => {
+    setUploaded('');
+    const text = await file.text();
+    const parsed = Papa.parse<Record<string, string>>(text.replace(/^\uFEFF/, ''), { header: true, skipEmptyLines: true });
+    if (!parsed.data.length || !('Ticket Number' in parsed.data[0])) throw new Error('This is not their Airtable export: it has no "Ticket Number" column.');
+    const r = await svc.syncFromCsv(parsed.data);
+    setUploaded(`${file.name}: ${r.fetched} rows read - ${r.added} new, ${r.changedRecords} changed, ${r.deleted} gone; ${r.notices} notice(s), ${r.reqFilled} request(s) filled.`);
+    await onRefresh?.();
+    await load();
+  });
 
   const load = async () => {
     try {
@@ -138,7 +156,24 @@ export const AirtablePage: React.FC<{
               className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded hover:bg-slate-50">
               {busy === 'sync' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Sync now
             </button>
+            {canEdit && (
+              <label title="Their Airtable's CSV export, read in place of the live connection"
+                className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded cursor-pointer ${sync?.lastError
+                  ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                {busy === 'csv' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Upload their export (CSV)
+                <input type="file" accept=".csv,text/csv" className="hidden" disabled={busy === 'csv'}
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadExport(f); }} />
+              </label>
+            )}
           </div>
+          {sync?.lastError && /401|authenticat/i.test(sync.lastError) && (
+            <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-[11px] text-purple-900">
+              Their Airtable cannot be read right now. Export the Aviation Tickets table from Airtable as CSV and upload it here:
+              everything the live connection does - the bell, requests filled, the Emirates limit - runs on the file instead.
+              The whole table is best; part of it updates only the rows it carries.
+            </div>
+          )}
+          {uploaded && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-[11px] text-emerald-800">{uploaded}</div>}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             {([
               ['Their tickets', records?.length ?? sync?.recordCount ?? '—', 'tickets'],

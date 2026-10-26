@@ -706,7 +706,7 @@ function MainApp({ user }: { user: User }) {
           is not always the person who can write to the ledger. */}
       {view === 'airtable' && <AirtablePage tickets={tickets} notices={atNotices} sync={atSync} canEdit={isAdmin}
         onAccept={acceptNotices} onDismiss={dismissNotices} onSyncNow={syncAirtableNow}
-        onOpenSheetCheck={() => setView('teamsheet')} />}
+        onOpenSheetCheck={() => setView('teamsheet')} onRefresh={loadAirtable} />}
       {view === 'teamsheet' && <TeamSheetCheck tickets={tickets}
         voids={voids} exchanges={exchanges} userId={user.id} userEmail={user.email}
         {...(isAdmin ? { onSendToReview: handleSendToReview,

@@ -121,6 +121,24 @@ export class AirtableService {
   }
 
   /** Open notices, and the ones decided in the last week for reference. */
+  /** Their CSV export, read instead of the API: the rows go up in pieces,
+   *  then the sync takes them as it would a live read. */
+  async syncFromCsv(rows: Record<string, string>[]): Promise<{ fetched: number; changedRecords: number; added: number; deleted: number; notices: number; reqFilled: number }> {
+    const upload = `up_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    for (let i = 0; i < rows.length; i += 500) {
+      const { error } = await supabase.from('airtable_csv_rows')
+        .insert(rows.slice(i, i + 500).map((row, k) => ({ upload_id: upload, idx: i + k, row })));
+      if (error) throw new Error(error.message);
+    }
+    const { data } = await supabase.auth.getSession();
+    const r = await fetch(`/api/airtable/sync?upload=${upload}`, {
+      method: 'POST', headers: { Authorization: `Bearer ${data.session?.access_token ?? ''}` },
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Upload failed (${r.status})`);
+    return j;
+  }
+
   async notices(): Promise<AirtableNotice[]> {
     const since = new Date(Date.now() - 7 * 864e5).toISOString();
     const rows = await fetchAllRows<any>((from, to) =>

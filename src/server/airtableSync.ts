@@ -24,6 +24,7 @@ import { planSheetAdd } from '../core/helpers/addFromSheet';
 import { pendingRow } from '../core/helpers/pendingRow';
 import { requestsFor, pnrVendorOfRow } from '../core/integrations/airtableRequests';
 import { detailsFor } from '../core/integrations/airtableDetails';
+import { matchExport } from '../core/integrations/airtableCsv';
 import type { Ticket } from '../types';
 
 const STATE_ID = 'aviation_tickets';
@@ -38,7 +39,7 @@ const STATE_ID = 'aviation_tickets';
 const FULL_EVERY_MS = 6 * 60 * 60 * 1000;
 
 export interface SyncResult {
-  mode: 'full' | 'incremental';
+  mode: 'full' | 'incremental' | 'csv';
   fetched: number; changedRecords: number; fieldChanges: number; added: number; deleted: number;
   notices: number; onlineQueued: number; reqFilled: number; detailsFilled: number; ms: number;
 }
@@ -92,12 +93,15 @@ export async function syncAirtable(env: {
   dryRun?: boolean;
   /** Fill requests, names, cabins and routes now - after an import. */
   fillNow?: boolean;
+  /** Their CSV export's rows, read instead of the API (airtableCsv.ts) -
+   *  for while the API cannot be used. */
+  csvRows?: Record<string, string>[];
 }): Promise<SyncResult & { preview?: { notices: Notice[]; online: string[]; changes?: unknown } }> {
   const t0 = Date.now();
   const db = createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false } });
   const { data: st } = await db.from('airtable_sync_state').select('*').eq('id', STATE_ID).maybeSingle();
   const now = new Date();
-  const full = env.forceFull || !st?.cursor || !st?.last_full_at
+  let full = env.forceFull || !st?.cursor || !st?.last_full_at
     || now.getTime() - new Date(st.last_full_at).getTime() > FULL_EVERY_MS;
   const dry = !!env.dryRun;
   if (!dry) await db.from('airtable_sync_state').upsert({ id: STATE_ID, last_run_at: now.toISOString() });
@@ -106,25 +110,41 @@ export async function syncAirtable(env: {
     // Linked records by name. Kept between runs; read again on the hourly
     // full run, or the moment a record links to one we have not seen.
     let names: Record<string, string> = (st?.names as Record<string, string>) ?? {};
-    if (full || !Object.keys(names).length) names = await fetchNames(env.airtableToken);
-
-    // A little overlap with the last run: a record saved in the same second
-    // as the cursor is read twice rather than missed, and reads as unchanged.
-    const since = st?.cursor ? new Date(new Date(st.cursor).getTime() - 5000).toISOString() : '';
-    const recs = await airtable(env.airtableToken, AIRTABLE_TICKETS_TABLE,
-      full ? {} : { filterByFormula: `IS_AFTER(LAST_MODIFIED_TIME(), DATETIME_PARSE('${since}'))` });
-    if (!full && recs.some(r => usesUnknownLink(r, names))) names = await fetchNames(env.airtableToken);
-    const nameMap: NameMap = new Map(Object.entries(names));
-
-    const rows = recs.map(r => normalize(r, nameMap));
-    const ids = rows.map(r => r.record_id);
+    const csv = !!env.csvRows;
+    let recs: unknown[] = [];
+    let rows: AirtableTicketRow[];
     const before = new Map<string, AirtableTicketRow & { deleted?: boolean }>();
-    if (full) for (const r of await selectAll<AirtableTicketRow & { deleted: boolean }>(db, 'airtable_tickets', '*')) before.set(r.record_id, r);
-    else for (let i = 0; i < ids.length; i += 200) {
-      const { data, error } = await db.from('airtable_tickets').select('*').in('record_id', ids.slice(i, i + 200));
-      if (error) throw new Error(error.message);
-      for (const r of data ?? []) before.set(r.record_id, r as AirtableTicketRow);
+    if (csv) {
+      /* Their export instead of the API: every row matched to the record we
+         hold. An export of the whole table is a full run - what it lacks is
+         gone; a part of it changes only what it carries. */
+      const held = await selectAll<AirtableTicketRow & { deleted: boolean }>(db, 'airtable_tickets', '*');
+      for (const r of held) before.set(r.record_id, r);
+      const m = matchExport(env.csvRows!, held.map(r => ({ ...r, net_cost: r.net_cost == null ? null : Number(r.net_cost),
+        refund_amount: r.refund_amount == null ? null : Number(r.refund_amount) })), now.toISOString());
+      rows = m.rows;
+      full = m.whole;
+    } else {
+      if (full || !Object.keys(names).length) names = await fetchNames(env.airtableToken);
+
+      // A little overlap with the last run: a record saved in the same second
+      // as the cursor is read twice rather than missed, and reads as unchanged.
+      const since = st?.cursor ? new Date(new Date(st.cursor).getTime() - 5000).toISOString() : '';
+      const got = await airtable(env.airtableToken, AIRTABLE_TICKETS_TABLE,
+        full ? {} : { filterByFormula: `IS_AFTER(LAST_MODIFIED_TIME(), DATETIME_PARSE('${since}'))` });
+      if (!full && got.some(r => usesUnknownLink(r, names))) names = await fetchNames(env.airtableToken);
+      const nameMap: NameMap = new Map(Object.entries(names));
+      recs = got;
+      rows = got.map(r => normalize(r, nameMap));
+      const ids0 = rows.map(r => r.record_id);
+      if (full) for (const r of await selectAll<AirtableTicketRow & { deleted: boolean }>(db, 'airtable_tickets', '*')) before.set(r.record_id, r);
+      else for (let i = 0; i < ids0.length; i += 200) {
+        const { data, error } = await db.from('airtable_tickets').select('*').in('record_id', ids0.slice(i, i + 200));
+        if (error) throw new Error(error.message);
+        for (const r of data ?? []) before.set(r.record_id, r as AirtableTicketRow);
+      }
     }
+    const ids = rows.map(r => r.record_id);
 
     // What moved, field by field. The very first run has nothing to compare
     // with and records none - a change is a difference from what we held.
@@ -541,12 +561,18 @@ export async function syncAirtable(env: {
     const newest = [st?.cursor, ...rows.map(r => r.last_modified), ...rows.map(r => r.created_at)]
       .filter(Boolean).map(x => new Date(x as string).getTime()).reduce((a, b) => Math.max(a, b), 0);
     const { count } = await db.from('airtable_tickets').select('record_id', { count: 'exact', head: true }).eq('deleted', false);
-    if (!dry) await db.from('airtable_sync_state').upsert({
+    /* An export moves no cursor and resets the full run: when the API is back,
+       its first read is of the whole table, which settles the records the
+       export could only name by their content. */
+    if (!dry) await db.from('airtable_sync_state').upsert(csv ? {
+      id: STATE_ID, last_full_at: null, last_run_at: stamp, last_ok_at: new Date().toISOString(),
+      last_error: null, record_count: count ?? null, last_changed: changedRows.length,
+    } : {
       id: STATE_ID, cursor: newest ? new Date(newest).toISOString() : now.toISOString(),
       last_full_at: full ? stamp : st?.last_full_at, last_run_at: stamp, last_ok_at: new Date().toISOString(),
       last_error: null, record_count: count ?? null, last_changed: changedRows.length, names,
     });
-    return { mode: full ? 'full' : 'incremental', fetched: recs.length, changedRecords: changes.size, fieldChanges: log.length,
+    return { mode: csv ? 'csv' : full ? 'full' : 'incremental', fetched: csv ? rows.length : recs.length, changedRecords: changes.size, fieldChanges: log.length,
       added, deleted, notices: notices.length, onlineQueued, reqFilled, detailsFilled, ms: Date.now() - t0, preview };
   } catch (e) {
     if (!dry) await db.from('airtable_sync_state').upsert({ id: STATE_ID, last_error: e instanceof Error ? e.message : String(e) });
