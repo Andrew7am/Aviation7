@@ -3065,15 +3065,19 @@ async function handler(req, res) {
       return;
     }
   }
+  const clear = async () => {
+    if (upload) await db.from("airtable_csv_rows").delete().eq("upload_id", upload);
+  };
   try {
     const result = await syncAirtable({ airtableToken, supabaseUrl, serviceKey, forceFull: req.query.full === "1", fillNow: req.query.fill === "1" || !!upload, csvRows });
-    res.status(200).json({ ...result, alerts: await alerts() });
+    const a = await alerts();
+    await clear();
+    res.status(200).json({ ...result, alerts: a });
   } catch (err) {
     console.error(err);
     await alerts();
+    await clear();
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
-  } finally {
-    if (upload) await db.from("airtable_csv_rows").delete().eq("upload_id", upload);
   }
 }
 export {
