@@ -283,6 +283,14 @@ scenario('34. Flyadeal, matched by its PNR', [
 ], [tkt({ ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB', amount: 1261.51, totalDoc: 1261.51 })],
 { NOT_IN_LEDGER: 0, NOT_ON_SHEET: 0 });
 
+// KSAML2706: sold under the e-ticket number, refunded on a row of its own under the PNR.
+scenario('34b. Flyadeal sold by number, refunded under its PNR', [
+  `560-9152641826,H692FC,Issued,REQ100,1261.51,,,${D},,F3 Portal`,
+  `H692FC,H692FC,Cancelled/Refunded,REQ100,0,821.74,checked,${D},,F3 Portal`,
+], [tkt({ ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB', amount: 1261.51, totalDoc: 1261.51 }),
+    tkt({ ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB', amount: -821.74, totalDoc: 821.74, status: 'REFUND', date: '2026-08-22' })],
+{ NOT_IN_LEDGER: 0, NOT_ON_SHEET: 0, REFUND_NOT_ON_SHEET: 0, REFUND_NOT_IN_LEDGER: 0 });
+
 scenario('35. Our ticket, on their sheet under another request', [
   `065-5513059078,PNR001,Issued,REQ200,1000,,,${D},,IATA Portal (UAE)`,
 ], [tkt({})], { REQ_DIFFERS: 1, NOT_ON_SHEET: 0 });

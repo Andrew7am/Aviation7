@@ -1134,18 +1134,25 @@ export function compareTeamSheet(
        the PNR (H692FC), and their sheet writes the number off the e-ticket
        (560-9152641826). For a flyadeal row the number finds nothing, so the
        booking does - our flyadeal tickets on its PNR. */
-    const flyadeal = rows.some(r => /flyadeal/i.test(r.airline || '') || /^\s*f3\b/i.test(r.portal || ''));
+    /* flydubai the same way (25 Oct 2026): its bookings are held under the PNR too. */
+    const flyadeal = rows.some(r => /flyadeal|fly\s*dubai/i.test(r.airline || '') || /^\s*(f3|fz)\b|fly\s*dubai/i.test(r.portal || ''));
+    let byBooking: Set<string> | null = null;
     if (!ours.length && flyadeal) {
       const viaPnr = rows.flatMap(r => pnrParts(r.pnr)).flatMap(p => ourByPnr.get(pnrKey(p)) ?? [])
-        .filter((t, i, all) => /flyadeal/i.test(t.source || '') && all.indexOf(t) === i);
+        .filter((t, i, all) => /flyadeal|fly\s*dubai/i.test(t.source || '') && all.indexOf(t) === i);
       if (viaPnr.length) {
         ours = viaPnr;
         for (const t of viaPnr) claimed.add(ticketMatchKey(t.ticketNo || ''));
+        byBooking = new Set(rows.flatMap(r => pnrParts(r.pnr)).map(pnrKey));
       }
     }
     const theirReq = (rows.find(r => reqKey(r.reqNum))?.reqNum || '').trim();
     const ourReq = (ours.find(t => reqKey(t.reqNum || ''))?.reqNum || '').trim();
-    const theySayRefunded = rows.some(r => r.status === 'REFUNDED');
+    /* Matched by the booking, the booking's refund row counts too: KSAML2706's
+       H692FC is refunded on a row of its own, written under the PNR, and the
+       sale row under 9152641826 read "refund not on their sheet". */
+    const theySayRefunded = rows.some(r => r.status === 'REFUNDED')
+      || (!!byBooking && sheet.some(r => r.status === 'REFUNDED' && pnrParts(r.pnr).some(p => byBooking!.has(pnrKey(p)))));
 
     /* Whether a void was the LAST thing that happened to this document.
        Their dates settle it; a tie cannot, and is reported instead. See
@@ -2101,7 +2108,13 @@ export function compareTeamSheet(
     // A refund written under the booking reference is that ticket's refund.
     const refundOf = r.serial ? pnrRefund.get(r.serial) : undefined;
     if (refundOf) { theirR.add(refundOf); continue; }
-    const k = r.serial || pnrKey(r.pnr);
+    /* flyadeal and flydubai are held under the booking, their reports
+       carrying no ticket number: a row of theirs that names the ticket
+       number is the booking we hold. KSAML2706's 9152641826 is our H692FC,
+       and counted apart it read 3 tickets on their side against our 2. */
+    const p = pnrKey(r.pnr);
+    const k = r.serial && p && !ourBySerial.has(r.serial) && (ourBySerial.get(p) ?? []).some(t => !isRefund(t))
+      ? p : r.serial || p;
     if (!k || voidedSet.has(k) || coupons.has(k)) continue;
     /* Their ticket column rarely says EMD: EGPML1909's two EMDs sit there as
        plain numbers. Our books know which documents are EMDs. */

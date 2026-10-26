@@ -951,17 +951,19 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     for (const t of applications) claimed.add(ticketMatchKey(t.ticketNo || ""));
     let ours = [...ourBySerial.get(serial3) ?? [], ...applications];
     const first2 = rows[0];
-    const flyadeal = rows.some((r) => /flyadeal/i.test(r.airline || "") || /^\s*f3\b/i.test(r.portal || ""));
+    const flyadeal = rows.some((r) => /flyadeal|fly\s*dubai/i.test(r.airline || "") || /^\s*(f3|fz)\b|fly\s*dubai/i.test(r.portal || ""));
+    let byBooking = null;
     if (!ours.length && flyadeal) {
-      const viaPnr = rows.flatMap((r) => pnrParts(r.pnr)).flatMap((p) => ourByPnr.get(pnrKey(p)) ?? []).filter((t, i, all) => /flyadeal/i.test(t.source || "") && all.indexOf(t) === i);
+      const viaPnr = rows.flatMap((r) => pnrParts(r.pnr)).flatMap((p) => ourByPnr.get(pnrKey(p)) ?? []).filter((t, i, all) => /flyadeal|fly\s*dubai/i.test(t.source || "") && all.indexOf(t) === i);
       if (viaPnr.length) {
         ours = viaPnr;
         for (const t of viaPnr) claimed.add(ticketMatchKey(t.ticketNo || ""));
+        byBooking = new Set(rows.flatMap((r) => pnrParts(r.pnr)).map(pnrKey));
       }
     }
     const theirReq = (rows.find((r) => reqKey(r.reqNum))?.reqNum || "").trim();
     const ourReq = (ours.find((t) => reqKey(t.reqNum || ""))?.reqNum || "").trim();
-    const theySayRefunded = rows.some((r) => r.status === "REFUNDED");
+    const theySayRefunded = rows.some((r) => r.status === "REFUNDED") || !!byBooking && sheet.some((r) => r.status === "REFUNDED" && pnrParts(r.pnr).some((p) => byBooking.has(pnrKey(p))));
     const dates = rows.map((r) => r.issued).filter(Boolean).sort();
     const latest = dates[dates.length - 1] ?? "";
     const atLatest = latest ? rows.filter((r) => r.issued === latest) : rows;
@@ -1596,7 +1598,8 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       theirR.add(refundOf);
       continue;
     }
-    const k = r.serial || pnrKey(r.pnr);
+    const p = pnrKey(r.pnr);
+    const k = r.serial && p && !ourBySerial.has(r.serial) && (ourBySerial.get(p) ?? []).some((t) => !isRefund(t)) ? p : r.serial || p;
     if (!k || voidedSet.has(k) || coupons.has(k)) continue;
     const anEmd = !!r.serial && (emdNamed(r) || theirEmdDocs.has(r.serial) || (ourBySerial.get(r.serial) ?? []).some((t) => emdLine(t)));
     if (anEmd) theirE.add(k);
