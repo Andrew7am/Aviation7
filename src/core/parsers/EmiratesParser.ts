@@ -20,8 +20,10 @@ import { parseDate } from '../helpers/parseDate';
  *
  * NetDueAirline is what the agency owes on the document - the total less any
  * commission - and so the ledger figure, the same as Turkish's Cash Payment.
- * Only a cash sale settles through the agency: a card sale is collected by the
- * airline from the passenger, and owes nothing here.
+ * A card sale is paid with the company's card (26 Oct 2026): it settles
+ * nothing through BSP, but the ticket still cost what it cost, so it is held
+ * at the same figure as a cash sale. Held at 0.00, a card ticket vanished
+ * from its request's cost.
  */
 export const EmiratesParser: VendorParser = {
   id:   'EMIRATES',
@@ -103,12 +105,13 @@ export const EmiratesParser: VendorParser = {
       if (conj && !gross && !(net || 0)) return;
 
       const fop = (iFOP !== -1 ? cell(row, iFOP) : '').toUpperCase().trim();
-      // CASH (and INVC, invoiced to the agency) settle through BSP; a card does not.
-      const card = !/^(CASH|INV)/.test(fop) && /^(CC|CARD|CREDIT|VI|AX|MC|DC|CA)/.test(fop);
-      if (card) warnings.push(`Document ${ticketNo}: paid by card (${fop}) - Emirates collects this directly, so it settles nothing through the agency.`);
+      // CASH (and INVC, invoiced to the agency) settle through BSP; a card does not,
+      // but it is the company's card and the cost stands.
+      const card = !/^(CASH|INV)/.test(fop) && /^(CC|CARD|CREDIT|VI|AX|MC|DC)/.test(fop);
+      if (card) warnings.push(`Document ${ticketNo}: paid by card (${fop}) - kept at its cost; it will not appear on the BSP invoice.`);
 
       const owed = Number.isFinite(net) && cell(row, iNet).trim() !== '' ? net : gross - comm;
-      const figure = card ? 0 : Math.abs(owed);
+      const figure = Math.abs(owed);
       const amount = status === 'VOID' ? 0 : status === 'REFUND' ? -figure : figure;
 
       const penalty = iPenalty !== -1 ? num(cell(row, iPenalty)) : 0;

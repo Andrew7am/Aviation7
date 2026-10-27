@@ -112,12 +112,12 @@ console.log('\n5. These rows now agree with the BSP invoice');
   }
 }
 
-console.log('\n6. A card sale settles nothing through the agency');
+console.log('\n6. A card sale is held at its cost (the company card)');
 {
   const card = String.raw`Sales,,2352540225999,23.08.2026,23.08.2026,International, ,0,0,2940,0,1380,0,0,0,1560,0,0,AED,0,JED\IST\JED,0,,8621913,SURNAMED/GIVEND MR,1160,20,0, , ,0,0,0,PAX,OP4,,IST,No,No,No,1160,ZZZZZZ,0`;
   const { headers: h, body: bd } = parse([card]);
   const r = TurkishAgencySalesParser.parse(bd, h, 'AED');
-  eq('payable is zero', r.rows[0].amount, 0);
+  eq('held at its cost, not the zero cash payment', r.rows[0].amount, 2940);
   eq('but the fare is still recorded', r.rows[0].totalDoc, 2940);
   eq('and it is called out', r.warnings.some(w => /credit card/i.test(w)), true);
 }

@@ -58,7 +58,8 @@ console.log('\n3. A refund, a void and a card sale');
   const x = runParser(g, undefined, 'SAR', 'pasted');
   eq('the refund is a credit', [x.rows[0].status, x.rows[0].amount], ['REFUND', -15000]);
   eq('the void carries nothing', [x.rows[1].status, x.rows[1].amount], ['VOID', 0]);
-  eq('a card sale settles nothing through the agency', x.rows[2].amount, 0);
+  // The company's card: settles nothing through BSP, but the ticket still cost 1,000.
+  eq('a card sale is held at its cost', x.rows[2].amount, 1000);
 }
 
 console.log('\n4. The BSP invoice settles the Emirates row, like Turkish');

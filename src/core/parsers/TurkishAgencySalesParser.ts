@@ -28,8 +28,9 @@ import { NormalizedStatus } from '../helpers/normalizeStatus';
  * and every reconciliation showed a difference. Reading this format, the
  * portal row already agrees with the invoice.
  *
- * Only CASH settles through the agency's credit. A card sale is collected by
- * the airline directly, so its Cash Payment is 0 and the ledger figure is 0 —
+ * Only CASH settles through the agency's credit. A card sale is paid with the
+ * company's card (26 Oct 2026): its Cash Payment is 0, but the ticket cost the
+ * fare less the discount all the same, and that is what the ledger holds -
  * the same rule the BSP invoice parser follows for its own FOP column.
  */
 export const TurkishAgencySalesParser: VendorParser = {
@@ -152,8 +153,8 @@ export const TurkishAgencySalesParser: VendorParser = {
       if (iRemit !== -1 && Math.abs(remit - settled) > 0.01 && card === 0 && invoiced === 0) {
         warnings.push(`Ticket ${ticketNo}: Total Remittence ${remit} does not match Cash Payment ${settled}.`);
       }
-      if (card > 0) {
-        warnings.push(`Ticket ${ticketNo}: paid by credit card (${card}) — the airline collects this directly, so it settles nothing through the agency.`);
+      if (card !== 0) {
+        warnings.push(`Ticket ${ticketNo}: paid by credit card (${card}) — kept at its cost; it settles nothing through the agency's credit.`);
       }
       if (invoiced > 0) {
         warnings.push(`Ticket ${ticketNo}: ${invoiced} settled as Invoice Payment, not cash.`);
@@ -168,7 +169,8 @@ export const TurkishAgencySalesParser: VendorParser = {
       // nothing through the agency — and a fallback would quietly restore the
       // full fare on exactly those rows. Only a missing Cash Payment column,
       // which is a different thing from a zero in it, uses the computed value.
-      const figure = iCash === -1 ? expected : settled;
+      // Paid by card, in whole or in part: the cost is the report's own sum.
+      const figure = iCash === -1 || card !== 0 ? expected : settled;
       const amount = status === 'VOID'   ? 0
                    : status === 'REFUND' ? -Math.abs(figure)
                    : figure;
