@@ -3014,20 +3014,21 @@ async function send(mail, a, total, at) {
 }
 async function checkRequestAlerts(db, mail) {
   const out = { checked: 0, emailed: [], errors: [] };
-  const { data: alerts, error } = await db.from("request_alerts").select("*").is("emailed_at", null);
+  const { data: alerts, error } = await db.from("request_alerts").select("*");
   if (error || !alerts?.length) return out;
   for (const a of alerts) {
     const now = /* @__PURE__ */ new Date();
     try {
       let total = null;
-      if (!a.reached_at) {
-        const like = `%${a.req_num}%`;
-        const since = a.checked_at ?? "1970-01-01";
-        const [{ data: t1 }, { data: s1 }] = await Promise.all([
-          db.from("tickets").select("updated_at").ilike("req_num", like).gt("updated_at", since).limit(1),
-          db.from("airtable_tickets").select("synced_at").ilike("req_num", like).gt("synced_at", since).limit(1)
-        ]);
-        if (a.checked_at && !t1?.length && !s1?.length) continue;
+      const like = `%${a.req_num}%`;
+      const since = a.checked_at ?? "1970-01-01";
+      const [{ data: t1 }, { data: s1 }] = await Promise.all([
+        db.from("tickets").select("updated_at").ilike("req_num", like).gt("updated_at", since).limit(1),
+        db.from("airtable_tickets").select("synced_at").ilike("req_num", like).gt("synced_at", since).limit(1)
+      ]);
+      const moved = !a.checked_at || !!t1?.length || !!s1?.length;
+      if (!moved && (a.emailed_at || !a.reached_at)) continue;
+      if (moved) {
         out.checked++;
         const [{ data: books }, { data: sheet }] = await Promise.all([
           db.from("tickets").select("ticket_no, status, amount, total_doc, currency, req_num").ilike("req_num", like),
@@ -3038,10 +3039,11 @@ async function checkRequestAlerts(db, mail) {
         const onlyTheirs = sheetOnlySerials(a.req_num, bookRows, sheetRows);
         const { data: voids } = onlyTheirs.length ? await db.from("void_tickets").select("ticket_no").in("ticket_no", onlyTheirs) : { data: [] };
         total = requestIssued(a.req_num, a.currency, bookRows, sheetRows, (voids ?? []).map((v) => v.ticket_no));
-        const reached = total.total >= Number(a.threshold);
-        await db.from("request_alerts").update({ last_total: total.total, checked_at: now.toISOString(), ...reached ? { reached_at: now.toISOString() } : {} }).eq("id", a.id);
+        const reached = !!a.reached_at || total.total >= Number(a.threshold);
+        await db.from("request_alerts").update({ last_total: total.total, checked_at: now.toISOString(), ...reached && !a.reached_at ? { reached_at: now.toISOString() } : {} }).eq("id", a.id);
         if (!reached) continue;
       }
+      if (a.emailed_at) continue;
       const t = total ?? { total: Number(a.last_total ?? 0), fromBooks: Number(a.last_total ?? 0), fromSheet: 0, docs: 0 };
       await send(mail, a, t, now);
       await db.from("request_alerts").update({ emailed_at: now.toISOString(), last_error: null }).eq("id", a.id);
