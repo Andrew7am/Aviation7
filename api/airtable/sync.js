@@ -2469,6 +2469,7 @@ async function syncAirtable(env) {
   try {
     let names = st?.names ?? {};
     const csv = !!env.csvRows;
+    let apiDown = "";
     let recs = [];
     let rows;
     const before = /* @__PURE__ */ new Map();
@@ -2482,7 +2483,7 @@ async function syncAirtable(env) {
       })), now.toISOString());
       rows = m.rows;
       full = m.whole;
-    } else {
+    } else try {
       if (full || !Object.keys(names).length) names = await fetchNames(env.airtableToken);
       const since = st?.cursor ? new Date(new Date(st.cursor).getTime() - 5e3).toISOString() : "";
       const got = await airtable(
@@ -2501,6 +2502,12 @@ async function syncAirtable(env) {
         if (error) throw new Error(error.message);
         for (const r of data ?? []) before.set(r.record_id, r);
       }
+    } catch (e) {
+      apiDown = e instanceof Error ? e.message : String(e);
+      if (!env.fillNow || !/^Airtable |fetch failed/i.test(apiDown)) throw e;
+      rows = [];
+      full = false;
+      before.clear();
     }
     const ids = rows.map((r) => r.record_id);
     const changes = /* @__PURE__ */ new Map();
@@ -2681,13 +2688,19 @@ async function syncAirtable(env) {
     }
     let reqFilled = 0, detailsFilled = 0;
     const fillNow = full || changedRows.length > 0 || !!env.fillNow;
+    const onlySince = apiDown ? st?.last_ok_at : void 0;
+    const arrivedSince = (q) => onlySince ? q.gt("created_at", onlySince) : q;
     let liveRows = null;
-    const liveAll = async () => liveRows ??= full ? rows : !env.fillNow ? changedRows : await selectAll(
+    const liveAll = async () => liveRows ??= full ? rows : !env.fillNow ? changedRows : (await selectAll(
       db,
       "airtable_tickets",
-      "serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, sheet_row",
+      'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, emd:sheet_row->>"EMD Number", origin:sheet_row->>"Origin Airports (from Aviation Quotations)", dest:sheet_row->>"Destination Airports (from Aviation Quotations)"',
       (q) => q.eq("deleted", false)
-    );
+    )).map(({ emd, origin, dest, ...r }) => ({ ...r, sheet_row: {
+      "EMD Number": emd ?? "",
+      "Origin Airports (from Aviation Quotations)": origin ?? "",
+      "Destination Airports (from Aviation Quotations)": dest ?? ""
+    } }));
     const auditRows = [];
     const audit = async (owner, entity, detail) => {
       auditRows.push({
@@ -2703,7 +2716,7 @@ async function syncAirtable(env) {
     };
     if (fillNow) {
       const LACK_COLS = "id, ticket_no, passenger_name, cabin_class, route, user_id, pnr, source";
-      const lackingOnly = (q) => q.neq("status", "FUND").or("passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.");
+      const lackingOnly = (q) => arrivedSince(q).neq("status", "FUND").or("passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.");
       const lacking = full || env.fillNow ? await selectAll(db, "tickets", LACK_COLS, lackingOnly) : await ledgerIn(LACK_COLS, lackingOnly);
       if (lacking.length) {
         const fills = detailsFor(lacking.map((t) => ({
@@ -2853,7 +2866,7 @@ async function syncAirtable(env) {
         }
       }
     }
-    const { data: miss, error: missErr } = fillNow ? await db.from("tickets").select("id, ticket_no, pnr, status, user_id, source").or("req_num.is.null,req_num.eq.").neq("status", "FUND") : { data: [], error: null };
+    const { data: miss, error: missErr } = fillNow ? await arrivedSince(db.from("tickets").select("id, ticket_no, pnr, status, user_id, source").or("req_num.is.null,req_num.eq.").neq("status", "FUND")) : { data: [], error: null };
     if (missErr) throw new Error(`tickets: ${missErr.message}`);
     if (miss?.length) {
       const live = await liveAll();
@@ -2888,7 +2901,8 @@ async function syncAirtable(env) {
     }
     const newest = [st?.cursor, ...rows.map((r) => r.last_modified), ...rows.map((r) => r.created_at)].filter(Boolean).map((x) => new Date(x).getTime()).reduce((a, b) => Math.max(a, b), 0);
     const { count } = await db.from("airtable_tickets").select("record_id", { count: "exact", head: true }).eq("deleted", false);
-    if (!dry) await db.from("airtable_sync_state").upsert(csv ? {
+    if (!dry && apiDown) await db.from("airtable_sync_state").upsert({ id: STATE_ID, last_run_at: stamp, last_error: apiDown });
+    else if (!dry) await db.from("airtable_sync_state").upsert(csv ? {
       id: STATE_ID,
       last_full_at: null,
       last_run_at: stamp,
@@ -2908,7 +2922,7 @@ async function syncAirtable(env) {
       names
     });
     return {
-      mode: csv ? "csv" : full ? "full" : "incremental",
+      mode: csv ? "csv" : apiDown ? "local" : full ? "full" : "incremental",
       fetched: csv ? rows.length : recs.length,
       changedRecords: changes.size,
       fieldChanges: log.length,

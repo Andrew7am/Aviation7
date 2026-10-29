@@ -86,9 +86,10 @@ export class AirtableService {
   /** What each of their rows says about requests - for filling ours. */
   async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal: string; airline: string }[]> {
     const rows = await fetchAllRows<any>((from, to) =>
-      supabase.from('airtable_tickets').select('serials, pnr, req_num, status, portal, airline, sheet_row')
+      // The EMD cell alone, not the whole sheet: 2.5 MB of a 2.8 MB read, every import.
+      supabase.from('airtable_tickets').select('serials, pnr, req_num, status, portal, airline, emd:sheet_row->>"EMD Number"')
         .eq('deleted', false).range(from, to));
-    return rows.map(r => ({ serials: r.serials ?? [], emd: r.sheet_row?.['EMD Number'] ?? '', pnr: r.pnr ?? '',
+    return rows.map(r => ({ serials: r.serials ?? [], emd: r.emd ?? '', pnr: r.pnr ?? '',
       req_num: r.req_num ?? '', status: r.status ?? '', portal: r.portal ?? '', airline: r.airline ?? '' }));
   }
 
@@ -123,7 +124,7 @@ export class AirtableService {
   /** Open notices, and the ones decided in the last week for reference. */
   /** Their CSV export, read instead of the API: the rows go up in pieces,
    *  then the sync takes them as it would a live read. */
-  async syncFromCsv(rows: Record<string, string>[]): Promise<{ fetched: number; changedRecords: number; added: number; deleted: number; notices: number; reqFilled: number }> {
+  async syncFromCsv(rows: Record<string, string>[]): Promise<{ fetched: number; changedRecords: number; added: number; deleted: number; notices: number; reqFilled: number; detailsFilled: number }> {
     const upload = `up_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await supabase.from('airtable_csv_rows')

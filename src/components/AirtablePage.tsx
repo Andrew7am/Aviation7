@@ -72,7 +72,7 @@ export const AirtablePage: React.FC<{
     const parsed = Papa.parse<Record<string, string>>(text.replace(/^\uFEFF/, ''), { header: true, skipEmptyLines: true });
     if (!parsed.data.length || !('Ticket Number' in parsed.data[0])) throw new Error('This is not their Airtable export: it has no "Ticket Number" column.');
     const r = await svc.syncFromCsv(parsed.data);
-    setUploaded(`${file.name}: ${r.fetched} rows read - ${r.added} new, ${r.changedRecords} changed, ${r.deleted} gone; ${r.notices} notice(s), ${r.reqFilled} request(s) filled.`);
+    setUploaded(`${file.name}: ${r.fetched} rows read - ${r.added} new, ${r.changedRecords} changed, ${r.deleted} gone; ${r.notices} notice(s); filled in our tickets: ${r.reqFilled} request(s), ${r.detailsFilled} name/cabin/route.`);
     await onRefresh?.();
     await load();
   });

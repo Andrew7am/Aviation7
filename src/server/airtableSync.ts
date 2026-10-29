@@ -39,7 +39,7 @@ const STATE_ID = 'aviation_tickets';
 const FULL_EVERY_MS = 6 * 60 * 60 * 1000;
 
 export interface SyncResult {
-  mode: 'full' | 'incremental' | 'csv';
+  mode: 'full' | 'incremental' | 'csv' | 'local';
   fetched: number; changedRecords: number; fieldChanges: number; added: number; deleted: number;
   notices: number; onlineQueued: number; reqFilled: number; detailsFilled: number; ms: number;
 }
@@ -111,6 +111,7 @@ export async function syncAirtable(env: {
     // full run, or the moment a record links to one we have not seen.
     let names: Record<string, string> = (st?.names as Record<string, string>) ?? {};
     const csv = !!env.csvRows;
+    let apiDown = '';
     let recs: unknown[] = [];
     let rows: AirtableTicketRow[];
     const before = new Map<string, AirtableTicketRow & { deleted?: boolean }>();
@@ -124,7 +125,7 @@ export async function syncAirtable(env: {
         refund_amount: r.refund_amount == null ? null : Number(r.refund_amount) })), now.toISOString());
       rows = m.rows;
       full = m.whole;
-    } else {
+    } else try {
       if (full || !Object.keys(names).length) names = await fetchNames(env.airtableToken);
 
       // A little overlap with the last run: a record saved in the same second
@@ -143,6 +144,15 @@ export async function syncAirtable(env: {
         if (error) throw new Error(error.message);
         for (const r of data ?? []) before.set(r.record_id, r as AirtableTicketRow);
       }
+    } catch (e) {
+      /* Their API cannot be read (since 26 Oct 2026 the token is 401). A run
+         somebody asked for - after an import, or Sync now - still fills what
+         our copy of their table, from the last export uploaded, can fill:
+         requests, names, cabins and routes, as the API run did. The schedule's
+         own runs still stop here: nothing has changed for them to read. */
+      apiDown = e instanceof Error ? e.message : String(e);
+      if (!env.fillNow || !/^Airtable |fetch failed/i.test(apiDown)) throw e;
+      rows = []; full = false; before.clear();
     }
     const ids = rows.map(r => r.record_id);
 
@@ -319,15 +329,26 @@ export async function syncAirtable(env: {
        the moment they do. Fill only, and said in the activity log. */
     let reqFilled = 0, detailsFilled = 0;
     const fillNow = full || changedRows.length > 0 || !!env.fillNow;
+    /* Read from our copy alone, which has not moved since the last run that
+       wrote it - and that run filled everything it could. Only a ticket
+       arrived since can take something now. */
+    const onlySince = apiDown ? st?.last_ok_at as string | undefined : undefined;
+    const arrivedSince = (q: any) => onlySince ? q.gt('created_at', onlySince) : q;
     type LiveRow = { serials: string[]; ticket_cell: string; pnr: string; req_num: string; status: string; client_name: string; cabin: string; portal: string; airline: string; sheet_row: Record<string, string> };
     let liveRows: LiveRow[] | null = null;
     // On a full run their whole table was just read; on any other, read our copy.
     // After an import (fill=1) our copy of their whole table; between full
     // runs, only what just changed.
+    /* Of each row's sheet, only the three cells the fills read: the whole
+       sheet is 2.5 MB of the 2.8 a read of the table costs. */
     const liveAll = async () => liveRows ??= full ? rows as unknown as LiveRow[]
       : !env.fillNow ? changedRows as unknown as LiveRow[]
-      : await selectAll<LiveRow>(db, 'airtable_tickets',
-        'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, sheet_row', q => q.eq('deleted', false));
+      : (await selectAll<LiveRow & { emd: string | null; origin: string | null; dest: string | null }>(db, 'airtable_tickets',
+        'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, emd:sheet_row->>"EMD Number", '
+        + 'origin:sheet_row->>"Origin Airports (from Aviation Quotations)", dest:sheet_row->>"Destination Airports (from Aviation Quotations)"',
+        q => q.eq('deleted', false)))
+        .map(({ emd, origin, dest, ...r }) => ({ ...r, sheet_row: { 'EMD Number': emd ?? '',
+          'Origin Airports (from Aviation Quotations)': origin ?? '', 'Destination Airports (from Aviation Quotations)': dest ?? '' } }));
     // The log lines, written together at the end rather than one round trip each.
     const auditRows: Record<string, unknown>[] = [];
     const audit = async (owner: string | undefined, entity: string, detail: string) => { auditRows.push({
@@ -339,7 +360,7 @@ export async function syncAirtable(env: {
     if (fillNow) {
       type Lacking = { id: string; ticket_no: string; passenger_name: string | null; cabin_class: string | null; route: string | null; user_id: string; pnr: string | null; source: string | null };
       const LACK_COLS = 'id, ticket_no, passenger_name, cabin_class, route, user_id, pnr, source';
-      const lackingOnly = (q: any) => q.neq('status', 'FUND').or('passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.');
+      const lackingOnly = (q: any) => arrivedSince(q).neq('status', 'FUND').or('passenger_name.is.null,passenger_name.eq.,cabin_class.is.null,cabin_class.eq.,route.is.null,route.eq.');
       const lacking = (full || env.fillNow
         ? await selectAll<Lacking>(db, 'tickets', LACK_COLS, lackingOnly)
         : await ledgerIn(LACK_COLS, lackingOnly)) as Lacking[];
@@ -532,7 +553,7 @@ export async function syncAirtable(env: {
     }
 
     const { data: miss, error: missErr } = fillNow
-      ? await db.from('tickets').select('id, ticket_no, pnr, status, user_id, source').or('req_num.is.null,req_num.eq.').neq('status', 'FUND')
+      ? await arrivedSince(db.from('tickets').select('id, ticket_no, pnr, status, user_id, source').or('req_num.is.null,req_num.eq.').neq('status', 'FUND'))
       : { data: [], error: null };
     if (missErr) throw new Error(`tickets: ${missErr.message}`);
     if (miss?.length) {
@@ -564,7 +585,9 @@ export async function syncAirtable(env: {
     /* An export moves no cursor and resets the full run: when the API is back,
        its first read is of the whole table, which settles the records the
        export could only name by their content. */
-    if (!dry) await db.from('airtable_sync_state').upsert(csv ? {
+    // From our copy alone: their API is still down, and says so.
+    if (!dry && apiDown) await db.from('airtable_sync_state').upsert({ id: STATE_ID, last_run_at: stamp, last_error: apiDown });
+    else if (!dry) await db.from('airtable_sync_state').upsert(csv ? {
       id: STATE_ID, last_full_at: null, last_run_at: stamp, last_ok_at: new Date().toISOString(),
       last_error: null, record_count: count ?? null, last_changed: changedRows.length,
     } : {
@@ -572,7 +595,7 @@ export async function syncAirtable(env: {
       last_full_at: full ? stamp : st?.last_full_at, last_run_at: stamp, last_ok_at: new Date().toISOString(),
       last_error: null, record_count: count ?? null, last_changed: changedRows.length, names,
     });
-    return { mode: csv ? 'csv' : full ? 'full' : 'incremental', fetched: csv ? rows.length : recs.length, changedRecords: changes.size, fieldChanges: log.length,
+    return { mode: csv ? 'csv' : apiDown ? 'local' : full ? 'full' : 'incremental', fetched: csv ? rows.length : recs.length, changedRecords: changes.size, fieldChanges: log.length,
       added, deleted, notices: notices.length, onlineQueued, reqFilled, detailsFilled, ms: Date.now() - t0, preview };
   } catch (e) {
     if (!dry) await db.from('airtable_sync_state').upsert({ id: STATE_ID, last_error: e instanceof Error ? e.message : String(e) });
