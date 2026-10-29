@@ -4,7 +4,7 @@ import type { AirlineLimit, LimitUse } from '../core/helpers/airlineLimit';
 
 /**
  * The week's issues on an airline's IATA limit, always in the header - so
- * where the week stands can be read on a Wednesday, not only once it nears
+ * where the week stands can be read mid-week, not only once it nears
  * the limit. A click lists what was counted.
  */
 const fmt = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 0 });

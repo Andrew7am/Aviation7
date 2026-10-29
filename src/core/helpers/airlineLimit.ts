@@ -2,8 +2,9 @@
  * How much of an airline's weekly sales limit on IATA has been used.
  *
  * Emirates (176) lets the agency issue up to 300,000 AED a week on its IATA
- * (BSP) account. The weeks run seven days from Wednesday 21 Oct 2026, the
- * day the user set this up, so each one is Wednesday to Tuesday.
+ * (BSP) account. The week runs Monday to Sunday, local time (UTC+3): it
+ * starts again at midnight between Sunday and Monday. (Set up on Wednesday
+ * 21 Oct 2026 as Wednesday to Tuesday; moved to Mondays on 29 Oct.)
  *
  * Only what was issued counts - tickets and EMDs, at their full fare. A
  * refund does not give any of the week back, a void was never billed and an
@@ -28,7 +29,7 @@ export interface AirlineLimit {
 }
 
 export const EMIRATES_IATA: AirlineLimit = {
-  airlineCode: '176', airline: 'Emirates', limit: 300_000, warnAt: 290_000, currency: 'AED', weekFrom: '2026-10-21',
+  airlineCode: '176', airline: 'Emirates', limit: 300_000, warnAt: 290_000, currency: 'AED', weekFrom: '2026-10-26',
 };
 
 export interface BookRow { ticketNo: string; source?: string; airlineCode?: string; status?: string; date?: string; amount: number; totalDoc?: number }
@@ -52,7 +53,7 @@ const ymd = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 /** A moment as the agency's calendar date (UTC+3). */
 export const localDate = (iso: string) => ymd(new Date(iso).getTime() + 3 * 3600_000);
 
-/** The week, Wednesday to Tuesday, that a local date falls in. */
+/** The week, Monday to Sunday, that a local date falls in. */
 export function limitWeek(today: string, weekFrom: string): { from: string; to: string } {
   const start = Date.parse(`${weekFrom}T00:00:00Z`);
   const n = Math.floor((Date.parse(`${today}T00:00:00Z`) - start) / (7 * DAY));
