@@ -6,6 +6,7 @@ import { AirtableService, type AirtableNotice, type SyncState, type LiveRecord, 
 import { docKey } from '../core/integrations/airtableNotices';
 import { teamFixes, FIX_LABEL, NUMBERED_SOURCES, type FixKind } from '../core/integrations/airtableFixes';
 import { portalSource } from '../core/config/teamPortals';
+import { AIRTABLE_API_ON } from '../core/integrations/airtable';
 
 /**
  * The aviation team's Airtable, in one place.
@@ -111,7 +112,8 @@ export const AirtablePage: React.FC<{
     ['changes', 'Changes', changes?.length ?? null], ['tickets', 'Their tickets', records?.length ?? null],
     ['fixes', 'For the team to fix', fixes.length || null],
   ];
-  const stale = sync?.lastOkAt ? Date.now() - new Date(sync.lastOkAt).getTime() > 10 * 60000 : true;
+  // Live, ten minutes is stale; from uploads, a day.
+  const stale = sync?.lastOkAt ? Date.now() - new Date(sync.lastOkAt).getTime() > (AIRTABLE_API_ON ? 10 * 60000 : 864e5) : true;
 
   const exportFixes = async () => {
     const XLSX = await xlsx();
@@ -150,15 +152,17 @@ export const AirtablePage: React.FC<{
             {sync?.lastError ? <AlertTriangle className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
             <span className="flex-1">
               {sync?.lastError ? <>Last sync failed: {sync.lastError}</>
-                : <>Synced <b>{ago(sync?.lastOkAt)}</b> ({when(sync?.lastOkAt)}). It runs every two minutes on its own, and reads the whole table once an hour.</>}
+                : !AIRTABLE_API_ON ? <>Their sheet as of the last export uploaded, <b>{ago(sync?.lastOkAt)}</b> ({when(sync?.lastOkAt)}). The live connection is off: upload a new export to update it.</>
+                : <>Synced <b>{ago(sync?.lastOkAt)}</b> ({when(sync?.lastOkAt)}). It runs every two minutes on its own, and reads the whole table every six hours.</>}
             </span>
             <button onClick={() => act('sync', async () => { await onSyncNow(); await load(); })} disabled={busy === 'sync'}
+              title={AIRTABLE_API_ON ? undefined : 'Fill requests, names, cabins and routes from the last export uploaded'}
               className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded hover:bg-slate-50">
-              {busy === 'sync' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Sync now
+              {busy === 'sync' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} {AIRTABLE_API_ON ? 'Sync now' : 'Fill from export'}
             </button>
             {canEdit && (
               <label title="Their Airtable's CSV export, read in place of the live connection"
-                className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded cursor-pointer ${sync?.lastError
+                className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded cursor-pointer ${sync?.lastError || !AIRTABLE_API_ON
                   ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
                 {busy === 'csv' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Upload their export (CSV)
                 <input type="file" accept=".csv,text/csv" className="hidden" disabled={busy === 'csv'}
@@ -166,9 +170,9 @@ export const AirtablePage: React.FC<{
               </label>
             )}
           </div>
-          {sync?.lastError && /401|authenticat/i.test(sync.lastError) && (
+          {(!AIRTABLE_API_ON || (sync?.lastError && /401|authenticat/i.test(sync.lastError))) && (
             <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-[11px] text-purple-900">
-              Their Airtable cannot be read right now. Export the Aviation Tickets table from Airtable as CSV and upload it here:
+              Their Airtable is not read live. Export the Aviation Tickets table from Airtable as CSV and upload it here:
               everything the live connection does - the bell, requests filled, the Emirates limit - runs on the file instead.
               The whole table is best; part of it updates only the rows it carries.
             </div>

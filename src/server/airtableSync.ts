@@ -14,7 +14,7 @@
  */
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import {
-  AIRTABLE_BASE, AIRTABLE_TICKETS_TABLE, AIRTABLE_NAME_TABLES, normalize, diffRecord, rowsToCsv,
+  AIRTABLE_API_ON, AIRTABLE_BASE, AIRTABLE_TICKETS_TABLE, AIRTABLE_NAME_TABLES, normalize, diffRecord, rowsToCsv,
   type AirtableRecord, type AirtableTicketRow, type FieldChange, type NameMap,
 } from '../core/integrations/airtable';
 import { noticesFor, missingRefunds, refundProposals, splitRequests, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
@@ -99,7 +99,8 @@ export async function syncAirtable(env: {
 }): Promise<SyncResult & { preview?: { notices: Notice[]; online: string[]; changes?: unknown } }> {
   const t0 = Date.now();
   const db = createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false } });
-  const { data: st } = await db.from('airtable_sync_state').select('*').eq('id', STATE_ID).maybeSingle();
+  // Not the linked names (48 KB): only a read of the API wants them.
+  const { data: st } = await db.from('airtable_sync_state').select('cursor, last_full_at, last_ok_at').eq('id', STATE_ID).maybeSingle();
   const now = new Date();
   let full = env.forceFull || !st?.cursor || !st?.last_full_at
     || now.getTime() - new Date(st.last_full_at).getTime() > FULL_EVERY_MS;
@@ -109,8 +110,10 @@ export async function syncAirtable(env: {
   try {
     // Linked records by name. Kept between runs; read again on the hourly
     // full run, or the moment a record links to one we have not seen.
-    let names: Record<string, string> = (st?.names as Record<string, string>) ?? {};
+    let names: Record<string, string> = {};
     const csv = !!env.csvRows;
+    // Read from our copy alone: the API is off, or could not be read.
+    let local = !csv && !AIRTABLE_API_ON;
     let apiDown = '';
     let recs: unknown[] = [];
     let rows: AirtableTicketRow[];
@@ -125,7 +128,11 @@ export async function syncAirtable(env: {
         refund_amount: r.refund_amount == null ? null : Number(r.refund_amount) })), now.toISOString());
       rows = m.rows;
       full = m.whole;
+    } else if (local) {
+      rows = []; full = false;
     } else try {
+      const { data: kept } = await db.from('airtable_sync_state').select('names').eq('id', STATE_ID).maybeSingle();
+      names = (kept?.names as Record<string, string>) ?? {};
       if (full || !Object.keys(names).length) names = await fetchNames(env.airtableToken);
 
       // A little overlap with the last run: a record saved in the same second
@@ -152,7 +159,7 @@ export async function syncAirtable(env: {
          own runs still stop here: nothing has changed for them to read. */
       apiDown = e instanceof Error ? e.message : String(e);
       if (!env.fillNow || !/^Airtable |fetch failed/i.test(apiDown)) throw e;
-      rows = []; full = false; before.clear();
+      rows = []; full = false; before.clear(); local = true;
     }
     const ids = rows.map(r => r.record_id);
 
@@ -332,7 +339,7 @@ export async function syncAirtable(env: {
     /* Read from our copy alone, which has not moved since the last run that
        wrote it - and that run filled everything it could. Only a ticket
        arrived since can take something now. */
-    const onlySince = apiDown ? st?.last_ok_at as string | undefined : undefined;
+    const onlySince = local ? st?.last_ok_at as string | undefined : undefined;
     const arrivedSince = (q: any) => onlySince ? q.gt('created_at', onlySince) : q;
     type LiveRow = { serials: string[]; ticket_cell: string; pnr: string; req_num: string; status: string; client_name: string; cabin: string; portal: string; airline: string; sheet_row: Record<string, string> };
     let liveRows: LiveRow[] | null = null;
@@ -585,8 +592,8 @@ export async function syncAirtable(env: {
     /* An export moves no cursor and resets the full run: when the API is back,
        its first read is of the whole table, which settles the records the
        export could only name by their content. */
-    // From our copy alone: their API is still down, and says so.
-    if (!dry && apiDown) await db.from('airtable_sync_state').upsert({ id: STATE_ID, last_run_at: stamp, last_error: apiDown });
+    // From our copy alone: a failing API says so; one switched off is no failure.
+    if (!dry && local) await db.from('airtable_sync_state').upsert({ id: STATE_ID, last_run_at: stamp, last_error: apiDown || null });
     else if (!dry) await db.from('airtable_sync_state').upsert(csv ? {
       id: STATE_ID, last_full_at: null, last_run_at: stamp, last_ok_at: new Date().toISOString(),
       last_error: null, record_count: count ?? null, last_changed: changedRows.length,
@@ -595,7 +602,7 @@ export async function syncAirtable(env: {
       last_full_at: full ? stamp : st?.last_full_at, last_run_at: stamp, last_ok_at: new Date().toISOString(),
       last_error: null, record_count: count ?? null, last_changed: changedRows.length, names,
     });
-    return { mode: csv ? 'csv' : apiDown ? 'local' : full ? 'full' : 'incremental', fetched: csv ? rows.length : recs.length, changedRecords: changes.size, fieldChanges: log.length,
+    return { mode: csv ? 'csv' : local ? 'local' : full ? 'full' : 'incremental', fetched: csv ? rows.length : recs.length, changedRecords: changes.size, fieldChanges: log.length,
       added, deleted, notices: notices.length, onlineQueued, reqFilled, detailsFilled, ms: Date.now() - t0, preview };
   } catch (e) {
     if (!dry) await db.from('airtable_sync_state').upsert({ id: STATE_ID, last_error: e instanceof Error ? e.message : String(e) });

@@ -329,6 +329,7 @@ function parseTeamSheet(text) {
 }
 
 // src/core/integrations/airtable.ts
+var AIRTABLE_API_ON = false;
 var AIRTABLE_BASE = "appRdNQrrjKM4wGAe";
 var AIRTABLE_TICKETS_TABLE = "tblNx337qwL2lonJs";
 var AIRTABLE_NAME_TABLES = {
@@ -2461,14 +2462,15 @@ var usesUnknownLink = (r, names) => Object.values(r.fields).some((v) => Array.is
 async function syncAirtable(env) {
   const t0 = Date.now();
   const db = createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false } });
-  const { data: st } = await db.from("airtable_sync_state").select("*").eq("id", STATE_ID).maybeSingle();
+  const { data: st } = await db.from("airtable_sync_state").select("cursor, last_full_at, last_ok_at").eq("id", STATE_ID).maybeSingle();
   const now = /* @__PURE__ */ new Date();
   let full = env.forceFull || !st?.cursor || !st?.last_full_at || now.getTime() - new Date(st.last_full_at).getTime() > FULL_EVERY_MS;
   const dry = !!env.dryRun;
   if (!dry) await db.from("airtable_sync_state").upsert({ id: STATE_ID, last_run_at: now.toISOString() });
   try {
-    let names = st?.names ?? {};
+    let names = {};
     const csv = !!env.csvRows;
+    let local2 = !csv && !AIRTABLE_API_ON;
     let apiDown = "";
     let recs = [];
     let rows;
@@ -2483,7 +2485,12 @@ async function syncAirtable(env) {
       })), now.toISOString());
       rows = m.rows;
       full = m.whole;
+    } else if (local2) {
+      rows = [];
+      full = false;
     } else try {
+      const { data: kept } = await db.from("airtable_sync_state").select("names").eq("id", STATE_ID).maybeSingle();
+      names = kept?.names ?? {};
       if (full || !Object.keys(names).length) names = await fetchNames(env.airtableToken);
       const since = st?.cursor ? new Date(new Date(st.cursor).getTime() - 5e3).toISOString() : "";
       const got = await airtable(
@@ -2508,6 +2515,7 @@ async function syncAirtable(env) {
       rows = [];
       full = false;
       before.clear();
+      local2 = true;
     }
     const ids = rows.map((r) => r.record_id);
     const changes = /* @__PURE__ */ new Map();
@@ -2688,7 +2696,7 @@ async function syncAirtable(env) {
     }
     let reqFilled = 0, detailsFilled = 0;
     const fillNow = full || changedRows.length > 0 || !!env.fillNow;
-    const onlySince = apiDown ? st?.last_ok_at : void 0;
+    const onlySince = local2 ? st?.last_ok_at : void 0;
     const arrivedSince = (q) => onlySince ? q.gt("created_at", onlySince) : q;
     let liveRows = null;
     const liveAll = async () => liveRows ??= full ? rows : !env.fillNow ? changedRows : (await selectAll(
@@ -2901,7 +2909,7 @@ async function syncAirtable(env) {
     }
     const newest = [st?.cursor, ...rows.map((r) => r.last_modified), ...rows.map((r) => r.created_at)].filter(Boolean).map((x) => new Date(x).getTime()).reduce((a, b) => Math.max(a, b), 0);
     const { count } = await db.from("airtable_tickets").select("record_id", { count: "exact", head: true }).eq("deleted", false);
-    if (!dry && apiDown) await db.from("airtable_sync_state").upsert({ id: STATE_ID, last_run_at: stamp, last_error: apiDown });
+    if (!dry && local2) await db.from("airtable_sync_state").upsert({ id: STATE_ID, last_run_at: stamp, last_error: apiDown || null });
     else if (!dry) await db.from("airtable_sync_state").upsert(csv ? {
       id: STATE_ID,
       last_full_at: null,
@@ -2922,7 +2930,7 @@ async function syncAirtable(env) {
       names
     });
     return {
-      mode: csv ? "csv" : apiDown ? "local" : full ? "full" : "incremental",
+      mode: csv ? "csv" : local2 ? "local" : full ? "full" : "incremental",
       fetched: csv ? rows.length : recs.length,
       changedRecords: changes.size,
       fieldChanges: log.length,
@@ -3054,11 +3062,11 @@ async function handler(req, res) {
     res.status(405).json({ error: "Method not allowed" });
     return;
   }
-  const airtableToken = process.env.AIRTABLE_TOKEN;
+  const airtableToken = process.env.AIRTABLE_TOKEN || "";
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const secret = process.env.AIRTABLE_SYNC_SECRET;
-  if (!airtableToken || !supabaseUrl || !serviceKey || !secret) {
+  if (AIRTABLE_API_ON && !airtableToken || !supabaseUrl || !serviceKey || !secret) {
     res.status(500).json({ error: "Airtable sync is not configured on the server" });
     return;
   }

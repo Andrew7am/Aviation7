@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Bell, RefreshCw, X, Check, Loader2, AlertTriangle } from 'lucide-react';
 import type { AirtableNotice, SyncState } from '../services/AirtableService';
+import { AIRTABLE_API_ON } from '../core/integrations/airtable';
 
 /**
  * What changed on the aviation team's Airtable, waiting for a person.
@@ -50,7 +51,8 @@ export const AirtableBell: React.FC<{
   const [err, setErr] = useState('');
   const openOnes = useMemo(() => notices.filter(n => n.state === 'OPEN' && NEEDS_APPROVAL.has(n.kind)), [notices]);
   const groups = useMemo(() => ORDER.map(k => [k, openOnes.filter(n => n.kind === k)] as const).filter(([, l]) => l.length), [openOnes]);
-  const stale = sync?.lastOkAt ? Date.now() - new Date(sync.lastOkAt).getTime() > 10 * 60000 : true;
+  // Live, ten minutes is stale; from uploads, a day.
+  const stale = sync?.lastOkAt ? Date.now() - new Date(sync.lastOkAt).getTime() > (AIRTABLE_API_ON ? 10 * 60000 : 864e5) : true;
 
   const act = async (key: string, fn: () => Promise<void>) => {
     setBusy(key); setErr('');
@@ -80,12 +82,14 @@ export const AirtableBell: React.FC<{
                 <div className="text-xs font-bold">Team's Airtable</div>
                 <div className={`text-[10px] ${sync?.lastError ? 'text-red-600' : stale ? 'text-amber-600' : 'text-slate-500'}`}>
                   {sync?.lastError ? `Last sync failed: ${sync.lastError.slice(0, 80)}`
-                    : `Synced ${ago(sync?.lastOkAt)} · ${sync?.recordCount ?? '—'} tickets · every 2 minutes`}
+                    : AIRTABLE_API_ON ? `Synced ${ago(sync?.lastOkAt)} · ${sync?.recordCount ?? '—'} tickets · every 2 minutes`
+                    : `Last export uploaded ${ago(sync?.lastOkAt)} · ${sync?.recordCount ?? '—'} tickets`}
                 </div>
               </div>
-              <button onClick={() => act('sync', onSyncNow)} disabled={busy === 'sync'} title="Sync now"
+              <button onClick={() => act('sync', onSyncNow)} disabled={busy === 'sync'}
+                title={AIRTABLE_API_ON ? 'Sync now' : 'Fill requests, names, cabins and routes from the last export uploaded'}
                 className="text-[10px] font-bold text-purple-700 hover:text-purple-900 flex items-center gap-1 px-2 py-1 rounded hover:bg-purple-50">
-                {busy === 'sync' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} Sync now
+                {busy === 'sync' ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />} {AIRTABLE_API_ON ? 'Sync now' : 'Fill from export'}
               </button>
               <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600 p-1"><X className="w-4 h-4" /></button>
             </div>

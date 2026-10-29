@@ -6,6 +6,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { syncAirtable } from '../../src/server/airtableSync';
+import { AIRTABLE_API_ON } from '../../src/core/integrations/airtable';
 import { checkRequestAlerts } from '../../src/server/requestAlerts';
 
 export const config = { maxDuration: 60 };
@@ -13,11 +14,12 @@ export const config = { maxDuration: 60 };
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return; }
 
-  const airtableToken = process.env.AIRTABLE_TOKEN;
+  const airtableToken = process.env.AIRTABLE_TOKEN || '';
   const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const secret = process.env.AIRTABLE_SYNC_SECRET;
-  if (!airtableToken || !supabaseUrl || !serviceKey || !secret) {
+  // With the live connection off, no token is needed: uploads and imports only.
+  if ((AIRTABLE_API_ON && !airtableToken) || !supabaseUrl || !serviceKey || !secret) {
     res.status(500).json({ error: 'Airtable sync is not configured on the server' });
     return;
   }

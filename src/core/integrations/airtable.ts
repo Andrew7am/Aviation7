@@ -11,6 +11,14 @@
  */
 import { teamSerials } from '../parsers/teamSheet';
 
+/* The live connection is off (29 Oct 2026, the user): their token has been
+   401 since 26 Oct and the API will not be used for now. Their CSV export,
+   uploaded on the Airtable page, is the only way their sheet comes in; an
+   import fills from the copy that upload left. The schedule is off too
+   (scripts/schedule-airtable-sync.ts --off). To turn it back on: true here,
+   a working AIRTABLE_TOKEN in Vercel, and the schedule again. */
+export const AIRTABLE_API_ON = false;
+
 export const AIRTABLE_BASE = 'appRdNQrrjKM4wGAe';
 export const AIRTABLE_TICKETS_TABLE = 'tblNx337qwL2lonJs';
 
