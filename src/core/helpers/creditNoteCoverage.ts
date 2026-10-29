@@ -120,23 +120,3 @@ export const CREDIT_REASON: Record<Exclude<RefundCoverage, 'CREDITED'>, string> 
   AMOUNT_DIFFERS: 'Credit note amount differs from the refund - please confirm or correct',
   SALE_NOT_FINAL: 'The sale has no ZATCA e-invoice yet - please send the e-invoice, then the credit note against it',
 };
-
-/** The rows to send them, English. */
-export function creditRequestSheet(report: CreditReport) {
-  return report.refunds.filter(r => r.coverage !== 'CREDITED')
-    .sort((a, b) => (a.ticket.date || '').localeCompare(b.ticket.date || ''))
-    .map(r => ({
-      'Refund Date': r.ticket.date || '',
-      'Ticket No': r.ticket.relatedTicket || r.ticket.ticketNo,
-      'Passenger': r.ticket.passengerName || '',
-      'PNR': r.ticket.pnr || '',
-      'Refund Amount': Math.abs(r.ticket.amount ?? 0),
-      'Currency': r.ticket.currency || 'SAR',
-      'Your Credit Note No': r.creditNoteNo ?? '',
-      'Your Invoice No (sale)': r.saleInvoices.length ? r.saleInvoices.join(', ') : (r.saleInvoiceNo ?? ''),
-      'Credit Note': r.creditNotes.join(', '),
-      'Credit Note Amount': r.noteTotal ?? '',
-      'Request No': r.ticket.reqNum || '',
-      'Request': CREDIT_REASON[r.coverage as Exclude<RefundCoverage, 'CREDITED'>],
-    }));
-}

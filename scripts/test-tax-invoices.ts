@@ -35,7 +35,7 @@ import {
 import type { Ticket } from '../src/types';
 import { decodeZatcaQr, IBTEKAR_VAT } from '../src/core/parsers/zatcaQr';
 import { invoiceRequestList } from '../src/core/helpers/taxInvoiceRequest';
-import { creditNoteReport, creditsInPeriod, creditRequestSheet } from '../src/core/helpers/creditNoteCoverage';
+import { creditNoteReport, creditsInPeriod } from '../src/core/helpers/creditNoteCoverage';
 
 /** A ZATCA QR code's text: base64 of tag-length-value fields. */
 const qrText = (fields: Record<number, string>) => {
@@ -559,8 +559,6 @@ console.log('\n18. Refunds and the ZATCA credit notes for them');
   check('no note at all', of('4862141169').coverage, 'NONE');
   check('a note no refund of ours accounts for', r.unmatched.map(n => n.theirSerial), ['30']);
   check('a printout credit note is no credit note', r.credited.some(x => x.creditNotes.includes('RFD260326')), false);
-  check('only what is still owed is asked for', creditRequestSheet(r).map(x => x['Ticket No']).sort(), ['4860316810', '4862141169', '4862405604']);
-  check('...with the sale\'s invoice to quote', creditRequestSheet(r).find(x => x['Ticket No'] === '4862141169')!['Your Invoice No (sale)'], '1599');
   check('October\'s refunds only', creditsInPeriod(r, '2026-10-01', '2026-10-31').refunds.map(x => x.ticket.ticketNo), ['4862405604']);
 }
 

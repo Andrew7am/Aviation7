@@ -1,4 +1,3 @@
-import type { PdfWord } from '../parsers/ibtekarInvoicePdf';
 import { readPdf, type PdfContent } from './pdfRead';
 
 /**
@@ -17,8 +16,4 @@ async function browserPdfjs() {
 
 export async function pdfContent(data: ArrayBuffer): Promise<PdfContent> {
   return readPdf(await browserPdfjs(), data);
-}
-
-export async function pdfToWords(data: ArrayBuffer): Promise<PdfWord[]> {
-  return (await pdfContent(data)).words;
 }

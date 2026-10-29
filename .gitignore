@@ -35,3 +35,7 @@ backups/
 
 # Excel exports with passenger data, made for sending, never for the repo.
 /exports/
+
+# Working files from investigations: snapshots, caches and one-off scripts,
+# many with passenger data. Nothing here is part of the system.
+/scratch/

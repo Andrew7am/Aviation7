@@ -27,11 +27,6 @@ export interface VoidedDoc {
 
 const serial = (t: string) => (t || '').replace(/\D/g, '').slice(-10);
 
-export interface VoidMatch {
-  /** The cancelled document, as the register holds it. */
-  voided: VoidedDoc;
-}
-
 /** Cancelled documents by serial, for a screen to look a row up in. */
 export function voidIndex(voids: VoidedDoc[]): Map<string, VoidedDoc> {
   const m = new Map<string, VoidedDoc>();

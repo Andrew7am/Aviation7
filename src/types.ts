@@ -144,15 +144,6 @@ export interface BalanceTopUp {
   userId: string;
 }
 
-export interface ImportBatch {
-  id: string;
-  vendorName: string;
-  ticketCount: number;
-  totalAmount: number;
-  date: string;
-  userId: string;
-}
-
 /** The banner now carries one thing: what an import just skipped. Low balance
  *  moved to where it can be acted on (the Vendor Credit page and the sidebar
  *  count), and missing_req was never raised at all — the Action Required view
