@@ -2965,17 +2965,17 @@ function sheetOnlySerials(req, books, sheet) {
   const held2 = new Set(books.map((t) => ticketMatchKey(t.ticketNo)).filter(Boolean));
   return [...new Set(sheet.filter((r) => reqTokensOf(r.req_num || "").includes(want)).flatMap((r) => r.serials).filter((s) => !held2.has(ticketMatchKey(s))))];
 }
-function requestIssued(req, currency, books, sheet, voided = []) {
+function requestNet(req, currency, books, sheet, voided = []) {
   const gone = new Set([...voided].map(ticketMatchKey).filter(Boolean));
   const want = req.trim().toUpperCase();
   const mine = books.filter((t) => reqTokensOf(t.reqNum || "").includes(want));
   const held2 = new Set(mine.map((t) => ticketMatchKey(t.ticketNo)).filter(Boolean));
-  let fromBooks = 0, fromSheet = 0, docs = 0;
+  let fromBooks = 0, fromSheet = 0, docs = 0, refunded = 0;
   for (const t of mine) {
-    if (t.status !== "ISSUE" && t.status !== "EMDS" || t.amount <= 0) continue;
-    if ((t.currency || "").toUpperCase() !== currency) continue;
-    fromBooks += t.totalDoc || t.amount;
-    docs++;
+    if (t.status === "FUND" || (t.currency || "").toUpperCase() !== currency) continue;
+    fromBooks += t.amount || 0;
+    if ((t.amount || 0) < 0) refunded -= t.amount;
+    else if (t.amount) docs++;
   }
   for (const r of sheet) {
     if (!reqTokensOf(r.req_num || "").includes(want) || !SHEET_ISSUED.test(r.status ?? "")) continue;
@@ -2985,7 +2985,7 @@ function requestIssued(req, currency, books, sheet, voided = []) {
     fromSheet += r.net_cost;
     docs++;
   }
-  return { total: r2(fromBooks + fromSheet), fromBooks: r2(fromBooks), fromSheet: r2(fromSheet), docs };
+  return { total: r2(fromBooks + fromSheet), fromBooks: r2(fromBooks), fromSheet: r2(fromSheet), refunded: r2(refunded), docs };
 }
 
 // src/server/requestAlerts.ts
@@ -3001,13 +3001,13 @@ async function send(mail, a, total, at) {
     to: a.recipients.join(", "),
     subject: `${a.req_num} has reached ${goal}`,
     text: [
-      `${a.req_num} has reached ${goal} issued.`,
+      `${a.req_num} has reached ${goal}.`,
       "",
-      `Issued so far: ${fmt(total.total)} ${a.currency} (${total.docs} documents)`,
-      `  in our books: ${fmt(total.fromBooks)} ${a.currency}`,
+      `Net so far: ${fmt(total.total)} ${a.currency} (${total.docs} documents)`,
+      `  in our books: ${fmt(total.fromBooks)} ${a.currency}${total.refunded ? `, after ${fmt(total.refunded)} ${a.currency} of refunds` : ""}`,
       total.fromSheet ? `  on the team's Airtable, not yet in a supplier report: ${fmt(total.fromSheet)} ${a.currency}` : "",
       "",
-      `Checked ${local(at)} (UTC+3). Refunds are not taken off; voids and On Hold rows are not counted.`,
+      `Checked ${local(at)} (UTC+3). At cost, net of commission, refunds taken off - as the file is closed; voids and On Hold rows are not counted.`,
       "- Luxury Explorers reconciliation"
     ].filter((l) => l !== "").join("\n")
   });
@@ -3038,7 +3038,7 @@ async function checkRequestAlerts(db, mail) {
         const sheetRows = (sheet ?? []).map((r) => ({ serials: r.serials ?? [], status: r.status, net_cost: r.net_cost == null ? null : Number(r.net_cost), currency: r.currency, req_num: r.req_num }));
         const onlyTheirs = sheetOnlySerials(a.req_num, bookRows, sheetRows);
         const { data: voids } = onlyTheirs.length ? await db.from("void_tickets").select("ticket_no").in("ticket_no", onlyTheirs) : { data: [] };
-        total = requestIssued(a.req_num, a.currency, bookRows, sheetRows, (voids ?? []).map((v) => v.ticket_no));
+        total = requestNet(a.req_num, a.currency, bookRows, sheetRows, (voids ?? []).map((v) => v.ticket_no));
         const reached = !!a.reached_at || total.total >= Number(a.threshold);
         await db.from("request_alerts").update({ last_total: total.total, checked_at: now.toISOString(), ...reached && !a.reached_at ? { reached_at: now.toISOString() } : {} }).eq("id", a.id);
         if (!reached) continue;

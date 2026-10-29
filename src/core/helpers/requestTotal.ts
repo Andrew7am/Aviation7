@@ -1,7 +1,10 @@
 /**
- * What has been issued on a request: tickets and EMDs, at their full fare.
- * A refund does not take any of it back, a void was never billed, an On Hold
- * row was never issued.
+ * What a request stands at, as a file is closed: every row of ours on it at
+ * what it cost - sales and EMDs net of commission, refunds taken off, ADMs
+ * and ACMs as they are - the way the request's own page adds it up. A void
+ * was never billed, an On Hold row was never issued. (Until 29 Oct 2026 it
+ * was sales at full fare with refunds left on; the user: "after refunds and
+ * commission, like any file we close".)
  *
  * Our books are the record; a row on their Airtable whose ticket is not in
  * our books yet is counted from their sheet, so a total near a figure is seen
@@ -29,16 +32,16 @@ export function sheetOnlySerials(req: string, books: TotalBook[], sheet: TotalSh
    Issued whose tickets were voided with the supplier was never billed:
    KSAML2771's YC24LS row (5513658381/84/87, 6,260.00) was cancelled on
    23 Oct and stood in the total as issued. */
-export function requestIssued(req: string, currency: string, books: TotalBook[], sheet: TotalSheet[], voided: Iterable<string> = []) {
+export function requestNet(req: string, currency: string, books: TotalBook[], sheet: TotalSheet[], voided: Iterable<string> = []) {
   const gone = new Set([...voided].map(ticketMatchKey).filter(Boolean));
   const want = req.trim().toUpperCase();
   const mine = books.filter(t => reqTokensOf(t.reqNum || '').includes(want));
   const held = new Set(mine.map(t => ticketMatchKey(t.ticketNo)).filter(Boolean));
-  let fromBooks = 0, fromSheet = 0, docs = 0;
+  let fromBooks = 0, fromSheet = 0, docs = 0, refunded = 0;
   for (const t of mine) {
-    if ((t.status !== 'ISSUE' && t.status !== 'EMDS') || t.amount <= 0) continue;
-    if ((t.currency || '').toUpperCase() !== currency) continue;
-    fromBooks += t.totalDoc || t.amount; docs++;
+    if (t.status === 'FUND' || (t.currency || '').toUpperCase() !== currency) continue;
+    fromBooks += t.amount || 0;
+    if ((t.amount || 0) < 0) refunded -= t.amount; else if (t.amount) docs++;
   }
   for (const r of sheet) {
     if (!reqTokensOf(r.req_num || '').includes(want) || !SHEET_ISSUED.test(r.status ?? '')) continue;
@@ -47,5 +50,5 @@ export function requestIssued(req: string, currency: string, books: TotalBook[],
     if (r.serials.every(s => gone.has(ticketMatchKey(s)))) continue;
     fromSheet += r.net_cost; docs++;
   }
-  return { total: r2(fromBooks + fromSheet), fromBooks: r2(fromBooks), fromSheet: r2(fromSheet), docs };
+  return { total: r2(fromBooks + fromSheet), fromBooks: r2(fromBooks), fromSheet: r2(fromSheet), refunded: r2(refunded), docs };
 }

@@ -1,5 +1,5 @@
 /**
- * Request alerts: when a request's issued total reaches its figure, email the
+ * Request alerts: when a request's net total reaches its figure, email the
  * people named, once. Run after every Airtable upload and import.
  *
  * The total goes on being worked out after the figure is reached: the banner
@@ -18,7 +18,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import nodemailer from 'nodemailer';
-import { requestIssued, sheetOnlySerials } from '../core/helpers/requestTotal';
+import { requestNet, sheetOnlySerials } from '../core/helpers/requestTotal';
 
 export interface MailEnv { host?: string; port?: string; user?: string; pass?: string; from?: string }
 
@@ -30,7 +30,7 @@ interface AlertRow {
 const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const local = (d: Date) => new Date(d.getTime() + 3 * 3600_000).toISOString().slice(0, 16).replace('T', ' ');
 
-async function send(mail: MailEnv, a: AlertRow, total: { total: number; fromBooks: number; fromSheet: number; docs: number }, at: Date) {
+async function send(mail: MailEnv, a: AlertRow, total: { total: number; fromBooks: number; fromSheet: number; refunded?: number; docs: number }, at: Date) {
   if (!mail.host || !mail.user || !mail.pass) throw new Error('Email is not set up on the server (SMTP_HOST, SMTP_USER, SMTP_PASS)');
   const port = Number(mail.port || 587);
   const t = nodemailer.createTransport({ host: mail.host, port, secure: port === 465, auth: { user: mail.user, pass: mail.pass } });
@@ -40,13 +40,13 @@ async function send(mail: MailEnv, a: AlertRow, total: { total: number; fromBook
     to: a.recipients.join(', '),
     subject: `${a.req_num} has reached ${goal}`,
     text: [
-      `${a.req_num} has reached ${goal} issued.`,
+      `${a.req_num} has reached ${goal}.`,
       '',
-      `Issued so far: ${fmt(total.total)} ${a.currency} (${total.docs} documents)`,
-      `  in our books: ${fmt(total.fromBooks)} ${a.currency}`,
+      `Net so far: ${fmt(total.total)} ${a.currency} (${total.docs} documents)`,
+      `  in our books: ${fmt(total.fromBooks)} ${a.currency}${total.refunded ? `, after ${fmt(total.refunded)} ${a.currency} of refunds` : ''}`,
       total.fromSheet ? `  on the team's Airtable, not yet in a supplier report: ${fmt(total.fromSheet)} ${a.currency}` : '',
       '',
-      `Checked ${local(at)} (UTC+3). Refunds are not taken off; voids and On Hold rows are not counted.`,
+      `Checked ${local(at)} (UTC+3). At cost, net of commission, refunds taken off - as the file is closed; voids and On Hold rows are not counted.`,
       '- Luxury Explorers reconciliation',
     ].filter(l => l !== '').join('\n'),
   });
@@ -59,7 +59,7 @@ export async function checkRequestAlerts(db: SupabaseClient, mail: MailEnv): Pro
   for (const a of alerts as AlertRow[]) {
     const now = new Date();
     try {
-      let total: ReturnType<typeof requestIssued> | null = null;
+      let total: ReturnType<typeof requestNet> | null = null;
       const like = `%${a.req_num}%`;
       const since = a.checked_at ?? '1970-01-01';
       const [{ data: t1 }, { data: s1 }] = await Promise.all([
@@ -82,7 +82,7 @@ export async function checkRequestAlerts(db: SupabaseClient, mail: MailEnv): Pro
         const { data: voids } = onlyTheirs.length
           ? await db.from('void_tickets').select('ticket_no').in('ticket_no', onlyTheirs)
           : { data: [] as { ticket_no: string }[] };
-        total = requestIssued(a.req_num, a.currency, bookRows, sheetRows, (voids ?? []).map(v => v.ticket_no));
+        total = requestNet(a.req_num, a.currency, bookRows, sheetRows, (voids ?? []).map(v => v.ticket_no));
         // Reached once is reached: a refund or a void later does not take the email back.
         const reached = !!a.reached_at || total.total >= Number(a.threshold);
         await db.from('request_alerts').update({ last_total: total.total, checked_at: now.toISOString(), ...(reached && !a.reached_at ? { reached_at: now.toISOString() } : {}) }).eq('id', a.id);
