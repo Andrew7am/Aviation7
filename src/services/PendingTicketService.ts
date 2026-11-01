@@ -244,10 +244,11 @@ export class PendingTicketService {
   /**
    * Agree to one, and write the ticket.
    *
-   * The ticket goes in first. If marking the proposal then fails, the ticket
-   * exists and the proposal is still pending, which somebody will notice —
-   * the other order would mark it agreed with no ticket behind it, which
-   * nobody would.
+   * The proposal is claimed first, and only while it is still pending: one
+   * claim wins, and a second Confirm finds it taken. Writing the ticket
+   * first let two clicks a second apart both write it - 1950195676 went in
+   * twice on 1 Nov 2026. If the ticket then cannot be written, the claim is
+   * handed back and it waits again.
    */
   async confirm(p: PendingTicket, ticketId: string): Promise<Ticket> {
     // The same gate the screen greys the button with, checked again here:
@@ -256,6 +257,17 @@ export class PendingTicketService {
     if (blocked) throw new Error(`${p.ticketNo || p.pnr}: ${blocked}`);
 
     const ticket = ticketFromPending(p, ticketId, this.userId);
+
+    const { data: claimed, error } = await supabase.from('pending_tickets').update({
+      state: 'CONFIRMED',
+      reviewed_at: new Date().toISOString(),
+      ticket_id: ticket.id,
+      // the cost confirmed may be one typed a moment ago and not yet saved
+      amount: p.amount,
+      total_doc: p.totalDoc,
+    }).eq('id', p.id).eq('state', 'PENDING').select('id');
+    if (error) throw new Error(error.message);
+    if (!claimed?.length) throw new Error(`${p.ticketNo || p.pnr}: already recorded.`);
 
     const { error: tErr } = await supabase.from('tickets').insert({
       id: ticket.id,
@@ -283,17 +295,11 @@ export class PendingTicketService {
       original_amount: ticket.originalAmount ?? null,
       fx_rate: ticket.fxRate ?? null,
     });
-    if (tErr) throw new Error(tErr.message);
-
-    const { error } = await supabase.from('pending_tickets').update({
-      state: 'CONFIRMED',
-      reviewed_at: new Date().toISOString(),
-      ticket_id: ticket.id,
-      // the cost confirmed may be one typed a moment ago and not yet saved
-      amount: p.amount,
-      total_doc: p.totalDoc,
-    }).eq('id', p.id);
-    if (error) throw new Error(error.message);
+    if (tErr) {
+      await supabase.from('pending_tickets').update({ state: 'PENDING', reviewed_at: null, ticket_id: null })
+        .eq('id', p.id).eq('ticket_id', ticket.id);
+      throw new Error(tErr.message);
+    }
     return ticket;
   }
 
