@@ -448,6 +448,12 @@ function MainApp({ user }: { user: User }) {
       importSvc.audit('EDIT_TICKET', x.ticketNo, `vendor_reference: ${x.was || '-'} -> ${x.doc} (the vendor's statement of account, ${period})`);
     }
   }, [updateTicket, importSvc]);
+  /* Rows keyed from their sheet or by hand that a statement bills at the
+     figure we recorded: confirmed by it, as a supplier report confirms them. */
+  const handleConfirmFromStatement = useCallback(async (list: { id: string; ticketNo: string; by: string }[]) => {
+    await ticketSvc.confirm(list);
+    for (const c of list) importSvc.audit('CONFIRMED', c.ticketNo, `Confirmed by ${c.by}: it bills it at the amount we recorded.`);
+  }, [ticketSvc, importSvc]); // eslint-disable-line react-hooks/exhaustive-deps
   const handleDeleteStatement = (id: string) => {
     deleteStatement(id);
     importSvc.audit('DELETE_STATEMENT', id, 'Statement deleted');
@@ -753,7 +759,8 @@ function MainApp({ user }: { user: User }) {
         <VendorStatements statements={statements} tickets={tickets} canEdit={isAdmin}
           topUps={topUps} wallets={vendorBalancesLive}
           onSave={handleSaveStatement} onDelete={handleDeleteStatement}
-          onReprice={handleRepriceFromStatement} onFillInvoiceNos={handleFillInvoiceNos} />
+          onReprice={handleRepriceFromStatement} onFillInvoiceNos={handleFillInvoiceNos}
+          onConfirmFromStatement={handleConfirmFromStatement} />
       )}
       {view === 'taxinvoices' && (
         <TaxInvoices tickets={tickets} invoices={taxInvoices}

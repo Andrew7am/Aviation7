@@ -2,7 +2,7 @@
  * Reading Ibtekar's statement files each ticket under the invoice number it
  * is billed on - what a request for its ZATCA tax invoice quotes.
  */
-import { invoiceNumbersFromStatement } from '../src/core/helpers/statementInvoiceNos';
+import { invoiceNumbersFromStatement, confirmationsFromStatement } from '../src/core/helpers/statementInvoiceNos';
 import type { Ticket } from '../src/types';
 
 let passed = 0, failed = 0;
@@ -47,6 +47,24 @@ console.log('\n2. What it leaves alone');
   check('billed on two invoices: nothing filled', r.fill.some(f => f.ticketNo === '4862479111'), false);
   check('a receipt line is not an invoice', r.fill.some(f => f.ticketNo === '4862479112'), false);
   check('another supplier\'s ticket is not touched', r.fill.length, 0);
+}
+
+console.log('\n4. What we keyed by hand, billed at our figure, is confirmed by it');
+{
+  const hand = (o: Partial<Ticket>) => tkt({ reportName: 'Team sheet — reviewed', ...o });
+  const c = confirmationsFromStatement(st([line('1950195673', 'INV264913', 180), line('1950195674', 'INV264913', 180),
+    line('4862676450', 'INV264883', 5560), line('4862606961', 'RFD260698', 0, 520.95)]), [
+    hand({ ticketNo: '1950195673', amount: 180 }),
+    hand({ ticketNo: '1950195674', amount: 170 }),
+    tkt({ ticketNo: '4862676450', amount: 5560, reportName: 'Ibtekar' }),
+    hand({ ticketNo: '4862606961', amount: -520.95 }),
+    hand({ ticketNo: '4862607005', amount: 10 }),
+    hand({ ticketNo: '1950195673', amount: 180, source: 'NSA' }),
+  ]);
+  check('the sale and the refund it bills as recorded', c.map(x => x.id).sort(), ['1950195673S', '4862606961R']);
+  check('said by the statement', c[0]?.by, "Ibtekar's statement 2026-10-01 to 2026-10-19");
+  check('a figure it bills differently is not confirmed', c.some(x => x.ticketNo === '1950195674'), false);
+  check('one it never bills is not confirmed', c.some(x => x.ticketNo === '4862607005'), false);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

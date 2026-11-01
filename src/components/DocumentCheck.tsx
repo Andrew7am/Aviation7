@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
-import { invoiceNumbersFromStatement, type InvoiceNoFill, type InvoiceNoConflict } from '../core/helpers/statementInvoiceNos';
+import { invoiceNumbersFromStatement, confirmationsFromStatement, type InvoiceNoFill, type InvoiceNoConflict } from '../core/helpers/statementInvoiceNos';
+import type { Confirmation } from '../core/helpers/supplierProof';
 import { Ticket, VendorStatement, BalanceTopUp, VendorBalance } from '../types';
 import {
   Upload, FileCheck2, AlertTriangle, CheckCircle2, X, Loader2, ChevronDown, ChevronRight,
@@ -510,7 +511,9 @@ export const DocumentCheck: React.FC<{
   onReprice?: (list: Reprice[]) => Promise<void>;
   /** Write the statement's invoice numbers onto our tickets. Absent for a viewer. */
   onFillInvoiceNos?: (list: InvoiceNoFill[], period: string) => Promise<void>;
-}> = ({ tickets, vendorName = 'Ibtekar', onSaveStatement, topUps = [], statements = [], wallets = [], onReprice, onFillInvoiceNos }) => {
+  /** Mark rows from their sheet or by hand that the statement bills as recorded. Absent for a viewer. */
+  onConfirm?: (list: Confirmation[]) => Promise<void>;
+}> = ({ tickets, vendorName = 'Ibtekar', onSaveStatement, topUps = [], statements = [], wallets = [], onReprice, onFillInvoiceNos, onConfirm }) => {
   const [results, setResults] = useState<InvoiceResult[] | null>(null);
   const [statement, setStatement] = useState<ParsedStatement | null>(null);
   const [saved, setSaved] = useState(false);
@@ -537,7 +540,10 @@ export const DocumentCheck: React.FC<{
     setInvoiceNos({ filled: fill, conflicts });
     if (fill.length) void onFillInvoiceNos(fill, `${statement.periodStart} to ${statement.periodEnd}`)
       .catch(() => setInvoiceNos({ filled: [], conflicts }));
-  }, [statement, fileName, tickets, vendorName, onFillInvoiceNos]);
+    // ...and what we keyed by hand that it bills at our figure is confirmed.
+    const confirm = confirmationsFromStatement(statement, tickets, vendorName);
+    if (confirm.length && onConfirm) void onConfirm(confirm).catch(e => console.error('statement confirmations', e));
+  }, [statement, fileName, tickets, vendorName, onFillInvoiceNos, onConfirm]);
 
   const clear = () => {
     setResults(null); setStatement(null); setFileName(''); setError(''); setSaved(false); setInvoiceNos(null);

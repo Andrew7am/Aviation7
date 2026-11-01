@@ -54,6 +54,7 @@ interface Props {
   onReprice?: (list: Reprice[]) => Promise<void>;
   /** File tickets under the invoice numbers a statement bills them on. */
   onFillInvoiceNos?: (list: InvoiceNoFill[], period: string) => Promise<void>;
+  onConfirmFromStatement?: (list: { id: string; ticketNo: string; by: string }[]) => Promise<void>;
 }
 
 const blank = (vendor: string): VendorStatement => ({
@@ -419,7 +420,7 @@ const PeriodRow: React.FC<{
 };
 
 export const VendorStatements: React.FC<Props> = ({
-  statements, tickets, topUps, wallets, onSave, onDelete, canEdit = false, onReprice, onFillInvoiceNos,
+  statements, tickets, topUps, wallets, onSave, onDelete, canEdit = false, onReprice, onFillInvoiceNos, onConfirmFromStatement,
 }) => {
   const [editing, setEditing] = useState<VendorStatement | null>(null);
 
@@ -473,7 +474,8 @@ export const VendorStatements: React.FC<Props> = ({
       <DocumentCheck tickets={tickets} onSaveStatement={canEdit ? onSave : undefined}
         topUps={topUps} statements={statements} wallets={wallets}
         onReprice={canEdit ? onReprice : undefined}
-        onFillInvoiceNos={canEdit ? onFillInvoiceNos : undefined} />
+        onFillInvoiceNos={canEdit ? onFillInvoiceNos : undefined}
+        onConfirm={canEdit ? onConfirmFromStatement : undefined} />
 
       {accounts.map(a => (
         <div key={a.vendorName} className="bg-white border border-slate-200 rounded-xl overflow-hidden">

@@ -1,6 +1,7 @@
 import type { Ticket } from '../../types';
 import type { ParsedStatement } from '../parsers/ibtekarStatementPdf';
 import { vendorMatchesSource } from './walletMath';
+import { confirmationsFrom, type Confirmation } from './supplierProof';
 
 /**
  * The invoice number each ticket is billed under, read off the supplier's
@@ -52,4 +53,19 @@ export function invoiceNumbersFromStatement(
     fill.push({ id: t.id, ticketNo: t.ticketNo, was, doc });
   }
   return { fill, conflicts };
+}
+
+/**
+ * Rows recorded from their sheet or by hand that the statement bills at the
+ * amount we recorded: the supplier has now vouched for them, as a report of
+ * theirs does on import. The six "EMD SV" of XTDH69, keyed from To Review
+ * at 180.00 each, were billed at 180.00 on Ibtekar's 25-31 Oct statement
+ * and still read "not confirmed by the supplier". A row billed at another
+ * figure is the reprice's question, not this one.
+ */
+export function confirmationsFromStatement(st: ParsedStatement, tickets: Ticket[], vendor = 'Ibtekar'): Confirmation[] {
+  const billed = st.lines.filter(l => l.section !== 'RECEIPT' && ser(l.ticketNo).length === 10)
+    .map(l => ({ ticketNo: ser(l.ticketNo), amount: Math.round((l.debit - l.credit) * 100) / 100 }) as Ticket);
+  const mine = tickets.filter(t => vendorMatchesSource(vendor, t.source || ''));
+  return confirmationsFrom(billed, mine, `${vendor}'s statement ${st.periodStart} to ${st.periodEnd}`).confirm;
 }
