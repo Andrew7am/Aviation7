@@ -27,6 +27,7 @@ import { secondCouponsIn } from '../core/helpers/conjunction';
 import { requestsFor, pnrVendorOfRow } from '../core/integrations/airtableRequests';
 import { detailsFor } from '../core/integrations/airtableDetails';
 import { matchExport } from '../core/integrations/airtableCsv';
+import { applyAppSettings } from '../core/config/appSettings';
 import type { Ticket } from '../types';
 
 const STATE_ID = 'aviation_tickets';
@@ -101,6 +102,9 @@ export async function syncAirtable(env: {
 }): Promise<SyncResult & { preview?: { notices: Notice[]; online: string[]; changes?: unknown } }> {
   const t0 = Date.now();
   const db = createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false } });
+  // The Settings screen's vendors and portals: which vendor a row is, and which are held back.
+  const { data: settings } = await db.from('app_settings').select('key, value');
+  applyAppSettings(settings ?? []);
   // Not the linked names (48 KB): only a read of the API wants them.
   const { data: st } = await db.from('airtable_sync_state').select('cursor, last_full_at, last_ok_at').eq('id', STATE_ID).maybeSingle();
   const now = new Date();

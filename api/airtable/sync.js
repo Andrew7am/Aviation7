@@ -505,6 +505,54 @@ function ticketMatchKey(ticketNo) {
   return CONJUNCTION_FORM.test(s) && conj.ticketNo !== s ? conj.ticketNo : s;
 }
 
+// src/core/helpers/airlineLimit.ts
+var EMIRATES_IATA = {
+  airlineCode: "176",
+  airline: "Emirates",
+  limit: 4e5,
+  warnAt: 39e4,
+  currency: "AED",
+  weekFrom: "2026-10-26"
+};
+
+// src/core/config/appSettings.ts
+var vendors = [];
+var portals = [];
+var offices = {};
+var configuredPortals = () => portals;
+function setConfiguredVendors(list) {
+  vendors = list.filter((v) => (v.name || "").trim()).map((v) => ({ ...v, name: v.name.trim() }));
+}
+function setConfiguredPortals(list) {
+  portals = list.filter((p) => (p.word || "").trim() && (p.source || "").trim()).map((p) => ({ word: p.word.trim(), source: p.source.trim() }));
+}
+function setConfiguredOffices(o) {
+  offices = Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k, [...new Set((v ?? []).map((x) => x.trim().toUpperCase()).filter(Boolean))]]));
+}
+var byName = (source) => {
+  const s = (source || "").trim().toLowerCase();
+  return s ? vendors.find((v) => v.name.toLowerCase() === s) : void 0;
+};
+function configuredOnStatement(source) {
+  return byName(source)?.onStatement;
+}
+function applyAppSettings(rows) {
+  const of = (k) => rows.find((r) => r.key === k)?.value;
+  const list = (v) => Array.isArray(v) ? v : [];
+  const s = {
+    vendors: list(of("vendors")),
+    airlineLimits: list(of("airline_limits")),
+    portals: list(of("portals")),
+    offices: of("offices") && typeof of("offices") === "object" ? of("offices") : {}
+  };
+  setConfiguredVendors(s.vendors);
+  setConfiguredPortals(s.portals);
+  setConfiguredOffices(s.offices);
+  const ek = s.airlineLimits.find((l) => l.airlineCode === EMIRATES_IATA.airlineCode);
+  if (ek) Object.assign(EMIRATES_IATA, ek);
+  return s;
+}
+
 // src/core/config/teamPortals.ts
 var PORTALS = [
   { match: /ibtkar|ibtekar/, source: "Ibtekar" },
@@ -531,21 +579,24 @@ var PORTALS = [
   // all, which is a kind of vendor and needs a name to be filed under.
   { match: /a\/?l\s*website|airline\s*website|website/, source: "Airline Website" }
 ];
-var ON_STATEMENT = /* @__PURE__ */ new Set(["Ibtekar", "NSA"]);
-var settlesOnStatement = (source) => ON_STATEMENT.has((source || "").trim());
+var BUILTIN_ON_STATEMENT = /* @__PURE__ */ new Set(["Ibtekar", "NSA"]);
+var builtinOnStatement = (source) => BUILTIN_ON_STATEMENT.has((source || "").trim());
+var onStatement = (source) => configuredOnStatement(source) ?? builtinOnStatement(source);
+var settlesOnStatement = (source) => onStatement(source);
 var STATEMENT_WHY = () => WHY;
 var WHY = "Billed on their statement and settled against a credit wallet \u2014 recording it by hand would move the balance twice. It arrives when the statement is imported.";
 function one(word) {
   const portal = (word || "").trim();
   const low = portal.toLowerCase();
-  const hit = portal ? PORTALS.find((p) => p.match.test(low)) : void 0;
+  const set = portal ? configuredPortals().find((p) => low.includes(p.word.toLowerCase())) : void 0;
+  const hit = set ? { source: set.source, choices: [] } : portal ? PORTALS.find((p) => p.match.test(low)) : void 0;
   const source = hit?.source ?? "";
   return {
     portal,
     source,
     choices: hit?.choices ?? [],
-    heldBack: ON_STATEMENT.has(source),
-    why: ON_STATEMENT.has(source) ? WHY : ""
+    heldBack: onStatement(source),
+    why: onStatement(source) ? WHY : ""
   };
 }
 function portalSource(cell2) {
@@ -2518,6 +2569,8 @@ var usesUnknownLink = (r, names) => Object.values(r.fields).some((v) => Array.is
 async function syncAirtable(env) {
   const t0 = Date.now();
   const db = createClient(env.supabaseUrl, env.serviceKey, { auth: { persistSession: false } });
+  const { data: settings } = await db.from("app_settings").select("key, value");
+  applyAppSettings(settings ?? []);
   const { data: st } = await db.from("airtable_sync_state").select("cursor, last_full_at, last_ok_at").eq("id", STATE_ID).maybeSingle();
   const now = /* @__PURE__ */ new Date();
   let full = env.forceFull || !st?.cursor || !st?.last_full_at || now.getTime() - new Date(st.last_full_at).getTime() > FULL_EVERY_MS;

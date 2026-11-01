@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Store, Gauge, BellRing, Plus, Trash2, Save, Loader2 } from 'lucide-react';
+import { Store, Gauge, BellRing, Plus, Trash2, Save, Loader2, Signpost, Building2 } from 'lucide-react';
 import { AppSettingsService, type LoadedSettings, type RequestAlertSetting } from '../services/AppSettingsService';
-import { BUILTIN_SOURCES } from '../core/config/sources';
-import { type VendorSetting, type VendorCurrencyCode } from '../core/config/appSettings';
+import { BUILTIN_SOURCES, knownSources } from '../core/config/sources';
+import { type VendorSetting, type VendorCurrencyCode, type PortalSetting, type OfficeSetting, type OfficeKey } from '../core/config/appSettings';
+import { BUILTIN_PORTALS, builtinOnStatement } from '../core/config/teamPortals';
+import { BUILTIN_OFFICE_PREFIXES, OFFICE_LABEL } from '../core/helpers/reqOffice';
 import { type AirlineLimit } from '../core/helpers/airlineLimit';
 
 /**
  * What an admin changes here rather than in the code (1 Nov 2026): the
- * vendors and their currencies, an airline's weekly limit on IATA, and the
- * request alerts. Each section saves on its own and says so in the Activity
- * log.
+ * vendors - their currencies, and which bill on a statement against a
+ * wallet - the team sheet's portals, the offices' request prefixes, an
+ * airline's weekly limit on IATA, and the request alerts. Each section saves
+ * on its own and says so in the Activity log.
  */
 const svc = new AppSettingsService();
 const CURRENCIES: VendorCurrencyCode[] = ['SAR', 'AED', 'USD', 'EUR'];
@@ -67,6 +70,12 @@ export const AdminSettings: React.FC<{ onChanged?: () => void }> = ({ onChanged 
       <Vendors loaded={loaded} busy={busy === 'vendors'} onSave={(list, detail) => run('vendors', 'vendors and currencies', async () => {
         await svc.saveVendors(list, loaded); await svc.audit('Vendors', detail);
       })} />
+      <Portals loaded={loaded} busy={busy === 'portals'} onSave={(list, detail) => run('portals', 'portals', async () => {
+        await svc.savePortals(list, loaded); await svc.audit('Portals', detail);
+      })} />
+      <Offices loaded={loaded} busy={busy === 'offices'} onSave={(o, detail) => run('offices', 'office prefixes', async () => {
+        await svc.saveOffices(o, loaded); await svc.audit('Offices', detail);
+      })} />
       <Limits loaded={loaded} busy={busy === 'limits'} onSave={(list, detail) => run('limits', 'weekly limit', async () => {
         await svc.saveAirlineLimits(list, loaded); await svc.audit('Weekly limit', detail);
       })} />
@@ -85,31 +94,34 @@ const Vendors: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (v: Ven
   ({ loaded, busy, onSave }) => {
   const builtin = useMemo(() => BUILTIN_SOURCES.filter(s => s !== 'Airline Website'), []);
   const isBuiltin = (n: string) => builtin.some(b => b.toLowerCase() === n.trim().toLowerCase());
-  // Every built-in vendor, at its currency as set here or by the rule, then the ones added here.
-  const initial = useMemo(() => [
-    ...builtin.map(name => ({ name, currency: loaded.vendors.find(v => v.name.toLowerCase() === name.toLowerCase())?.currency ?? builtinCurrency(name) })),
-    ...loaded.vendors.filter(v => !isBuiltin(v.name)),
+  // Every built-in vendor, as set here or by the rule, then the ones added here.
+  const initial = useMemo((): VendorSetting[] => [
+    ...builtin.map(name => {
+      const set = loaded.vendors.find(v => v.name.toLowerCase() === name.toLowerCase());
+      return { name, currency: set?.currency ?? builtinCurrency(name), onStatement: set?.onStatement ?? builtinOnStatement(name) };
+    }),
+    ...loaded.vendors.filter(v => !isBuiltin(v.name)).map(v => ({ ...v, onStatement: !!v.onStatement })),
   ], [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const [rows, setRows] = useState(initial);
   const [name, setName] = useState('');
   const [cur, setCur] = useState<VendorCurrencyCode>('SAR');
   useEffect(() => setRows(initial), [initial]);
 
-  // Saved: the vendors added here, and a built-in one only where its currency was changed.
-  const toSave = rows.filter(r => !isBuiltin(r.name) || r.currency !== builtinCurrency(r.name));
+  // Saved: the vendors added here, and a built-in one only where it was changed.
+  const toSave = rows.filter(r => !isBuiltin(r.name) || r.currency !== builtinCurrency(r.name) || !!r.onStatement !== builtinOnStatement(r.name));
   const dirty = JSON.stringify(toSave) !== JSON.stringify(loaded.vendors);
   const add = () => {
     const n = name.trim();
     if (!n || rows.some(r => r.name.toLowerCase() === n.toLowerCase())) return;
-    setRows([...rows, { name: n, currency: cur }]); setName('');
+    setRows([...rows, { name: n, currency: cur, onStatement: false }]); setName('');
   };
   return (
     <Section icon={<Store className="w-3.5 h-3.5" />} title="Vendors and their currencies"
-      note="A vendor added here appears in every vendor list. Each vendor's tickets are kept in its currency - a change applies to tickets recorded or edited from now on."
-      action={<button disabled={!dirty || busy} onClick={() => onSave(toSave, toSave.map(v => `${v.name} ${v.currency}`).join(', ') || 'built-in rule only')}
+      note="A vendor added here appears in every vendor list. Each vendor's tickets are kept in its currency - a change applies to tickets recorded or edited from now on. A vendor that bills on a statement against a wallet is never keyed by hand: its tickets arrive with the statement."
+      action={<button disabled={!dirty || busy} onClick={() => onSave(toSave, toSave.map(v => `${v.name} ${v.currency}${v.onStatement ? ' (statement)' : ''}`).join(', ') || 'built-in rule only')}
         className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}>{busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save</button>}>
       <table className="w-full text-xs">
-        <thead><tr className="text-[9px] uppercase text-slate-400 text-left"><th className="py-1">Vendor</th><th>Currency</th><th></th></tr></thead>
+        <thead><tr className="text-[9px] uppercase text-slate-400 text-left"><th className="py-1">Vendor</th><th>Currency</th><th>Statement + wallet</th><th></th></tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={r.name} className="border-t border-slate-100">
@@ -117,6 +129,8 @@ const Vendors: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (v: Ven
               <td><select className={input} value={r.currency}
                 onChange={e => setRows(rows.map((x, j) => j === i ? { ...x, currency: e.target.value as VendorCurrencyCode } : x))}>
                 {CURRENCIES.map(c => <option key={c}>{c}</option>)}</select></td>
+              <td><input type="checkbox" checked={!!r.onStatement} title="Bills on a statement against a credit wallet - never keyed by hand"
+                onChange={e => setRows(rows.map((x, j) => j === i ? { ...x, onStatement: e.target.checked } : x))} /></td>
               <td className="text-right">{!isBuiltin(r.name) && (
                 <button title="Remove" onClick={() => setRows(rows.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-600 p-1"><Trash2 className="w-3.5 h-3.5" /></button>)}</td>
             </tr>
@@ -128,6 +142,90 @@ const Vendors: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (v: Ven
           onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} />
         <select className={input} value={cur} onChange={e => setCur(e.target.value as VendorCurrencyCode)}>{CURRENCIES.map(c => <option key={c}>{c}</option>)}</select>
         <button onClick={add} className={`${btn} bg-slate-100 text-slate-700 hover:bg-slate-200`}><Plus className="w-3 h-3" /> Add</button>
+      </div>
+    </Section>
+  );
+};
+
+/* ── portals ─────────────────────────────────────────────────────────── */
+const Portals: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (p: PortalSetting[], detail: string) => void }> =
+  ({ loaded, busy, onSave }) => {
+  const [rows, setRows] = useState<PortalSetting[]>(loaded.portals);
+  const [word, setWord] = useState('');
+  const [source, setSource] = useState('');
+  useEffect(() => setRows(loaded.portals), [loaded]);
+  const vendors = knownSources().filter(v => v !== 'IATA');
+  const dirty = JSON.stringify(rows) !== JSON.stringify(loaded.portals);
+  const add = () => {
+    const w = word.trim();
+    if (!w || !source || rows.some(r => r.word.toLowerCase() === w.toLowerCase())) return;
+    setRows([...rows, { word: w, source }]); setWord('');
+  };
+  return (
+    <Section icon={<Signpost className="w-3.5 h-3.5" />} title="Team sheet portals"
+      note="Their Portal column says where a ticket was bought; this is the vendor that bills us for it. A word here is read before the built-in ones - for a new portal, or to read one differently. Matched anywhere in their cell, any case."
+      action={<button disabled={!dirty || busy} onClick={() => onSave(rows, rows.map(r => `${r.word} -> ${r.source}`).join(', ') || 'built-in only')}
+        className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}>{busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save</button>}>
+      <table className="w-full text-xs">
+        <thead><tr className="text-[9px] uppercase text-slate-400 text-left"><th className="py-1">Their word</th><th>Our vendor</th><th></th></tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.word} className="border-t border-slate-100">
+              <td className="py-1.5 font-mono text-slate-700">{r.word}</td>
+              <td><select className={input} value={r.source} onChange={e => setRows(rows.map((x, j) => j === i ? { ...x, source: e.target.value } : x))}>
+                {[...new Set([r.source, ...vendors])].map(v => <option key={v}>{v}</option>)}</select></td>
+              <td className="text-right"><button title="Remove" onClick={() => setRows(rows.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-600 p-1"><Trash2 className="w-3.5 h-3.5" /></button></td>
+            </tr>
+          ))}
+          {BUILTIN_PORTALS.map(p => (
+            <tr key={p.words} className="border-t border-slate-100 text-slate-400">
+              <td className="py-1.5 font-mono">{p.words}</td><td>{p.source}</td><td className="text-right text-[9px]">built in</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="flex gap-2 mt-3 items-center">
+        <input className={`${input} flex-1`} placeholder="A word in their Portal column, e.g. Saudia Portal" value={word}
+          onChange={e => setWord(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} />
+        <select className={input} value={source} onChange={e => setSource(e.target.value)}>
+          <option value="">Our vendor…</option>{vendors.map(v => <option key={v}>{v}</option>)}</select>
+        <button onClick={add} disabled={!word.trim() || !source} className={`${btn} bg-slate-100 text-slate-700 hover:bg-slate-200`}><Plus className="w-3 h-3" /> Add</button>
+      </div>
+    </Section>
+  );
+};
+
+/* ── offices ─────────────────────────────────────────────────────────── */
+const Offices: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (o: OfficeSetting, detail: string) => void }> =
+  ({ loaded, busy, onSave }) => {
+  const keys: OfficeKey[] = ['SAUDI', 'DUBAI', 'EGYPT'];
+  const text = (o: OfficeSetting) => Object.fromEntries(keys.map(k => [k, (o[k] ?? []).join(', ')])) as Record<OfficeKey, string>;
+  const [draft, setDraft] = useState(text(loaded.offices));
+  useEffect(() => setDraft(text(loaded.offices)), [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  const parsed: OfficeSetting = Object.fromEntries(keys.map(k =>
+    [k, [...new Set(draft[k].split(/[,\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean))]]));
+  const builtinOf = (k: OfficeKey) => BUILTIN_OFFICE_PREFIXES.filter(([, o]) => o === k).flatMap(([ps]) => ps);
+  const allBuiltin = BUILTIN_OFFICE_PREFIXES.flatMap(([ps]) => ps);
+  // A prefix belongs to one office: added twice, or already built in, it would be read two ways.
+  const added = keys.flatMap(k => parsed[k] ?? []);
+  const clash = added.find((p, i) => added.indexOf(p) !== i || allBuiltin.includes(p));
+  const dirty = JSON.stringify(text(parsed)) !== JSON.stringify(text(loaded.offices));
+  return (
+    <Section icon={<Building2 className="w-3.5 h-3.5" />} title="Offices"
+      note="Which office raised a request, read off the start of its number. Add a prefix to an office when the agency starts a new series; the longest prefix is read first, so KSA is never read as SA."
+      action={<button disabled={!dirty || busy || !!clash}
+        onClick={() => onSave(parsed, keys.map(k => `${OFFICE_LABEL[k]}: ${(parsed[k] ?? []).join(', ') || 'built-in only'}`).join('; '))}
+        className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}>{busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save</button>}>
+      <div className="space-y-2 text-xs">
+        {keys.map(k => (
+          <div key={k} className="flex flex-wrap items-center gap-3">
+            <div className="w-16 font-bold text-slate-700">{OFFICE_LABEL[k]}</div>
+            <div className="font-mono text-slate-400 w-40">{builtinOf(k).join(', ')}</div>
+            <input className={`${input} flex-1 min-w-[12rem] font-mono uppercase`} placeholder="Added prefixes, comma between"
+              value={draft[k]} onChange={e => setDraft({ ...draft, [k]: e.target.value })} />
+          </div>
+        ))}
+        {clash && <div className="text-[10px] text-red-600">{clash} is already a prefix{allBuiltin.includes(clash) ? ' built in' : ' of another office'} - each prefix belongs to one office.</div>}
       </div>
     </Section>
   );

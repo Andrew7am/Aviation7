@@ -18,6 +18,8 @@
  * inventing a fact about where the work was done.
  */
 
+import { configuredOffices } from '../config/appSettings';
+
 export type Office = 'DUBAI' | 'SAUDI' | 'EGYPT' | '';
 
 export const OFFICE_LABEL: Record<Exclude<Office, ''>, string> = {
@@ -31,7 +33,7 @@ export const OFFICE_LABEL: Record<Exclude<Office, ''>, string> = {
  *
  *  DXB is Dubai's airport code and RQE is REQ typed with two letters
  *  transposed; the agency confirmed both belong to Dubai. */
-const RULES: [string[], Exclude<Office, ''>][] = [
+export const BUILTIN_OFFICE_PREFIXES: [string[], Exclude<Office, ''>][] = [
   [['KSA'], 'SAUDI'],
   [['UAE', 'REQ', 'RQE', 'DXB'], 'DUBAI'],
   [['EGP'], 'EGYPT'],
@@ -55,9 +57,14 @@ const TOKEN_RULES: [string[], Exclude<Office, ''>][] = [
 export function classifyOffice(reqNum: string | undefined | null): Office {
   const s = (reqNum || '').trim().toUpperCase();
   if (!s) return '';
-  for (const [prefixes, office] of RULES) {
-    if (prefixes.some(p => s.startsWith(p))) return office;
-  }
+  /* With the prefixes added on the Settings screen, the longest tested
+     first - the order the built-in list keeps by hand, so KSA is never
+     read as SA. */
+  const prefixes = [...BUILTIN_OFFICE_PREFIXES.flatMap(([ps, o]) => ps.map(p => [p, o] as const)),
+    ...Object.entries(configuredOffices()).flatMap(([o, ps]) => (ps ?? []).map(p => [p, o as Exclude<Office, ''>] as const))]
+    .sort((a, b) => b[0].length - a[0].length);
+  const hit = prefixes.find(([p]) => s.startsWith(p));
+  if (hit) return hit[1];
   for (const [codes, office] of TOKEN_RULES) {
     if (codes.some(code => new RegExp(`(^|[^A-Z])${code}([^A-Z]|$)`).test(s))) return office;
   }

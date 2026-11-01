@@ -17,6 +17,8 @@
  * with them.
  */
 
+import { configuredPortals, configuredOnStatement } from './appSettings';
+
 export interface PortalMatch {
   /** Their word, trimmed. Empty when their cell was empty. */
   portal: string;
@@ -64,8 +66,22 @@ const PORTALS: { match: RegExp; source: string; choices?: string[] }[] = [
   { match: /a\/?l\s*website|airline\s*website|website/, source: 'Airline Website' },
 ];
 
-/** The two that bill on a statement and settle against a wallet. */
-const ON_STATEMENT = new Set(['Ibtekar', 'NSA']);
+/** What the built-in table reads, for the Settings screen to show. */
+export const BUILTIN_PORTALS: { words: string; source: string }[] = [
+  { words: 'Ibtkar, Ibtekar', source: 'Ibtekar' }, { words: 'NSA', source: 'NSA' },
+  { words: 'IATA, BSP', source: 'IATA BSP' }, { words: 'RTS', source: 'RTS' },
+  { words: 'Turkish', source: 'Turkish Airlines' }, { words: 'Emirates', source: 'Emirates' },
+  { words: 'Riyadh Air', source: 'Riyadh Air' }, { words: 'Fly Dubai', source: 'FlyDubai' },
+  { words: 'Air Arabia, G9', source: 'AirArabia' }, { words: 'Flynas, XY', source: 'Flynas' },
+  { words: 'FlyAdeal, F3', source: 'FlyAdeal KSA or FlyAdeal DXB (the reviewer chooses)' },
+  { words: 'Website, A/L website', source: 'Airline Website' },
+];
+
+/** The two that bill on a statement and settle against a wallet - unless
+ *  the Settings screen says otherwise, for them or for any other vendor. */
+const BUILTIN_ON_STATEMENT = new Set(['Ibtekar', 'NSA']);
+export const builtinOnStatement = (source: string) => BUILTIN_ON_STATEMENT.has((source || '').trim());
+const onStatement = (source: string) => configuredOnStatement(source) ?? builtinOnStatement(source);
 
 /**
  * Does this vendor settle against a credit wallet?
@@ -76,8 +92,7 @@ const ON_STATEMENT = new Set(['Ibtekar', 'NSA']);
  * name is on the row itself, and keying one of these by hand moves the
  * wallet twice.
  */
-export const settlesOnStatement = (source: string) =>
-  ON_STATEMENT.has((source || '').trim());
+export const settlesOnStatement = (source: string) => onStatement(source);
 
 /** Why one of them cannot be keyed in by hand. */
 export const STATEMENT_WHY = () => WHY;
@@ -90,14 +105,16 @@ const WHY = 'Billed on their statement and settled against a credit wallet —'
 function one(word: string): PortalMatch {
   const portal = (word || '').trim();
   const low = portal.toLowerCase();
-  const hit = portal ? PORTALS.find(p => p.match.test(low)) : undefined;
+  // A word set on the Settings screen first: a new portal, or one read differently.
+  const set = portal ? configuredPortals().find(p => low.includes(p.word.toLowerCase())) : undefined;
+  const hit = set ? { source: set.source, choices: [] as string[] } : portal ? PORTALS.find(p => p.match.test(low)) : undefined;
   const source = hit?.source ?? '';
   return {
     portal,
     source,
     choices: hit?.choices ?? [],
-    heldBack: ON_STATEMENT.has(source),
-    why: ON_STATEMENT.has(source) ? WHY : '',
+    heldBack: onStatement(source),
+    why: onStatement(source) ? WHY : '',
   };
 }
 

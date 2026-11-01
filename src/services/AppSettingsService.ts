@@ -1,6 +1,7 @@
 import { supabase } from '../utils/supabase';
-import { setConfiguredVendors, type VendorSetting } from '../core/config/appSettings';
-import { EMIRATES_IATA, type AirlineLimit } from '../core/helpers/airlineLimit';
+import { applyAppSettings, type LoadedSettings, type VendorSetting, type PortalSetting, type OfficeSetting } from '../core/config/appSettings';
+import type { AirlineLimit } from '../core/helpers/airlineLimit';
+export type { LoadedSettings };
 
 /**
  * The Settings screen's own settings (app_settings, 0047) and the request
@@ -13,26 +14,18 @@ export interface RequestAlertSetting {
   id: string; reqNum: string; threshold: number; currency: string; recipients: string[];
   lastTotal: number | null; reachedAt: string | null; emailedAt: string | null; lastError: string | null;
 }
-export interface LoadedSettings { vendors: VendorSetting[]; airlineLimits: AirlineLimit[] }
 
-const apply = (s: LoadedSettings) => {
-  setConfiguredVendors(s.vendors);
-  // Emirates is the one limit the header shows; its figures come from here.
-  const ek = s.airlineLimits.find(l => l.airlineCode === EMIRATES_IATA.airlineCode);
-  if (ek) Object.assign(EMIRATES_IATA, ek);
-};
+/** Put one changed setting where the rules read it, with the rest as loaded. */
+const apply = (s: LoadedSettings) => applyAppSettings([
+  { key: 'vendors', value: s.vendors }, { key: 'airline_limits', value: s.airlineLimits },
+  { key: 'portals', value: s.portals }, { key: 'offices', value: s.offices },
+]);
 
 export class AppSettingsService {
   async load(): Promise<LoadedSettings> {
     const { data, error } = await supabase.from('app_settings').select('key, value');
     if (error) throw new Error(error.message);
-    const of = (k: string) => (data ?? []).find(r => r.key === k)?.value;
-    const s: LoadedSettings = {
-      vendors: Array.isArray(of('vendors')) ? of('vendors') : [],
-      airlineLimits: Array.isArray(of('airline_limits')) ? of('airline_limits') : [],
-    };
-    apply(s);
-    return s;
+    return applyAppSettings(data ?? []);
   }
 
   private async save(key: string, value: unknown): Promise<void> {
@@ -60,6 +53,16 @@ export class AppSettingsService {
   async saveAirlineLimits(limits: AirlineLimit[], all: LoadedSettings): Promise<void> {
     await this.save('airline_limits', limits);
     apply({ ...all, airlineLimits: limits });
+  }
+
+  async savePortals(portals: PortalSetting[], all: LoadedSettings): Promise<void> {
+    await this.save('portals', portals);
+    apply({ ...all, portals });
+  }
+
+  async saveOffices(offices: OfficeSetting, all: LoadedSettings): Promise<void> {
+    await this.save('offices', offices);
+    apply({ ...all, offices });
   }
 
   async requestAlerts(): Promise<RequestAlertSetting[]> {
