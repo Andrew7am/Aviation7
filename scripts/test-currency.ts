@@ -8,6 +8,9 @@
 import { resolveCurrency } from '../src/core/helpers/resolveCurrency';
 import { classifyAgainstExisting, detectDuplicatesAgainstExisting } from '../src/core/ImportEngine';
 import { CURRENCIES } from '../src/components/ManualEntry';
+import { setConfiguredVendors } from '../src/core/config/appSettings';
+import { sourceToCurrency, vendorCurrency } from '../src/core/helpers/sourceCurrency';
+import { knownSources } from '../src/core/config/sources';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -106,6 +109,21 @@ console.log('\nThe currencies manual entry offers');
   // The two the vendors settle in have to be there, whatever else is.
   check('SAR is offered', CURRENCIES.includes('SAR'), true);
   check('AED is offered', CURRENCIES.includes('AED'), true);
+}
+
+console.log('\nVendors set on the Settings screen');
+{
+  check('before: a vendor the code does not know is riyals', sourceToCurrency('Saudia Direct'), 'SAR');
+  setConfiguredVendors([{ name: 'Saudia Direct', currency: 'AED' }, { name: 'Flynas', currency: 'AED' }]);
+  check('an added vendor takes the currency set for it', vendorCurrency('Saudia Direct'), 'AED');
+  check('matched on the whole name, any case', vendorCurrency(' saudia direct '), 'AED');
+  check('a built-in vendor set by hand follows the setting', sourceToCurrency('Flynas'), 'AED');
+  check('the others keep the built-in rule: IATA', sourceToCurrency('IATA BSP'), 'AED');
+  check('the others keep the built-in rule: NSA', sourceToCurrency('NSA'), 'SAR');
+  check('the airline website keeps its own', vendorCurrency('Airline Website'), null);
+  check('an added vendor is offered in the lists', knownSources().includes('Saudia Direct'), true);
+  setConfiguredVendors([]);
+  check('cleared: back to the rule', sourceToCurrency('Flynas'), 'SAR');
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

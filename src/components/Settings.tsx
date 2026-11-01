@@ -3,6 +3,7 @@ import { LearnedProfile } from '../core/ai/learnedProfile';
 import { AIProfileService } from '../services/AIProfileService';
 import { ManualParserMapper } from './ManualParserMapper';
 import { Sparkles, Wrench, Plus, Trash2, FileText } from 'lucide-react';
+import { AdminSettings } from './AdminSettings';
 
 const svc = new AIProfileService();
 
@@ -15,7 +16,7 @@ const svc = new AIProfileService();
  * or the AI taught the app on top of that: their column mappings, and a
  * button to teach a new one.
  */
-export const Settings: React.FC = () => {
+export const Settings: React.FC<{ onSettingsChanged?: () => void }> = ({ onSettingsChanged }) => {
   const [profiles, setProfiles] = useState<LearnedProfile[]>([]);
   const [loading, setLoading]   = useState(true);
   const [teaching, setTeaching] = useState(false);
@@ -57,9 +58,11 @@ export const Settings: React.FC = () => {
       <div>
         <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Settings — Admin Only</h2>
         <p className="text-sm text-slate-600 mt-1">
-          Report formats the app has been taught to read on top of its built-in vendors.
+          Vendors and their currencies, the weekly limit on IATA, the request alerts, and the report
+          formats the app has been taught to read on top of its built-in vendors. Every change is in the Activity log.
         </p>
       </div>
+      <AdminSettings onChanged={onSettingsChanged} />
 
       {error && (
         <div className="rounded px-3 py-2 bg-red-50 border border-red-200 text-[11px] text-red-700 font-mono">{error}</div>

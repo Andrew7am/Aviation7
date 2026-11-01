@@ -1,3 +1,4 @@
+import { configuredVendors } from './appSettings';
 /**
  * The vendors the app knows by name.
  *
@@ -37,7 +38,8 @@ export function knownSources(
 ): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const s of [...BUILTIN_SOURCES, ...vendorNames, ...ledgerSources]) {
+  // Vendors added on the Settings screen are offered with the built-in ones.
+  for (const s of [...BUILTIN_SOURCES, ...configuredVendors().map(v => v.name), ...vendorNames, ...ledgerSources]) {
     const name = (s || '').trim();
     if (!name) continue;
     const k = name.toLowerCase();

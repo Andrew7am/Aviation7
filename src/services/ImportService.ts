@@ -25,7 +25,7 @@ export interface AuditEntry {
     | 'UPDATE_REQ' | 'BULK_UPDATE_REQ'
     | 'UPDATE_CLOSED' | 'BULK_UPDATE_CLOSED'
     | 'EDIT_TICKET' | 'DELETE'
-    | 'TOPUP' | 'ADD_VENDOR' | 'EDIT_VENDOR' | 'DELETE_VENDOR'
+    | 'TOPUP' | 'ADD_VENDOR' | 'EDIT_VENDOR' | 'DELETE_VENDOR' | 'EDIT_SETTINGS'
     | 'SAVE_STATEMENT' | 'DELETE_STATEMENT'
     // The review queue. A proposal raised is not a change to the ledger, but
     // it is how a couple of hundred tickets get queued for one, so it is

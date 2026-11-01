@@ -1,6 +1,11 @@
+import { configuredCurrency, type VendorCurrencyCode } from '../config/appSettings';
 const AED_KEYS = ['iata', 'rts', 'gold medal', 'goldmedal', 'flyadeal dxb', 'air arabia', 'airarabia', 'flydubai', 'fly dubai', 'riyadh air', 'riyadhair', 'turkish', 'emirates', 'websales'];
 
-export function sourceToCurrency(source: string): 'SAR' | 'AED' {
+export function sourceToCurrency(source: string): VendorCurrencyCode {
+  // Set by hand on the Settings screen first: a vendor added there, or one
+  // whose currency was changed there.
+  const set = configuredCurrency(source);
+  if (set) return set;
   const s = (source || '').toLowerCase();
   if (AED_KEYS.some(k => s.includes(k))) return 'AED';
   return 'SAR';
@@ -34,7 +39,7 @@ export function ticketCurrency(t: { currency?: string | null; source?: string | 
  * The database holds the same rule (vendor_currency(), migration 0043), so a
  * row written by any path takes it. A vendor added to AED_KEYS goes there too.
  */
-export function vendorCurrency(source?: string | null): 'SAR' | 'AED' | null {
+export function vendorCurrency(source?: string | null): VendorCurrencyCode | null {
   const s = (source || '').trim();
   if (!s || /^airline website$/i.test(s)) return null;
   return sourceToCurrency(s);

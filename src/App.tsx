@@ -50,6 +50,7 @@ import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { summariseVendor } from './core/helpers/statementMath';
 import type { Reprice } from './core/helpers/statementAgainstBooks';
 import { AirtableService, type AirtableNotice, type SyncState } from './services/AirtableService';
+import { AppSettingsService } from './services/AppSettingsService';
 import { companyIndex, companyOf, type CompanyRow, type CompanyAssignment } from './core/helpers/companies';
 import { CompanyService } from './services/CompanyService';
 import { AirtableBell, NEEDS_APPROVAL } from './components/AirtableBell';
@@ -347,6 +348,13 @@ function MainApp({ user }: { user: User }) {
      with the bell - a few dozen rows, read only from the week's first day. */
   const [ekWeek, setEkWeek] = useState<{ today: string; rows: SheetRow[] }>({ today: localDate(new Date().toISOString()), rows: [] });
   const [reqAlerts, setReqAlerts] = useState<RequestAlert[]>([]);
+  /* The Settings screen's settings - vendors' currencies, the Emirates
+     limit - read once on opening and again whenever an admin saves them;
+     the count makes everything that reads them draw again. */
+  const [settingsRev, setSettingsRev] = useState(0);
+  useEffect(() => {
+    new AppSettingsService().load().then(() => setSettingsRev(r => r + 1)).catch(e => console.error('app settings', e));
+  }, []);
   const loadAirtable = React.useCallback(async () => {
     try {
       const today = localDate(new Date().toISOString());
@@ -356,8 +364,8 @@ function MainApp({ user }: { user: User }) {
       setAtNotices(n); setAtSync(s); setEkWeek({ today, rows: ek });
       airtable.requestAlerts().then(a => setReqAlerts(a as RequestAlert[])).catch(e => console.error('request alerts', e));
     } catch (e) { console.error('airtable notices', e); }
-  }, [airtable]);
-  const ekUse = React.useMemo(() => limitUse(EMIRATES_IATA, tickets, ekWeek.rows, ekWeek.today), [tickets, ekWeek]);
+  }, [airtable, settingsRev]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ekUse = React.useMemo(() => limitUse(EMIRATES_IATA, tickets, ekWeek.rows, ekWeek.today), [tickets, ekWeek, settingsRev]); // eslint-disable-line react-hooks/exhaustive-deps
   /* Every five minutes, and only while the page is in view - read every
      minute in every open tab, the bell alone was ~100 MB a day of egress. */
   useEffect(() => {
@@ -758,7 +766,7 @@ function MainApp({ user }: { user: User }) {
         ? <ActivityLog currentUserId={user.id} onUndo={handleUndoAction} />
         : <div className="p-10 text-center text-slate-400 font-sans text-sm">Admin access required.</div>)}
       {view === 'settings'  && (isAdmin
-        ? <Settings />
+        ? <Settings onSettingsChanged={() => setSettingsRev(r => r + 1)} />
         : <div className="p-10 text-center text-slate-400 font-sans text-sm">Admin access required.</div>)}
       </React.Suspense>
     </Shell>

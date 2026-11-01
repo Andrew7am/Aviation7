@@ -17,6 +17,7 @@ const ACTION_COLORS: Record<string, string> = {
   UPDATE_CLOSED: 'bg-teal-100 text-teal-700',
   BULK_UPDATE_CLOSED: 'bg-teal-100 text-teal-700',
   TOPUP:         'bg-emerald-100 text-emerald-700',
+  EDIT_SETTINGS: 'bg-amber-100 text-amber-700',
 };
 
 /** A single entity reads as itself; a list of them reads as a count. */
