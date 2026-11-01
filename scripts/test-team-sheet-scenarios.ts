@@ -337,5 +337,27 @@ scenario('39. One request reviewed; a shared ticket does not bring in the other 
     tkt({ ticketNo: '5513059301', pnr: 'PNR301', reqNum: 'REQ200' })],
 { NOT_ON_SHEET: 0 }, rep => check('ours is the one ticket', rep.docTypes.tickets.ours, 1));
 
+// KSAML2747's ZO6D8E: their refund row names 5513658205; the 780.00 is ours
+// under 5513727227, the reissue of 5513658206, which their sheet never refunds.
+const otherSheet = [
+  `072-5513658205,ZO6D8E,Issued,REQ100,1280,,,${D},,IATA Portal (UAE)`,
+  `065-5513658206,ZO6D8E,Issued,REQ100,790,,,${D},,IATA Portal (UAE)`,
+  `065-5513727227,ZO6D8E,Reissue,REQ100,0,,,25/08/2026 1:00pm,,IATA Portal (UAE)`,
+  `072-5513658205,ZO6D8E,Cancelled/Refunded,REQ100,790,780,checked,27/08/2026 1:00pm,,IATA Portal (UAE)`,
+];
+const otherOurs = (refund: number) => [
+  tkt({ ticketNo: '5513658205', airlineCode: '072', pnr: 'ZO6D8E', amount: 1280, totalDoc: 1280 }),
+  tkt({ ticketNo: '5513658206', pnr: 'ZO6D8E', amount: 790, totalDoc: 790 }),
+  tkt({ ticketNo: '5513727227', pnr: 'ZO6D8E', amount: 0, totalDoc: 0, date: '2026-08-25' }),
+  tkt({ ticketNo: '5513727227', pnr: 'ZO6D8E', amount: -refund, totalDoc: refund, status: 'REFUND', date: '2026-08-26' })];
+scenario('40. A refund their sheet writes under another ticket of the booking', otherSheet, otherOurs(780),
+{ REFUND_NOT_IN_LEDGER: 0, REFUND_NOT_ON_SHEET: 0, REFUND_OTHER_NUMBER: 1 }, (rep, props) => {
+  check('the refunds agree', [rep.docTypes.refunds.ours, rep.docTypes.refunds.theirs, rep.docTypes.refunds.missingInOurs, rep.docTypes.refunds.missingOnTheirs], [1, 1, [], []]);
+  check('their sheet to tidy, nothing to add', props.filter(p => p.transactionType === 'REFUND').length, 0);
+  check('it can be closed', rep.clean, true);
+});
+scenario('40b. Another amount on the same booking is not the same refund', otherSheet, otherOurs(500),
+{ REFUND_NOT_IN_LEDGER: 1, REFUND_OTHER_NUMBER: 0 });
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

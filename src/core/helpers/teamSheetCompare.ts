@@ -296,6 +296,7 @@ export type Verdict =
   | 'REFUND_DIFFERS'
   | 'PRICE_DIFFERS'
   | 'TWICE_ON_THEIR_SHEET'
+  | 'REFUND_OTHER_NUMBER'
   | 'NO_TICKET_NUMBER'
   | 'UNREADABLE'
   | 'NOT_ON_SHEET';
@@ -324,7 +325,7 @@ export function whoActs(f: Pick<Finding, 'verdict' | 'ours'>): 'US' | 'THEM' | '
     // Applied, and on its way: it arrives with the supplier's next billing.
     case 'REFUND_AWAITING_BILLING':
       return 'INFO';
-    case 'FILED_ELSEWHERE': case 'REFUND_NOT_ON_SHEET': case 'TWICE_ON_THEIR_SHEET':
+    case 'FILED_ELSEWHERE': case 'REFUND_NOT_ON_SHEET': case 'TWICE_ON_THEIR_SHEET': case 'REFUND_OTHER_NUMBER':
       return 'THEM';
     case 'UNREADABLE': case 'NO_TICKET_NUMBER':
       return f.ours.length ? 'THEM' : 'US';
@@ -352,6 +353,7 @@ export const VERDICT_LABEL: Record<Verdict, string> = {
   REFUND_DIFFERS:       'Refund differs',
   PRICE_DIFFERS:        'Price differs',
   TWICE_ON_THEIR_SHEET: 'Their sheet refunds it twice',
+  REFUND_OTHER_NUMBER:  'Their refund row names another ticket of the booking',
   NO_TICKET_NUMBER:     'Issued with no ticket number',
   UNREADABLE:           'Their ticket column has no usable number',
   NOT_ON_SHEET:         'Not on their sheet',
@@ -375,6 +377,7 @@ export const VERDICT_RANK: Record<Verdict, number> = {
   // Their own record disagrees with itself, so nothing can be compared
   // against it until they settle on one figure.
   TWICE_ON_THEIR_SHEET: 5.2,
+  REFUND_OTHER_NUMBER: 5.3,
   // A row that cannot be checked at all. Above the states of the world,
   // because somebody has to go and ask for the number.
   UNREADABLE: 5.5,
@@ -2061,6 +2064,45 @@ export function compareTeamSheet(
   };
   const unconfirmedOurs = ledger.filter(t => isTicket(t) && inScope(t) && unconfirmed(t));
 
+  /* A refund their sheet writes under another ticket of the booking.
+     KSAML2747's ZO6D8E: their refund row reads 072-5513658205 (780.00), and
+     our books hold that 780.00 under 5513727227 - the reissue of
+     5513658206, which their sheet carries as a reissue and never refunds.
+     One refund on both sides, read as one missing from each. Paired only on
+     the PNR AND the amount, to one refund of ours their sheet does not
+     refund under its own number. */
+  const refundRenamed = new Map<string, string>();   // their number -> ours
+  for (const f of findings) {
+    if (f.verdict !== 'REFUND_NOT_IN_LEDGER' && f.verdict !== 'REFUND_AWAITING_BILLING') continue;
+    const amount = Math.abs(f.sheet?.refund ?? 0);
+    const pnr = pnrKey(f.sheet?.pnr || f.pnr);
+    if (!f.serial || !amount || !pnr) continue;
+    const theirsRefund = (k: string) => (theirBySerial.get(k) ?? []).some(r => r.status === 'REFUNDED') || refundedByPnr.has(k);
+    const hits = ledger.filter(t => isTicket(t) && isRefund(t) && inScope(t) && pnrParts(t.pnr).includes(pnr)
+      && Math.abs(Math.abs(t.amount || 0) - amount) < 1);
+    const keys = [...new Set(hits.map(t => ticketMatchKey(t.relatedTicket || '') || ticketMatchKey(t.ticketNo || '')))]
+      .filter(k => k && k !== f.serial && !theirsRefund(k) && ![...refundRenamed.values()].includes(k));
+    if (keys.length !== 1) continue;
+    const ours = keys[0];
+    refundRenamed.set(f.serial, ours);
+    f.verdict = 'REFUND_OTHER_NUMBER';
+    f.ours = [...f.ours, ...hits.filter(t => (ticketMatchKey(t.relatedTicket || '') || ticketMatchKey(t.ticketNo || '')) === ours)];
+    f.note = `Their sheet refunds ${money(amount)} under ${f.serial}; our books hold that refund, ${money(amount)},`
+      + ` under ${ours} - the same booking ${pnr} - and their sheet does not refund ${ours}.`
+      + ` Nothing is missing: their refund row names the wrong ticket and should read ${ours}.`;
+  }
+  // ...and the same refund is not also "ours, not on their sheet": that
+  // document agrees, its refund carried on the row the pair names.
+  const renamedTo = new Map([...refundRenamed].map(([theirs, ours]) => [ours, theirs]));
+  for (const f of findings) if (f.verdict === 'REFUND_NOT_ON_SHEET' && renamedTo.has(f.serial)) {
+    f.verdict = 'OK';
+    f.note = `Its refund is on their sheet under ${renamedTo.get(f.serial)} - see that row.`;
+  }
+  if (refundRenamed.size) {
+    for (const k of Object.keys(counts)) counts[k as Verdict] = 0;
+    for (const f of findings) counts[f.verdict]++;
+  }
+
   /* ── each kind of document, both sides ──────────────────────────────────
      Ours: every document under these requests in the period, keyed by its
      number (or its booking reference, for a purchase with no number). A
@@ -2166,7 +2208,7 @@ export function compareTeamSheet(
       || (ourBySerial.get(r.serial) ?? []).some(t => emdLine(t)));
     if (anEmd) theirE.add(k); else theirT.add(k);
     if (!r.serial) pnrOnly.add(k);
-    if (r.status === 'REFUNDED') theirR.add(k);
+    if (r.status === 'REFUNDED') theirR.add(refundRenamed.get(k) ?? k);
   }
   /* What counts as carried: the same exclusions "not on their sheet" uses,
      so these lists and the findings below them never disagree. */
@@ -2302,7 +2344,8 @@ export function compareTeamSheet(
     }
     const ourRefund = mine.filter(t => (t.amount || 0) < 0);
     const fs = bySerialF.get(k) ?? [];
-    const theyRefund = (theirBySerial.get(k) ?? []).some(r => r.status === 'REFUNDED') || refundedByPnr.has(k);
+    const theyRefund = (theirBySerial.get(k) ?? []).some(r => r.status === 'REFUNDED') || refundedByPnr.has(k)
+      || [...refundRenamed.values()].includes(k);
     if (ourRefund.length && theirBySerial.has(k) && !theyRefund && !fs.some(f => OUR_REFUND_SAYS.has(f.verdict)))
       unaccounted.push({ side: 'ours', ref: k,
         what: `We hold a refund of ${money(Math.abs(ourRefund.reduce((n, t) => n + (t.amount || 0), 0)))} on ${k};`

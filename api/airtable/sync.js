@@ -653,6 +653,7 @@ function whoActs(f) {
     case "FILED_ELSEWHERE":
     case "REFUND_NOT_ON_SHEET":
     case "TWICE_ON_THEIR_SHEET":
+    case "REFUND_OTHER_NUMBER":
       return "THEM";
     case "UNREADABLE":
     case "NO_TICKET_NUMBER":
@@ -680,6 +681,7 @@ var VERDICT_LABEL = {
   REFUND_DIFFERS: "Refund differs",
   PRICE_DIFFERS: "Price differs",
   TWICE_ON_THEIR_SHEET: "Their sheet refunds it twice",
+  REFUND_OTHER_NUMBER: "Their refund row names another ticket of the booking",
   NO_TICKET_NUMBER: "Issued with no ticket number",
   UNREADABLE: "Their ticket column has no usable number",
   NOT_ON_SHEET: "Not on their sheet"
@@ -700,6 +702,7 @@ var VERDICT_RANK = {
   // Their own record disagrees with itself, so nothing can be compared
   // against it until they settle on one figure.
   TWICE_ON_THEIR_SHEET: 5.2,
+  REFUND_OTHER_NUMBER: 5.3,
   // A row that cannot be checked at all. Above the states of the world,
   // because somebody has to go and ask for the number.
   UNREADABLE: 5.5,
@@ -1554,6 +1557,31 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     refunds: scoped.filter((t) => (t.amount || 0) < 0).length
   };
   const unconfirmedOurs = ledger.filter((t) => isTicket(t) && inScope(t) && unconfirmed(t));
+  const refundRenamed = /* @__PURE__ */ new Map();
+  for (const f of findings) {
+    if (f.verdict !== "REFUND_NOT_IN_LEDGER" && f.verdict !== "REFUND_AWAITING_BILLING") continue;
+    const amount = Math.abs(f.sheet?.refund ?? 0);
+    const pnr = pnrKey(f.sheet?.pnr || f.pnr);
+    if (!f.serial || !amount || !pnr) continue;
+    const theirsRefund = (k) => (theirBySerial.get(k) ?? []).some((r) => r.status === "REFUNDED") || refundedByPnr.has(k);
+    const hits = ledger.filter((t) => isTicket(t) && isRefund(t) && inScope(t) && pnrParts(t.pnr).includes(pnr) && Math.abs(Math.abs(t.amount || 0) - amount) < 1);
+    const keys = [...new Set(hits.map((t) => ticketMatchKey(t.relatedTicket || "") || ticketMatchKey(t.ticketNo || "")))].filter((k) => k && k !== f.serial && !theirsRefund(k) && ![...refundRenamed.values()].includes(k));
+    if (keys.length !== 1) continue;
+    const ours = keys[0];
+    refundRenamed.set(f.serial, ours);
+    f.verdict = "REFUND_OTHER_NUMBER";
+    f.ours = [...f.ours, ...hits.filter((t) => (ticketMatchKey(t.relatedTicket || "") || ticketMatchKey(t.ticketNo || "")) === ours)];
+    f.note = `Their sheet refunds ${money2(amount)} under ${f.serial}; our books hold that refund, ${money2(amount)}, under ${ours} - the same booking ${pnr} - and their sheet does not refund ${ours}. Nothing is missing: their refund row names the wrong ticket and should read ${ours}.`;
+  }
+  const renamedTo = new Map([...refundRenamed].map(([theirs, ours]) => [ours, theirs]));
+  for (const f of findings) if (f.verdict === "REFUND_NOT_ON_SHEET" && renamedTo.has(f.serial)) {
+    f.verdict = "OK";
+    f.note = `Its refund is on their sheet under ${renamedTo.get(f.serial)} - see that row.`;
+  }
+  if (refundRenamed.size) {
+    for (const k of Object.keys(counts)) counts[k] = 0;
+    for (const f of findings) counts[f.verdict]++;
+  }
   const emdLine = (t) => /^EMD/i.test(`${t.status || ""} ${t.transactionType || ""}`.trim());
   const ourScoped = scoped.filter((t) => inPeriod(t.date || "", from, to));
   const keyOf2 = (t) => ticketMatchKey(t.ticketNo || "") || pnrKey(t.pnr) || t.id;
@@ -1619,7 +1647,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     if (anEmd) theirE.add(k);
     else theirT.add(k);
     if (!r.serial) pnrOnly.add(k);
-    if (r.status === "REFUNDED") theirR.add(k);
+    if (r.status === "REFUNDED") theirR.add(refundRenamed.get(k) ?? k);
   }
   const carried = (k) => theirT.has(k) || theirE.has(k) || claimed.has(k) || claimedByPnr.has(k) || isReference2(k) && theirPnrs.has(k) || voidedSet.has(k);
   const held2 = (k) => voidedSet.has(k) || (ourBySerial.get(k) ?? []).some((t) => !isRefund(t)) || (isReference2(k) ? (ourByPnr.get(k) ?? []).some((t) => !theirSerials.has(ticketMatchKey(t.ticketNo || ""))) : ourByPnr.has(k));
@@ -1752,7 +1780,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     }
     const ourRefund = mine.filter((t) => (t.amount || 0) < 0);
     const fs = bySerialF.get(k) ?? [];
-    const theyRefund = (theirBySerial.get(k) ?? []).some((r) => r.status === "REFUNDED") || refundedByPnr.has(k);
+    const theyRefund = (theirBySerial.get(k) ?? []).some((r) => r.status === "REFUNDED") || refundedByPnr.has(k) || [...refundRenamed.values()].includes(k);
     if (ourRefund.length && theirBySerial.has(k) && !theyRefund && !fs.some((f) => OUR_REFUND_SAYS.has(f.verdict)))
       unaccounted.push({
         side: "ours",
@@ -2044,6 +2072,12 @@ function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
   const viaApplication = /* @__PURE__ */ new Set();
   for (const list of index.values()) for (const t of list)
     if ((t.amount || 0) < 0 && t.relatedTicket) viaApplication.add(docKey(t.relatedTicket));
+  const theirRefunded = new Set(rows.filter((r) => /refund/i.test(r.status || "")).flatMap((r) => r.serials.map(docKey)));
+  const ourRefunds = [...index.values()].flat().filter((t) => (t.amount || 0) < 0);
+  const heldElsewhere = (k, pnr, amount) => amount != null && !!pnr && ourRefunds.some((t) => {
+    const of = docKey(t.relatedTicket || t.ticketNo);
+    return of !== k && !theirRefunded.has(of) && Math.abs(Math.abs(t.amount || 0) - Math.abs(amount)) < 1 && (t.pnr || "").toUpperCase().split(/[|,/\s]+/).includes(pnr);
+  });
   for (const r of rows) {
     if (!/refund/i.test(r.status || "")) continue;
     if (!(Date.parse(r.created_at || "") >= since)) continue;
@@ -2052,8 +2086,9 @@ function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
       if (!k || seen.has(k)) continue;
       const ours = index.get(k) ?? [];
       if (!ours.some((t) => (t.amount || 0) > 0) || ours.some((t) => (t.amount || 0) < 0) || viaApplication.has(k)) continue;
-      seen.add(k);
       const amount = r.refund_amount ?? (r.serials.length === 1 ? r.net_cost : null);
+      if (heldElsewhere(k, (r.pnr || "").toUpperCase(), amount)) continue;
+      seen.add(k);
       const src = ours.find((t) => (t.amount || 0) > 0)?.source || "the supplier";
       const sale = ours.filter((t) => (t.amount || 0) > 0).reduce((n, t) => n + (t.amount || 0), 0);
       const added = (r.created_at || "").slice(0, 10);

@@ -182,6 +182,18 @@ export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, Led
   const viaApplication = new Set<string>();
   for (const list of index.values()) for (const t of list)
     if ((t.amount || 0) < 0 && t.relatedTicket) viaApplication.add(docKey(t.relatedTicket));
+  /* A refund of ours on the same booking, for the same amount, under a
+     ticket their sheet does not refund: their row names the wrong ticket of
+     the booking. 5513658205's 780.00 is ours under 5513727227. The Team
+     Sheet Check pairs it the same way (REFUND_OTHER_NUMBER). */
+  const theirRefunded = new Set(rows.filter(r => /refund/i.test(r.status || '')).flatMap(r => r.serials.map(docKey)));
+  const ourRefunds = [...index.values()].flat().filter(t => (t.amount || 0) < 0);
+  const heldElsewhere = (k: string, pnr: string, amount: number | null) => amount != null && !!pnr
+    && ourRefunds.some(t => {
+      const of = docKey(t.relatedTicket || t.ticketNo);
+      return of !== k && !theirRefunded.has(of) && Math.abs(Math.abs(t.amount || 0) - Math.abs(amount)) < 1
+        && (t.pnr || '').toUpperCase().split(/[|,/\s]+/).includes(pnr);
+    });
   for (const r of rows) {
     if (!/refund/i.test(r.status || '')) continue;
     if (!(Date.parse(r.created_at || '') >= since)) continue;
@@ -190,8 +202,9 @@ export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, Led
       if (!k || seen.has(k)) continue;
       const ours = index.get(k) ?? [];
       if (!ours.some(t => (t.amount || 0) > 0) || ours.some(t => (t.amount || 0) < 0) || viaApplication.has(k)) continue;
-      seen.add(k);
       const amount = r.refund_amount ?? (r.serials.length === 1 ? r.net_cost : null);
+      if (heldElsewhere(k, (r.pnr || '').toUpperCase(), amount)) continue;
+      seen.add(k);
       const src = ours.find(t => (t.amount || 0) > 0)?.source || 'the supplier';
       const sale = ours.filter(t => (t.amount || 0) > 0).reduce((n, t) => n + (t.amount || 0), 0);
       const added = (r.created_at || '').slice(0, 10);

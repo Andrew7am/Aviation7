@@ -49,6 +49,7 @@ const TONE: Record<Verdict, { chip: string; band: string; money: boolean }> = {
   REFUND_DIFFERS:       { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   PRICE_DIFFERS:        { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   TWICE_ON_THEIR_SHEET: { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
+  REFUND_OTHER_NUMBER:  { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   NO_TICKET_NUMBER:     { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   UNREADABLE:           { chip: 'bg-amber-100 text-amber-800',    band: 'border-amber-200',   money: true },
   REQ_RELATED:          { chip: 'bg-sky-100 text-sky-700',         band: 'border-sky-200',     money: false },
@@ -103,6 +104,11 @@ const WHY: Record<Verdict, string> = {
     + ' two rows — one Issued, one Cancelled/Refunded — with only the second carrying a'
     + ' figure; these carry two. Until their record settles on one number there is nothing'
     + ' ours can be compared against, so the refund check stands aside for them.',
+  REFUND_OTHER_NUMBER:
+    'Their sheet refunds one ticket of a booking, and our books hold a refund of the same amount,'
+    + ' on the same PNR, under another ticket of it - one their sheet does not refund. It is one'
+    + ' refund, held on both sides: their refund row names the wrong ticket. Nothing is missing on'
+    + ' our side; the team should write the number we name on their refund row.',
   REQ_RELATED:
     'Each side files it under a different request, and the ledger already records those'
     + ' two as one piece of work — a cash-paid ticket raised under its own number beside'
