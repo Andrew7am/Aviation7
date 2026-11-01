@@ -1,8 +1,8 @@
 /**
  * How much of an airline's weekly sales limit on IATA has been used.
  *
- * Emirates (176) lets the agency issue up to 300,000 AED a week on its IATA
- * (BSP) account. The week runs Monday to Sunday, local time (UTC+3): it
+ * Emirates (176) lets the agency issue up to 400,000 AED a week on its IATA
+ * (BSP) account (300,000 until 1 Nov 2026). The week runs Monday to Sunday, local time (UTC+3): it
  * starts again at midnight between Sunday and Monday. (Set up on Wednesday
  * 21 Oct 2026 as Wednesday to Tuesday; moved to Mondays on 29 Oct.)
  *
@@ -29,7 +29,7 @@ export interface AirlineLimit {
 }
 
 export const EMIRATES_IATA: AirlineLimit = {
-  airlineCode: '176', airline: 'Emirates', limit: 300_000, warnAt: 290_000, currency: 'AED', weekFrom: '2026-10-26',
+  airlineCode: '176', airline: 'Emirates', limit: 400_000, warnAt: 390_000, currency: 'AED', weekFrom: '2026-10-26',
 };
 
 export interface BookRow { ticketNo: string; source?: string; airlineCode?: string; status?: string; date?: string; amount: number; totalDoc?: number }

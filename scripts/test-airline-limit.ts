@@ -1,5 +1,5 @@
 /**
- * Emirates' weekly IATA limit: what counts toward the 300,000 AED, and when
+ * Emirates' weekly IATA limit: what counts toward the 400,000 AED, and when
  * the warning is raised.
  */
 import { EMIRATES_IATA, limitUse, limitWeek, localDate } from '../src/core/helpers/airlineLimit';
@@ -56,10 +56,12 @@ console.log('\n2. What counts');
 }
 
 console.log('\n3. The warning');
-check('below 290,000: nothing', limitUse(cfg, [bk('1', '2026-10-21', 289_999)], [], '2026-10-21').level, 'OK');
-check('at 290,000: warn', limitUse(cfg, [bk('1', '2026-10-21', 290_000)], [], '2026-10-21').level, 'WARN');
-check('at 300,000: over', limitUse(cfg, [bk('1', '2026-10-21', 300_000)], [], '2026-10-21').level, 'OVER');
-check('what is left', limitUse(cfg, [bk('1', '2026-10-21', 291_500)], [], '2026-10-21').left, 8_500);
+check('the limit is 400,000', cfg.limit, 400_000);
+check('300,000 is now nothing to say', limitUse(cfg, [bk('1', '2026-10-21', 300_000)], [], '2026-10-21').level, 'OK');
+check('below 390,000: nothing', limitUse(cfg, [bk('1', '2026-10-21', 389_999)], [], '2026-10-21').level, 'OK');
+check('at 390,000: warn', limitUse(cfg, [bk('1', '2026-10-21', 390_000)], [], '2026-10-21').level, 'WARN');
+check('at 400,000: over', limitUse(cfg, [bk('1', '2026-10-21', 400_000)], [], '2026-10-21').level, 'OVER');
+check('what is left', limitUse(cfg, [bk('1', '2026-10-21', 391_500)], [], '2026-10-21').left, 8_500);
 check('a new week starts from nothing', limitUse(cfg, [bk('1', '2026-10-25', 295_000)], [], '2026-10-26').level, 'OK');
 
 console.log(`\n${passed} passed, ${failed} failed`);
