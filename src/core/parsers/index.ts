@@ -1,6 +1,7 @@
 import { VendorParser, ParserResult } from './types';
 import { IATAParser } from './IATAParser';
 import { NSAParser } from './NSAParser';
+import { NSAStatementParser } from './NSAStatementParser';
 import { FlyAdealDXBParser } from './FlyAdealDXBParser';
 import { FlyAdealKSAParser } from './FlyAdealKSAParser';
 import { IbtekarParser } from './IbtekarParser';
@@ -30,6 +31,8 @@ export const ALL_PARSERS: VendorParser[] = [
   // settlement document is never mistaken for a daily sales report.
   BSPInvoiceParser,
   IATAParser, NSAParser,
+  // NSA's statement of account - their account, not their sales report.
+  NSAStatementParser,
   FlyAdealDXBParser, FlyAdealKSAParser,
   IbtekarV2Parser, IbtekarParser, GoldMedalParser,
   AirArabiaParser, FlynasParser,
@@ -77,6 +80,16 @@ export function smartDetect(
     if (parser.headerless && headerRowIdx !== 0 && parser.detect(allRows[0] ?? [])) {
       return { parser, confidence: 95, missingCols: [], headerRowIdx };
     }
+  }
+
+  /* 1b. The same signals on the other rows above the data. A statement
+     prints its own header block first, and findHeaderRow can settle on a
+     line of it: NSA's statement of account has "File No | Reference" on
+     row 13 and its table header on row 16. */
+  for (let idx = 0; idx < Math.min(allRows.length, PROFILE_HEADER_SEARCH); idx++) {
+    if (idx === headerRowIdx) continue;
+    const parser = ALL_PARSERS.find(p => !p.headerless && p.detect(allRows[idx] ?? []));
+    if (parser) return { parser, confidence: 90, missingCols: [], headerRowIdx: idx };
   }
 
   // 2. Learned profile — an exact header fingerprint match means this exact
