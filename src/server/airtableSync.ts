@@ -22,6 +22,8 @@ import { parseTeamSheet } from '../core/parsers/teamSheet';
 import { compareTeamSheet, reqParts } from '../core/helpers/teamSheetCompare';
 import { planSheetAdd } from '../core/helpers/addFromSheet';
 import { pendingRow } from '../core/helpers/pendingRow';
+import { dedupeKey } from '../core/helpers/pendingFromFindings';
+import { secondCouponsIn } from '../core/helpers/conjunction';
 import { requestsFor, pnrVendorOfRow } from '../core/integrations/airtableRequests';
 import { detailsFor } from '../core/integrations/airtableDetails';
 import { matchExport } from '../core/integrations/airtableCsv';
@@ -454,7 +456,7 @@ export async function syncAirtable(env: {
        overnight after it was in our Voids. A waiting ticket is closed the
        moment its question is answered - it arrived, or it was voided. */
     if (!dry) {
-      const { data: waiting } = await db.from('pending_tickets').select('id, ticket_no, pnr, their_portal, their_cell, dedupe, amount, currency, their_cost, req_num, their_req')
+      const { data: waiting } = await db.from('pending_tickets').select('id, ticket_no, pnr, their_portal, their_cell, their_group, dedupe, amount, currency, their_cost, req_num, their_req, transaction_type')
         .eq('origin', 'AIRTABLE').eq('state', 'PENDING');
       if (waiting?.length) {
         const nos = [...new Set(waiting.map(w => w.ticket_no).filter(Boolean))];
@@ -536,13 +538,20 @@ export async function syncAirtable(env: {
             const rowsFor = (theirs ?? []).filter(r => (r.serials ?? []).includes(docKey(w.ticket_no)) && !/void|hold/i.test(r.status ?? ''));
             if (rowsFor.length !== 1) continue;
             const r = rowsFor[0];
-            const untouched = w.their_cost == null || Math.abs(Math.abs(Number(w.amount)) - Math.abs(Number(w.their_cost))) < 0.005;
+            // A cell of several tickets: each holds its share of their figure.
+            const n = Math.max(1, (Number(w.their_group) || 1) - secondCouponsIn(w.their_cell || '').size);
+            const share = (c: number) => Math.round(Math.abs(c) / n * 100) / 100;
+            /* Raised at 0 before shares were given (1 Nov 2026): never
+               priced, so it takes its share now - the six "EMD SV" of
+               XTDH69 at 1,080.00 SAR, 180.00 each. */
+            const unpriced = n > 1 && !Number(w.amount);
+            const untouched = unpriced || w.their_cost == null || Math.abs(Math.abs(Number(w.amount)) - share(Number(w.their_cost))) < 0.02;
             if (!untouched) continue;
             const patch: Record<string, unknown> = {};
             if (r.currency && r.currency !== w.currency) patch.currency = r.currency;
-            if (r.net_cost != null && Math.abs(Number(r.net_cost) - Math.abs(Number(w.amount))) >= 0.005) {
-              patch.amount = Math.sign(Number(w.amount) || 1) * Math.abs(Number(r.net_cost));
-              patch.total_doc = Math.abs(Number(r.net_cost));
+            if (r.net_cost != null && (unpriced || w.their_cost == null || Math.abs(Number(r.net_cost) - Number(w.their_cost)) >= 0.005)) {
+              patch.amount = (/REFUND/i.test(w.transaction_type ?? '') ? -1 : 1) * share(Number(r.net_cost));
+              patch.total_doc = share(Number(r.net_cost));
               patch.their_cost = Number(r.net_cost);
             }
             if (r.req_num && !r.req_num.includes(',') && r.req_num !== (w.req_num || '')) { patch.req_num = r.req_num; patch.their_req = r.req_num; }
@@ -555,6 +564,30 @@ export async function syncAirtable(env: {
               title: `Not in our books: ${w.ticket_no} · ${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${cur} · ${req}` })
               .eq('dedupe_key', `MISSING|${w.dedupe}`).eq('state', 'OPEN');
           }
+        }
+      }
+    }
+
+    /* Decided in To Review, so the bell's question is answered: 5513658205's
+       refund was turned down there as already in our books (under 5513727227)
+       and stayed open in the bell. Turned down there dismisses the notice;
+       recorded there accepts it. */
+    if (!dry) {
+      const { data: asking } = await db.from('airtable_notifications').select('id, kind, dedupe_key, ticket_no')
+        .eq('state', 'OPEN').in('kind', ['NOT_IN_BOOKS', 'ONLINE_TICKET', 'REFUND_MISSING']);
+      if (asking?.length) {
+        const waitKey = (n: { kind: string; dedupe_key: string; ticket_no: string }) => n.kind === 'REFUND_MISSING'
+          ? dedupeKey('TEAM_SHEET', n.ticket_no, '', 'REFUND_NOT_IN_LEDGER') : n.dedupe_key.replace(/^(MISSING|ONLINE)\|/, '');
+        const keys = [...new Set(asking.map(waitKey))];
+        const decided = new Map<string, string>();
+        for (let i = 0; i < keys.length; i += 200) {
+          const { data } = await db.from('pending_tickets').select('dedupe, state').in('dedupe', keys.slice(i, i + 200)).neq('state', 'PENDING');
+          for (const r of data ?? []) decided.set(r.dedupe, r.state);
+        }
+        const at = new Date().toISOString();
+        for (const [state, as] of [['REJECTED', 'DISMISSED'], ['CONFIRMED', 'ACCEPTED']] as const) {
+          const ids = asking.filter(n => decided.get(waitKey(n)) === state).map(n => n.id);
+          if (ids.length) await db.from('airtable_notifications').update({ state: as, decided_by: 'To Review', decided_at: at }).in('id', ids);
         }
       }
     }

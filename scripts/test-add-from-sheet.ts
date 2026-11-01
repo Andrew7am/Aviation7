@@ -91,7 +91,7 @@ console.log('\n2. A wallet vendor is never keyed by hand');
 console.log('\n3. A shared cell prices a booking, not a ticket');
 {
   // Their sheet repeats the booking's value beside every coupon, so the
-  // proposal arrives at zero and somebody has to divide it.
+  // proposal arrives at an even share - which a person confirms.
   const p = plan([finding({ groupSize: 5, siblings: ['1','2','3','4'], cost: 6390 })]);
   check('nothing recorded', p.ready.length, 0);
   check('it waits', p.waiting.length, 1);

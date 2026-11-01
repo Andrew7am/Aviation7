@@ -4,6 +4,7 @@ import { SupportedCurrency } from './resolveCurrency';
 import { portalSource } from '../config/teamPortals';
 import { conjunctionFirst, secondCouponsIn } from './conjunction';
 import { toDirhams } from './toDirhams';
+import { teamSerials } from '../parsers/teamSheet';
 
 /**
  * Turn what the check found into tickets somebody can agree to.
@@ -93,6 +94,19 @@ export interface BuildOptions {
 const ticketsInCell = (s: { groupSize: number; cellTickets?: number; rawTicket: string }) =>
   s.cellTickets ?? Math.max(1, s.groupSize - secondCouponsIn(s.rawTicket || '').size);
 
+/* A cell naming several tickets prices them together: each takes an even
+   share, and the last named the remainder, so the cell adds back to its
+   figure. Until 1 Nov 2026 they went in at 0 for somebody to divide; the
+   user asked for it done on its own after "EMD SV" x6 at 1,080.00 SAR came
+   in as six EMDs at 0 ("4 tickets at 1000 is 250 each"). */
+function shareOf(s: { groupSize: number; cellTickets?: number; rawTicket: string }, serial: string, total: number): number {
+  const n = ticketsInCell(s);
+  if (n <= 1) return Math.abs(total);
+  const order = teamSerials(s.rawTicket).filter(d => d.serial && !d.couponOf).map(d => d.serial);
+  const i = order.indexOf(serial);
+  return splitEvenly(total, n)[i >= 0 && i < n ? i : 0];
+}
+
 export function pendingFromFindings(
   findings: Finding[],
   { origin = 'TEAM_SHEET', newId, userId }: BuildOptions,
@@ -125,17 +139,17 @@ export function pendingFromFindings(
       // the reviewer's. An empty source is what stops the confirm.
       source: match.source,
       date: s.issued || '',
-      // Their net, which is a net. Zero when their cell named several
-      // tickets: that figure is the booking's and would treble the cost.
-      // See the note above. A cell naming none - a website purchase with
-      // only a PNR - is one purchase, and its figure is its own.
+      // Their net, which is a net - this ticket's share of it when their
+      // cell named several (shareOf). A second coupon takes none: its fare
+      // is on the first. A cell naming none - a website purchase with only
+      // a PNR - is one purchase, and its figure is its own.
       amount: isFreeReissue ? 0 : isRefund
-        ? (s.refund != null ? refundAmount(s.refund) : 0)
-        : (ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0),
+        ? (s.refund != null ? refundAmount(shareOf(s, f.serial, s.refund)) : 0)
+        : (!s.couponOf && s.cost != null ? shareOf(s, f.serial, s.cost) : 0),
       commission: 0,
       totalDoc: isFreeReissue ? 0 : isRefund
-        ? (s.refund != null ? Math.abs(s.refund) : 0)
-        : (ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0),
+        ? (s.refund != null ? shareOf(s, f.serial, s.refund) : 0)
+        : (!s.couponOf && s.cost != null ? shareOf(s, f.serial, s.cost) : 0),
       // We hold no row for it, so their request is the only one there is.
       // Kept in both places: this is what it would be filed under, and
       // `theirReq` is the record of where that came from.

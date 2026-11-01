@@ -1846,6 +1846,13 @@ function dedupeKey(origin, serial3, pnr, verdict) {
 }
 var refundAmount = (n) => -Math.abs(n);
 var ticketsInCell = (s) => s.cellTickets ?? Math.max(1, s.groupSize - secondCouponsIn(s.rawTicket || "").size);
+function shareOf(s, serial3, total) {
+  const n = ticketsInCell(s);
+  if (n <= 1) return Math.abs(total);
+  const order = teamSerials(s.rawTicket).filter((d) => d.serial && !d.couponOf).map((d) => d.serial);
+  const i = order.indexOf(serial3);
+  return splitEvenly(total, n)[i >= 0 && i < n ? i : 0];
+}
 function pendingFromFindings(findings, { origin = "TEAM_SHEET", newId, userId }) {
   const out = [];
   for (const f of findings) {
@@ -1865,13 +1872,13 @@ function pendingFromFindings(findings, { origin = "TEAM_SHEET", newId, userId })
       // the reviewer's. An empty source is what stops the confirm.
       source: match.source,
       date: s.issued || "",
-      // Their net, which is a net. Zero when their cell named several
-      // tickets: that figure is the booking's and would treble the cost.
-      // See the note above. A cell naming none - a website purchase with
-      // only a PNR - is one purchase, and its figure is its own.
-      amount: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? refundAmount(s.refund) : 0 : ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0,
+      // Their net, which is a net - this ticket's share of it when their
+      // cell named several (shareOf). A second coupon takes none: its fare
+      // is on the first. A cell naming none - a website purchase with only
+      // a PNR - is one purchase, and its figure is its own.
+      amount: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? refundAmount(shareOf(s, f.serial, s.refund)) : 0 : !s.couponOf && s.cost != null ? shareOf(s, f.serial, s.cost) : 0,
       commission: 0,
-      totalDoc: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? Math.abs(s.refund) : 0 : ticketsInCell(s) <= 1 && !s.couponOf && s.cost != null ? Math.abs(s.cost) : 0,
+      totalDoc: isFreeReissue ? 0 : isRefund2 ? s.refund != null ? shareOf(s, f.serial, s.refund) : 0 : !s.couponOf && s.cost != null ? shareOf(s, f.serial, s.cost) : 0,
       // We hold no row for it, so their request is the only one there is.
       // Kept in both places: this is what it would be filed under, and
       // `theirReq` is the record of where that came from.
@@ -1917,6 +1924,15 @@ function whyNotConfirmable(p) {
     return passengersNamed(p) > 1 ? `Enter what it cost \u2014 their figure covers all ${passengersNamed(p)} tickets in that cell.` : "Enter what it cost \u2014 their sheet states no figure for it.";
   }
   return "";
+}
+function splitEvenly(total, n) {
+  if (n < 1) return [];
+  const round = (x) => Math.round(x * 100) / 100;
+  const whole = Math.abs(round(total));
+  const each = round(whole / n);
+  const parts = Array.from({ length: n }, () => each);
+  parts[n - 1] = round(whole - each * (n - 1));
+  return parts;
 }
 function passengersNamed(p) {
   const named = p.theirGroup ?? 1;
@@ -2187,6 +2203,11 @@ function planSheetAdd(findings, { newId, userId, tickets }) {
     const why = whyNotConfirmable(proposal);
     if (why) {
       plan.waiting.push({ proposal, why });
+      continue;
+    }
+    const named = passengersNamed(proposal);
+    if (named > 1) {
+      plan.waiting.push({ proposal, why: `An even share: their figure covers ${named} tickets in one cell. Check it and confirm.` });
       continue;
     }
     plan.ready.push(proposal);
@@ -2795,7 +2816,7 @@ async function syncAirtable(env) {
       }
     }
     if (!dry) {
-      const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, pnr, their_portal, their_cell, dedupe, amount, currency, their_cost, req_num, their_req").eq("origin", "AIRTABLE").eq("state", "PENDING");
+      const { data: waiting } = await db.from("pending_tickets").select("id, ticket_no, pnr, their_portal, their_cell, their_group, dedupe, amount, currency, their_cost, req_num, their_req, transaction_type").eq("origin", "AIRTABLE").eq("state", "PENDING");
       if (waiting?.length) {
         const nos = [...new Set(waiting.map((w) => w.ticket_no).filter(Boolean))];
         const { data: arrived } = await db.from("tickets").select("ticket_no, amount").in("ticket_no", nos);
@@ -2849,13 +2870,16 @@ async function syncAirtable(env) {
             const rowsFor2 = (theirs ?? []).filter((r3) => (r3.serials ?? []).includes(docKey(w.ticket_no)) && !/void|hold/i.test(r3.status ?? ""));
             if (rowsFor2.length !== 1) continue;
             const r = rowsFor2[0];
-            const untouched = w.their_cost == null || Math.abs(Math.abs(Number(w.amount)) - Math.abs(Number(w.their_cost))) < 5e-3;
+            const n = Math.max(1, (Number(w.their_group) || 1) - secondCouponsIn(w.their_cell || "").size);
+            const share = (c) => Math.round(Math.abs(c) / n * 100) / 100;
+            const unpriced = n > 1 && !Number(w.amount);
+            const untouched = unpriced || w.their_cost == null || Math.abs(Math.abs(Number(w.amount)) - share(Number(w.their_cost))) < 0.02;
             if (!untouched) continue;
             const patch = {};
             if (r.currency && r.currency !== w.currency) patch.currency = r.currency;
-            if (r.net_cost != null && Math.abs(Number(r.net_cost) - Math.abs(Number(w.amount))) >= 5e-3) {
-              patch.amount = Math.sign(Number(w.amount) || 1) * Math.abs(Number(r.net_cost));
-              patch.total_doc = Math.abs(Number(r.net_cost));
+            if (r.net_cost != null && (unpriced || w.their_cost == null || Math.abs(Number(r.net_cost) - Number(w.their_cost)) >= 5e-3)) {
+              patch.amount = (/REFUND/i.test(w.transaction_type ?? "") ? -1 : 1) * share(Number(r.net_cost));
+              patch.total_doc = share(Number(r.net_cost));
               patch.their_cost = Number(r.net_cost);
             }
             if (r.req_num && !r.req_num.includes(",") && r.req_num !== (w.req_num || "")) {
@@ -2871,6 +2895,23 @@ async function syncAirtable(env) {
               title: `Not in our books: ${w.ticket_no} \xB7 ${amt.toLocaleString("en-US", { minimumFractionDigits: 2 })} ${cur} \xB7 ${req}`
             }).eq("dedupe_key", `MISSING|${w.dedupe}`).eq("state", "OPEN");
           }
+        }
+      }
+    }
+    if (!dry) {
+      const { data: asking } = await db.from("airtable_notifications").select("id, kind, dedupe_key, ticket_no").eq("state", "OPEN").in("kind", ["NOT_IN_BOOKS", "ONLINE_TICKET", "REFUND_MISSING"]);
+      if (asking?.length) {
+        const waitKey = (n) => n.kind === "REFUND_MISSING" ? dedupeKey("TEAM_SHEET", n.ticket_no, "", "REFUND_NOT_IN_LEDGER") : n.dedupe_key.replace(/^(MISSING|ONLINE)\|/, "");
+        const keys = [...new Set(asking.map(waitKey))];
+        const decided = /* @__PURE__ */ new Map();
+        for (let i = 0; i < keys.length; i += 200) {
+          const { data } = await db.from("pending_tickets").select("dedupe, state").in("dedupe", keys.slice(i, i + 200)).neq("state", "PENDING");
+          for (const r of data ?? []) decided.set(r.dedupe, r.state);
+        }
+        const at = (/* @__PURE__ */ new Date()).toISOString();
+        for (const [state, as] of [["REJECTED", "DISMISSED"], ["CONFIRMED", "ACCEPTED"]]) {
+          const ids2 = asking.filter((n) => decided.get(waitKey(n)) === state).map((n) => n.id);
+          if (ids2.length) await db.from("airtable_notifications").update({ state: as, decided_by: "To Review", decided_at: at }).in("id", ids2);
         }
       }
     }

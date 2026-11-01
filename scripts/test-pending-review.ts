@@ -471,23 +471,21 @@ console.log('\n16. Bought on the airline\'s own site, with nobody to invoice us'
 }
 
 /* -- 17. one cell, several tickets, one price --------------------------- */
-console.log('\n17. A price that belongs to a booking is not a ticket\'s price');
+console.log('\n17. A price that belongs to a booking is divided between its tickets');
 {
   // Their export puts a whole booking in one cell when it was issued
   // together - three numbers with /P1 /P2 /P3 after them - and the money
   // beside that cell is the BOOKING'S. Copying it onto each ticket would
-  // treble the cost, which is the one way prefilling could do real harm.
+  // treble the cost; since 1 Nov 2026 each takes an even share.
   const r = compareTeamSheet(sheet([
     '"065-5513373301/P1\n065-5513373302/P2\n065-5513373303/P3",YSLM99,Issued,'
       + '7590.00,,03/09/2026 1:00pm,RTS,KSAML2218',
   ]), []);
   const out = build(r.findings);
   check('three tickets out of one cell', out.length, 3);
-  check('and not one of them is priced', out.map(p => p.amount), [0, 0, 0]);
+  check('each takes a third', out.map(p => p.amount), [2530, 2530, 2530]);
   check('their figure is still shown',   out.map(p => p.theirCost), [7590, 7590, 7590]);
-  check('each one says what it is dividing',
-    out.every(p => whyNotConfirmable(p)
-      === 'Enter what it cost — their figure covers all 3 tickets in that cell.'), true);
+  check('and each can be confirmed', out.every(p => whyNotConfirmable(p) === ''), true);
   check('and carries the count',   out.map(p => p.theirGroup), [3, 3, 3]);
 
   // One ticket in the cell: prefilled, as it should be.
@@ -688,8 +686,20 @@ console.log('\n24. A divided cell is a confirmable cell');
       + '7590.00,,03/09/2026 1:00pm,RTS,KSAML2218',
   ]), []);
   const out = build(r.findings);
-  check('three arrive unpriced',  out.map(p => p.amount), [0, 0, 0]);
-  check('none can be confirmed',  out.map(canConfirm), [false, false, false]);
+  check('three arrive priced at a third', out.map(p => p.amount), [2530, 2530, 2530]);
+  check('all can be confirmed',   out.map(canConfirm), [true, true, true]);
+  // 1,000.00 over three: the last named takes the fils, and they add back.
+  const odd = build(compareTeamSheet(sheet([
+    '"065-5513373311/P1\n065-5513373312/P2\n065-5513373313/P3",YSLM97,Issued,'
+      + '1000.00,,03/09/2026 1:00pm,RTS,KSAML2218',
+  ]), []).findings);
+  check('an odd figure divides to the fils', odd.map(p => p.amount), [333.33, 333.33, 333.34]);
+  // Six EMDs on one line, 1,080.00 SAR (KSAML2771, 30 Oct 2026): 180.00 each.
+  const emd = build(compareTeamSheet(sheet([
+    '"EMD SV 065-1950195673\nEMD SV 065-1950195674\nEMD SV 065-1950195675\nEMD SV 065-1950195676\nEMD SV 065-1950195677\nEMD SV 065-1950195678",'
+      + 'XTDH69,Issued,1080.00,,30/10/2026 11:16am,RTS,KSAML2771',
+  ]), []).findings);
+  check('six EMDs on one line, 180.00 each', emd.map(p => p.amount), [180, 180, 180, 180, 180, 180]);
   check('the cell can be divided', canSplit(out, out[0]), '');
 
   const parts = cellShares(out, out[0]);

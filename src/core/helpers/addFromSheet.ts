@@ -1,6 +1,6 @@
 import type { Finding } from './teamSheetCompare';
 import type { PendingTicket, Ticket } from '../../types';
-import { pendingFromFindings, whyNotConfirmable } from './pendingFromFindings';
+import { pendingFromFindings, whyNotConfirmable, passengersNamed } from './pendingFromFindings';
 import { ticketMatchKey } from './ticketIdentity';
 import { settlesOnStatement, STATEMENT_WHY } from '../config/teamPortals';
 
@@ -100,6 +100,14 @@ export function planSheetAdd(
     }
     const why = whyNotConfirmable(proposal);
     if (why) { plan.waiting.push({ proposal, why }); continue; }
+    /* A share of a cell their sheet priced for several tickets is our
+       division, not their figure: it waits in To Review, priced, for a
+       person to confirm - never straight into the books. */
+    const named = passengersNamed(proposal);
+    if (named > 1) {
+      plan.waiting.push({ proposal, why: `An even share: their figure covers ${named} tickets in one cell. Check it and confirm.` });
+      continue;
+    }
     plan.ready.push(proposal);
     if (k) held.add(k);
   }

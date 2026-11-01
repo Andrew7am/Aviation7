@@ -131,9 +131,8 @@ const Row = React.memo(function Row({
       const untouched = priced && p.theirCost != null
         && Math.abs(p.amount) === Math.abs(p.theirCost);
       /* Their cell named more than one ticket, so the figure beside it
-         is the booking's. 123 of the first 206 are like this, one of
-         them a cell of 45 against 139,500 — which is why nothing is
-         divided automatically and nothing is prefilled. */
+         is the booking's. Each arrives at an even share of it (since
+         1 Nov 2026); "Split across" divides it again if it was changed. */
       const shared = passengersNamed(p) > 1 && !conjOf;
       /* What this ticket would get if the cell were divided evenly. Shown
          on the row rather than left as arithmetic: "2,960.00 covers 5"
