@@ -11,7 +11,7 @@ import { configuredVendors } from './appSettings';
  * wallet holders would make those tickets unrecordable.
  */
 export const BUILTIN_SOURCES = [
-  'IATA', 'NSA', 'FlyAdeal KSA', 'FlyAdeal DXB',
+  'IATA BSP', 'NSA', 'FlyAdeal KSA', 'FlyAdeal DXB',
   'Flynas', 'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal',
   'Riyadh Air', 'Turkish Airlines', 'Emirates',
   // Bought on the airline's own site with a card. Not a vendor: nobody
@@ -22,6 +22,14 @@ export const BUILTIN_SOURCES = [
   // missing from the books in the first place.
   'Airline Website',
 ];
+
+/**
+ * One name for IATA. "IATA" is the wallet's name, and "IATA BSP" what every
+ * ticket of theirs is filed under; offered side by side, ADPIJR went in under
+ * the bare one (2 Nov 2026) and every report grouping by source had a second
+ * IATA. The database holds tickets to this too (0048).
+ */
+export const canonicalSource = (s: string) => (/^iata$/i.test((s || '').trim()) ? 'IATA BSP' : (s || '').trim());
 
 /**
  * Every vendor worth offering: the built-in formats, the vendors holding a
@@ -40,7 +48,7 @@ export function knownSources(
   const seen = new Set<string>();
   // Vendors added on the Settings screen are offered with the built-in ones.
   for (const s of [...BUILTIN_SOURCES, ...configuredVendors().map(v => v.name), ...vendorNames, ...ledgerSources]) {
-    const name = (s || '').trim();
+    const name = canonicalSource(s);
     if (!name) continue;
     const k = name.toLowerCase();
     if (seen.has(k)) continue;

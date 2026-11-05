@@ -9,6 +9,7 @@ import { portalSource, settlesOnStatement } from '../src/core/config/teamPortals
 import { classifyOffice } from '../src/core/helpers/reqOffice';
 import { EMIRATES_IATA } from '../src/core/helpers/airlineLimit';
 import { sourceToCurrency } from '../src/core/helpers/sourceCurrency';
+import { knownSources } from '../src/core/config/sources';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -46,6 +47,13 @@ check('a vendor\'s currency follows the setting', sourceToCurrency('Saudia Direc
 console.log('\n3. Cleared again');
 applyAppSettings([{ key: 'vendors', value: [] }, { key: 'portals', value: [] }, { key: 'offices', value: {} }]);
 check('back to the built-in rules', [portalSource('XY').source, settlesOnStatement('Ibtekar'), classifyOffice('QAML100')], ['Flynas', true, '']);
+
+console.log('\n4. One name for IATA');
+{
+  const offered = knownSources(['IATA', 'Ibtekar'], ['IATA BSP', 'iata', 'RTS']);
+  check('offered once, as the ledger files it', offered.filter(s => /iata/i.test(s)), ['IATA BSP']);
+  check('and it is still dirhams', sourceToCurrency('IATA BSP'), 'AED');
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

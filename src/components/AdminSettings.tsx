@@ -154,7 +154,7 @@ const Portals: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (p: Por
   const [word, setWord] = useState('');
   const [source, setSource] = useState('');
   useEffect(() => setRows(loaded.portals), [loaded]);
-  const vendors = knownSources().filter(v => v !== 'IATA');
+  const vendors = knownSources();
   const dirty = JSON.stringify(rows) !== JSON.stringify(loaded.portals);
   const add = () => {
     const w = word.trim();
