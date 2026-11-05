@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { TaxInvoiceService, StoredInvoice } from '../services/TaxInvoiceService';
 import { pdfContent } from '../core/helpers/pdfWords';
 import { readIbtekarInvoices } from '../core/parsers/ibtekarInvoiceRead';
+import { verifyZatcaSignature } from '../core/parsers/zatcaQr';
 
 export interface FileOutcome {
   file: string;
@@ -42,7 +43,8 @@ export function useTaxInvoices(userId: string, vendor = 'Ibtekar') {
     for (const file of files) {
       try {
         const { words, qrCodes } = await pdfContent(await file.arrayBuffer());
-        const read = readIbtekarInvoices(words, file.name, qrCodes);
+        const signatures = new Map(await Promise.all(qrCodes.map(async q => [q, await verifyZatcaSignature(q)] as const)));
+        const read = readIbtekarInvoices(words, file.name, qrCodes, signatures);
         if (!read.invoices.length) {
           out.push({
             file: file.name, saved: [], alreadyHeld: [], upgraded: [],

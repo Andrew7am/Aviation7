@@ -33,7 +33,7 @@ import {
   coverageReport, coverageInPeriod, invoiceable, serialOf, HeldInvoice,
 } from '../src/core/helpers/taxInvoiceCoverage';
 import type { Ticket } from '../src/types';
-import { decodeZatcaQr, IBTEKAR_VAT } from '../src/core/parsers/zatcaQr';
+import { decodeZatcaQr, verifyZatcaSignature, IBTEKAR_VAT } from '../src/core/parsers/zatcaQr';
 import { invoiceRequestList } from '../src/core/helpers/taxInvoiceRequest';
 import { creditNoteReport, creditsInPeriod } from '../src/core/helpers/creditNoteCoverage';
 
@@ -228,7 +228,7 @@ console.log('\n6. Which tickets we can produce a tax invoice for');
     tkt({ ticketNo: '593-4861234273', amount: 783.00,  vendorReference: 'INV263097' }),
   ];
   const invoices = [
-    inv({ invoiceNo: 'INV261733', serials: ['6906030983', '6906030984'], total: 4025.79 }),
+    inv({ invoiceNo: 'INV261733', serials: ['6906030983', '6906030984'], total: 3500.69 }),
     inv({ invoiceNo: 'INV263097', serials: ['4861234273'], isTaxInvoice: false }),
   ];
   const r = coverageReport(invoices, tickets);
@@ -421,6 +421,13 @@ console.log('\n13. The QR code is what makes it final');
   check('a code for a different total is not this invoice',
         [wrongTotal.invoices[0].invoice.taxInvoice, wrongTotal.notFinal[0].includes('3000.00')], [false, true]);
 
+  const code = ibtekarQr('3640.12', '474.80');
+  const forged = readIbtekarInvoices(page, 'x.pdf', [code], new Map([[code, false]]));
+  check('a code whose signature fails is not final',
+        [forged.invoices[0].invoice.taxInvoice, forged.notFinal[0].includes('signature')], [false, true]);
+  const signedOk = readIbtekarInvoices(page, 'x.pdf', [code], new Map([[code, true]]));
+  check('one whose signature checks out is, and says so', [signedOk.invoices[0].invoice.taxInvoice, signedOk.invoices[0].qr?.signatureOk], [true, true]);
+
   const unread = words([['Tax', 'Invoice'], ['InvoNO:', '1599'], ['1', '065-4862083218', 'X/Y', 'RUH/JED']]);
   const filled = readIbtekarInvoices(unread, 'x.pdf', [ibtekarQr('3640.12', '474.80')]);
   check('a total the page did not give up is taken from the code',
@@ -455,8 +462,8 @@ console.log('\n15. A printout, its e-invoice, and the credit note between them')
      same two came back on e-invoice 1599 (3,640.12), with credit note 15
      (1,603.68) taking the refund off it — 2,036.44, the printout's total. */
   const tickets = [
-    tkt({ ticketNo: '065-4862083218', amount: 1603.58 }),
-    tkt({ ticketNo: '065-4862141169', amount: 1561.74 }),
+    tkt({ ticketNo: '065-4862083218', amount: 1844.12 }),
+    tkt({ ticketNo: '065-4862141169', amount: 1796 }),
     tkt({ ticketNo: '065-4862141183', amount: 1561.74 }),
   ];
   const r = coverageReport([
@@ -476,7 +483,7 @@ console.log('\n15. A printout, its e-invoice, and the credit note between them')
 console.log('\n16. What to ask Ibtekar for');
 {
   const tickets = [
-    tkt({ ticketNo: '065-4862083218', amount: 1603.58, passengerName: 'ALZAHRANI/RAZAN', reqNum: 'R1' }),
+    tkt({ ticketNo: '065-4862083218', amount: 1844.12, passengerName: 'ALZAHRANI/RAZAN', reqNum: 'R1' }),
     tkt({ ticketNo: '065-4862141183', amount: 1561.74, passengerName: 'ALNOMAN/HATEM', reqNum: 'R2' }),
     tkt({ ticketNo: '065-4862141185', amount: 1908.90, vendorReference: 'INV264300' }),
     tkt({ ticketNo: '065-4862141186', amount: 500 }),
@@ -560,6 +567,43 @@ console.log('\n18. Refunds and the ZATCA credit notes for them');
   check('a note no refund of ours accounts for', r.unmatched.map(n => n.theirSerial), ['30']);
   check('a printout credit note is no credit note', r.credited.some(x => x.creditNotes.includes('RFD260326')), false);
   check('October\'s refunds only', creditsInPeriod(r, '2026-10-01', '2026-10-31').refunds.map(x => x.ticket.ticketNo), ['4862405604']);
+}
+
+console.log('\nA final invoice has to add up');
+{
+  const tickets = [
+    tkt({ ticketNo: '065-4862479139', amount: 5000 }), tkt({ ticketNo: '065-4862479140', amount: 2874.36 }),
+    tkt({ ticketNo: '065-4862479143', amount: 0 }),
+    tkt({ ticketNo: '065-4862607005', amount: 0 }),
+    tkt({ ticketNo: '065-4862606950', amount: 300 }),
+  ];
+  const wrong = inv({ invoiceNo: 'INV264827', serials: ['4862479139', '4862479140', '4862479143'], total: 2874.36 });
+  const r = coverageReport([wrong, inv({ invoiceNo: 'INV264843', serials: ['4862606950'], total: 300 })], tickets);
+  check('its tickets are not covered', r.totalOff.map(c => c.ticket.ticketNo), ['065-4862479139', '065-4862479140']);
+  check('the invoice is named, with the gap', r.wrongTotals.map(w => [w.invoice.invoiceNo, w.difference]), [['INV264827', 5000]]);
+  check('one that adds up still covers', r.covered.map(c => c.ticket.ticketNo), ['065-4862606950']);
+  check('a ticket at 0.00 is not asked about', r.tickets.some(c => c.ticket.ticketNo === '065-4862607005'), false);
+  check('  ...and is not "billed, not in our books" when an invoice names it', r.billedNotHeld, []);
+  const ask = invoiceRequestList(r);
+  check('it is asked for by its own number', [...new Set(ask.tickets.map(t => [t.invoiceNo, t.reason].join(' ')))], ['INV264827 WRONG_TOTAL']);
+  check('  ...at the total it printed', ask.invoices[0].total, 2874.36);
+  const fixed = coverageReport([wrong, inv({ invoiceNo: 'INV264827-R', serials: ['4862479139', '4862479140'], total: 7874.36 })], tickets);
+  check('a corrected invoice covers them', fixed.totalOff.length, 0);
+  const twice = coverageReport([inv({ invoiceNo: 'IBK-1559', serials: ['4862606950'], total: 300 }), inv({ invoiceNo: 'IBK-1570', serials: ['4862606950'], total: 300 })], tickets);
+  check('a ticket on two final invoices is named', twice.printedTwice, [{ serial: '4862606950', invoices: ['IBK-1559', 'IBK-1570'] }]);
+}
+
+console.log('\nThe signature in the QR code');
+{
+  // Invoice 1599's own code again: it verifies, and a figure changed in it does not reach the signature.
+  const real = 'ARVJQlRFS0FSIENPIEZPUiBUUkFWRUwCDzMxMTY2OTkwMjgwMDAwMwMTMjAyNi0xMC0wN1QwMDowMDowMAQHMzY0MC4xMgUGNDc0LjgwBixzYzZPc2ZINTlNNE9LRGROMG0rT2dReWVHZ2d3N3cwUTdCN3dIZVdjY01nPQdgTUVZQ0lRQzB4aFNTcDhobTV2Z3c1UFpnNHNLQm1ZSHBMT0xoZVFrdjljc2ZTbnRKb2dJaEFLdWNjTG01eUxpRXB4U1lMTzdNQmpqRUVmSzZaMGlDVkx1VkcrRStIdVAzCFswWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAASoiLS9shR7Ow2cxdvJu/Iu/49VH5jI7wpmE7MJrUll2hHLF0RtJI+R4oEcFU7jlnXaLOZ9+vNR76QAqDf0Pvaz';
+  check('a real code verifies', await verifyZatcaSignature(real), true);
+  const b = Buffer.from(real, 'base64');
+  const hashAt = b.indexOf(Buffer.from([6, 44])) + 2;
+  const altered = Buffer.from(b); altered[hashAt] = altered[hashAt] === 0x41 ? 0x42 : 0x41;
+  check('a changed hash does not', await verifyZatcaSignature(altered.toString('base64')), false);
+  check('a made-up signature does not', await verifyZatcaSignature(ibtekarQr('100.00', '13.04')), false);
+  check('a Phase 1 code has nothing to check', await verifyZatcaSignature(qrText({ 1: 'IBTEKAR CO FOR TRAVEL', 2: IBTEKAR_VAT, 3: '2026-10-07T00:00:00', 4: '100.00', 5: '13.04' })), null);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

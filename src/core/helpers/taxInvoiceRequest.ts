@@ -10,13 +10,16 @@ import type { CoverageReport } from './taxInvoiceCoverage';
  *     from their ZATCA system (INV264215 came back as 1599).
  *   - NONE: no document of theirs names the ticket at all. Quote the invoice
  *     number their statement filed it under, where there is one.
+ *   - WRONG_TOTAL: it is on a final e-invoice whose total is not what its
+ *     tickets come to. Quote that invoice; it has to be issued again.
  */
 
-export type RequestReason = 'NO_QR' | 'NONE';
+export type RequestReason = 'NO_QR' | 'NONE' | 'WRONG_TOTAL';
 
 export const REASON_TEXT: Record<RequestReason, string> = {
   NO_QR: 'Printout only, no ZATCA QR code - please send the e-invoice',
   NONE: 'No invoice received - please send the e-invoice',
+  WRONG_TOTAL: 'Invoice total does not match what was billed - please issue a corrected e-invoice',
 };
 
 export interface RequestTicket {
@@ -67,7 +70,7 @@ export function invoiceRequestList(report: CoverageReport): { invoices: RequestI
   for (const r of report.tickets) {
     if (r.coverage === 'COVERED') continue;
     const t = r.ticket;
-    const printout = r.coverage === 'NOT_TAX' ? byNo.get(r.invoices[0])?.invoice : undefined;
+    const printout = r.coverage === 'NOT_TAX' || r.coverage === 'TOTAL_OFF' ? byNo.get(r.invoices[0])?.invoice : undefined;
     tickets.push({
       invoiceNo: printout?.invoiceNo ?? statementInvoiceNo(t.vendorReference),
       invoiceDate: printout?.invoiceDate ?? '',
@@ -79,7 +82,7 @@ export function invoiceRequestList(report: CoverageReport): { invoices: RequestI
       amount: t.amount ?? null,
       currency: t.currency || 'SAR',
       reqNum: t.reqNum || '',
-      reason: printout ? 'NO_QR' : 'NONE',
+      reason: r.coverage === 'TOTAL_OFF' ? 'WRONG_TOTAL' : printout ? 'NO_QR' : 'NONE',
     });
   }
 
@@ -103,7 +106,7 @@ export function invoiceRequestList(report: CoverageReport): { invoices: RequestI
     groups.get(k)!.push(t);
   }
   const invoices: RequestInvoice[] = [...groups.values()].map(ts => {
-    const held = ts[0].reason === 'NO_QR' ? byNo.get(ts[0].invoiceNo)?.invoice : undefined;
+    const held = ts[0].reason !== 'NONE' ? byNo.get(ts[0].invoiceNo)?.invoice : undefined;
     return {
       invoiceNo: ts[0].invoiceNo,
       invoiceDate: ts[0].invoiceDate,

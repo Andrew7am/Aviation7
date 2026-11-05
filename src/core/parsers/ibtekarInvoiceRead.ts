@@ -74,6 +74,8 @@ function settleFinal(r: ReadInvoice, qrs: ZatcaQr[], onlyOne: boolean): string |
   if (!qr) return NO_QR;
   if (qr.vatNo !== IBTEKAR_VAT)
     return `its QR code names VAT number ${qr.vatNo} as the seller, not Ibtekar's ${IBTEKAR_VAT}`;
+  if (qr.signatureOk === false)
+    return 'its QR code carries a signature that does not check out: the code was altered, or never signed';
   if (!close(qr.total, inv.total))
     return `its QR code says ${qr.total?.toFixed(2)} but the page prints ${inv.total?.toFixed(2)}`;
   if (!close(qr.vat, inv.vat))
@@ -88,10 +90,15 @@ function settleFinal(r: ReadInvoice, qrs: ZatcaQr[], onlyOne: boolean): string |
   return null;
 }
 
-export function readIbtekarInvoices(words: PdfWord[], fileName: string, qrCodes: string[]): ReadResult {
+export function readIbtekarInvoices(words: PdfWord[], fileName: string, qrCodes: string[],
+                                    /** Each code's signature check, by its text. */
+                                    signatures?: Map<string, boolean | null>): ReadResult {
   const problems: string[] = [];
   const notFinal: string[] = [];
-  const qrs = qrCodes.map(decodeZatcaQr).filter((q): q is ZatcaQr => q !== null);
+  const qrs = qrCodes.map(t => {
+    const q = decodeZatcaQr(t);
+    return q && signatures ? { ...q, signatureOk: signatures.get(t) ?? null } : q;
+  }).filter((q): q is ZatcaQr => q !== null);
 
   if (!words.length)
     return { invoices: [], problems: ['the file has no readable text — a scan, not a PDF of text'], notFinal };

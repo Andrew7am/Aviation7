@@ -44,6 +44,7 @@ const CREDIT_BADGE: Record<RefundCoverage, { label: string; cls: string }> = {
 
 const BADGE: Record<Coverage, { label: string; cls: string }> = {
   COVERED: { label: 'Tax invoice held', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  TOTAL_OFF: { label: 'Invoice total wrong', cls: 'bg-red-50 text-red-700 border-red-200' },
   NOT_TAX: { label: 'Not a final tax invoice', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   NONE:    { label: 'No invoice',        cls: 'bg-red-50 text-red-700 border-red-200' },
 };
@@ -103,7 +104,7 @@ const InvoiceRow: React.FC<{
         {i.isTaxInvoice ? (
           <span className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
             title={i.qr ? `ZATCA QR: ${i.qr.seller} · VAT no. ${i.qr.vatNo} · ${i.qr.timestamp} · total ${i.qr.total} · VAT ${i.qr.vat}` : undefined}>
-            QR ✓ FINAL
+            QR ✓ FINAL{i.qr?.signatureOk ? ' · SIGNED ✓' : ''}
           </span>
         ) : (
           <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
@@ -267,7 +268,7 @@ export const TaxInvoices: React.FC<{
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(tk), 'Tickets');
     XLSX.writeFile(wb, `${vendorName} - tax invoices to request${periodLabel || ' ' + new Date().toISOString().slice(0, 10)}.xlsx`);
   };
-  const owed = report.notTax.length + report.uncovered.length;
+  const owed = report.notTax.length + report.uncovered.length + report.totalOff.length;
   const creditsOwed = credits.refunds.length - credits.credited.length;
 
   const q = search.trim().toLowerCase();
@@ -426,8 +427,37 @@ export const TaxInvoices: React.FC<{
         </button>
       )}
 
+      {report.wrongTotals.length > 0 && (
+        <button onClick={() => setTab('invoices')}
+          className="w-full text-left bg-red-50 border border-red-300 rounded-lg px-4 py-2.5 hover:shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-bold text-red-800">
+            <FileWarning className="w-4 h-4" />
+            {report.wrongTotals.length} final invoice(s) do not add up to their tickets - their tickets are not counted as covered
+          </div>
+          {report.wrongTotals.map(w => (
+            <div key={w.invoice.invoiceNo} className="text-[11px] text-red-800 mt-0.5 font-mono">
+              {w.invoice.invoiceNo}{w.invoice.theirSerial ? ` (no. ${w.invoice.theirSerial})` : ''}: prints {fmt(w.invoice.total ?? 0)}, its tickets come to {fmt(w.ledgerTotal)}
+              {' '}- {fmt(Math.abs(w.difference ?? 0))} {currency} {(w.difference ?? 0) > 0 ? 'short' : 'over'}
+            </div>
+          ))}
+          <div className="text-[10px] text-red-700 mt-0.5">Ask {vendorName} to issue them again.</div>
+        </button>
+      )}
+      {report.printedTwice.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg px-4 py-2.5">
+          <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
+            <FileWarning className="w-4 h-4" />
+            {report.printedTwice.length} ticket(s) are on more than one final invoice - their VAT is on paper twice
+          </div>
+          <div className="text-[11px] text-amber-800 mt-0.5 font-mono">
+            {report.printedTwice.map(p => `${p.serial} on ${p.invoices.join(' + ')}`).join(' · ')}
+          </div>
+          <div className="text-[10px] text-amber-700 mt-0.5">One of them should be credited back.</div>
+        </div>
+      )}
+
       {/* ── the answer ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Tile label="No tax invoice" tone="bad"
           value={String(report.uncovered.length)}
           sub={`${fmt(report.uncoveredValue)} ${currency}`}
@@ -436,6 +466,10 @@ export const TaxInvoices: React.FC<{
           value={String(report.covered.length)}
           sub={`${fmt(report.coveredValue)} ${currency}`}
           active={filter === 'COVERED'} onClick={() => { setTab('tickets'); setFilter('COVERED'); }} />
+        <Tile label="Invoice total wrong" tone="bad"
+          value={String(report.totalOff.length)}
+          sub="on a final invoice that does not add up"
+          active={filter === 'TOTAL_OFF'} onClick={() => { setTab('tickets'); setFilter('TOTAL_OFF'); }} />
         <Tile label="Not a final tax invoice" tone="warn"
           value={String(report.notTax.length)}
           sub="only on a document with no ZATCA QR code"
@@ -463,6 +497,7 @@ export const TaxInvoices: React.FC<{
               className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600">
               <option value="NONE">No invoice</option>
               <option value="COVERED">Covered</option>
+              <option value="TOTAL_OFF">Invoice total wrong</option>
               <option value="NOT_TAX">Not a final tax invoice</option>
               <option value="ALL">All {report.tickets.length}</option>
             </select>

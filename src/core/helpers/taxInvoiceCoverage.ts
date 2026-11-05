@@ -14,14 +14,23 @@ import type { ZatcaQr } from '../parsers/zatcaQr';
  * ticket is the one an auditor asks: is this document number printed on a
  * piece of paper we hold, and does that paper call itself a tax invoice.
  *
- * Two kinds of row are left out of the question, because no invoice was ever
- * going to name them:
+ * Three kinds of row are left out of the question, because no invoice has
+ * anything to say about them:
  *   - refunds, which Ibtekar credit on their own document
  *   - wallet top-ups, which are payments rather than purchases
+ *   - rows at 0.00, a reissue at no charge: no money, so no VAT to claim.
+ *     4862607005 held the count at one more for a ticket nobody billed.
+ *
+ * Their ZATCA template prints no price per ticket, so being named on it says
+ * nothing about the money. What can be checked is the invoice's total against
+ * what its tickets come to, and a final invoice that does not agree covers
+ * none of them until it is reissued. 1648 printed 2,874.36 for 7,874.36 and
+ * 1653 2,530.01 for 3,530.01, and both read as covered.
  */
 
 export type Coverage =
-  | 'COVERED'    // printed on a final tax invoice: one carrying a ZATCA QR code
+  | 'COVERED'    // printed on a final tax invoice, one carrying a ZATCA QR code, whose total agrees
+  | 'TOTAL_OFF'  // printed on a final tax invoice whose total is not what its tickets come to
   | 'NOT_TAX'    // printed, but only on something that is not (a printout headed TAX INVOICE is not)
   | 'NONE';      // no document we hold names it
 
@@ -73,8 +82,13 @@ export interface CoverageReport {
   tickets: TicketCoverage[];
   invoices: InvoiceCoverage[];
   covered: TicketCoverage[];
+  totalOff: TicketCoverage[];
   notTax: TicketCoverage[];
   uncovered: TicketCoverage[];
+  /** Final invoices whose printed total is not what their tickets come to. */
+  wrongTotals: InvoiceCoverage[];
+  /** A ticket named on more than one final invoice: its VAT is on paper twice. */
+  printedTwice: { serial: string; invoices: string[] }[];
   coveredValue: number;
   uncoveredValue: number;
   /** Serials printed on an invoice that the ledger has no row for at all. */
@@ -112,13 +126,20 @@ export function coverageReport(invoices: HeldInvoice[], tickets: Ticket[]): Cove
     bySerial.get(k)!.push(t);
   }
 
-  const rows: TicketCoverage[] = held.map(ticket => {
+  /* What an invoice's tickets come to, against its printed total. A row at
+     0.00 is on the paper and in this sum: it adds nothing. */
+  const ledgerTotalOf = (i: HeldInvoice) =>
+    round2([...new Set(i.serials)].reduce((n, s) => n + (bySerial.get(s) ?? []).reduce((m, t) => m + (t.amount ?? 0), 0), 0));
+  const agrees = (i: HeldInvoice) => i.total === null || Math.abs(ledgerTotalOf(i) - i.total) < 0.02;
+
+  const rows: TicketCoverage[] = held.filter(t => (t.amount ?? 0) !== 0).map(ticket => {
     const on = printedIn.get(serialOf(ticket.ticketNo)) ?? [];
     const tax = on.filter(i => i.isTaxInvoice);
+    const good = tax.filter(agrees);
     return {
       ticket,
-      coverage: tax.length ? 'COVERED' : on.length ? 'NOT_TAX' : 'NONE',
-      invoices: [...tax, ...on.filter(i => !i.isTaxInvoice)].map(i => i.invoiceNo),
+      coverage: good.length ? 'COVERED' : tax.length ? 'TOTAL_OFF' : on.length ? 'NOT_TAX' : 'NONE',
+      invoices: [...good, ...tax.filter(i => !good.includes(i)), ...on.filter(i => !i.isTaxInvoice)].map(i => i.invoiceNo),
     };
   });
 
@@ -139,7 +160,7 @@ export function coverageReport(invoices: HeldInvoice[], tickets: Ticket[]): Cove
       const ours = bySerial.get(s);
       if (ours?.length) inLedger.push(...ours); else notInLedger.push(s);
     }
-    const ledgerTotal = round2(inLedger.reduce((n, t) => n + (t.amount ?? 0), 0));
+    const ledgerTotal = ledgerTotalOf(invoice);
     return {
       invoice, inLedger, notInLedger, ledgerTotal, credits, finalFor,
       // A credit note names no tickets, so there is nothing of ours to hold it against.
@@ -148,13 +169,17 @@ export function coverageReport(invoices: HeldInvoice[], tickets: Ticket[]): Cove
   });
 
   const covered = rows.filter(r => r.coverage === 'COVERED');
+  const totalOff = rows.filter(r => r.coverage === 'TOTAL_OFF');
   const notTax = rows.filter(r => r.coverage === 'NOT_TAX');
   const uncovered = rows.filter(r => r.coverage === 'NONE');
   const sum = (rs: TicketCoverage[]) => round2(rs.reduce((n, r) => n + (r.ticket.amount ?? 0), 0));
 
   return {
     tickets: rows, invoices: invoiceRows,
-    covered, notTax, uncovered,
+    covered, totalOff, notTax, uncovered,
+    wrongTotals: invoiceRows.filter(i => i.invoice.isTaxInvoice && !isCredit(i.invoice) && !agrees(i.invoice)),
+    printedTwice: [...printedIn].map(([serial, on]) => ({ serial, invoices: on.filter(i => i.isTaxInvoice && !isCredit(i)).map(i => i.invoiceNo) }))
+      .filter(p => p.invoices.length > 1),
     coveredValue: sum(covered),
     uncoveredValue: sum(uncovered),
     billedNotHeld: [...new Set(invoiceRows.flatMap(i => i.notInLedger))].sort(),
@@ -176,6 +201,7 @@ export function coverageInPeriod(report: CoverageReport, from: string, to: strin
   const within = (d?: string) => !!d && (!from || d >= from) && (!to || d <= to);
   const tickets = report.tickets.filter(r => within(r.ticket.date));
   const covered = tickets.filter(r => r.coverage === 'COVERED');
+  const totalOff = tickets.filter(r => r.coverage === 'TOTAL_OFF');
   const notTax = tickets.filter(r => r.coverage === 'NOT_TAX');
   const uncovered = tickets.filter(r => r.coverage === 'NONE');
   const sum = (rs: TicketCoverage[]) => round2(rs.reduce((n, r) => n + (r.ticket.amount ?? 0), 0));
@@ -187,8 +213,11 @@ export function coverageInPeriod(report: CoverageReport, from: string, to: strin
   const touches = (i: InvoiceCoverage) => i.inLedger.length > 0 || i.notInLedger.length > 0;
   const invoices = report.invoices.filter(i =>
     i.inLedger.length ? i.inLedger.some(t => within(t.date)) : within(i.invoice.invoiceDate));
+  const named = new Set(tickets.map(r => serialOf(r.ticket.ticketNo)));
   return {
-    tickets, invoices, covered, notTax, uncovered,
+    tickets, invoices, covered, totalOff, notTax, uncovered,
+    wrongTotals: report.wrongTotals.filter(i => i.inLedger.some(t => within(t.date))),
+    printedTwice: report.printedTwice.filter(p => named.has(p.serial)),
     coveredValue: sum(covered),
     uncoveredValue: sum(uncovered),
     billedNotHeld: [...new Set(invoices.filter(i => within(i.invoice.invoiceDate)).flatMap(i => i.notInLedger))].sort(),

@@ -647,8 +647,8 @@ function MainApp({ user }: { user: User }) {
    *  anything is wrong. */
   const noTaxInvoiceCount = React.useMemo(() => {
     if (!taxInvoices.length) return 0;
-    return coverageReport(taxInvoices, tickets.filter(t => t.source === 'Ibtekar'))
-      .uncovered.length;
+    const r = coverageReport(taxInvoices, tickets.filter(t => t.source === 'Ibtekar'));
+    return r.uncovered.length + r.totalOff.length;
   }, [taxInvoices, tickets]);
 
   type NavItem = { id: ViewState; label: string; icon: React.ReactNode; badge?: number; badgeColor?: 'red' | 'amber' | 'slate' };
