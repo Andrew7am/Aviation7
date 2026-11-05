@@ -189,6 +189,14 @@ function dropUntrustedTotals(inv: ParsedInvoice): string[] {
 }
 
 /**
+ * Is this serial a later final invoice than the one held under the same INV
+ * number? Their ZATCA serials only go up, and a correction is a new serial on
+ * the old INV number: 1654 for INV264827, printed 1648 before it.
+ */
+export const isLaterIssue = (serial: string, held: string) =>
+  /^\d+$/.test(serial) && /^\d+$/.test(held) && Number(serial) > Number(held);
+
+/**
  * Of two readings of the SAME invoice number, the one to keep.
  *
  * The same invoice arrives more than once: inside a bundle and again on its

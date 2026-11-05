@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { supabase, fetchAllRows } from '../utils/supabase';
 import type { HeldInvoice } from '../core/helpers/taxInvoiceCoverage';
 import type { ZatcaQr } from '../core/parsers/zatcaQr';
-import { preferReading, type ReadInvoice } from '../core/parsers/ibtekarInvoiceRead';
+import { isLaterIssue, preferReading, type ReadInvoice } from '../core/parsers/ibtekarInvoiceRead';
 
 /**
  * The tax invoices we hold, kept rather than looked at once.
@@ -170,7 +170,7 @@ export class TaxInvoiceService {
 
     const { data: existing } = await supabase
       .from('tax_invoices')
-      .select('id, invoice_no, is_tax_invoice, total, net, vat')
+      .select('id, invoice_no, their_serial, is_tax_invoice, total, net, vat')
       .eq('vendor', vendor).in('invoice_no', wanted.map(r => r.invoice.invoice));
     const held = new Map((existing ?? []).map(e => [e.invoice_no, e]));
 
@@ -191,6 +191,21 @@ export class TaxInvoiceService {
     for (const r of wanted) {
       const have = held.get(r.invoice.invoice);
       if (!have) { toWrite.push(r); continue; }
+
+      /* Two final invoices under one INV number are two documents, not two
+         readings of one: 1654 corrected 1648, both INV264827, and read as
+         "already held" it was dropped. The new one takes the INV number the
+         statement bills; the old one stays on file by its serial until a
+         credit note cancels it. An older serial arriving late is ignored. */
+      if (have.is_tax_invoice && r.invoice.taxInvoice && have.their_serial && r.theirSerial
+          && have.their_serial !== r.theirSerial) {
+        if (!isLaterIssue(r.theirSerial, have.their_serial)) { alreadyHeld.push(r.invoice.invoice); continue; }
+        const { error } = await supabase.from('tax_invoices')
+          .update({ invoice_no: `IBK-${have.their_serial}` }).eq('id', have.id);
+        if (error) throw error;
+        toWrite.push(r);
+        continue;
+      }
 
       /* What is on file is not automatically what to keep. A bundle read
          first can hold the same invoice with no totals and no TAX INVOICE

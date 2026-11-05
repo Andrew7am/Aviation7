@@ -26,6 +26,10 @@ import type { ZatcaQr } from '../parsers/zatcaQr';
  * what its tickets come to, and a final invoice that does not agree covers
  * none of them until it is reissued. 1648 printed 2,874.36 for 7,874.36 and
  * 1653 2,530.01 for 3,530.01, and both read as covered.
+ *
+ * Reissued, the old invoice stops being a wrong total to chase: 1654 and 1655
+ * replaced those two. It is still on paper until a credit note cancels it, so
+ * its tickets are listed as printed twice until then.
  */
 
 export type Coverage =
@@ -147,6 +151,16 @@ export function coverageReport(invoices: HeldInvoice[], tickets: Ticket[]): Cove
   const creditsFor = (i: HeldInvoice) => invoices.filter(c =>
     isCredit(c) && !!c.against && !!i.theirSerial && c.against === i.theirSerial);
 
+  /** Credit notes against it come to its whole total: it no longer stands. */
+  const cancelled = (i: HeldInvoice) => !isCredit(i) && !!i.total
+    && Math.abs(creditsFor(i).reduce((n, c) => n + Math.abs(c.total ?? 0), 0) - i.total) < 0.02;
+  /** Every ticket with money on it is on another final invoice that adds up. */
+  const reissued = (i: HeldInvoice) => {
+    const billed = [...new Set(i.serials)].filter(s => (bySerial.get(s) ?? []).some(t => (t.amount ?? 0) !== 0));
+    return billed.length > 0 && billed.every(s => (printedIn.get(s) ?? [])
+      .some(o => o !== i && o.isTaxInvoice && !isCredit(o) && agrees(o)));
+  };
+
   const invoiceRows: InvoiceCoverage[] = invoices.map(invoice => {
     const credits = isCredit(invoice) ? [] : creditsFor(invoice);
     const serials = [...new Set(invoice.serials)];
@@ -177,8 +191,9 @@ export function coverageReport(invoices: HeldInvoice[], tickets: Ticket[]): Cove
   return {
     tickets: rows, invoices: invoiceRows,
     covered, totalOff, notTax, uncovered,
-    wrongTotals: invoiceRows.filter(i => i.invoice.isTaxInvoice && !isCredit(i.invoice) && !agrees(i.invoice)),
-    printedTwice: [...printedIn].map(([serial, on]) => ({ serial, invoices: on.filter(i => i.isTaxInvoice && !isCredit(i)).map(i => i.invoiceNo) }))
+    wrongTotals: invoiceRows.filter(i => i.invoice.isTaxInvoice && !isCredit(i.invoice) && !agrees(i.invoice)
+      && !cancelled(i.invoice) && !reissued(i.invoice)),
+    printedTwice: [...printedIn].map(([serial, on]) => ({ serial, invoices: on.filter(i => i.isTaxInvoice && !isCredit(i) && !cancelled(i)).map(i => i.invoiceNo) }))
       .filter(p => p.invoices.length > 1),
     coveredValue: sum(covered),
     uncoveredValue: sum(uncovered),

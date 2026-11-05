@@ -450,9 +450,12 @@ export const TaxInvoices: React.FC<{
             {report.printedTwice.length} ticket(s) are on more than one final invoice - their VAT is on paper twice
           </div>
           <div className="text-[11px] text-amber-800 mt-0.5 font-mono">
-            {report.printedTwice.map(p => `${p.serial} on ${p.invoices.join(' + ')}`).join(' · ')}
+            {[...report.printedTwice.reduce((m, p) => {
+              const k = p.invoices.join(' + ');
+              return m.set(k, (m.get(k) ?? 0) + 1);
+            }, new Map<string, number>())].map(([k, n]) => `${k}: ${n} ticket(s)`).join(' · ')}
           </div>
-          <div className="text-[10px] text-amber-700 mt-0.5">One of them should be credited back.</div>
+          <div className="text-[10px] text-amber-700 mt-0.5">The one that does not stand should be cancelled with a credit note for its full balance.</div>
         </div>
       )}
 

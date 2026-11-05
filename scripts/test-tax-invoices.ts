@@ -35,6 +35,7 @@ import {
 import type { Ticket } from '../src/types';
 import { decodeZatcaQr, verifyZatcaSignature, IBTEKAR_VAT } from '../src/core/parsers/zatcaQr';
 import { invoiceRequestList } from '../src/core/helpers/taxInvoiceRequest';
+import { isLaterIssue } from '../src/core/parsers/ibtekarInvoiceRead';
 import { creditNoteReport, creditsInPeriod } from '../src/core/helpers/creditNoteCoverage';
 
 /** A ZATCA QR code's text: base64 of tag-length-value fields. */
@@ -589,6 +590,16 @@ console.log('\nA final invoice has to add up');
   check('  ...at the total it printed', ask.invoices[0].total, 2874.36);
   const fixed = coverageReport([wrong, inv({ invoiceNo: 'INV264827-R', serials: ['4862479139', '4862479140'], total: 7874.36 })], tickets);
   check('a corrected invoice covers them', fixed.totalOff.length, 0);
+  check('  ...and the old one is no longer a wrong total', fixed.wrongTotals.length, 0);
+  check('  ...but stays on paper until it is credited', fixed.printedTwice.map(p => p.invoices), [['INV264827', 'INV264827-R'], ['INV264827', 'INV264827-R']]);
+  const old = { ...wrong, invoiceNo: 'IBK-1648', theirSerial: '1648' };
+  const credited = coverageReport([old, inv({ invoiceNo: 'INV264827', serials: ['4862479139', '4862479140'], total: 7874.36 }),
+    inv({ invoiceNo: 'IBK-CN-40', kind: 'CREDIT_NOTE', against: '1648', serials: [], total: -2874.36 })], tickets);
+  check('a credit note for all of it takes it off paper', credited.printedTwice, []);
+  const part = coverageReport([old, inv({ invoiceNo: 'INV264827', serials: ['4862479139', '4862479140'], total: 7874.36 }),
+    inv({ invoiceNo: 'IBK-CN-40', kind: 'CREDIT_NOTE', against: '1648', serials: [], total: -83.9 })], tickets);
+  check('  ...a part of it does not', part.printedTwice.length, 2);
+  check('a later serial on the same INV number is a correction', [isLaterIssue('1654', '1648'), isLaterIssue('1648', '1654'), isLaterIssue('1648', '1648')], [true, false, false]);
   const twice = coverageReport([inv({ invoiceNo: 'IBK-1559', serials: ['4862606950'], total: 300 }), inv({ invoiceNo: 'IBK-1570', serials: ['4862606950'], total: 300 })], tickets);
   check('a ticket on two final invoices is named', twice.printedTwice, [{ serial: '4862606950', invoices: ['IBK-1559', 'IBK-1570'] }]);
 }
