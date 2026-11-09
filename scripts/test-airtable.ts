@@ -174,6 +174,15 @@ console.log('\n7b. Flyadeal by its PNR - its report has no ticket number');
     requestsFor([{ id: 'a', ticketNo: 'V6MKFS', pnr: 'V6MKFS', source: 'FlyAdeal DXB', status: 'ISSUE' }, { id: 'b', ticketNo: 'V6MKFS', pnr: 'V6MKFS', source: 'FlyAdeal DXB', status: 'ISSUE' }], [v6]).map(f => f.id), ['a', 'b']);
   check('any other vendor still only by number',
     requestsFor([{ id: 'a', ticketNo: 'H692FC', pnr: 'H692FC', source: 'IATA BSP' }], [f3row]), []);
+  // EKER1I: two flydubai sales on one booking, each on its own row and request.
+  const sep = { serials: ['EKER1I'], emd: '', pnr: 'EKER1I', req_num: 'UAECO695', status: 'Issued', portal: 'flydubai', airline: 'Flydubai', issued: '2026-09-05T18:27:00Z' };
+  const nov = { ...sep, req_num: 'UAECO857', status: 'Reissue', issued: '2026-11-06T17:52:00Z' };
+  check('two sales on one booking: each takes the row issued near its date',
+    requestsFor([{ id: 'n', ticketNo: 'EKER1I', pnr: 'EKER1I', source: 'FlyDubai', status: 'ISSUE', date: '2026-11-06' },
+      { id: 's', ticketNo: 'EKER1I', pnr: 'EKER1I', source: 'FlyDubai', status: 'ISSUE', date: '2026-09-05' }], [sep, nov]).map(f => [f.id, f.req]),
+    [['n', 'UAECO857'], ['s', 'UAECO695']]);
+  check('  ...and with no date to go by, neither is guessed',
+    requestsFor([{ id: 'n', ticketNo: 'EKER1I', pnr: 'EKER1I', source: 'FlyDubai', status: 'ISSUE' }], [sep, nov]), []);
   check('and its name and cabin too',
     detailsFor([{ id: 'a', ticketNo: 'H692FC', pnr: 'H692FC', source: 'FlyAdeal DXB', passengerName: '', cabinClass: '', route: 'RUH/JED' }],
       [{ serials: ['9152641826'], ticket_cell: '5609152641826', status: 'Issued', client_name: 'ZAKI ATTAR', cabin: 'Economy', pnr: 'H692FC', portal: 'F3', airline: 'Flyadeal', sheet_row: {} }])

@@ -347,7 +347,7 @@ export async function syncAirtable(env: {
        arrived since can take something now. */
     const onlySince = local ? st?.last_ok_at as string | undefined : undefined;
     const arrivedSince = (q: any) => onlySince ? q.gt('created_at', onlySince) : q;
-    type LiveRow = { serials: string[]; ticket_cell: string; pnr: string; req_num: string; status: string; client_name: string; cabin: string; portal: string; airline: string; sheet_row: Record<string, string> };
+    type LiveRow = { serials: string[]; ticket_cell: string; pnr: string; req_num: string; status: string; client_name: string; cabin: string; portal: string; airline: string; issued_at?: string | null; sheet_row: Record<string, string> };
     let liveRows: LiveRow[] | null = null;
     // On a full run their whole table was just read; on any other, read our copy.
     // After an import (fill=1) our copy of their whole table; between full
@@ -357,7 +357,7 @@ export async function syncAirtable(env: {
     const liveAll = async () => liveRows ??= full ? rows as unknown as LiveRow[]
       : !env.fillNow ? changedRows as unknown as LiveRow[]
       : (await selectAll<LiveRow & { emd: string | null; origin: string | null; dest: string | null }>(db, 'airtable_tickets',
-        'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, emd:sheet_row->>"EMD Number", '
+        'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, issued_at, emd:sheet_row->>"EMD Number", '
         + 'origin:sheet_row->>"Origin Airports (from Aviation Quotations)", dest:sheet_row->>"Destination Airports (from Aviation Quotations)"',
         q => q.eq('deleted', false)))
         .map(({ emd, origin, dest, ...r }) => ({ ...r, sheet_row: { 'EMD Number': emd ?? '',
@@ -597,15 +597,15 @@ export async function syncAirtable(env: {
     }
 
     const { data: miss, error: missErr } = fillNow
-      ? await arrivedSince(db.from('tickets').select('id, ticket_no, pnr, status, user_id, source').or('req_num.is.null,req_num.eq.').neq('status', 'FUND'))
+      ? await arrivedSince(db.from('tickets').select('id, ticket_no, pnr, status, user_id, source, date').or('req_num.is.null,req_num.eq.').neq('status', 'FUND'))
       : { data: [], error: null };
     if (missErr) throw new Error(`tickets: ${missErr.message}`);
     if (miss?.length) {
       const live = await liveAll();
       const fills = requestsFor(
-        miss.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', pnr: t.pnr ?? '', source: t.source ?? '', status: t.status ?? '' })),
+        miss.map(t => ({ id: t.id, ticketNo: t.ticket_no ?? '', pnr: t.pnr ?? '', source: t.source ?? '', status: t.status ?? '', date: String(t.date ?? '') })),
         live.map(r => ({ serials: r.serials ?? [], emd: r.sheet_row?.['EMD Number'] ?? '', pnr: r.pnr ?? '', req_num: r.req_num ?? '',
-          status: r.status ?? '', portal: r.portal ?? '', airline: r.airline ?? '' })));
+          status: r.status ?? '', portal: r.portal ?? '', airline: r.airline ?? '', issued: r.issued_at ?? null })));
       const owner = miss.find(t => t.user_id)?.user_id;
       for (const f of fills) {
         if (dry) { reqFilled++; continue; }

@@ -22,11 +22,14 @@
  */
 import { teamSerials } from '../parsers/teamSheet';
 import { docKey } from './airtableNotices';
+import { isBookingRef, BOOKING_DAYS_APART } from '../helpers/ticketIdentity';
 
-export interface ReqSource { serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal?: string; airline?: string }
+export interface ReqSource { serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal?: string; airline?: string;
+  /** Their "Issued Date & Time": tells two sales under one booking apart. */
+  issued?: string | null }
 /** `source` matters for two vendors: flyadeal's and flydubai's reports carry
  *  no ticket number, so we hold their tickets under the PNR and match them by it. */
-export interface MissingReq { id: string; ticketNo: string; pnr: string; source?: string; status?: string }
+export interface MissingReq { id: string; ticketNo: string; pnr: string; source?: string; status?: string; date?: string }
 export interface ReqFill { id: string; ticketNo: string; req: string; how: 'ticket number' | 'flyadeal PNR' | 'flydubai PNR' }
 
 /** A flyadeal row of theirs, and a flyadeal ticket of ours. */
@@ -68,7 +71,27 @@ const single = (reqs: string[]) => {
   return s.size === 1 && !s.has('TWO') ? [...s][0] : '';
 };
 
+/* Two sales under one booking reference, each on its own row and request:
+   EKER1I, 1,440 under UAECO695 on 5 Sep and 635 under UAECO857 on 6 Nov.
+   Both rows answer for the reference, so neither request could be given.
+   The row issued within a week of our sale's date is the one it means. */
+const nearDay = (issued: string | null | undefined, date: string | undefined) => {
+  const a = Date.parse(String(issued || '').slice(0, 10)), b = Date.parse(String(date || '').slice(0, 10));
+  return !Number.isNaN(a) && !Number.isNaN(b) && Math.abs(a - b) / 86_400_000 <= BOOKING_DAYS_APART;
+};
+
 export function requestsFor(missing: MissingReq[], rows: ReqSource[]): ReqFill[] {
+  const out = requestsAmong(missing, rows);
+  const done = new Set(out.map(f => f.id));
+  for (const t of missing) {
+    if (done.has(t.id) || !t.date || !isBookingRef(t.ticketNo)) continue;
+    const near = rows.filter(r => nearDay(r.issued, t.date));
+    if (near.length && near.length < rows.length) out.push(...requestsAmong([t], near));
+  }
+  return out;
+}
+
+function requestsAmong(missing: MissingReq[], rows: ReqSource[]): ReqFill[] {
   /* The same document under two requests: its sale on one row, its refund
      on another. 5513427844 is sold under KSAML2325 and refunded on a row the
      team filed under KSAFM2466. A refund takes its refund row's request; a

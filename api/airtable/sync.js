@@ -495,6 +495,8 @@ function splitTicketNo(raw, explicitCode) {
   if (BARE_SERIAL.test(s)) return { ticketNo: s, airlineCode: stated };
   return { ticketNo: s, airlineCode: stated };
 }
+var isBookingRef = (ticketNo) => !/\d{10}/.test(ticketNo || "");
+var BOOKING_DAYS_APART = 7;
 function ticketMatchKey(ticketNo) {
   const s = (ticketNo || "").replace(/\s+/g, "").toUpperCase();
   const joined = s.match(JOINED_FORM);
@@ -2361,7 +2363,21 @@ var single = (reqs) => {
   const s = new Set(reqs);
   return s.size === 1 && !s.has("TWO") ? [...s][0] : "";
 };
+var nearDay = (issued, date) => {
+  const a = Date.parse(String(issued || "").slice(0, 10)), b = Date.parse(String(date || "").slice(0, 10));
+  return !Number.isNaN(a) && !Number.isNaN(b) && Math.abs(a - b) / 864e5 <= BOOKING_DAYS_APART;
+};
 function requestsFor(missing, rows) {
+  const out = requestsAmong(missing, rows);
+  const done = new Set(out.map((f) => f.id));
+  for (const t of missing) {
+    if (done.has(t.id) || !t.date || !isBookingRef(t.ticketNo)) continue;
+    const near = rows.filter((r) => nearDay(r.issued, t.date));
+    if (near.length && near.length < rows.length) out.push(...requestsAmong([t], near));
+  }
+  return out;
+}
+function requestsAmong(missing, rows) {
   const byDoc = /* @__PURE__ */ new Map();
   const byPnr = /* @__PURE__ */ new Map();
   for (const r of rows) {
@@ -2811,7 +2827,7 @@ async function syncAirtable(env) {
     const liveAll = async () => liveRows ??= full ? rows : !env.fillNow ? changedRows : (await selectAll(
       db,
       "airtable_tickets",
-      'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, emd:sheet_row->>"EMD Number", origin:sheet_row->>"Origin Airports (from Aviation Quotations)", dest:sheet_row->>"Destination Airports (from Aviation Quotations)"',
+      'serials, ticket_cell, pnr, req_num, status, client_name, cabin, portal, airline, issued_at, emd:sheet_row->>"EMD Number", origin:sheet_row->>"Origin Airports (from Aviation Quotations)", dest:sheet_row->>"Destination Airports (from Aviation Quotations)"',
       (q) => q.eq("deleted", false)
     )).map(({ emd, origin, dest, ...r }) => ({ ...r, sheet_row: {
       "EMD Number": emd ?? "",
@@ -3003,12 +3019,12 @@ async function syncAirtable(env) {
         }
       }
     }
-    const { data: miss, error: missErr } = fillNow ? await arrivedSince(db.from("tickets").select("id, ticket_no, pnr, status, user_id, source").or("req_num.is.null,req_num.eq.").neq("status", "FUND")) : { data: [], error: null };
+    const { data: miss, error: missErr } = fillNow ? await arrivedSince(db.from("tickets").select("id, ticket_no, pnr, status, user_id, source, date").or("req_num.is.null,req_num.eq.").neq("status", "FUND")) : { data: [], error: null };
     if (missErr) throw new Error(`tickets: ${missErr.message}`);
     if (miss?.length) {
       const live = await liveAll();
       const fills = requestsFor(
-        miss.map((t) => ({ id: t.id, ticketNo: t.ticket_no ?? "", pnr: t.pnr ?? "", source: t.source ?? "", status: t.status ?? "" })),
+        miss.map((t) => ({ id: t.id, ticketNo: t.ticket_no ?? "", pnr: t.pnr ?? "", source: t.source ?? "", status: t.status ?? "", date: String(t.date ?? "") })),
         live.map((r) => ({
           serials: r.serials ?? [],
           emd: r.sheet_row?.["EMD Number"] ?? "",
@@ -3016,7 +3032,8 @@ async function syncAirtable(env) {
           req_num: r.req_num ?? "",
           status: r.status ?? "",
           portal: r.portal ?? "",
-          airline: r.airline ?? ""
+          airline: r.airline ?? "",
+          issued: r.issued_at ?? null
         }))
       );
       const owner = miss.find((t) => t.user_id)?.user_id;

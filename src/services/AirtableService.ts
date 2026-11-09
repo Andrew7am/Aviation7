@@ -84,13 +84,13 @@ export class AirtableService {
   }
 
   /** What each of their rows says about requests - for filling ours. */
-  async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal: string; airline: string }[]> {
+  async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal: string; airline: string; issued: string | null }[]> {
     const rows = await fetchAllRows<any>((from, to) =>
       // The EMD cell alone, not the whole sheet: 2.5 MB of a 2.8 MB read, every import.
-      supabase.from('airtable_tickets').select('serials, pnr, req_num, status, portal, airline, emd:sheet_row->>"EMD Number"')
+      supabase.from('airtable_tickets').select('serials, pnr, req_num, status, portal, airline, issued_at, emd:sheet_row->>"EMD Number"')
         .eq('deleted', false).range(from, to));
     return rows.map(r => ({ serials: r.serials ?? [], emd: r.emd ?? '', pnr: r.pnr ?? '',
-      req_num: r.req_num ?? '', status: r.status ?? '', portal: r.portal ?? '', airline: r.airline ?? '' }));
+      req_num: r.req_num ?? '', status: r.status ?? '', portal: r.portal ?? '', airline: r.airline ?? '', issued: r.issued_at ?? null }));
   }
 
   /** What moved on their side, newest first. */
