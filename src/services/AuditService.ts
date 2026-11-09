@@ -16,7 +16,7 @@ export interface AuditRecord {
 export interface AppUser {
   id:        string;
   email:     string;
-  role:      'admin' | 'member';
+  role:      Role;
   createdAt: string;
 }
 
@@ -40,16 +40,26 @@ const rowToAudit = (r: AuditRow): AuditRecord => ({
   performedAt: r.performed_at,
 });
 
+/**
+ * Who may do what (0049, 9 Nov 2026). Accountants and the aviation team read;
+ * the admin also writes. A new account is 'pending' and reads nothing until
+ * an admin gives it a role - operations are not to see real costs at all.
+ */
+export type Role = 'admin' | 'accountant' | 'aviation' | 'pending';
+export const ROLES: Role[] = ['admin', 'accountant', 'aviation', 'pending'];
+export const ROLE_LABEL: Record<Role, string> = { admin: 'Admin', accountant: 'Accountant', aviation: 'Aviation team', pending: 'No access' };
+export const canRead = (r: Role | null | undefined) => r === 'admin' || r === 'accountant' || r === 'aviation';
+
 export class AuditService {
-  /** Current user's role. Returns 'member' if the registry row is missing,
-   *  so a brand-new account is never accidentally treated as an admin. */
-  static async myRole(): Promise<'admin' | 'member'> {
+  /** Current user's role. 'pending' when the registry row is missing or
+   *  unreadable, so a new account is never treated as having access. */
+  static async myRole(): Promise<Role> {
     const { data: auth } = await supabase.auth.getUser();
-    if (!auth.user) return 'member';
+    if (!auth.user) return 'pending';
     const { data, error } = await supabase
       .from('app_users').select('role').eq('id', auth.user.id).maybeSingle();
-    if (error || !data) return 'member';
-    return data.role === 'admin' ? 'admin' : 'member';
+    if (error || !data) return 'pending';
+    return (ROLES as string[]).includes(data.role) ? data.role as Role : 'pending';
   }
 
   static async listUsers(): Promise<AppUser[]> {
@@ -147,7 +157,7 @@ export class AuditService {
     return (data ?? []).length;
   }
 
-  static async setRole(userId: string, role: 'admin' | 'member'): Promise<void> {
+  static async setRole(userId: string, role: Role): Promise<void> {
     const { error } = await supabase.from('app_users').update({ role }).eq('id', userId);
     if (error) throw new Error(error.message);
   }

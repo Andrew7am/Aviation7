@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AuditService, AuditRecord, AppUser } from '../services/AuditService';
-import { Search, Download, ShieldCheck, ShieldOff, Users, Activity, Undo2, Trash2 } from 'lucide-react';
+import { AuditService, AuditRecord, AppUser, ROLES, ROLE_LABEL, type Role } from '../services/AuditService';
+import { Search, Download, Users, Activity, Undo2, Trash2 } from 'lucide-react';
 import { undoableAction, undoneAuditId } from '../core/helpers/undoableAction';
 import * as XLSX from 'xlsx';
 
@@ -159,10 +159,10 @@ export const ActivityLog: React.FC<{
     finally { setUndoing(''); }
   };
 
-  const changeRole = async (u: AppUser) => {
-    const next = u.role === 'admin' ? 'member' : 'admin';
-    if (u.id === currentUserId && next === 'member') {
-      if (!confirm('Remove your own admin access? You will lose the Activity Log.')) return;
+  const changeRole = async (u: AppUser, next: Role) => {
+    if (next === u.role) return;
+    if (u.id === currentUserId && next !== 'admin') {
+      if (!confirm('Remove your own admin access? You will lose the Activity Log and Settings.')) return;
     }
     await AuditService.setRole(u.id, next);
     setUsers(await AuditService.listUsers());
@@ -337,8 +337,8 @@ export const ActivityLog: React.FC<{
                       {u.email}{u.id === currentUserId && <span className="ml-1.5 text-[9px] text-blue-500">(you)</span>}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${u.role === 'admin' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600'}`}>
-                        {u.role.toUpperCase()}
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${u.role === 'admin' ? 'bg-violet-100 text-violet-700' : u.role === 'pending' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
+                        {(ROLE_LABEL[u.role] ?? u.role).toUpperCase()}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 font-mono text-blue-600">{s.edits || '—'}</td>
@@ -348,14 +348,10 @@ export const ActivityLog: React.FC<{
                       {s.last ? fmtWhen(s.last) : <span className="text-slate-300">never — no changes made</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right">
-                      <button onClick={() => changeRole(u)}
-                        className={`px-2 py-1 rounded text-[9px] font-bold uppercase border flex items-center gap-1 ml-auto transition-colors ${
-                          u.role === 'admin'
-                            ? 'border-slate-200 text-slate-500 hover:bg-slate-50'
-                            : 'border-violet-200 text-violet-700 hover:bg-violet-50'
-                        }`}>
-                        {u.role === 'admin' ? <><ShieldOff className="w-3 h-3" /> Revoke admin</> : <><ShieldCheck className="w-3 h-3" /> Make admin</>}
-                      </button>
+                      <select value={u.role} onChange={e => changeRole(u, e.target.value as Role)}
+                        className="ml-auto block px-2 py-1 rounded text-[10px] font-bold border border-slate-200 bg-white text-slate-700">
+                        {ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                      </select>
                     </td>
                   </tr>
                 );

@@ -45,7 +45,7 @@ const Loading: React.FC = () => (
     <span className="text-[11px] font-mono text-slate-400">loading…</span>
   </div>
 );
-import { AuditService, AuditRecord } from './services/AuditService';
+import { AuditService, AuditRecord, canRead, type Role } from './services/AuditService';
 import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { summariseVendor } from './core/helpers/statementMath';
 import type { Reprice } from './core/helpers/statementAgainstBooks';
@@ -780,6 +780,24 @@ function MainApp({ user }: { user: User }) {
   );
 }
 
+/* Nothing of the books is loaded for an account without a role: operations
+   and new sign-ups get this page and no data (0049 enforces the same in the
+   database). */
+function AccessGate({ user }: { user: User }) {
+  const [role, setRole] = useState<Role | null>(null);
+  React.useEffect(() => { AuditService.myRole().then(setRole).catch(() => setRole('pending')); }, [user.id]);
+  if (role === null) return <div className="min-h-screen flex items-center justify-center text-sm text-slate-400">Loading…</div>;
+  if (!canRead(role)) return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+      <div className="max-w-sm w-full bg-white border border-slate-200 rounded-xl p-6 text-center">
+        <div className="text-base font-bold text-slate-800">No access</div>
+        <p className="text-sm text-slate-500 mt-2">{user.email} is signed in but has no access to this system. Ask the administrator.</p>
+        <button onClick={() => logout()} className="mt-4 px-4 py-2 rounded-lg bg-slate-800 text-white text-sm font-bold">Sign out</button>
+      </div>
+    </div>);
+  return <MainApp user={user} />;
+}
+
 export default function App() {
-  return <AuthGuard>{(user) => <MainApp user={user} />}</AuthGuard>;
+  return <AuthGuard>{(user) => <AccessGate user={user} />}</AuthGuard>;
 }
