@@ -689,6 +689,9 @@ function explanationFor(f, byKey) {
   return { explanation: e, stale: e.fingerprint !== fingerprint(f) };
 }
 
+// src/core/config/profit.ts
+var PROFIT_FROM = "2026-11-09";
+
 // src/core/helpers/teamSheetCompare.ts
 function whoActs(f) {
   switch (f.verdict) {
@@ -838,6 +841,7 @@ var pnrKey = (s) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 var countsAgree = (d) => !d.missingOnTheirs.length && !d.missingInOurs.length && (d.noted ?? []).every((n) => n.includes(" - explained: ")) && (d.ours === d.theirs || (d.noted ?? []).length > 0);
 var REFUND_FLOOR = 50;
 var PRICE_FLOOR = 15;
+var quotedAbove = (r, gap) => gap > 0 && (r.issued || "") >= PROFIT_FROM;
 function reqDiffHint(ours, theirs) {
   const a = (ours || "").toUpperCase().replace(/\s+/g, "");
   const b = (theirs || "").toUpperCase().replace(/\s+/g, "");
@@ -1310,7 +1314,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
               for (const t of emdIndex.get(`${day}|${part}`) ?? []) folded.set(t.id, t);
           const emds = [...folded.values()].reduce((n, t) => n + asBought(t, t.amount || 0), 0);
           const gap = [payable, fare, adjusted, payable + emds].map((v) => theirs - v).sort((a, b) => Math.abs(a) - Math.abs(b))[0];
-          if (Math.abs(gap) >= PRICE_FLOOR) {
+          if (Math.abs(gap) >= PRICE_FLOOR && !quotedAbove(priced[0], gap)) {
             findings.push({
               ...base,
               sheet: priced[0],
@@ -1538,6 +1542,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       const gaps = readings.flatMap((t) => [payable, fare].map((v) => t - v));
       const gap = gaps.sort((a, b) => Math.abs(a) - Math.abs(b))[0];
       if (Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
+      if (quotedAbove(r, gap)) continue;
       if (findings.some((f) => f.verdict === "PRICE_DIFFERS" && docs.includes(f.serial))) continue;
       const missingDocs = docs.filter((d) => !ourBySerial.has(d));
       if (bigGroup && missingDocs.length) continue;

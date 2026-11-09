@@ -5,6 +5,7 @@ import { portalSource } from '../config/teamPortals';
 import { chainIndex, chainOf, type Edge } from './ticketChain';
 import { unconfirmed } from './supplierProof';
 import { explanationFor, type Explanation } from './sheetMemory';
+import { PROFIT_FROM } from '../config/profit';
 
 /**
  * Their sheet against our ledger, before a flight sheet is signed off.
@@ -780,6 +781,11 @@ export const REFUND_FLOOR = 50;
  *  tickets, the ten riyals on Ibtekar's, NSA's 2.25. What is left above it
  *  is a different price. */
 export const PRICE_FLOOR = 15;
+/* From 9 Nov 2026 their Net Cost is the cost they quote operations, not the
+   supplier's: a figure above ours is the aviation team's margin (Aviation
+   Profit), not a difference. One below ours is still said - operations were
+   quoted less than the ticket cost. */
+const quotedAbove = (r: { issued?: string }, gap: number) => gap > 0 && (r.issued || '') >= PROFIT_FROM;
 
 /**
  * Why two requests differ, when it can be told from the two names alone.
@@ -1598,7 +1604,7 @@ export function compareTeamSheet(
           const emds = [...folded.values()].reduce((n, t) => n + asBought(t, t.amount || 0), 0);
           const gap = [payable, fare, adjusted, payable + emds]
             .map(v => theirs - v).sort((a, b) => Math.abs(a) - Math.abs(b))[0];
-          if (Math.abs(gap) >= PRICE_FLOOR) {
+          if (Math.abs(gap) >= PRICE_FLOOR && !quotedAbove(priced[0], gap)) {
             findings.push({ ...base, sheet: priced[0], verdict: 'PRICE_DIFFERS',
               note: `Their sheet prices it at ${money(theirs)} ${cur}; we hold ${money(payable)}`
                   + (Math.abs(fare - payable) >= 0.01 ? ` (fare ${money(fare)})` : '')
@@ -1965,6 +1971,7 @@ export function compareTeamSheet(
       // a cell is a booking, and its small differences are already the
       // tickets' own.
       if (Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
+      if (quotedAbove(r, gap)) continue;
       if (findings.some(f => f.verdict === 'PRICE_DIFFERS' && docs.includes(f.serial))) continue;
       const missingDocs = docs.filter(d => !ourBySerial.has(d));
       /* A big group with documents we do not hold is usually a cell of

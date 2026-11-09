@@ -1,3 +1,4 @@
+import type { ProfitSheetRow } from '../core/helpers/aviationProfit';
 import { supabase, fetchAllRows } from '../utils/supabase';
 import type { CompanyRow } from '../core/helpers/companies';
 
@@ -84,6 +85,18 @@ export class AirtableService {
   }
 
   /** What each of their rows says about requests - for filling ours. */
+  /** Their priced rows issued on or after `from`, with only the cells the profit page reads. */
+  async profitRows(from: string): Promise<ProfitSheetRow[]> {
+    // Riyadh midnight of `from`, in UTC.
+    const since = new Date(Date.parse(`${from}T00:00:00Z`) - 3 * 3600_000).toISOString();
+    const rows = await fetchAllRows<any>((f, t) =>
+      supabase.from('airtable_tickets').select('record_id, serials, pnr, status, req_num, net_cost, currency, issued_at, team_member, portal, airline, ticket_cell, emd:sheet_row->>"EMD Number"')
+        .eq('deleted', false).gte('issued_at', since).range(f, t));
+    return rows.map(r => ({ record_id: r.record_id, serials: r.serials ?? [], pnr: r.pnr ?? '', status: r.status ?? '', req_num: r.req_num ?? '',
+      net_cost: r.net_cost == null ? null : Number(r.net_cost), currency: r.currency ?? '', issued_at: r.issued_at ?? null,
+      team_member: r.team_member ?? '', portal: r.portal ?? '', airline: r.airline ?? '', ticket_cell: r.ticket_cell ?? '', emd: r.emd ?? '' }));
+  }
+
   async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal: string; airline: string; issued: string | null }[]> {
     const rows = await fetchAllRows<any>((from, to) =>
       // The EMD cell alone, not the whole sheet: 2.5 MB of a 2.8 MB read, every import.

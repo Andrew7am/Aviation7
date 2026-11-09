@@ -30,6 +30,7 @@ const VendorBalances  = React.lazy(() => import('./components/VendorBalances').t
 const VendorStatements = React.lazy(() => import('./components/VendorStatements').then(m => ({ default: m.VendorStatements })));
 const Reports         = React.lazy(() => import('./components/Reports').then(m => ({ default: m.Reports })));
 const TaxInvoices     = React.lazy(() => import('./components/TaxInvoices').then(m => ({ default: m.TaxInvoices })));
+const AviationProfit  = React.lazy(() => import('./components/AviationProfit').then(m => ({ default: m.AviationProfit })));
 const Voids           = React.lazy(() => import('./components/Voids').then(m => ({ default: m.Voids })));
 const Adms            = React.lazy(() => import('./components/Adms').then(m => ({ default: m.Adms })));
 const ImportHistory   = React.lazy(() => import('./components/ImportHistory').then(m => ({ default: m.ImportHistory })));
@@ -107,6 +108,7 @@ function MainApp({ user }: { user: User }) {
     invoices: taxInvoices, upload: uploadTaxInvoices, remove: removeTaxInvoice,
   } = useTaxInvoices(user.id);
   const { voids, refresh: refreshVoids } = useVoids(user.id);
+  const voidNos = React.useMemo(() => voids.map(v => v.ticketNo), [voids]);
   const [exchanges, setExchanges] = useState<{ ticketNo: string; replacedTicket: string; fee?: number | null }[]>([]);
   React.useEffect(() => {
     new ExchangeService().list().then(setExchanges).catch(e => console.error('exchanges', e));
@@ -673,6 +675,7 @@ function MainApp({ user }: { user: User }) {
     { id: 'voids',     label: 'Voids',           icon: <Ban className="w-4 h-4" />, badge: voids.length || undefined, badgeColor: 'slate' },
     { id: 'adms',      label: 'ADMs',            icon: <FileWarning className="w-4 h-4" />, badge: admCount || undefined, badgeColor: 'red' },
     { id: 'reports',   label: 'Reports',         icon: <BarChart2 className="w-4 h-4" /> },
+    { id: 'profit',    label: 'Aviation Profit', icon: <BarChart2 className="w-4 h-4" /> },
     ...(isAdmin ? [{ id: 'activity' as ViewState, label: 'Activity Log', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
     ...(isAdmin ? [{ id: 'settings' as ViewState, label: 'Settings', icon: <SettingsIcon className="w-4 h-4" /> }] : []),
   ];
@@ -762,6 +765,7 @@ function MainApp({ user }: { user: User }) {
           onReprice={handleRepriceFromStatement} onFillInvoiceNos={handleFillInvoiceNos}
           onConfirmFromStatement={handleConfirmFromStatement} />
       )}
+      {view === 'profit' && <AviationProfit tickets={tickets} voidedNos={voidNos} />}
       {view === 'taxinvoices' && (
         <TaxInvoices tickets={tickets} invoices={taxInvoices}
           {...(isAdmin ? { onUpload: uploadTaxInvoices, onDelete: removeTaxInvoice } : {})} />
