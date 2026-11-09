@@ -7,7 +7,7 @@ import {
 import {
   ledgerAccount, unmatchedInPeriod, LedgerPeriod, Payment,
 } from '../core/helpers/statementMath';
-import { DocumentCheck } from './DocumentCheck';
+import { DocumentCheck, type VoidDropped } from './DocumentCheck';
 import type { Reprice } from '../core/helpers/statementAgainstBooks';
 import { BalanceRange } from './BalanceRange';
 import type { InvoiceNoFill } from '../core/helpers/statementInvoiceNos';
@@ -55,6 +55,8 @@ interface Props {
   /** File tickets under the invoice numbers a statement bills them on. */
   onFillInvoiceNos?: (list: InvoiceNoFill[], period: string) => Promise<void>;
   onConfirmFromStatement?: (list: { id: string; ticketNo: string; by: string }[]) => Promise<void>;
+  /** Move tickets a statement stopped billing to Voids. */
+  onVoidDropped?: VoidDropped;
 }
 
 const blank = (vendor: string): VendorStatement => ({
@@ -420,7 +422,7 @@ const PeriodRow: React.FC<{
 };
 
 export const VendorStatements: React.FC<Props> = ({
-  statements, tickets, topUps, wallets, onSave, onDelete, canEdit = false, onReprice, onFillInvoiceNos, onConfirmFromStatement,
+  statements, tickets, topUps, wallets, onSave, onDelete, canEdit = false, onReprice, onFillInvoiceNos, onConfirmFromStatement, onVoidDropped,
 }) => {
   const [editing, setEditing] = useState<VendorStatement | null>(null);
 
@@ -475,7 +477,8 @@ export const VendorStatements: React.FC<Props> = ({
         topUps={topUps} statements={statements} wallets={wallets}
         onReprice={canEdit ? onReprice : undefined}
         onFillInvoiceNos={canEdit ? onFillInvoiceNos : undefined}
-        onConfirm={canEdit ? onConfirmFromStatement : undefined} />
+        onConfirm={canEdit ? onConfirmFromStatement : undefined}
+        onVoidDropped={canEdit ? onVoidDropped : undefined} />
 
       {accounts.map(a => (
         <div key={a.vendorName} className="bg-white border border-slate-200 rounded-xl overflow-hidden">

@@ -117,6 +117,40 @@ console.log('\n6. What changed since their last statement');
           openingBalance: 14388.37, closingBalance: 13330.23 }]).since, null);
 }
 
+console.log('\n7. A ticket their last statement billed, gone from this one: voided on their side');
+{
+  /* 4862765248: Ibtekar's 01-07 Nov statement billed it at 1,876.00 and
+     closed on 16,582.13; their 01-09 Nov one opens the same, bills it
+     nowhere, and puts 7 Nov at 18,458.13. */
+  const nov = {
+    ...st, periodStart: '2026-11-01', periodEnd: '2026-11-09', openingBalance: 16627.15, closingBalance: 16726.13,
+    lines: [
+      { section: 'TICKET', date: '2026-11-04', document: 'INV264970', airline: '065', ticketNo: '4862765250', debit: 1876, credit: 0, balance: 0 },
+      { section: 'TICKET', date: '2026-11-04', document: 'INV264970', airline: '065', ticketNo: '4862765251', debit: 1133, credit: 0, balance: 0 },
+      { section: 'TICKET', date: '2026-11-04', document: 'INV264970', airline: '065', ticketNo: '4862765252', debit: 1876, credit: 0, balance: 0 },
+      { section: 'TICKET', date: '2026-11-04', document: 'INV264970', airline: '065', ticketNo: '4862765253', debit: 1054, credit: 0, balance: 0 },
+      { section: 'TICKET', date: '2026-11-04', document: 'INV264970', airline: '560', ticketNo: '4862765254', debit: 610.01, credit: 0, balance: 0 },
+      { section: 'TICKET', date: '2026-11-04', document: 'INV264970', airline: '065', ticketNo: '4862874835', debit: 1620.01, credit: 0, balance: 0 },
+      { section: 'TICKET', date: '2026-11-08', document: 'INV264982', airline: '065', ticketNo: '4862874859', debit: 1732, credit: 0, balance: 0 },
+      { section: 'RECEIPT', date: '2026-11-04', document: 'RV264420', airline: '', ticketNo: 'RV264420', debit: 0, credit: 10000, balance: 0 },
+    ].sort((a, b) => a.date.localeCompare(b.date)),
+  } as typeof st;
+  const prev = { id: 'p', vendorName: 'Ibtekar', periodStart: '2026-11-01', periodEnd: '2026-11-07', currency: 'SAR',
+    openingBalance: 16627.15, closingBalance: 16582.13, billed: 10045.02, paid: 10000, otherCharges: 0 } as VendorStatement;
+  const ours = [...nov.lines.filter(l => l.section === 'TICKET').map(l => t({ ticketNo: l.ticketNo, date: l.date, amount: l.debit })),
+    t({ ticketNo: '4862765248', date: '2026-11-04', amount: 1876, reqNum: 'KSAML2533' })];
+  const r = reviewStatement(nov, 'Ibtekar', ours, [], [prev]);
+  check('unbilled', r.notBilled.map(o => o.ticketNo), ['4862765248']);
+  check('dropped since 01-07 Nov, by its own money', [r.dropped?.tickets.map(o => o.ticketNo), r.dropped?.was, r.dropped?.now, r.dropped?.total],
+        [['4862765248'], 16582.13, 18458.13, 1876]);
+  const late = [...ours, t({ ticketNo: '4862999999', date: '2026-11-09', amount: 500 })];
+  check('a ticket after their last statement is only unbilled, not dropped',
+        reviewStatement(nov, 'Ibtekar', late, [], [prev]).dropped?.tickets.map(o => o.ticketNo), ['4862765248']);
+  check('no previous statement: only unbilled', reviewStatement(nov, 'Ibtekar', ours, [], []).dropped, null);
+  check('a move the unbilled do not add up to is not called a void',
+        reviewStatement(nov, 'Ibtekar', ours, [], [{ ...prev, closingBalance: 16600 }]).dropped, null);
+}
+
 console.log('\nN. A sale and its refund on the same statement');
 {
   /* Ibtekar's 01/10-11/10 statement bills 4862343302 at 1,917.00 and

@@ -73,6 +73,21 @@ export interface SinceLast {
   change: number;
 }
 
+/**
+ * Tickets their last statement billed and this one no longer does: voided
+ * on their side after the fact. 4862765248 was on the 01-07 Nov statement
+ * at 1,876.00; the 01-09 Nov one puts 7 Nov 1,876.00 higher and bills it
+ * nowhere. Said only when ours, unbilled, add up to exactly that move.
+ */
+export interface Dropped {
+  previous: VendorStatement;
+  /** Their balance on the previous statement's last day, then and now. */
+  was: number;
+  now: number;
+  tickets: Ticket[];
+  total: number;
+}
+
 export interface StatementReview {
   vendor: string;
   lines: LineCheck[];
@@ -81,6 +96,8 @@ export interface StatementReview {
   notInBooks: LineCheck[];
   /** Ours, dated inside the period, that the statement never bills. */
   notBilled: Ticket[];
+  /** Of those, the ones their last statement billed: voided since. */
+  dropped: Dropped | null;
   receipts: ReceiptCheck[];
   fees: { count: number; total: number; min: number; max: number };
   /** Our books on the statement's last day: payments less tickets. */
@@ -107,13 +124,16 @@ function balanceOn(st: ParsedStatement, on: string): number | null {
  * The previous statement for the same vendor that this one can be laid
  * against: the latest one that ends inside this one's period.
  */
-function sinceLast(st: ParsedStatement, vendor: string, saved: VendorStatement[]): SinceLast | null {
-  const prior = saved
+function previousOf(st: ParsedStatement, vendor: string, saved: VendorStatement[]): VendorStatement | undefined {
+  return saved
     .filter(s => s.vendorName === vendor && s.periodEnd >= st.periodStart && s.periodEnd <= st.periodEnd)
     .filter(s => !(s.periodStart === st.periodStart && s.periodEnd === st.periodEnd
       && Math.abs(s.closingBalance - st.closingBalance) < 0.005 && Math.abs(s.openingBalance - st.openingBalance) < 0.005))
-    .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
-  const previous = prior[0];
+    .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd))[0];
+}
+
+function sinceLast(st: ParsedStatement, vendor: string, saved: VendorStatement[]): SinceLast | null {
+  const previous = previousOf(st, vendor, saved);
   if (!previous) return null;
   // Same opening day: compare the openings, which is where a change made
   // before the period shows. Otherwise compare the balance on their last day.
@@ -124,6 +144,41 @@ function sinceLast(st: ParsedStatement, vendor: string, saved: VendorStatement[]
   if (now == null) return null;
   return { previous, on: previous.periodEnd, was: previous.closingBalance, now,
            change: r2(now - previous.closingBalance) };
+}
+
+/**
+ * The fewest of these that add up to `target`, to the fil-and-a-bit; null
+ * when none do. Past sixteen it is a statement to read, not a sum to solve.
+ */
+function subsetSumming(xs: Ticket[], target: number): Ticket[] | null {
+  if (!xs.length || xs.length > 16) return null;
+  let best: Ticket[] | null = null;
+  for (let m = 1; m < 1 << xs.length; m++) {
+    const g = xs.filter((_, i) => m & (1 << i));
+    if (best && g.length >= best.length) continue;
+    if (Math.abs(r2(g.reduce((n, t) => n + (t.amount || 0), 0)) - target) < 0.05) best = g;
+  }
+  return best;
+}
+
+/**
+ * Ours their last statement billed and this one does not. The proof is the
+ * money: their balance on the last statement's closing day has moved in our
+ * favour by exactly what those tickets cost - nothing else accounts for it.
+ */
+function droppedSince(st: ParsedStatement, vendor: string, saved: VendorStatement[], notBilled: Ticket[]): Dropped | null {
+  const previous = previousOf(st, vendor, saved);
+  if (!previous) return null;
+  const now = balanceOn(st, previous.periodEnd);
+  if (now == null) return null;
+  // A change before the period shows in the opening balance and is not a ticket of this period.
+  const before = previous.periodStart === st.periodStart ? r2(st.openingBalance - previous.openingBalance) : 0;
+  const moved = r2(now - previous.closingBalance - before);
+  if (moved < 0.05) return null;
+  const sales = notBilled.filter(t => (t.amount || 0) > 0 && day(t.date) <= previous.periodEnd
+    && (t.status || '').toUpperCase() !== 'REFUND');
+  const tickets = subsetSumming(sales, moved);
+  return tickets ? { previous, was: previous.closingBalance, now, tickets, total: moved } : null;
 }
 
 /**
@@ -297,7 +352,7 @@ export function reviewStatement(
   const feeList = lines.map(c => c.fee).filter((f): f is number => f != null && f >= FEE_FLOOR);
   return {
     vendor, lines, reprice, ask, notInBooks: lines.filter(c => c.verdict === 'NOT_IN_BOOKS'),
-    notBilled, receipts,
+    notBilled, dropped: droppedSince(st, vendor, saved, notBilled), receipts,
     fees: {
       count: feeList.length, total: r2(feeList.reduce((n, f) => n + f, 0)),
       min: feeList.length ? Math.min(...feeList) : 0, max: feeList.length ? Math.max(...feeList) : 0,

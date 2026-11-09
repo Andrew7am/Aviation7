@@ -456,6 +456,21 @@ function MainApp({ user }: { user: User }) {
     await ticketSvc.confirm(list);
     for (const c of list) importSvc.audit('CONFIRMED', c.ticketNo, `Confirmed by ${c.by}: it bills it at the amount we recorded.`);
   }, [ticketSvc, importSvc]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* A ticket a vendor's statement billed and their next one dropped: voided
+     on their side (4862765248, 9 Nov 2026). Into the register first, then
+     out of the ledger, so the balance never loses it without a trace. */
+  const handleVoidDropped = useCallback(async (list: Ticket[], why: string) => {
+    await new VoidTicketService(user.id).record(list.map(t => ({
+      ticketNo: t.ticketNo, airlineCode: t.airlineCode || '', pnr: t.pnr || '', passengerName: t.passengerName || '',
+      date: (t.date || '').slice(0, 10), source: t.source, period: (t.date || '').slice(0, 7), currency: t.currency,
+      faceValue: t.amount, rawStatus: 'VOID', reportName: 'Dropped from statement', note: why,
+    })));
+    await refreshVoids();
+    for (const t of list) {
+      await deleteTicket(t.id);
+      importSvc.audit('DELETE', t.ticketNo, `${t.source} ${t.ticketNo} (${t.amount} ${t.currency}${t.reqNum ? `, ${t.reqNum}` : ''}): ${why}`);
+    }
+  }, [user.id, refreshVoids, deleteTicket, importSvc]); // eslint-disable-line react-hooks/exhaustive-deps
   const handleDeleteStatement = (id: string) => {
     deleteStatement(id);
     importSvc.audit('DELETE_STATEMENT', id, 'Statement deleted');
@@ -763,7 +778,7 @@ function MainApp({ user }: { user: User }) {
           topUps={topUps} wallets={vendorBalancesLive}
           onSave={handleSaveStatement} onDelete={handleDeleteStatement}
           onReprice={handleRepriceFromStatement} onFillInvoiceNos={handleFillInvoiceNos}
-          onConfirmFromStatement={handleConfirmFromStatement} />
+          onConfirmFromStatement={handleConfirmFromStatement} onVoidDropped={handleVoidDropped} />
       )}
       {view === 'profit' && <AviationProfit tickets={tickets} voidedNos={voidNos} />}
       {view === 'taxinvoices' && (

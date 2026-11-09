@@ -15,6 +15,8 @@ import { checkStatement } from '../core/helpers/statementMath';
 import { pdfContent } from '../core/helpers/pdfWords';
 import { reviewStatement, Reprice, StatementReview } from '../core/helpers/statementAgainstBooks';
 
+/** Tickets a statement stopped billing, and why, to the Voids register. */
+export type VoidDropped = (tickets: Ticket[], why: string) => Promise<void>;
 /**
  * Check a document the vendor sent against the ledger, without importing it.
  *
@@ -204,9 +206,13 @@ const drCr = (n: number) => `${fmt(n)} ${n < 0 ? 'Dr' : 'Cr'}`;
  */
 const ReviewPanel: React.FC<{
   r: StatementReview; st: ParsedStatement; onReprice?: (list: Reprice[]) => Promise<void>;
-}> = ({ r, st, onReprice }) => {
+  onVoidDropped?: VoidDropped;
+}> = ({ r, st, onReprice, onVoidDropped }) => {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<number | null>(null);
+  const [voided, setVoided] = useState<number | null>(null);
+  const droppedIds = new Set((r.dropped?.tickets ?? []).map(t => t.id));
+  const unbilled = r.notBilled.filter(t => !droppedIds.has(t.id));
   const agrees = Math.abs(r.closingGap) < 0.05;
   const missingReceipts = r.receipts.filter(x => !x.recorded);
   const issues = r.reprice.length + r.ask.length + r.notInBooks.length + r.notBilled.length + missingReceipts.length;
@@ -316,10 +322,46 @@ const ReviewPanel: React.FC<{
               ))}
             </div>
           )}
-          {r.notBilled.length > 0 && (
+          {r.dropped && (
+            <div className="px-4 py-3 space-y-2 bg-red-50/40">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <b className="text-red-700">Billed on their last statement, gone from this one — voided on their side</b>
+                {onVoidDropped && (
+                  <button disabled={busy || voided != null}
+                    onClick={async () => {
+                      const d = r.dropped!;
+                      if (!confirm(`Move ${d.tickets.length} ticket(s), ${fmt(d.total)} ${st.currency}, to Voids? Their sale leaves the ledger.`)) return;
+                      setBusy(true);
+                      try {
+                        await onVoidDropped(d.tickets, `Voided with ${r.vendor}: billed on their ${d.previous.periodStart} to ${d.previous.periodEnd}`
+                          + ` statement, gone from the ${st.periodStart} to ${st.periodEnd} one, which puts ${d.previous.periodEnd}`
+                          + ` ${fmt(d.total)} higher (${drCr(d.was)} then, ${drCr(d.now)} now). Moved to Voids; its sale left the ledger.`);
+                        setVoided(d.tickets.length);
+                      } finally { setBusy(false); }
+                    }}
+                    className={`text-xs font-bold px-3 py-1.5 rounded ${voided != null
+                      ? 'bg-emerald-50 text-emerald-700' : 'bg-red-600 text-white hover:bg-red-700'}`}>
+                    {voided != null ? `${voided} moved to Voids` : busy ? 'Moving…' : `Move ${r.dropped.tickets.length} to Voids`}
+                  </button>
+                )}
+              </div>
+              <div className="text-[11px] text-slate-600">
+                Their statement for {r.dropped.previous.periodStart} → {r.dropped.previous.periodEnd} closed on{' '}
+                <b className="font-mono">{drCr(r.dropped.was)}</b>; this one puts the same day at{' '}
+                <b className="font-mono">{drCr(r.dropped.now)}</b> — <b className="font-mono">{fmt(r.dropped.total)}</b> in our
+                favour, exactly what these cost, and bills none of them.
+              </div>
+              {r.dropped.tickets.map(t => (
+                <div key={t.id} className="font-mono text-[11px] text-slate-600">
+                  {t.date} {t.ticketNo} {fmt(t.amount)} {t.reqNum} {t.pnr}
+                </div>
+              ))}
+            </div>
+          )}
+          {unbilled.length > 0 && (
             <div className="px-4 py-3 space-y-1">
               <b className="text-amber-700">Ours in this period, never billed</b>
-              {r.notBilled.map(t => (
+              {unbilled.map(t => (
                 <div key={t.id} className="font-mono text-[11px] text-slate-600">
                   {t.date} {t.ticketNo} {fmt(t.amount)} {t.reqNum}
                 </div>
@@ -353,7 +395,8 @@ const StatementPanel: React.FC<{
   statements: VendorStatement[];
   wallet?: VendorBalance;
   onReprice?: (list: Reprice[]) => Promise<void>;
-}> = ({ st, fileName, tickets, vendorName, saved, onSave, topUps, statements, wallet, onReprice }) => {
+  onVoidDropped?: VoidDropped;
+}> = ({ st, fileName, tickets, vendorName, saved, onSave, topUps, statements, wallet, onReprice, onVoidDropped }) => {
   const [open, setOpen] = useState(false);
   // Line by line against our books: what agrees, what the statement settles,
   // what it changed since their last one, and the ten riyals on each ticket.
@@ -443,7 +486,7 @@ const StatementPanel: React.FC<{
         )}
       </div>
 
-      <ReviewPanel r={review} st={st} onReprice={onReprice} />
+      <ReviewPanel r={review} st={st} onReprice={onReprice} onVoidDropped={onVoidDropped} />
 
       {open && (
         <div className="bg-white border border-slate-200 rounded max-h-96 overflow-auto">
@@ -513,7 +556,9 @@ export const DocumentCheck: React.FC<{
   onFillInvoiceNos?: (list: InvoiceNoFill[], period: string) => Promise<void>;
   /** Mark rows from their sheet or by hand that the statement bills as recorded. Absent for a viewer. */
   onConfirm?: (list: Confirmation[]) => Promise<void>;
-}> = ({ tickets, vendorName = 'Ibtekar', onSaveStatement, topUps = [], statements = [], wallets = [], onReprice, onFillInvoiceNos, onConfirm }) => {
+  /** Move tickets their statement stopped billing to Voids. Absent for a viewer. */
+  onVoidDropped?: VoidDropped;
+}> = ({ tickets, vendorName = 'Ibtekar', onSaveStatement, topUps = [], statements = [], wallets = [], onReprice, onFillInvoiceNos, onConfirm, onVoidDropped }) => {
   const [results, setResults] = useState<InvoiceResult[] | null>(null);
   const [statement, setStatement] = useState<ParsedStatement | null>(null);
   const [saved, setSaved] = useState(false);
@@ -724,7 +769,7 @@ export const DocumentCheck: React.FC<{
             st={statement} fileName={fileName} tickets={tickets} vendorName={vendorName}
             saved={saved}
             onSave={onSaveStatement && (() => { onSaveStatement(asStatement(statement)); setSaved(true); })}
-            topUps={topUps} statements={statements} onReprice={onReprice}
+            topUps={topUps} statements={statements} onReprice={onReprice} onVoidDropped={onVoidDropped}
             wallet={wallets.find(w => w.vendorName.toLowerCase() === vendorName.toLowerCase())}
           />
         )}
