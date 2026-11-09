@@ -48,7 +48,9 @@ const rowToAudit = (r: AuditRow): AuditRecord => ({
 export type Role = 'admin' | 'accountant' | 'aviation' | 'pending';
 export const ROLES: Role[] = ['admin', 'accountant', 'aviation', 'pending'];
 export const ROLE_LABEL: Record<Role, string> = { admin: 'Admin', accountant: 'Accountant', aviation: 'Aviation team', pending: 'No access' };
-export const canRead = (r: Role | null | undefined) => r === 'admin' || r === 'accountant' || r === 'aviation';
+/* 'member' is the role before 0049 split it; until that migration is applied
+   a member still reads, as it always has. */
+export const canRead = (r: Role | 'member' | null | undefined) => r === 'admin' || r === 'accountant' || r === 'aviation' || r === 'member';
 
 export class AuditService {
   /** Current user's role. 'pending' when the registry row is missing or
@@ -59,7 +61,7 @@ export class AuditService {
     const { data, error } = await supabase
       .from('app_users').select('role').eq('id', auth.user.id).maybeSingle();
     if (error || !data) return 'pending';
-    return (ROLES as string[]).includes(data.role) ? data.role as Role : 'pending';
+    return (ROLES as string[]).includes(data.role) || data.role === 'member' ? data.role as Role : 'pending';
   }
 
   static async listUsers(): Promise<AppUser[]> {
