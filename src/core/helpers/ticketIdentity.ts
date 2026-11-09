@@ -113,6 +113,36 @@ export function formatTicketNo(ticketNo: string, airlineCode?: string): string {
   return `${code}-${ticketNo}`;
 }
 
+/** A document known by its booking reference rather than a ticket number:
+ *  flydubai, flyadeal, a website booking. */
+export const isBookingRef = (ticketNo: string) => !/\d{10}/.test(ticketNo || '');
+
+/**
+ * Two rows under one booking reference: the same transaction, or two?
+ *
+ * A ticket number is one document for life. A booking reference is not:
+ * flydubai sold EKER1I on 5 Sep 2026 for 1,440 and again on 6 Nov for 635,
+ * and the second read as the first - it was dropped, and the first was
+ * "corrected" to 635. Two different supplier invoice numbers are two
+ * transactions, and so are two dates more than a week apart; a row typed
+ * from their sheet a day off the supplier's date is still the same one.
+ * A ticket number always answers yes.
+ */
+export const BOOKING_DAYS_APART = 7;
+export function sameBookingTransaction(
+  a: { ticketNo: string; date?: string; vendorReference?: string },
+  b: { ticketNo: string; date?: string; vendorReference?: string },
+): boolean {
+  if (!isBookingRef(a.ticketNo) || !isBookingRef(b.ticketNo)) return true;
+  const ra = (a.vendorReference || '').trim(), rb = (b.vendorReference || '').trim();
+  const invoice = (r: string) => /^\d{6,}$/.test(r);
+  if (invoice(ra) && invoice(rb) && ra !== rb) return false;
+  const day = (d?: string) => (/^\d{4}-\d{2}-\d{2}/.test(d || '') ? Date.parse(String(d).slice(0, 10)) : NaN);
+  const da = day(a.date), db = day(b.date);
+  if (Number.isNaN(da) || Number.isNaN(db)) return true;
+  return Math.abs(da - db) / 86_400_000 <= BOOKING_DAYS_APART;
+}
+
 /**
  * Matching key for comparing documents ACROSS vendors — the serial alone.
  * A portal row and its BSP invoice line agree on the serial and that is the

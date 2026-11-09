@@ -14,7 +14,7 @@
  * unconfirmed.
  */
 import type { Ticket } from '../../types';
-import { ticketMatchKey } from './ticketIdentity';
+import { ticketMatchKey, sameBookingTransaction } from './ticketIdentity';
 
 /** Recorded from their sheet or typed by hand, not read from a supplier. */
 export const fromSheetOrHand = (t: Pick<Ticket, 'reportName'>): boolean =>
@@ -110,6 +110,8 @@ export function confirmationsFrom(incoming: Ticket[], existing: Ticket[], report
     const k = `${ticketMatchKey(r.ticketNo || '')}|${dir(r)}`;
     for (const ours of waiting.get(k) ?? []) {
       if (seen.has(ours.id)) continue;
+      // Another sale under the same booking reference vouches for nothing here.
+      if (!sameBookingTransaction(ours, r)) continue;
       seen.add(ours.id);
       if (sameMoney(ours, r)) confirm.push({ id: ours.id, ticketNo: ours.ticketNo, by: reportName });
       else differ.push({ ours, report: r });

@@ -10,6 +10,7 @@
  */
 import { extractPdfRows, pdfRowsToCsv } from './helpers/pdfText';
 import { Ticket, FieldChange } from '../types';
+import { sameBookingTransaction } from './helpers/ticketIdentity';
 
 /* ─────────────────────────────────────────────
    DUPLICATE DETECTION
@@ -181,7 +182,14 @@ export function detectDuplicatesAgainstExisting(
   // against the sale it reverses, and vice versa.
   const vendorKey = (t: Ticket) =>
     `${t.ticketNo.trim().toUpperCase()}|${(t.source || '').trim().toLowerCase()}|${t.amount < 0 ? 'CR' : 'DR'}`;
-  const existingByTicket = new Map(existingTickets.map(t => [vendorKey(t), t]));
+  /* Every row under the key, not the last one: a booking reference can carry
+     two sales (EKER1I, 5 Sep and 6 Nov), and the incoming row is held
+     against the one that is the same transaction, or against none. */
+  const existingByTicket = new Map<string, Ticket[]>();
+  for (const t of existingTickets) {
+    const k = vendorKey(t);
+    existingByTicket.set(k, [...(existingByTicket.get(k) ?? []), t]);
+  }
 
   // The same DOCUMENT, whoever reported it. Used to spot the invoice line for
   // a ticket the portal already recorded. Indexed with and without the airline
@@ -215,7 +223,8 @@ export function detectDuplicatesAgainstExisting(
   newTickets.forEach(t => {
     const status   = (t.status || '').toUpperCase();
     const key      = dupKey(t);
-    const existing = existingByTicket.get(vendorKey(t));
+    const held = (existingByTicket.get(vendorKey(t)) ?? []).filter(e => sameBookingTransaction(e, t));
+    const existing = held[held.length - 1];
 
     // A refund is a document in its own right and gets the same treatment as a
     // sale: its invoice line settles it, a re-report fills in what is missing,

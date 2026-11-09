@@ -10,6 +10,8 @@
  */
 import { unconfirmed, confirmationsFrom, fromSheetOrHand, correctionsFrom, awaitsSupplier } from '../src/core/helpers/supplierProof';
 import type { Ticket } from '../src/types';
+import { detectDuplicatesAgainstExisting } from '../src/core/ImportEngine';
+import { sameBookingTransaction } from '../src/core/helpers/ticketIdentity';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -76,6 +78,26 @@ console.log('\n3. The supplier\'s figure goes in');
     [t({ id: 'k', source: 'Turkish Airlines', ticketNo: '2540225941', amount: -1570, totalDoc: 1570, commission: 0 })], 'Turkish Airlines');
   check('the same fare at a different amount owed is not confirmed', comm.confirm.length, 0);
   check('the commission the supplier took back goes in', correctionsFrom(comm.differ, 'Turkish Airlines').correct.map(c => [c.amount, c.commission]), [[-1534, -36]]);
+}
+
+console.log('\n9. Two sales under one booking reference (flydubai EKER1I)');
+{
+  const sep = t({ id: 'sep', ticketNo: 'EKER1I', pnr: 'EKER1I', source: 'FlyDubai', status: 'ISSUE', amount: 1440, totalDoc: 1440,
+    date: '2026-09-05', reportName: 'Manual entry', reqNum: 'UAECO695' });
+  const nov = t({ id: '', ticketNo: 'EKER1I', pnr: 'EKER1I', source: 'FlyDubai', status: 'ISSUE', amount: 635, totalDoc: 635,
+    date: '2026-11-06', reportName: 'FlyDubai', reqNum: '', vendorReference: '114805078' });
+  const r = confirmationsFrom([nov], [sep], 'FlyDubai');
+  check('the November sale does not correct the September one', [r.confirm.length, r.differ.length], [0, 0]);
+  const dup = detectDuplicatesAgainstExisting([nov], [sep]);
+  check('  ...and goes in as a sale of its own', [dup.fresh.length, dup.updates.length, dup.duplicates.length], [1, 0, 0]);
+  const typed = t({ ...sep, id: 'typed', amount: 1450, totalDoc: 1450, date: '2026-09-06' });
+  const fz = { ...nov, amount: 1440, totalDoc: 1440, date: '2026-09-05', vendorReference: '114700001' };
+  check('a row typed a day off the supplier is still the same sale', correctionsFrom(confirmationsFrom([fz], [typed], 'FlyDubai').differ, 'FlyDubai').correct.map(c => [c.was.amount, c.amount]), [[1450, 1440]]);
+  check('the same report again is held, not added', detectDuplicatesAgainstExisting([nov], [{ ...nov, id: 'x' }]).fresh.length, 0);
+  check('two invoice numbers are two sales', sameBookingTransaction({ ticketNo: 'EKER1I', date: '2026-11-06', vendorReference: '114805078' },
+    { ticketNo: 'EKER1I', date: '2026-11-07', vendorReference: '114805099' }), false);
+  check('a ticket number is one document whatever the date', sameBookingTransaction({ ticketNo: '5513408117', date: '2026-01-01' },
+    { ticketNo: '5513408117', date: '2026-11-06' }), true);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
