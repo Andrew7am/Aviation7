@@ -44,7 +44,7 @@ export const AviationProfit: React.FC<{ tickets: Ticket[]; voidedNos: string[] }
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Aviation Profit</h2>
-          <p className="text-xs text-slate-500 mt-0.5">The cost the aviation team quoted operations (Net Cost on their sheet) less what the supplier charged us. Counted from {PROFIT_FROM}; refunds not yet included.</p>
+          <p className="text-xs text-slate-500 mt-0.5">The cost the aviation team quoted operations (Net Cost on their sheet) less what the supplier charged us. Our cost is after the supplier's commission, so the commission counts to the team. Counted from {PROFIT_FROM}; refunds not yet included.</p>
         </div>
         <div className="ml-auto flex flex-wrap items-end gap-2 text-xs">
           <label className="flex flex-col">From<input type="date" min={PROFIT_FROM} value={from} onChange={e => setFrom(e.target.value || PROFIT_FROM)} className="border rounded px-2 py-1" /></label>
