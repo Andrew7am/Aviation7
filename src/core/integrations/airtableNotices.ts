@@ -24,7 +24,7 @@ import type { PendingTicket } from '../../types';
 import { dedupeKey } from '../helpers/pendingFromFindings';
 
 export type NoticeKind = 'REQ_CHANGED' | 'NAME' | 'CABIN' | 'REFUND' | 'VOID' | 'PRICE' | 'ONLINE_TICKET' | 'NOT_IN_BOOKS'
-  | 'REFUND_MISSING' | 'REQ_SPLIT';
+  | 'REFUND_MISSING' | 'REQ_SPLIT' | 'VOID_BILLED';
 
 export interface Notice {
   kind: NoticeKind;
@@ -137,12 +137,7 @@ export function noticesFor(
       title: `Refund amount changed on their sheet: ${label} · ${money(changed('refund_amount')!.old)} → ${money(String(r.refund_amount))} ${r.currency}`,
       detail: `The supplier's report is what credits it - compare with it.`,
       payload: { refund: r.refund_amount } });
-    if (st && /void/i.test(r.status) && ours.some(t => (t.amount || 0) > 0)) out.push({ ...base, kind: 'VOID',
-      dedupe_key: `VOID|${r.record_id}`,
-      ticket_ids: ours.map(t => t.id),
-      title: `Voided on their sheet: ${label}`,
-      detail: `We hold it as a sale. Check the supplier voided it too, and record it in Voids if so.`,
-      payload: { status: r.status } });
+    // A void is read off the sheet as it stands: voidsBilled.
     const price = changed('net_cost');
     if (price && r.net_cost != null) out.push({ ...base, kind: 'PRICE',
       dedupe_key: `PRICE|${r.record_id}|${r.net_cost}`,
@@ -218,6 +213,54 @@ export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, Led
         payload: { refund: amount, currency: r.currency, source: src, added, pnr: r.pnr, portal: r.portal,
           cell: r.ticket_cell, theirReq: r.req_num, airline: ours.find(t => (t.amount || 0) > 0)?.airlineCode ?? '',
           passenger: ours.find(t => (t.amount || 0) > 0)?.passengerName ?? '' },
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Tickets their sheet voids that our books still hold as a sale.
+ *
+ * A void moves no money, so a ticket the team voided and we hold at a price
+ * is money we are carrying for nothing - or a void that never happened.
+ * 4862765248: voided on their sheet on 4 Nov, billed 1,876.00 on Ibtekar's
+ * statement. The old notice fired only when a row's status changed, and the
+ * bell never showed it: four sat open from October unseen.
+ *
+ * Read off the sheet as it stands, every run, from every void row. A ticket
+ * stays on the list until our books say it is settled - a refund that takes
+ * the sale back to nothing, or the document in our Voids register - or until
+ * their sheet stops calling it void. A ticket they voided and also list as
+ * issued on another row is a reissue under the same number, not this.
+ */
+export function voidsBilled(rows: AirtableTicketRow[], index: Map<string, LedgerLite[]>, voided: Set<string>): Notice[] {
+  const out: Notice[] = [];
+  const seen = new Set<string>();
+  const live = new Set(rows.filter(r => /^(issued|reissue)$/i.test((r.status || '').trim())).flatMap(r => r.serials.map(docKey)));
+  for (const r of rows) {
+    if (!/void/i.test(r.status || '')) continue;
+    for (const s of r.serials) {
+      const k = docKey(s);
+      if (!k || seen.has(k) || voided.has(k) || live.has(k)) continue;
+      const ours = index.get(k) ?? [];
+      const sales = ours.filter(t => (t.amount || 0) > 0);
+      const sold = sales.reduce((n, t) => n + (t.amount || 0), 0);
+      const back = ours.filter(t => (t.amount || 0) < 0).reduce((n, t) => n - (t.amount || 0), 0);
+      const net = Math.round((sold - back) * 100) / 100;
+      if (!sales.length || net <= 0.005) continue;
+      seen.add(k);
+      const src = sales[0].source || 'the supplier';
+      const cur = sales[0].currency || r.currency || '';
+      const req = r.req_num || sales[0].reqNum || '';
+      out.push({
+        kind: 'VOID_BILLED', dedupe_key: `VOID_BILLED|${k}`, record_id: r.record_id, ticket_no: k,
+        ticket_ids: ours.map(t => t.id), req_num: req,
+        title: `Void on their sheet, billed in ours: ${k} · ${money(String(net))} ${cur}${req ? ` · ${req}` : ''}`,
+        detail: `Their sheet marks it Void; our books hold it as a sale from ${src} with nothing back against it.`
+          + ` If ${src} voided it, record it in Voids or wait for the refund; if it was issued, their sheet needs the row put right.`
+          + ' Closes by itself once either side says so.',
+        payload: { net, currency: cur, source: src, pnr: r.pnr, cell: r.ticket_cell, theirReq: r.req_num, status: r.status },
       });
     }
   }

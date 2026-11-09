@@ -2095,15 +2095,6 @@ function noticesFor(rows, changes, ledger) {
       detail: `The supplier's report is what credits it - compare with it.`,
       payload: { refund: r.refund_amount }
     });
-    if (st && /void/i.test(r.status) && ours.some((t) => (t.amount || 0) > 0)) out.push({
-      ...base,
-      kind: "VOID",
-      dedupe_key: `VOID|${r.record_id}`,
-      ticket_ids: ours.map((t) => t.id),
-      title: `Voided on their sheet: ${label}`,
-      detail: `We hold it as a sale. Check the supplier voided it too, and record it in Voids if so.`,
-      payload: { status: r.status }
-    });
     const price = changed("net_cost");
     if (price && r.net_cost != null) out.push({
       ...base,
@@ -2166,6 +2157,40 @@ function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
           airline: ours.find((t) => (t.amount || 0) > 0)?.airlineCode ?? "",
           passenger: ours.find((t) => (t.amount || 0) > 0)?.passengerName ?? ""
         }
+      });
+    }
+  }
+  return out;
+}
+function voidsBilled(rows, index, voided) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  const live = new Set(rows.filter((r) => /^(issued|reissue)$/i.test((r.status || "").trim())).flatMap((r) => r.serials.map(docKey)));
+  for (const r of rows) {
+    if (!/void/i.test(r.status || "")) continue;
+    for (const s of r.serials) {
+      const k = docKey(s);
+      if (!k || seen.has(k) || voided.has(k) || live.has(k)) continue;
+      const ours = index.get(k) ?? [];
+      const sales = ours.filter((t) => (t.amount || 0) > 0);
+      const sold = sales.reduce((n, t) => n + (t.amount || 0), 0);
+      const back = ours.filter((t) => (t.amount || 0) < 0).reduce((n, t) => n - (t.amount || 0), 0);
+      const net = Math.round((sold - back) * 100) / 100;
+      if (!sales.length || net <= 5e-3) continue;
+      seen.add(k);
+      const src = sales[0].source || "the supplier";
+      const cur = sales[0].currency || r.currency || "";
+      const req = r.req_num || sales[0].reqNum || "";
+      out.push({
+        kind: "VOID_BILLED",
+        dedupe_key: `VOID_BILLED|${k}`,
+        record_id: r.record_id,
+        ticket_no: k,
+        ticket_ids: ours.map((t) => t.id),
+        req_num: req,
+        title: `Void on their sheet, billed in ours: ${k} \xB7 ${money3(String(net))} ${cur}${req ? ` \xB7 ${req}` : ""}`,
+        detail: `Their sheet marks it Void; our books hold it as a sale from ${src} with nothing back against it. If ${src} voided it, record it in Voids or wait for the refund; if it was issued, their sheet needs the row put right. Closes by itself once either side says so.`,
+        payload: { net, currency: cur, source: src, pnr: r.pnr, cell: r.ticket_cell, theirReq: r.req_num, status: r.status }
       });
     }
   }
@@ -2813,6 +2838,40 @@ async function syncAirtable(env) {
         if (error) throw new Error(`pending_tickets: ${error.message}`);
       }
       onlineQueued += fresh.length;
+    }
+    {
+      const { data: voidRows, error: vErr } = await db.from("airtable_tickets").select("record_id, serials, pnr, status, req_num, ticket_cell, currency").eq("deleted", false).ilike("status", "%void%");
+      if (vErr) throw new Error(`airtable_tickets: ${vErr.message}`);
+      const keys = [...new Set((voidRows ?? []).flatMap((r) => r.serials ?? []).map(docKey).filter(Boolean))];
+      const { data: liveRows2 } = keys.length ? await db.from("airtable_tickets").select("serials, status").eq("deleted", false).overlaps("serials", keys).in("status", ["Issued", "Reissue"]) : { data: [] };
+      const ledgerRows = [];
+      for (let i = 0; i < keys.length; i += 200) {
+        const { data, error } = await db.from("tickets").select("id, ticket_no, pnr, req_num, source, amount, status, currency").in("ticket_no", keys.slice(i, i + 200)).neq("status", "FUND");
+        if (error) throw new Error(`tickets: ${error.message}`);
+        ledgerRows.push(...data ?? []);
+      }
+      const { data: reg } = keys.length ? await db.from("void_tickets").select("ticket_no").in("ticket_no", keys) : { data: [] };
+      const sheetRows = [...voidRows ?? [], ...liveRows2 ?? []].map((r) => ({ ...r, serials: r.serials ?? [] }));
+      const billedVoids = voidsBilled(sheetRows, ledgerIndex(ledgerRows.map((t) => ({
+        id: t.id,
+        ticketNo: t.ticket_no,
+        pnr: t.pnr,
+        reqNum: t.req_num ?? "",
+        source: t.source,
+        amount: Number(t.amount ?? 0),
+        status: t.status,
+        currency: t.currency
+      }))), new Set((reg ?? []).map((r) => docKey(r.ticket_no))));
+      notices.push(...billedVoids);
+      if (!dry) {
+        const still = new Set(billedVoids.map((n) => n.dedupe_key));
+        const at = (/* @__PURE__ */ new Date()).toISOString();
+        const { data: open } = await db.from("airtable_notifications").select("id, kind, dedupe_key").in("kind", ["VOID_BILLED", "VOID"]).eq("state", "OPEN");
+        const close = (open ?? []).filter((n) => n.kind === "VOID" || !still.has(n.dedupe_key)).map((n) => n.id);
+        if (close.length) await db.from("airtable_notifications").update({ state: "ACCEPTED", decided_by: "Airtable sync", decided_at: at }).in("id", close);
+        const back = billedVoids.map((n) => n.dedupe_key);
+        if (back.length) await db.from("airtable_notifications").update({ state: "OPEN", decided_by: null, decided_at: null }).in("dedupe_key", back).eq("state", "ACCEPTED").eq("decided_by", "Airtable sync");
+      }
     }
     const preview = dry ? { notices, online: notices.filter((n) => n.kind === "ONLINE_TICKET").map((n) => n.title), changes: [...changes].slice(0, 40) } : void 0;
     for (let i = 0; i < notices.length && !dry; i += 500) {

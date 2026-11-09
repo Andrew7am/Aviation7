@@ -17,7 +17,7 @@ import {
   AIRTABLE_API_ON, AIRTABLE_BASE, AIRTABLE_TICKETS_TABLE, AIRTABLE_NAME_TABLES, normalize, diffRecord, rowsToCsv,
   type AirtableRecord, type AirtableTicketRow, type FieldChange, type NameMap,
 } from '../core/integrations/airtable';
-import { noticesFor, missingRefunds, refundProposals, splitRequests, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
+import { noticesFor, missingRefunds, refundProposals, splitRequests, voidsBilled, ledgerIndex, docKey, type LedgerLite, type Notice } from '../core/integrations/airtableNotices';
 import { parseTeamSheet } from '../core/parsers/teamSheet';
 import { compareTeamSheet, reqParts } from '../core/helpers/teamSheetCompare';
 import { planSheetAdd } from '../core/helpers/addFromSheet';
@@ -329,6 +329,43 @@ export async function syncAirtable(env: {
         if (error) throw new Error(`pending_tickets: ${error.message}`);
       }
       onlineQueued += fresh.length;
+    }
+    /* Voided on their sheet, billed in ours. Every run, from their void
+       rows alone (a few dozen) and the tickets they name: a void is settled
+       by a refund or a Voids entry arriving with a supplier's file, which is
+       not a change on their sheet. */
+    {
+      const { data: voidRows, error: vErr } = await db.from('airtable_tickets')
+        .select('record_id, serials, pnr, status, req_num, ticket_cell, currency').eq('deleted', false).ilike('status', '%void%');
+      if (vErr) throw new Error(`airtable_tickets: ${vErr.message}`);
+      const keys = [...new Set((voidRows ?? []).flatMap(r => (r.serials ?? []) as string[]).map(docKey).filter(Boolean))];
+      const { data: liveRows } = keys.length ? await db.from('airtable_tickets').select('serials, status')
+        .eq('deleted', false).overlaps('serials', keys).in('status', ['Issued', 'Reissue']) : { data: [] as any[] };
+      const ledgerRows: Record<string, any>[] = [];
+      for (let i = 0; i < keys.length; i += 200) {
+        const { data, error } = await db.from('tickets').select('id, ticket_no, pnr, req_num, source, amount, status, currency')
+          .in('ticket_no', keys.slice(i, i + 200)).neq('status', 'FUND');
+        if (error) throw new Error(`tickets: ${error.message}`);
+        ledgerRows.push(...(data ?? []));
+      }
+      const { data: reg } = keys.length ? await db.from('void_tickets').select('ticket_no').in('ticket_no', keys) : { data: [] as any[] };
+      const sheetRows = [...(voidRows ?? []), ...(liveRows ?? [])].map(r => ({ ...r, serials: r.serials ?? [] })) as unknown as AirtableTicketRow[];
+      const billedVoids = voidsBilled(sheetRows, ledgerIndex(ledgerRows.map(t => ({ id: t.id, ticketNo: t.ticket_no, pnr: t.pnr, reqNum: t.req_num ?? '',
+        source: t.source, amount: Number(t.amount ?? 0), status: t.status, currency: t.currency }))), new Set((reg ?? []).map(r => docKey(r.ticket_no))));
+      notices.push(...billedVoids);
+      if (!dry) {
+        const still = new Set(billedVoids.map(n => n.dedupe_key));
+        const at = new Date().toISOString();
+        const { data: open } = await db.from('airtable_notifications').select('id, kind, dedupe_key').in('kind', ['VOID_BILLED', 'VOID']).eq('state', 'OPEN');
+        // Settled, or no longer void on their sheet - and the old change-driven
+        // VOID notices, which this list now carries in their place.
+        const close = (open ?? []).filter(n => n.kind === 'VOID' || !still.has(n.dedupe_key)).map(n => n.id);
+        if (close.length) await db.from('airtable_notifications').update({ state: 'ACCEPTED', decided_by: 'Airtable sync', decided_at: at }).in('id', close);
+        // One the sync closed comes back if the ticket is void-and-billed again; one a person closed stays closed.
+        const back = billedVoids.map(n => n.dedupe_key);
+        if (back.length) await db.from('airtable_notifications').update({ state: 'OPEN', decided_by: null, decided_at: null })
+          .in('dedupe_key', back).eq('state', 'ACCEPTED').eq('decided_by', 'Airtable sync');
+      }
     }
     const preview = dry ? { notices, online: notices.filter(n => n.kind === 'ONLINE_TICKET').map(n => n.title), changes: [...changes].slice(0, 40) } : undefined;
     for (let i = 0; i < notices.length && !dry; i += 500) {

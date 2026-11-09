@@ -4,7 +4,7 @@
  *   npx tsx scripts/test-airtable.ts
  */
 import { sheetTime, toSheetRow, normalize, diffRecord, rowsToCsv, type AirtableTicketRow } from '../src/core/integrations/airtable';
-import { noticesFor, missingRefunds, refundProposals, splitRequests, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
+import { noticesFor, missingRefunds, refundProposals, splitRequests, voidsBilled, ledgerIndex, onePassenger, usableName, usableCabin } from '../src/core/integrations/airtableNotices';
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
 import { teamFixes } from '../src/core/integrations/airtableFixes';
 import { requestsFor } from '../src/core/integrations/airtableRequests';
@@ -70,8 +70,10 @@ console.log('\n4. What a change means for our books');
   const ref = noticesFor([{ ...row, status: 'Cancelled/Refunded', refund_amount: 1560 }],
     new Map([['recB', diffRecord(row, { ...row, status: 'Cancelled/Refunded', refund_amount: 1560 })]]), ledgerIndex(ours));
   check('a refund on theirs', ref.some(x => x.kind === 'REFUND'), true);
+  // A void is no longer a change notice: voidsBilled reads the sheet as it stands (section 11).
   const vd = noticesFor([{ ...row, status: 'Void' }], new Map([['recB', diffRecord(row, { ...row, status: 'Void' })]]), ledgerIndex(ours));
-  check('a void on a ticket we hold as a sale', vd.some(x => x.kind === 'VOID'), true);
+  check('a void is not a change notice any more', vd.some(x => x.kind === 'VOID'), false);
+  check('  ...it is said by the standing check', voidsBilled([{ ...row, status: 'Void' }] as any, ledgerIndex(ours), new Set()).length > 0, true);
   check('a ticket we do not hold raises nothing here', noticesFor([row], changes, ledgerIndex([])), []);
   // 5513427841: its refund row moved to KSAML482, its sale stayed on
   // KSAML2325. "Move ours" moves our refund only - not the sale with it.
@@ -246,6 +248,21 @@ console.log('\n7. A refund added as a row of its own still reaches the bell');
   check('not for a refund row added before 1 October', missingRefunds(old as any, ledgerIndex([sale])).length, 0);
   check('1 October counts from midnight Riyadh time',
         missingRefunds([r({ status: 'Cancelled/Refunded', created_at: '2026-09-30T21:30:00Z' })] as any, ledgerIndex([sale])).length, 1);
+}
+
+console.log('\n11. Void on their sheet, billed in ours');
+{
+  // 4862765248: voided on their sheet on 4 Nov, billed 1,876.00 by Ibtekar.
+  const row = (o: any) => ({ record_id: 'v', serials: ['4862765248'], pnr: '8LI5MN', status: 'Void', req_num: 'KSAML2533', ticket_cell: '065-4862765248', currency: 'SAR', ...o });
+  const sale = { id: 's', ticketNo: '4862765248', source: 'Ibtekar', amount: 1876, status: 'ISSUE', currency: 'SAR', reqNum: 'KSAML2533' };
+  const run = (rows: any[], ledger: any[], reg: string[] = []) => voidsBilled(rows, ledgerIndex(ledger), new Set(reg)).map(n => [n.kind, n.ticket_no]);
+  check('a void we hold at a price is said', run([row({})], [sale]), [['VOID_BILLED', '4862765248']]);
+  check('  ...not once it is in our Voids register', run([row({})], [sale], ['4862765248']), []);
+  check('  ...not once the refund takes it back to nothing', run([row({})], [sale, { ...sale, id: 'r', amount: -1876, status: 'REFUND' }]), []);
+  check('  ...but a part refund leaves it said', run([row({})], [sale, { ...sale, id: 'r', amount: -100, status: 'REFUND' }]), [['VOID_BILLED', '4862765248']]);
+  check('  ...not when their sheet also lists it issued (reissued under the same number)', run([row({}), row({ record_id: 'w', status: 'Issued' })], [sale]), []);
+  check('a void we never held is nothing to say here', run([row({})], []), []);
+  check('a flydubai booking by its reference too', run([row({ serials: ['EKER1I'] })], [{ ...sale, ticketNo: 'EKER1I', source: 'FlyDubai' }]), [['VOID_BILLED', 'EKER1I']]);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
