@@ -71,6 +71,16 @@ export function num(raw: string): number {
   const s = raw.trim();
   // A wrapped figure, "(500.00)" or "SAR (500.00)", and a trailing "500.00-".
   const negated = /\(\s*[\d.,]+\s*\)/.test(s) || /[\d.,]\s*-\s*$/.test(s);
+  /* A decimal comma: "1721,55", "1.721,55". The booking system's Agent Sales
+     Report for Ibtekar prints money so (4862874859 at 1721,55 read as
+     172,155.00). A comma before one or two digits at the end is never a
+     thousands mark - those take three - so it is the decimal point. */
+  const bare = s.replace(/[^0-9.,-]/g, '');
+  if (/^-?[\d.]*\d,\d{1,2}-?$/.test(bare)) {
+    const n = parseFloat(bare.replace(/\./g, '').replace(',', '.'));
+    if (isNaN(n)) return 0;
+    return negated ? -Math.abs(n) : n;
+  }
   const n = parseFloat(s.replace(/[^0-9.-]/g, '').trim());
   if (isNaN(n)) return 0;
   return negated ? -Math.abs(n) : n;

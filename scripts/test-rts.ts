@@ -142,6 +142,17 @@ console.log('\n9. A ticket is dated the day it was issued, not the day its booki
   eq('no issue date: the booking date, as before', parse([noIssue]).rows[0].date, '2026-08-12');
 }
 
+console.log('\n9b. The same report printed for Ibtekar: the office decides');
+{
+  // 4862874859, 10 Nov 2026: "RTS_Agent_Sales_Report", issued from Riyadh, billed by Ibtekar on INV264982.
+  const riyadh = ROW.replace('DXBAD32AQ,DXBDN38DA', 'RUHS2242O,RUHS2234T');
+  const r = parse([riyadh]);
+  eq('a Riyadh office is Ibtekar', r.rows[0].source, 'Ibtekar');
+  eq('...and the preview says so', r.warnings.some(w => /Riyadh \(RUHS2234T\): 1 ticket\(s\) filed under Ibtekar/.test(w)), true);
+  eq('a Dubai office stays RTS', parse([ROW]).rows[0].source, undefined);
+  eq('no issuing office: the booking office decides', parse([ROW.replace('DXBAD32AQ,DXBDN38DA', 'RUHS2242O,')]).rows[0].source, 'Ibtekar');
+}
+
 console.log('\n10. The General Ticket Report - one row per ticket, its state in DisplayStatus');
 {
   const file = readFileSync(resolve('scripts/fixtures/rts-general-ticket-report.csv'), 'utf8');

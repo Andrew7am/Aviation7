@@ -5,6 +5,33 @@ import { parseDate } from '../helpers/parseDate';
 import { SupportedCurrency, resolveCurrency } from '../helpers/resolveCurrency';
 import { extractRoute } from '../helpers/extractRoute';
 import { normalizeStatus } from '../helpers/normalizeStatus';
+import { vendorForOffice } from './IbtekarV2Parser';
+
+/**
+ * Whose ticket a row is, by the office that issued it. The booking system
+ * prints this same Agent Sales Report for RTS in Dubai and for Ibtekar in
+ * Riyadh, column for column, and names the file "RTS_Agent_Sales_Report"
+ * either way. 4862874859 (10 Nov 2026) came in one, issued from RUHS2234T,
+ * and was filed under RTS - Ibtekar bills it, on INV264982. A Riyadh office
+ * files the row under Ibtekar; Dubai, or no office, stays RTS.
+ */
+function officeOf(headers: string[]) {
+  const tk = col(headers, 'OfficeId Tk', 'OfficeID Tk', 'Office ID Tk');
+  const bk = col(headers, 'OfficeId Bk', 'OfficeID Bk', 'Office ID Bk');
+  const riyadh = new Set<string>();
+  return {
+    sourceOf(row: string[]): { source?: string } {
+      const office = ((tk !== -1 ? cell(row, tk) : '') || (bk !== -1 ? cell(row, bk) : '')).trim().toUpperCase();
+      if (vendorForOffice(office) !== 'Ibtekar') return {};
+      riyadh.add(office);
+      return { source: 'Ibtekar' };
+    },
+    say(warnings: string[], rows: { source?: string }[]) {
+      if (riyadh.size)
+        warnings.push(`Issued from Riyadh (${[...riyadh].join(', ')}): ${rows.filter(r => r.source === 'Ibtekar').length} ticket(s) filed under Ibtekar, not RTS.`);
+    },
+  };
+}
 
 export const RTSParser: VendorParser = {
   id: 'RTS', name: 'RTS',
@@ -49,6 +76,7 @@ export const RTSParser: VendorParser = {
     // a file that does not say. That is what the warning below is for, and a
     // guessed column is not an answer to it.
     const iReq = findExplicitReqColumn(headers);
+    const office = officeOf(headers);
     // No broad guess: a blank request is filled from the team's Airtable by ticket number.
     rows.forEach((row,idx) => {
       const rawTk = cell(row,iNo);
@@ -92,8 +120,10 @@ export const RTSParser: VendorParser = {
         // only the fallback for a file that states nothing.
         currency: resolveCurrency(row, headers, defaultCurrency),
         ...(freeReissue ? { freeReissue: true } : {}),
+        ...office.sourceOf(row),
       });
     });
+    office.say(warnings, result);
     return {rows:result,errors,warnings};
   },
 };
@@ -126,6 +156,7 @@ function parseGeneral(rows: string[][], headers: string[], defaultCurrency: Supp
   const iRefund = exact('refund'), iComm = exact('commission');
   const iReq = findExplicitReqColumn(headers);
   const at = (row: string[], i: number) => (i >= 0 ? cell(row, i) : '');
+  const office = officeOf(headers);
 
   rows.forEach(row => {
     const rawTk = at(row, iTk);
@@ -154,6 +185,7 @@ function parseGeneral(rows: string[][], headers: string[], defaultCurrency: Supp
       reqNum: req,
       vendorReference: at(row, iReq),
       currency: resolveCurrency(row, headers, defaultCurrency),
+      ...office.sourceOf(row),
     };
 
     if (status === 'VOID') {
@@ -170,5 +202,6 @@ function parseGeneral(rows: string[][], headers: string[], defaultCurrency: Supp
       else warnings.push(`Ticket ${tkClean}: RTS says refunded, with no refund amount - the refund was not recorded`);
     }
   });
+  office.say(warnings, result);
   return { rows: result, errors, warnings };
 }
