@@ -9,7 +9,11 @@ export const AirArabiaParser: VendorParser = {
   id: 'AIRARABIA', name: 'AirArabia',
   detect: (headers) => {
     const hj = headers.map(c=>(c||'').toLowerCase().replace(/[^a-z0-9.]/g,'')).join('|');
-    return hj.includes('referencecode')&&hj.includes('debitamount')&&hj.includes('ticketnumber');
+    /* Two prints of the same Agent Transaction report. The fuller one has a
+       Ticket Number column; the "Detail Report" (UC_REPM_025, Nov 2026) has
+       only the booking in Remarks - 66SL3L, 2,460.28 - and was not
+       recognised at all. The booking is the document either way. */
+    return hj.includes('referencecode')&&hj.includes('debitamount')&&(hj.includes('ticketnumber')||hj.includes('remarks'));
   },
   parse: (rows, headers, defaultCurrency): ParserResult => {
     const errors: string[] = [], warnings: string[] = [], result = [];

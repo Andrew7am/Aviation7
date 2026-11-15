@@ -201,6 +201,12 @@ console.log('\n7c. flydubai by its PNR, the same way');
     requestsFor([{ id: 'r', ticketNo: 'Y4TG8S', pnr: 'Y4TG8S', source: 'FlyDubai', status: 'REFUND' }], [fz]), []);
   check('a flyadeal row never answers for a flydubai booking',
     requestsFor([{ id: 'a', ticketNo: 'Y4TG8S', pnr: 'Y4TG8S', source: 'FlyDubai' }], [{ ...fz, portal: 'F3', airline: 'Flyadeal' }]), []);
+  // 66SL3L, 14 Nov 2026: Air Arabia's report names the booking; their cell reads 060629220322.
+  const g9 = { serials: [], emd: '', pnr: '66SL3L', req_num: 'UAECO878', status: 'Issued', portal: 'Air Arabia Portal', airline: 'Air Arabia' };
+  check('an Air Arabia booking takes their request by the PNR',
+    requestsFor([{ id: 'g', ticketNo: '66SL3L', pnr: '66SL3L', source: 'AirArabia' }], [g9]).map(f => [f.req, f.how]), [['UAECO878', 'Air Arabia PNR']]);
+  check('...and never answers for a flydubai booking of the same letters',
+    requestsFor([{ id: 'g', ticketNo: '66SL3L', pnr: '66SL3L', source: 'FlyDubai' }], [g9]), []);
 }
 
 console.log('\n8. Names, cabins and routes we lack are filled, by number, without asking');

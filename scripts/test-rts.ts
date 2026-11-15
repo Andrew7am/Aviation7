@@ -183,5 +183,17 @@ console.log('\n10. The General Ticket Report - one row per ticket, its state in 
   eq('a voided ticket: a void, at nothing', r.rows.filter(x => x.ticketNo === '5513574476').map(x => [x.status, x.amount]), [['VOID', 0]]);
 }
 
+console.log('\n11. Air Arabia\'s Agent Transaction "Detail Report": the booking in Remarks, no ticket column');
+{
+  // 66SL3L, 14 Nov 2026 - not recognised at all until the parser read this print too.
+  const file = [',,AGENT TRANSACTION,,,,', ',,Detail Report,,,,', ',,,,Report ID :,UC_REPM_025,', ',,,,Print Date :,15/11/2026,',
+    ',,,,Print Time :,07.34.36,Zulu', 'Reference Code,Transaction date,Debit Amount,Credit Amount,Remarks,User ID,Carrier',
+    '8.9129145E7,14-Nov-26,"2,460.28",0.00,66SL3L,ABYNOURDOU, ', 'Air Arabia Reservation System,,,,,,Page 1', '*** End of Report ***,,,,,,'].join('\n');
+  const r = runParser(parseGrid(file).rows, undefined, 'AED', 'AgentTransactionsReport (4).csv');
+  eq('read as Air Arabia', smartDetect(parseGrid(file).rows).parser?.id, 'AIRARABIA');
+  eq('the booking, its money and its day', r.rows.map(x => [x.ticketNo, x.pnr, x.amount, x.currency, x.date, x.status]),
+    [['66SL3L', '66SL3L', 2460.28, 'AED', '2026-11-14', 'ISSUE']]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

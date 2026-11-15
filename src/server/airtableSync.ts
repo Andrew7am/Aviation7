@@ -509,11 +509,11 @@ export async function syncAirtable(env: {
         const credited = new Set((arrived ?? []).filter(t => Number(t.amount) < 0).map(t => docKey(t.ticket_no)));
         const arrivedFor = (w: { ticket_no: string; amount: number | string | null }) =>
           Number(w.amount) < 0 ? credited.has(docKey(w.ticket_no)) : sold.has(docKey(w.ticket_no));
-        // flyadeal and flydubai arrive under the PNR - their reports have no ticket number.
+        // flyadeal, flydubai and Air Arabia arrive under the PNR - their reports have no ticket number.
         const f3 = waiting.filter(w => pnrVendorOfRow({ portal: w.their_portal }) && w.pnr);
         const f3Pnrs = [...new Set(f3.flatMap(w => String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean)))];
         const { data: f3Held } = f3Pnrs.length
-          ? await db.from('tickets').select('pnr').or('source.ilike.%flyadeal%,source.ilike.%flydubai%').in('pnr', f3Pnrs)
+          ? await db.from('tickets').select('pnr').or('source.ilike.%flyadeal%,source.ilike.%flydubai%,source.ilike.%arabia%').in('pnr', f3Pnrs)
           : { data: [] as { pnr: string }[] };
         const heldPnr = new Set((f3Held ?? []).map(t => String(t.pnr).toUpperCase()));
         const done = waiting.filter(w => arrivedFor(w)

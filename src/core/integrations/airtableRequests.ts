@@ -30,7 +30,7 @@ export interface ReqSource { serials: string[]; emd: string; pnr: string; req_nu
 /** `source` matters for two vendors: flyadeal's and flydubai's reports carry
  *  no ticket number, so we hold their tickets under the PNR and match them by it. */
 export interface MissingReq { id: string; ticketNo: string; pnr: string; source?: string; status?: string; date?: string }
-export interface ReqFill { id: string; ticketNo: string; req: string; how: 'ticket number' | 'flyadeal PNR' | 'flydubai PNR' }
+export interface ReqFill { id: string; ticketNo: string; req: string; how: 'ticket number' | 'flyadeal PNR' | 'flydubai PNR' | 'Air Arabia PNR' }
 
 /** A flyadeal row of theirs, and a flyadeal ticket of ours. */
 export const isFlyadealRow = (r: { portal?: string; airline?: string }) =>
@@ -42,8 +42,12 @@ export const isFlydubaiRow = (r: { portal?: string; airline?: string }) =>
 export const isFlydubaiTicket = (source?: string) => /fly\s*dubai/i.test(source || '');
 /** Which PNR-matched vendor a row or ticket is, as a key prefix - so a
  *  flyadeal PNR never answers for a flydubai ticket. */
-export const pnrVendorOfRow = (r: { portal?: string; airline?: string }) => (isFlyadealRow(r) ? 'F3' : isFlydubaiRow(r) ? 'FZ' : '');
-export const pnrVendorOfTicket = (source?: string) => (isFlyadealTicket(source) ? 'F3' : isFlydubaiTicket(source) ? 'FZ' : '');
+/** Air Arabia the same: its report names the booking, never a ticket (66SL3L, 14 Nov 2026). */
+export const isAirArabiaRow = (r: { portal?: string; airline?: string }) =>
+  /air\s*arabia/i.test(r.airline || '') || /air\s*arabia|^\s*g9\b/i.test(r.portal || '');
+export const isAirArabiaTicket = (source?: string) => /air\s*arabia/i.test(source || '');
+export const pnrVendorOfRow = (r: { portal?: string; airline?: string }) => (isFlyadealRow(r) ? 'F3' : isFlydubaiRow(r) ? 'FZ' : isAirArabiaRow(r) ? 'G9' : '');
+export const pnrVendorOfTicket = (source?: string) => (isFlyadealTicket(source) ? 'F3' : isFlydubaiTicket(source) ? 'FZ' : isAirArabiaTicket(source) ? 'G9' : '');
 const pnrParts = (p: string) => (p || '').toUpperCase().split(/[|,/\s]+/).filter(Boolean);
 
 const one = (req: string) => {
@@ -119,7 +123,7 @@ function requestsAmong(missing: MissingReq[], rows: ReqSource[]): ReqFill[] {
     const v = pnrVendorOfTicket(t.source);
     if (!v) continue;
     const f = single(pnrParts(t.pnr || t.ticketNo).flatMap(p => rowsFor(byPnr.get(`${v}:${p}`), refund)));
-    if (f) out.push({ id: t.id, ticketNo: t.ticketNo, req: f, how: v === 'F3' ? 'flyadeal PNR' : 'flydubai PNR' });
+    if (f) out.push({ id: t.id, ticketNo: t.ticketNo, req: f, how: v === 'F3' ? 'flyadeal PNR' : v === 'G9' ? 'Air Arabia PNR' : 'flydubai PNR' });
   }
   return out;
 }

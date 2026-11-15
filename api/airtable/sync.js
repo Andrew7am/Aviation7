@@ -2397,8 +2397,10 @@ var isFlyadealRow = (r) => /flyadeal/i.test(r.airline || "") || /^\s*f3\b/i.test
 var isFlyadealTicket = (source) => /flyadeal/i.test(source || "");
 var isFlydubaiRow = (r) => /fly\s*dubai/i.test(r.airline || "") || /fly\s*dubai|^\s*fz\b/i.test(r.portal || "");
 var isFlydubaiTicket = (source) => /fly\s*dubai/i.test(source || "");
-var pnrVendorOfRow = (r) => isFlyadealRow(r) ? "F3" : isFlydubaiRow(r) ? "FZ" : "";
-var pnrVendorOfTicket = (source) => isFlyadealTicket(source) ? "F3" : isFlydubaiTicket(source) ? "FZ" : "";
+var isAirArabiaRow = (r) => /air\s*arabia/i.test(r.airline || "") || /air\s*arabia|^\s*g9\b/i.test(r.portal || "");
+var isAirArabiaTicket = (source) => /air\s*arabia/i.test(source || "");
+var pnrVendorOfRow = (r) => isFlyadealRow(r) ? "F3" : isFlydubaiRow(r) ? "FZ" : isAirArabiaRow(r) ? "G9" : "";
+var pnrVendorOfTicket = (source) => isFlyadealTicket(source) ? "F3" : isFlydubaiTicket(source) ? "FZ" : isAirArabiaTicket(source) ? "G9" : "";
 var pnrParts2 = (p) => (p || "").toUpperCase().split(/[|,/\s]+/).filter(Boolean);
 var one2 = (req) => {
   const parts = (req || "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
@@ -2455,7 +2457,7 @@ function requestsAmong(missing, rows) {
     const v = pnrVendorOfTicket(t.source);
     if (!v) continue;
     const f = single(pnrParts2(t.pnr || t.ticketNo).flatMap((p) => rowsFor(byPnr.get(`${v}:${p}`), refund)));
-    if (f) out.push({ id: t.id, ticketNo: t.ticketNo, req: f, how: v === "F3" ? "flyadeal PNR" : "flydubai PNR" });
+    if (f) out.push({ id: t.id, ticketNo: t.ticketNo, req: f, how: v === "F3" ? "flyadeal PNR" : v === "G9" ? "Air Arabia PNR" : "flydubai PNR" });
   }
   return out;
 }
@@ -3017,7 +3019,7 @@ async function syncAirtable(env) {
         const arrivedFor = (w) => Number(w.amount) < 0 ? credited.has(docKey(w.ticket_no)) : sold.has(docKey(w.ticket_no));
         const f3 = waiting.filter((w) => pnrVendorOfRow({ portal: w.their_portal }) && w.pnr);
         const f3Pnrs = [...new Set(f3.flatMap((w) => String(w.pnr).toUpperCase().split(/[|,/\s]+/).filter(Boolean)))];
-        const { data: f3Held } = f3Pnrs.length ? await db.from("tickets").select("pnr").or("source.ilike.%flyadeal%,source.ilike.%flydubai%").in("pnr", f3Pnrs) : { data: [] };
+        const { data: f3Held } = f3Pnrs.length ? await db.from("tickets").select("pnr").or("source.ilike.%flyadeal%,source.ilike.%flydubai%,source.ilike.%arabia%").in("pnr", f3Pnrs) : { data: [] };
         const heldPnr = new Set((f3Held ?? []).map((t) => String(t.pnr).toUpperCase()));
         const done = waiting.filter((w) => arrivedFor(w) || f3.includes(w) && String(w.pnr).toUpperCase().split(/[|,/\s]+/).some((p) => heldPnr.has(p)));
         const close = async (list, state, note, noticeState) => {
