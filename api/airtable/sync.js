@@ -841,6 +841,7 @@ var pnrKey = (s) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 var countsAgree = (d) => !d.missingOnTheirs.length && !d.missingInOurs.length && (d.noted ?? []).every((n) => n.includes(" - explained: ")) && (d.ours === d.theirs || (d.noted ?? []).length > 0);
 var REFUND_FLOOR = 50;
 var PRICE_FLOOR = 15;
+var LCC_BY_PNR_FROM = "2026-11-01";
 var quotedAbove = (r, gap) => gap > 0 && (r.issued || "") >= PROFIT_FROM;
 function reqDiffHint(ours, theirs) {
   const a = (ours || "").toUpperCase().replace(/\s+/g, "");
@@ -1330,6 +1331,10 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
   }
   const claimedByPnr = /* @__PURE__ */ new Set();
   const isOnline = (r) => portalSource(r.portal || "").source === "Airline Website";
+  const lccByPnr = (r) => {
+    const m = portalSource(r.portal || "");
+    return ["AirArabia", "FlyDubai", "Flynas"].includes(m.source) || m.choices.some((c) => /flyadeal/i.test(c));
+  };
   const onlineByPnr = /* @__PURE__ */ new Map();
   for (const r of noTicket)
     if (r.pnr && isOnline(r) && (r.cost ?? 0) > 0 && r.status === "ISSUED") {
@@ -1387,6 +1392,25 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         note: `Bought on the airline's website for ${money2(r.cost ?? 0)} ${r.currency} - their sheet gives PNR ${r.pnr} and no ticket number - and not in our books. Adding it records it under ${place.label}` + (r.currency === "USD" ? ", in dirhams at 3.67." : ".")
       });
       continue;
+    }
+    if (r.pnr && lccByPnr(r) && (r.cost ?? 0) > 0 && r.status === "ISSUED" && (r.issued || "") >= LCC_BY_PNR_FROM) {
+      const want = new Set(pnrParts(r.pnr));
+      const oursOnPnr = ledger.some((t) => isTicket(t) && (pnrParts(t.pnr).some((x) => want.has(x)) || want.has((t.ticketNo || "").replace(/\s+/g, "").toUpperCase())));
+      if (!oursOnPnr) {
+        findings.push({
+          ...UNSOURCED,
+          verdict: "NOT_IN_LEDGER",
+          serial: r.pnr,
+          airlineCode: "",
+          pnr: r.pnr,
+          sheet: r,
+          ours: [],
+          reqNum: "",
+          theirReq: r.reqNum,
+          note: `${portalSource(r.portal || "").source || r.portal} booking ${r.pnr} for ${money2(r.cost ?? 0)} ${r.currency} - their ticket column ${r.unreadable ? "has no usable number" : "is blank"}, and we hold nothing on that PNR. Not in our books until the carrier's report brings it.`
+        });
+        continue;
+      }
     }
     let identified = [];
     if (r.pnr) {

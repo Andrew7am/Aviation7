@@ -781,6 +781,8 @@ export const REFUND_FLOOR = 50;
  *  tickets, the ten riyals on Ibtekar's, NSA's 2.25. What is left above it
  *  is a different price. */
 export const PRICE_FLOOR = 15;
+/** A low-cost carrier's booking with no usable ticket number is matched on its PNR from this day. */
+export const LCC_BY_PNR_FROM = '2026-11-01';
 /* From 9 Nov 2026 their Net Cost is the cost they quote operations, not the
    supplier's: a figure above ours is the aviation team's margin (Aviation
    Profit), not a difference. One below ours is still said - operations were
@@ -1644,6 +1646,10 @@ export function compareTeamSheet(
      we hold nothing for are missing from our books and can be added, under
      the PNR. */
   const isOnline = (r: TeamSheetRow) => portalSource(r.portal || '').source === 'Airline Website';
+  const lccByPnr = (r: TeamSheetRow) => {
+    const m = portalSource(r.portal || '');
+    return ['AirArabia', 'FlyDubai', 'Flynas'].includes(m.source) || m.choices.some(c => /flyadeal/i.test(c));
+  };
   const onlineByPnr = new Map<string, TeamSheetRow[]>();
   for (const r of noTicket)
     if (r.pnr && isOnline(r) && (r.cost ?? 0) > 0 && r.status === 'ISSUED') {
@@ -1697,6 +1703,32 @@ export function compareTeamSheet(
             + (r.currency === 'USD' ? ', in dirhams at 3.67.' : '.'),
       });
       continue;
+    }
+
+    /* A low-cost carrier's booking: Air Arabia, flydubai, flynas and
+       flyadeal issue no IATA ticket, and our books hold the booking under
+       its PNR. A cell their reader cannot use - "060629220322" for 66SL3L,
+       Air Arabia, 2,460.28 AED (14 Nov 2026) - left the row "unreadable",
+       for the team to fix, and the bell never said the money was in nobody's
+       books. With nothing of ours on the PNR, it is missing from our books. */
+    /* From 1 Nov 2026 only: eighteen May-June rows (KSAML1965's flyadeal
+       bookings, "F3" in the ticket column) read the same way and were put to
+       accounting by hand, not to the bell. */
+    if (r.pnr && lccByPnr(r) && (r.cost ?? 0) > 0 && r.status === 'ISSUED' && (r.issued || '') >= LCC_BY_PNR_FROM) {
+      const want = new Set(pnrParts(r.pnr));
+      const oursOnPnr = ledger.some(t => isTicket(t)
+        && (pnrParts(t.pnr).some(x => want.has(x)) || want.has((t.ticketNo || '').replace(/\s+/g, '').toUpperCase())));
+      if (!oursOnPnr) {
+        findings.push({
+          ...UNSOURCED, verdict: 'NOT_IN_LEDGER',
+          serial: r.pnr, airlineCode: '', pnr: r.pnr, sheet: r, ours: [],
+          reqNum: '', theirReq: r.reqNum,
+          note: `${portalSource(r.portal || '').source || r.portal} booking ${r.pnr} for ${money(r.cost ?? 0)} ${r.currency}`
+              + ` - their ticket column ${r.unreadable ? 'has no usable number' : 'is blank'}, and we hold nothing on that PNR.`
+              + ` Not in our books until the carrier's report brings it.`,
+        });
+        continue;
+      }
     }
 
     let identified: Ticket[] = [];

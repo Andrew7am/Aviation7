@@ -359,5 +359,18 @@ scenario('40. A refund their sheet writes under another ticket of the booking', 
 scenario('40b. Another amount on the same booking is not the same refund', otherSheet, otherOurs(500),
 { REFUND_NOT_IN_LEDGER: 1, REFUND_OTHER_NUMBER: 0 });
 
+/* 66SL3L, 14 Nov 2026: Air Arabia, "060629220322" in the ticket column, and
+   nothing in our books - read as "unreadable", so the bell never said so. */
+const N = '14/11/2026 1:00pm';
+scenario('41. A low-cost carrier booking with an unusable number, not held', [
+  `060629220322,66SL3L,Issued,REQ100,2460.28,,,${N},,Air Arabia Portal`,
+], [], { NOT_IN_LEDGER: 1, UNREADABLE: 0 }, (_rep, props) => check('proposed at its price, under the PNR', props.map(p => [p.ticketNo || p.pnr, p.amount]), [['66SL3L', 2460.28]]));
+scenario('42. ...and held under the PNR: nothing missing', [
+  `060629220322,66SL3L,Issued,REQ100,2460.28,,,${N},,Air Arabia Portal`,
+], [tkt({ ticketNo: '66SL3L', pnr: '66SL3L', source: 'AirArabia', amount: 2460.28, date: '2026-11-14' })], { NOT_IN_LEDGER: 0 });
+scenario('43. A flyadeal booking with "F3" for a number, before 1 Nov: left to the team, as before', [
+  `F3,BYQ25A,Issued,REQ100,1337,,,21/05/2026 1:00pm,,F3`,
+], [], { NOT_IN_LEDGER: 0, UNREADABLE: 1 });
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
