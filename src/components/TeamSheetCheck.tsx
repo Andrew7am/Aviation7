@@ -1612,7 +1612,6 @@ export const TeamSheetCheck: React.FC<Props> = ({
                       <th className="px-3 py-1.5 text-right">Misfiled</th>
                       <th className="px-3 py-1.5 text-right">Price differs</th>
                       <th className="px-3 py-1.5 text-right" title="Refunds one side holds and the other does not show">Refund missing</th>
-                      <th className="px-3 py-1.5 text-right" title="Our rows recorded from their sheet or by hand that no supplier report has carried yet">Not confirmed</th>
                       <th className="px-3 py-1.5"></th>
                     </tr>
                   </thead>
@@ -1660,10 +1659,6 @@ export const TeamSheetCheck: React.FC<Props> = ({
                         <td className={`px-3 py-1.5 text-right font-bold
                           ${r.refundGaps ? 'text-red-600' : 'text-slate-300'}`}>
                           {r.refundGaps || '—'}
-                        </td>
-                        <td className={`px-3 py-1.5 text-right font-bold
-                          ${r.unconfirmed ? 'text-violet-600' : 'text-slate-300'}`}>
-                          {r.unconfirmed || '—'}
                         </td>
                         <td className="px-3 py-1.5 text-right">
                           {r.agrees

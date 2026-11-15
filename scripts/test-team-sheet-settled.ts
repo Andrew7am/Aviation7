@@ -223,12 +223,13 @@ console.log('\n8. The price');
     currency: 'AED', originalCurrency: 'USD', originalAmount: 1323.4, fxRate: 3.67, source: 'Airline Website', reqNum: 'UAEVP711' })];
   check('1,323.40 USD against 4,856.88 AED bought as 1,323.40 USD agrees',
         compareTeamSheet(usd, conv).findings[0]?.verdict, 'OK');
-  // Riyals against dirhams: never compared.
+  // Riyals against dirhams: compared at the fixed rate since 15 Nov 2026 -
+  // 1,800.00 SAR is 1,762.80 AED, and we hold 1,080.00.
   const sar = sheet(['065-5513427771,ZZWSI5,Issued,1800.00,,21/9/2026 12:39pm,IATA Portal (UAE),UAEVP711'])
     .map(r => ({ ...r, currency: 'SAR' }));
-  check('a riyal price against a dirham one is not compared',
+  check('a riyal price against a dirham one is compared at the fixed rate',
         compareTeamSheet(sar, [tkt({ ticketNo: '5513427771', pnr: 'ZZWSI5', date: '2026-09-21', amount: 1080, reqNum: 'UAEVP711' })])
-          .findings[0]?.verdict, 'OK');
+          .findings[0]?.verdict, 'PRICE_DIFFERS');
 }
 
 console.log('\n9. A refund filed under its refund application\'s number');

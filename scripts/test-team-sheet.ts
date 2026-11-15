@@ -256,8 +256,8 @@ console.log('\n4b. A ticket typed in by hand is not confirmed until its supplier
     tkt({ ticketNo: 'DNRPGQ', pnr: 'DNRPGQ', source: 'FlyDubai', amount: 2850, reportName: 'Manual entry' }),
   ];
   const r = compareTeamSheet(sheet, ledger);
-  check('it is named, so the sheet is not called closed over it',
-        r.unconfirmedOurs.map(t => t.ticketNo), ['DNRPGQ']);
+  // The user, 15 Nov 2026: what they record by hand is confirmed.
+  check('it does not hold the sheet open', r.unconfirmedOurs.map(t => t.ticketNo), []);
   const vouched = compareTeamSheet(sheet, ledger.map(t => t.ticketNo === 'DNRPGQ' ? { ...t, confirmedBy: 'FlyDubai report' } : t));
   check('once a report carries it, it is not', vouched.unconfirmedOurs.length, 0);
 }
@@ -353,7 +353,14 @@ console.log('\n11. Things the comparison must NOT do');
   // bury the ones anybody can act on.
   const marked = compareTeamSheet(
     parseTeamSheet(CSV.replace('1430.00,,1430 AED', '9999.00,,9999 SAR')).rows, ledger);
-  check('a different cost is not a finding', marked.counts.OK, 2);
+  // Until 15 Nov 2026 a price in another currency was never compared. The
+  // user: a team price over the fare is to be looked at, one under what we
+  // paid is a loss - so it is compared at the fixed rate.
+  check('a price in another currency is compared at the fixed rate', marked.counts.PRICE_DIFFERS, 1);
+  check('...and says both figures',
+    /9,999.00 SAR \(9,792.\d\d AED at the fixed rate\)/.test(marked.findings.find(f => f.verdict === 'PRICE_DIFFERS')!.note), true);
+  const same = compareTeamSheet(parseTeamSheet(CSV.replace('1430.00,,1430 AED', '1430.00,,1430 SAR')).rows, ledger);
+  check('the same number in two currencies is said', /currency wrong/.test(same.findings.find(f => f.verdict === 'PRICE_DIFFERS')?.note ?? ''), true);
 }
 
 console.log('\n12. A sheet where everything agrees says so');

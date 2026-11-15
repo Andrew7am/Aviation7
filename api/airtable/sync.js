@@ -658,15 +658,8 @@ function chainOf(ticket, index) {
 }
 
 // src/core/helpers/supplierProof.ts
-var fromSheetOrHand = (t) => /^(team sheet|manual entry)/i.test((t.reportName || "").trim());
-var NO_SUPPLIER_REPORT = /^airline website$/i;
-function awaitsSupplier(t) {
-  if (!fromSheetOrHand(t)) return false;
-  if (NO_SUPPLIER_REPORT.test((t.source || "").trim())) return false;
-  return !(t.confirmedBy || "").trim();
-}
-function unconfirmed(t) {
-  return awaitsSupplier(t) && (t.amount || 0) !== 0;
+function unconfirmed(_t) {
+  return false;
 }
 
 // src/core/helpers/sheetMemory.ts
@@ -841,8 +834,11 @@ var pnrKey = (s) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 var countsAgree = (d) => !d.missingOnTheirs.length && !d.missingInOurs.length && (d.noted ?? []).every((n) => n.includes(" - explained: ")) && (d.ours === d.theirs || (d.noted ?? []).length > 0);
 var REFUND_FLOOR = 50;
 var PRICE_FLOOR = 15;
+var PEG = { USD: 1, AED: 3.6725, SAR: 3.75 };
+var convertPeg = (v, from, to) => PEG[from] && PEG[to] ? Math.round(v / PEG[from] * PEG[to] * 100) / 100 : null;
 var LCC_BY_PNR_FROM = "2026-11-01";
 var quotedAbove = (r, gap) => gap > 0 && (r.issued || "") >= PROFIT_FROM;
+var isFitReq = (req) => reqParts(req).some((p) => /^[A-Z]{2,3}FM\d/.test(reqKey(p)));
 function reqDiffHint(ours, theirs) {
   const a = (ours || "").toUpperCase().replace(/\s+/g, "");
   const b = (theirs || "").toUpperCase().replace(/\s+/g, "");
@@ -1181,8 +1177,16 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         });
         continue;
       }
+      if (how === "DIFFERENT" && isFitReq(ourReq) && !isFitReq(theirReq)) {
+        findings.push({
+          ...base,
+          verdict: "REQ_RELATED",
+          note: `A FIT client: billed on its own under ${ourReq}, part of ${theirReq}'s file on their sheet.`
+        });
+        continue;
+      }
       if (how === "DIFFERENT") {
-        const hint = reqDiffHint(ourReq, theirReq);
+        const hint = isFitReq(theirReq) && !isFitReq(ourReq) ? `Their sheet bills it on its own as a FIT client under ${theirReq}; we still hold it in ${ourReq}'s file - move it if it is invoiced on its own.` : reqDiffHint(ourReq, theirReq);
         findings.push({
           ...base,
           verdict: "REQ_DIFFERS",
@@ -1323,6 +1327,25 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
               note: `Their sheet prices it at ${money2(theirs)} ${cur}; we hold ${money2(payable)}` + (Math.abs(fare - payable) >= 0.01 ? ` (fare ${money2(fare)})` : "") + ` ${cur} - ${money2(Math.abs(gap))} ${gap > 0 ? "more on theirs" : "more in ours"}.`
             });
             continue;
+          }
+        } else if (cur) {
+          const ourCur = String(issuedOurs[0].currency || "").toUpperCase();
+          const theirs = Math.abs(priced[0].cost ?? 0);
+          const inOurs2 = issuedOurs.every((t) => !t.originalCurrency && String(t.currency || "").toUpperCase() === ourCur) ? convertPeg(theirs, cur, ourCur) : null;
+          if (inOurs2 != null) {
+            const payable = issuedOurs.reduce((n, t) => n + Math.abs(t.amount || 0), 0);
+            const fare = issuedOurs.reduce((n, t) => n + Math.abs(t.totalDoc || t.amount || 0), 0);
+            const sameNumber = [payable, fare].some((v) => Math.abs(theirs - v) <= Math.max(0.5, v * 5e-3));
+            const gap = [payable, fare].map((v) => inOurs2 - v).sort((a, b) => Math.abs(a) - Math.abs(b))[0];
+            if (sameNumber || Math.abs(gap) >= Math.max(PRICE_FLOOR, payable * 0.03) && !quotedAbove(priced[0], gap)) {
+              findings.push({
+                ...base,
+                sheet: priced[0],
+                verdict: "PRICE_DIFFERS",
+                note: `Their sheet prices it at ${money2(theirs)} ${cur} (${money2(inOurs2)} ${ourCur} at the fixed rate); we hold ${money2(payable)}` + (Math.abs(fare - payable) >= 0.01 ? ` (fare ${money2(fare)})` : "") + ` ${ourCur}` + (sameNumber ? " - the same number in two currencies: one side has the currency wrong." : ` - ${money2(Math.abs(gap))} ${gap > 0 ? "more on theirs" : "more in ours: their price is under what we paid"}.`)
+              });
+              continue;
+            }
           }
         }
       }
@@ -1556,17 +1579,23 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       const inCell = docs.flatMap((d) => (ourBySerial.get(d) ?? []).filter((t) => (t.amount || 0) > 0));
       const held3 = [...inCell, ...alsoOnPnrs(r, inCell)];
       if (!held3.length || docs.some((d) => voidedSet.has(d))) continue;
-      const cur = (r.currency || "").toUpperCase();
-      if (!cur || !held3.every((t) => String(t.originalCurrency || t.currency || "").toUpperCase() === cur)) continue;
+      const theirCur = (r.currency || "").toUpperCase();
+      if (!theirCur) continue;
+      const heldCur = String(held3[0].currency || "").toUpperCase();
+      const across = !held3.every((t) => String(t.originalCurrency || t.currency || "").toUpperCase() === theirCur);
+      if (across && !(held3.every((t) => !t.originalCurrency && String(t.currency || "").toUpperCase() === heldCur) && convertPeg(1, theirCur, heldCur) != null)) continue;
+      const cur = across ? heldCur : theirCur;
       const asBought = (t, v) => t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
       const payable = held3.reduce((n, t) => n + asBought(t, t.amount || 0), 0);
       const fare = held3.reduce((n, t) => n + asBought(t, t.totalDoc || t.amount || 0), 0);
-      const each = Math.abs(r.cost ?? 0);
+      const each = across ? convertPeg(Math.abs(r.cost ?? 0), theirCur, heldCur) : Math.abs(r.cost ?? 0);
       const readings = bigGroup ? [each, each * docs.length] : Array.from({ length: docs.length }, (_, i) => each * (i + 1));
       const gaps = readings.flatMap((t) => [payable, fare].map((v) => t - v));
       const gap = gaps.sort((a, b) => Math.abs(a) - Math.abs(b))[0];
-      if (Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
-      if (quotedAbove(r, gap)) continue;
+      const raw = Math.abs(r.cost ?? 0);
+      const sameNumber = across && [payable, fare].some((v) => Math.abs(raw - v) <= Math.max(0.5, v * 5e-3));
+      if (!sameNumber && Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
+      if (!sameNumber && quotedAbove(r, gap)) continue;
       if (findings.some((f) => f.verdict === "PRICE_DIFFERS" && docs.includes(f.serial))) continue;
       const missingDocs = docs.filter((d) => !ourBySerial.has(d));
       if (bigGroup && missingDocs.length) continue;
@@ -1580,7 +1609,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
         ours: held3,
         reqNum: (held3[0].reqNum || "").trim(),
         theirReq: r.reqNum,
-        note: `Their cell ${r.rawTicket.trim()} prices ${docs.length} documents at ${money2(each)} ${cur}; we hold ${money2(payable)} on them - ${money2(Math.abs(gap))} ${gap > 0 ? "short in our books" : "more in ours"}.` + (missingDocs.length ? ` ${missingDocs.join(", ")} not in our books at all.` : "") + " One of the tickets may be recorded at the wrong price, or missing."
+        note: `Their cell ${r.rawTicket.trim()} prices ${docs.length} documents at ${money2(each)} ${cur}` + (across ? ` (${money2(raw)} ${theirCur} at the fixed rate)` : "") + `; we hold ${money2(payable)}${across ? ` ${cur}` : ""} on them - ` + (sameNumber ? `${money2(raw)} is the same number in two currencies: one side has the currency wrong.` : `${money2(Math.abs(gap))} ${gap > 0 ? "short in our books" : "more in ours"}.` + (missingDocs.length ? ` ${missingDocs.join(", ")} not in our books at all.` : "") + " One of the tickets may be recorded at the wrong price, or missing.")
       });
     }
   }
@@ -1595,7 +1624,8 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     else f.explained = e.explanation.note;
   }
   const explainedSerials = new Set(findings.filter((f) => f.explained).map((f) => f.serial).filter(Boolean));
-  const settledTheirs = new Set(findings.filter((f) => f.verdict === "VOID_NOT_BILLED" || f.verdict === "REISSUE_NO_CHARGE" || f.verdict === "CONJUNCT_ALREADY_HELD").map((f) => f.serial).filter(Boolean));
+  const settledTheirs = new Set(findings.filter((f) => f.verdict === "VOID_NOT_BILLED" || f.verdict === "REISSUE_NO_CHARGE" || f.verdict === "CONJUNCT_ALREADY_HELD" || f.verdict === "REQ_RELATED").map((f) => f.serial).filter(Boolean));
+  const relatedSerials = new Set(findings.filter((f) => f.verdict === "REQ_RELATED").map((f) => f.serial).filter(Boolean));
   const byRequest = [...requests].sort().map((req) => {
     const key = reqKey(req);
     const ourSet = ourSerialsByReq.get(key) ?? /* @__PURE__ */ new Set();
@@ -1613,7 +1643,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     const related = [...relations.get(key) ?? []].filter((x) => x !== key).sort();
     const onlyTheirs = [...theirSet].filter((x) => !ourSet.has(x) && !settledTheirs.has(x) && !explainedSerials.has(x)).length + findings.filter((f) => f.verdict === "NOT_IN_LEDGER" && !f.explained && !theirBySerial.has(f.serial) && reqParts(f.theirReq).includes(key)).length;
     const priceDiffers = findings.filter((f) => f.verdict === "PRICE_DIFFERS" && !f.explained && touches(f)).length;
-    const onlyOurs = [...ourSet].filter((x) => !theirSet.has(x) && !explainedSerials.has(x)).length;
+    const onlyOurs = [...ourSet].filter((x) => !theirSet.has(x) && !explainedSerials.has(x) && !relatedSerials.has(x)).length;
     const unconf = ledger.filter((t) => isTicket(t) && reqParts(t.reqNum || "").includes(key) && unconfirmed(t)).length;
     const refundGaps = findings.filter((f) => !f.explained && (f.verdict === "REFUND_NOT_ON_SHEET" && reqParts(f.reqNum).includes(key) || f.verdict === "REFUND_NOT_IN_LEDGER" && reqParts(f.theirReq).includes(key))).length;
     return {

@@ -33,10 +33,15 @@ export function awaitsSupplier(t: Ticket): boolean {
   return !(t.confirmedBy || '').trim();
 }
 
-/** Still waiting for the supplier to vouch for money in it. A row at 0.00
- *  moves no money and is not flagged - though a report can still correct it. */
-export function unconfirmed(t: Ticket): boolean {
-  return awaitsSupplier(t) && (t.amount || 0) !== 0;
+/** Still waiting for the supplier to vouch for money in it.
+ *
+ *  Nothing is, any more. The user, 15 Nov 2026: what they record by hand is
+ *  confirmed - they see the balance agree, and no report has to follow it.
+ *  A row from their sheet or by hand is never flagged and never holds a
+ *  request open. A supplier's report that later carries it at another figure
+ *  still corrects it (`awaitsSupplier` above, `correctionsFrom` below). */
+export function unconfirmed(_t: Ticket): boolean {
+  return false;
 }
 
 const dir = (t: Ticket) => ((t.amount || 0) < 0 ? 'R' : 'S');

@@ -786,6 +786,11 @@ export const REFUND_FLOOR = 50;
  *  tickets, the ten riyals on Ibtekar's, NSA's 2.25. What is left above it
  *  is a different price. */
 export const PRICE_FLOOR = 15;
+/** Units to the dollar: the dirham and the riyal are pegged. */
+const PEG: Record<string, number> = { USD: 1, AED: 3.6725, SAR: 3.75 };
+/** A figure in one pegged currency, in another; null where either is not pegged. */
+export const convertPeg = (v: number, from: string, to: string): number | null =>
+  PEG[from] && PEG[to] ? Math.round((v / PEG[from]) * PEG[to] * 100) / 100 : null;
 /** A low-cost carrier's booking with no usable ticket number is matched on its PNR from this day. */
 export const LCC_BY_PNR_FROM = '2026-11-01';
 /* From 9 Nov 2026 their Net Cost is the cost they quote operations, not the
@@ -804,6 +809,11 @@ const quotedAbove = (r: { issued?: string }, gap: number) => gap > 0 && (r.issue
  * the old REQ numbers. Each of those says where to look. Empty when the two
  * are simply different requests.
  */
+/** A FIT client's own request - KSAFM, UAEFM (KSAMLMI reads as KSAFM): a
+ *  ticket of a bigger file, invoiced on its own. */
+export const isFitReq = (req: string | undefined | null) =>
+  reqParts(req).some(p => /^[A-Z]{2,3}FM\d/.test(reqKey(p)));
+
 export function reqDiffHint(ours: string, theirs: string): string {
   const a = (ours || '').toUpperCase().replace(/\s+/g, '');
   const b = (theirs || '').toUpperCase().replace(/\s+/g, '');
@@ -1399,8 +1409,20 @@ export function compareTeamSheet(
               + ' two requests the ledger already records as one piece of work.' });
         continue;
       }
+      /* A FIT client: a ticket of a file, moved to a KSAFM request of its own
+         so it is invoiced on its own (the user, 15 Nov 2026). 5513427688
+         under KSAFM2557 with us and KSAML2025 on their sheet is that, not
+         a ticket in the wrong file. Ours carrying the FM request is the
+         move made; theirs carrying it while ours does not is still to make. */
+      if (how === 'DIFFERENT' && isFitReq(ourReq) && !isFitReq(theirReq)) {
+        findings.push({ ...base, verdict: 'REQ_RELATED',
+          note: `A FIT client: billed on its own under ${ourReq}, part of ${theirReq}'s file on their sheet.` });
+        continue;
+      }
       if (how === 'DIFFERENT') {
-        const hint = reqDiffHint(ourReq, theirReq);
+        const hint = isFitReq(theirReq) && !isFitReq(ourReq)
+          ? `Their sheet bills it on its own as a FIT client under ${theirReq}; we still hold it in ${ourReq}'s file - move it if it is invoiced on its own.`
+          : reqDiffHint(ourReq, theirReq);
         findings.push({ ...base, verdict: 'REQ_DIFFERS',
           note: `We file it under ${ourReq}; their sheet files it under ${theirReq}.`
               + (hint ? ` ${hint}` : ' One of the two requests is carrying a ticket that is not its own.') });
@@ -1568,8 +1590,7 @@ export function compareTeamSheet(
        of theirs for this document, a cell naming only it, and both sides in
        the same currency - a dollar ticket compared in the dollars it was
        bought in. Their net agreeing with either our payable or our fare is
-       agreement. Across currencies nothing is said: BSP bills in dirhams
-       what their sheet prices in riyals, and that is not a finding. */
+       agreement. Across currencies, at the fixed rates - see below. */
     {
       const priced = rows.filter(r => r.status !== 'VOID' && (r.cost ?? 0) > 0);
       /* A row naming two PNRs - "8KIDTX, BD4C2H" at 1,233.27 - prices both
@@ -1617,6 +1638,35 @@ export function compareTeamSheet(
                   + (Math.abs(fare - payable) >= 0.01 ? ` (fare ${money(fare)})` : '')
                   + ` ${cur} - ${money(Math.abs(gap))} ${gap > 0 ? 'more on theirs' : 'more in ours'}.` });
             continue;
+          }
+        } else if (cur) {
+          /* Their price in one currency, ours in another: compared at the
+             fixed rates, so a team price over the fare is looked at and one
+             under what we paid - a loss - is never passed over (the user,
+             15 Nov 2026). Until then nothing was said across currencies, and
+             KSAML2771's 6,500 and 3,960 in riyals against our dirhams went
+             unseen. Rates are pegged, but the airline's own conversion is
+             not the peg, so a gap under 3% is the conversion, not a price -
+             except the very same number in two currencies, which is one
+             side writing the currency wrong. */
+          const ourCur = String(issuedOurs[0].currency || '').toUpperCase();
+          const theirs = Math.abs(priced[0].cost ?? 0);
+          const inOurs = issuedOurs.every(t => !t.originalCurrency && String(t.currency || '').toUpperCase() === ourCur)
+            ? convertPeg(theirs, cur, ourCur) : null;
+          if (inOurs != null) {
+            const payable = issuedOurs.reduce((n, t) => n + Math.abs(t.amount || 0), 0);
+            const fare = issuedOurs.reduce((n, t) => n + Math.abs(t.totalDoc || t.amount || 0), 0);
+            const sameNumber = [payable, fare].some(v => Math.abs(theirs - v) <= Math.max(0.5, v * 0.005));
+            const gap = [payable, fare].map(v => inOurs - v).sort((a, b) => Math.abs(a) - Math.abs(b))[0];
+            if (sameNumber || (Math.abs(gap) >= Math.max(PRICE_FLOOR, payable * 0.03) && !quotedAbove(priced[0], gap))) {
+              findings.push({ ...base, sheet: priced[0], verdict: 'PRICE_DIFFERS',
+                note: `Their sheet prices it at ${money(theirs)} ${cur} (${money(inOurs)} ${ourCur} at the fixed rate); we hold ${money(payable)}`
+                    + (Math.abs(fare - payable) >= 0.01 ? ` (fare ${money(fare)})` : '') + ` ${ourCur}`
+                    + (sameNumber
+                      ? ' - the same number in two currencies: one side has the currency wrong.'
+                      : ` - ${money(Math.abs(gap))} ${gap > 0 ? 'more on theirs' : 'more in ours: their price is under what we paid'}.`) });
+              continue;
+            }
           }
         }
       }
@@ -1990,8 +2040,15 @@ export function compareTeamSheet(
       const inCell = docs.flatMap(d => (ourBySerial.get(d) ?? []).filter(t => (t.amount || 0) > 0));
       const held = [...inCell, ...alsoOnPnrs(r, inCell)];
       if (!held.length || docs.some(d => voidedSet.has(d))) continue;
-      const cur = (r.currency || '').toUpperCase();
-      if (!cur || !held.every(t => String(t.originalCurrency || t.currency || '').toUpperCase() === cur)) continue;
+      const theirCur = (r.currency || '').toUpperCase();
+      if (!theirCur) continue;
+      const heldCur = String(held[0].currency || '').toUpperCase();
+      /* Theirs in riyals, ours in dirhams: read at the fixed rate rather
+         than skipped (the user, 15 Nov 2026). */
+      const across = !held.every(t => String(t.originalCurrency || t.currency || '').toUpperCase() === theirCur);
+      if (across && !(held.every(t => !t.originalCurrency && String(t.currency || '').toUpperCase() === heldCur)
+        && convertPeg(1, theirCur, heldCur) != null)) continue;
+      const cur = across ? heldCur : theirCur;
       const asBought = (t: Ticket, v: number) => t.originalCurrency && t.fxRate ? Math.abs(v) / t.fxRate : Math.abs(v);
       const payable = held.reduce((n, t) => n + asBought(t, t.amount || 0), 0);
       const fare = held.reduce((n, t) => n + asBought(t, t.totalDoc || t.amount || 0), 0);
@@ -1999,7 +2056,7 @@ export function compareTeamSheet(
          written once for two tickets at 640.00 each. Either reading that
          agrees is agreement; the cell is a difference only when neither
          does. */
-      const each = Math.abs(r.cost ?? 0);
+      const each = across ? convertPeg(Math.abs(r.cost ?? 0), theirCur, heldCur)! : Math.abs(r.cost ?? 0);
       const readings = bigGroup ? [each, each * docs.length]
         : Array.from({ length: docs.length }, (_, i) => each * (i + 1));
       const gaps = readings.flatMap(t => [payable, fare].map(v => t - v));
@@ -2007,8 +2064,11 @@ export function compareTeamSheet(
       // Only a gap no single ticket explains, and big enough to be a fare:
       // a cell is a booking, and its small differences are already the
       // tickets' own.
-      if (Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
-      if (quotedAbove(r, gap)) continue;
+      // The very same figure in another currency: one side wrote the currency wrong.
+      const raw = Math.abs(r.cost ?? 0);
+      const sameNumber = across && [payable, fare].some(v => Math.abs(raw - v) <= Math.max(0.5, v * 0.005));
+      if (!sameNumber && Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
+      if (!sameNumber && quotedAbove(r, gap)) continue;
       if (findings.some(f => f.verdict === 'PRICE_DIFFERS' && docs.includes(f.serial))) continue;
       const missingDocs = docs.filter(d => !ourBySerial.has(d));
       /* A big group with documents we do not hold is usually a cell of
@@ -2020,10 +2080,14 @@ export function compareTeamSheet(
       findings.push({
         ...UNSOURCED, verdict: 'PRICE_DIFFERS', serial: r.serial, airlineCode: r.airlineCode, pnr: r.pnr, sheet: r,
         ours: held, reqNum: (held[0].reqNum || '').trim(), theirReq: r.reqNum,
-        note: `Their cell ${r.rawTicket.trim()} prices ${docs.length} documents at ${money(each)} ${cur}; we hold`
-          + ` ${money(payable)} on them - ${money(Math.abs(gap))} ${gap > 0 ? 'short in our books' : 'more in ours'}.`
-          + (missingDocs.length ? ` ${missingDocs.join(', ')} not in our books at all.` : '')
-          + ' One of the tickets may be recorded at the wrong price, or missing.',
+        note: `Their cell ${r.rawTicket.trim()} prices ${docs.length} documents at ${money(each)} ${cur}`
+          + (across ? ` (${money(raw)} ${theirCur} at the fixed rate)` : '') + '; we hold'
+          + ` ${money(payable)}${across ? ` ${cur}` : ''} on them - `
+          + (sameNumber
+            ? `${money(raw)} is the same number in two currencies: one side has the currency wrong.`
+            : `${money(Math.abs(gap))} ${gap > 0 ? 'short in our books' : 'more in ours'}.`
+              + (missingDocs.length ? ` ${missingDocs.join(', ')} not in our books at all.` : '')
+              + ' One of the tickets may be recorded at the wrong price, or missing.'),
       });
     }
   }
@@ -2048,8 +2112,11 @@ export function compareTeamSheet(
 
   const settledTheirs = new Set(findings
     .filter(f => f.verdict === 'VOID_NOT_BILLED' || f.verdict === 'REISSUE_NO_CHARGE'
-      || f.verdict === 'CONJUNCT_ALREADY_HELD')
+      || f.verdict === 'CONJUNCT_ALREADY_HELD' || f.verdict === 'REQ_RELATED')
     .map(f => f.serial).filter(Boolean));
+  /* A FIT client, or a split the ledger records: on their sheet in the file,
+     with us in its own request. Neither request is short of it. */
+  const relatedSerials = new Set(findings.filter(f => f.verdict === 'REQ_RELATED').map(f => f.serial).filter(Boolean));
 
   const byRequest: RequestLine[] = [...requests].sort().map(req => {
     const key = reqKey(req);
@@ -2081,7 +2148,7 @@ export function compareTeamSheet(
       + findings.filter(f => f.verdict === 'NOT_IN_LEDGER' && !f.explained && !theirBySerial.has(f.serial)
         && reqParts(f.theirReq).includes(key)).length;
     const priceDiffers = findings.filter(f => f.verdict === 'PRICE_DIFFERS' && !f.explained && touches(f)).length;
-    const onlyOurs = [...ourSet].filter(x => !theirSet.has(x) && !explainedSerials.has(x)).length;
+    const onlyOurs = [...ourSet].filter(x => !theirSet.has(x) && !explainedSerials.has(x) && !relatedSerials.has(x)).length;
     const unconf = ledger.filter(t => isTicket(t) && reqParts(t.reqNum || '').includes(key) && unconfirmed(t)).length;
     // Under the request the refund is ours in, or theirs in - once, not on both.
     const refundGaps = findings.filter(f => !f.explained

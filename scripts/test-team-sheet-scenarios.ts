@@ -372,5 +372,18 @@ scenario('43. A flyadeal booking with "F3" for a number, before 1 Nov: left to t
   `F3,BYQ25A,Issued,REQ100,1337,,,21/05/2026 1:00pm,,F3`,
 ], [], { NOT_IN_LEDGER: 0, UNREADABLE: 1 });
 
+/* A FIT client (the user, 15 Nov 2026): a ticket of the file, moved to a
+   KSAFM request of its own so it is invoiced on its own. 5513427688. */
+scenario('44. A FIT client: in the file on their sheet, under its own KSAFM with us', [
+  `065-5513059078,PNR001,Issued,KSAML2025,1000,,,${D},,IATA Portal (UAE)`,
+], [tkt({ reqNum: 'KSAFM2557' })], { REQ_DIFFERS: 0, REQ_RELATED: 1 }, rep => {
+  check('neither request is short of it', rep.byRequest.filter(r => r.reqNum !== 'REQ100').map(r => [r.reqNum, r.onlyTheirs, r.onlyOurs, r.misfiled]),
+    [['KSAFM2557', 0, 0, 0], ['KSAML2025', 0, 0, 0]]);
+});
+scenario('45. ...the other way round: their sheet bills it as FIT, we still hold it in the file', [
+  `065-5513059078,PNR001,Issued,KSAFM2557,1000,,,${D},,IATA Portal (UAE)`,
+], [tkt({ reqNum: 'KSAML2025' })], { REQ_DIFFERS: 1, REQ_RELATED: 0 }, rep =>
+  check('it says to move it', /FIT client under KSAFM2557/.test(rep.findings.find(f => f.verdict === 'REQ_DIFFERS')!.note), true));
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

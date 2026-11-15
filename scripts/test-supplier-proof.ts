@@ -26,8 +26,10 @@ const t = (o: Partial<Ticket>): Ticket => ({ id: Math.random().toString(36).slic
   reportName: 'Team sheet — reviewed', ...o } as Ticket);
 
 console.log('\n1. What waits for a supplier');
-check('an RTS refund from their sheet', unconfirmed(t({})), true);
-check('typed by hand', unconfirmed(t({ reportName: 'Manual entry' })), true);
+// The user, 15 Nov 2026: what they record is confirmed - no report has to follow it.
+check('an RTS refund from their sheet: recorded by the user, confirmed', unconfirmed(t({})), false);
+check('typed by hand: confirmed', unconfirmed(t({ reportName: 'Manual entry' })), false);
+check('still known to wait for a report that may correct it', awaitsSupplier(t({})), true);
 check('read from RTS\'s report', unconfirmed(t({ reportName: 'RTS' })), false);
 check('a website purchase never waits', unconfirmed(t({ source: 'Airline Website', amount: 1460 })), false);
 check('a reissue at 0 moves nothing', unconfirmed(t({ amount: 0, totalDoc: 0 })), false);

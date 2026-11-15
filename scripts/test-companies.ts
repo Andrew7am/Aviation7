@@ -62,7 +62,8 @@ console.log('\n3. Each company\'s work');
   check('two companies', s.map(x => x.company), ['Allergen', 'Nestle']);
   check('Allergen: two sales and a refund', [a.tickets, a.refunds], [2, 1]);
   check('net in riyals', a.money.SAR, { issued: 1712.82, refunds: -500, net: 1212.82 });
-  check('billed by the supplier, recorded only from their sheet', [a.billed, a.recordedOnly], [2, 1]);
+  // What the user records is confirmed (15 Nov 2026): nothing is "recorded, not billed yet".
+  check('a row recorded from their sheet counts as billed', [a.billed, a.recordedOnly], [3, 0]);
   check('in nobody\'s books - not the held or voided ones', [a.notInBooks, a.notInBooksRows.map(r => r.serials[0])], [1, ['4862141217']]);
   check('closed and open', [a.closed, a.open, a.openMoney.SAR], [1, 2, 356.41]);
   check('one request', a.requests, 1);
