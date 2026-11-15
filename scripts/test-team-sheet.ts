@@ -291,6 +291,10 @@ console.log('\n8. And the same thing the other way round');
   check('raised', r.counts.REFUND_NOT_ON_SHEET, 1);
   check('on the right ticket',
     r.findings.find(f => f.verdict === 'REFUND_NOT_ON_SHEET')?.serial, '5513059078');
+  // Counting tickets alone, KSAML2025 read 16 against 16 with three refunds missing.
+  const req = r.byRequest.find(x => x.refundGaps > 0);
+  check('its request counts the refund their sheet does not show', req?.refundGaps, 1);
+  check('and does not agree', req?.agrees, false);
 }
 
 console.log('\n9. Both refunded, for different money');

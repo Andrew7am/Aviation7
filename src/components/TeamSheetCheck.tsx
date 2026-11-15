@@ -168,6 +168,12 @@ const WHY: Record<Verdict, string> = {
  *  disagreement to settle. Everything else the check finds is already in the
  *  books somewhere, and "adding" it would make a second copy. */
 const PROPOSABLE_VERDICTS = new Set<Verdict>(['NOT_IN_LEDGER', 'REFUND_NOT_IN_LEDGER', 'REISSUE_NO_CHARGE']);
+/** Theirs to fix, but it leaves the counts apart, and a file is not closed
+ *  until they agree - so it is listed with the things to settle, not folded
+ *  under "their sheet to tidy - nothing missing on our side". KSAML2025's
+ *  three refunds (4,480 AED) were counted red in the table of documents and
+ *  shown nowhere else (15 Nov 2026). */
+const COUNT_GAP = new Set<Verdict>(['REFUND_NOT_ON_SHEET']);
 /** Stable, so a screen given no reissue links does not recompare on every render. */
 const NO_EXCHANGES: { ticketNo: string; replacedTicket: string }[] = [];
 
@@ -1101,8 +1107,8 @@ export const TeamSheetCheck: React.FC<Props> = ({
   // Only what is ours to settle: a row both sides hold, that their sheet
   // merely writes untidily, is theirs to tidy and not a thing to settle.
   const needsWork = report
-    ? report.findings.filter(f => !f.explained && whoActs(f) === 'US' && TONE[f.verdict].money).length : 0;
-  const forThem = report ? report.findings.filter(f => !f.explained && whoActs(f) === 'THEM' && (!onlyNew || isNew(f))) : [];
+    ? report.findings.filter(f => !f.explained && (whoActs(f) === 'US' || COUNT_GAP.has(f.verdict)) && TONE[f.verdict].money).length : 0;
+  const forThem = report ? report.findings.filter(f => !f.explained && whoActs(f) === 'THEM' && !COUNT_GAP.has(f.verdict) && (!onlyNew || isNew(f))) : [];
   /** Refunds their sheet has and our books do not, still on their way: not
    *  a mistake to settle, but the sheet is not closed until they land. */
   const awaiting = report ? report.findings.filter(f => !f.explained && f.verdict === 'REFUND_AWAITING_BILLING') : [];
@@ -1577,6 +1583,11 @@ export const TeamSheetCheck: React.FC<Props> = ({
                 </span>
               </button>
               {(reqOpen ?? report.byRequest.length <= 8) && (<>
+              <p className="px-4 pt-2 text-[11px] text-slate-500">
+                One line per request. The first two numbers count its tickets on each side; every column after them
+                counts something keeping it from agreeing - a ticket only one side has, one filed under another request,
+                a price that differs, a refund one side does not show. A request agrees when they are all "—".
+              </p>
               <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-slate-100 text-[11px]">
                 <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer">
                   <input type="checkbox" checked={reqOnlyBad} onChange={e => setReqOnlyBad(e.target.checked)} />
@@ -1600,6 +1611,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
                       <th className="px-3 py-1.5 text-right">Only ours</th>
                       <th className="px-3 py-1.5 text-right">Misfiled</th>
                       <th className="px-3 py-1.5 text-right">Price differs</th>
+                      <th className="px-3 py-1.5 text-right" title="Refunds one side holds and the other does not show">Refund missing</th>
                       <th className="px-3 py-1.5 text-right" title="Our rows recorded from their sheet or by hand that no supplier report has carried yet">Not confirmed</th>
                       <th className="px-3 py-1.5"></th>
                     </tr>
@@ -1646,6 +1658,10 @@ export const TeamSheetCheck: React.FC<Props> = ({
                           {r.priceDiffers || '—'}
                         </td>
                         <td className={`px-3 py-1.5 text-right font-bold
+                          ${r.refundGaps ? 'text-red-600' : 'text-slate-300'}`}>
+                          {r.refundGaps || '—'}
+                        </td>
+                        <td className={`px-3 py-1.5 text-right font-bold
                           ${r.unconfirmed ? 'text-violet-600' : 'text-slate-300'}`}>
                           {r.unconfirmed || '—'}
                         </td>
@@ -1666,7 +1682,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
           <div className="space-y-2">
             {order.map(v => (
               <Group key={v} verdict={v} onCopy={copy}
-                rows={report.findings.filter(f => f.verdict === v && !f.explained && whoActs(f) !== 'THEM' && (!onlyNew || isNew(f)))}
+                rows={report.findings.filter(f => f.verdict === v && !f.explained && (whoActs(f) !== 'THEM' || COUNT_GAP.has(f.verdict)) && (!onlyNew || isNew(f)))}
                 voided={voidedSerials}
                 {...(memory && onAddToLedger && mode === 'sheet' ? { onExplain: explain } : {})}
                 {...(onAddToLedger && PROPOSABLE_VERDICTS.has(v)

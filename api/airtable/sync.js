@@ -1615,6 +1615,7 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
     const priceDiffers = findings.filter((f) => f.verdict === "PRICE_DIFFERS" && !f.explained && touches(f)).length;
     const onlyOurs = [...ourSet].filter((x) => !theirSet.has(x) && !explainedSerials.has(x)).length;
     const unconf = ledger.filter((t) => isTicket(t) && reqParts(t.reqNum || "").includes(key) && unconfirmed(t)).length;
+    const refundGaps = findings.filter((f) => !f.explained && (f.verdict === "REFUND_NOT_ON_SHEET" && reqParts(f.reqNum).includes(key) || f.verdict === "REFUND_NOT_IN_LEDGER" && reqParts(f.theirReq).includes(key))).length;
     return {
       reqNum: req,
       theirTickets: theirSet.size,
@@ -1624,8 +1625,9 @@ function compareTeamSheet(sheet, ledger, declaredRaw = [], periodRaw = {}, opts 
       misfiled,
       related,
       priceDiffers,
+      refundGaps,
       unconfirmed: unconf,
-      agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0 && priceDiffers === 0 && unconf === 0
+      agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0 && priceDiffers === 0 && refundGaps === 0 && unconf === 0
     };
   });
   const theirDocs = /* @__PURE__ */ new Set([...theirSerials, ...sheet.flatMap((r) => r.emds ?? [])]);

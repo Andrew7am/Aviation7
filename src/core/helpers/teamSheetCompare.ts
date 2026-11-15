@@ -628,6 +628,11 @@ export interface RequestLine {
   misfiled: number;
   /** Tickets both sides hold at different prices, in the same currency. */
   priceDiffers: number;
+  /** Refunds one side holds and the other does not show. The refund count
+   *  has to agree before a file is closed, and counting tickets alone read
+   *  KSAML2025 as 16 against 16 while three refunds of ours - 4,480 AED -
+   *  were nowhere on their sheet (15 Nov 2026). */
+  refundGaps: number;
   /** Our rows under it recorded from their sheet or by hand that no supplier
    *  report has carried yet. A request is not settled on money nobody billed. */
   unconfirmed: number;
@@ -2078,10 +2083,14 @@ export function compareTeamSheet(
     const priceDiffers = findings.filter(f => f.verdict === 'PRICE_DIFFERS' && !f.explained && touches(f)).length;
     const onlyOurs = [...ourSet].filter(x => !theirSet.has(x) && !explainedSerials.has(x)).length;
     const unconf = ledger.filter(t => isTicket(t) && reqParts(t.reqNum || '').includes(key) && unconfirmed(t)).length;
+    // Under the request the refund is ours in, or theirs in - once, not on both.
+    const refundGaps = findings.filter(f => !f.explained
+      && ((f.verdict === 'REFUND_NOT_ON_SHEET' && reqParts(f.reqNum).includes(key))
+        || (f.verdict === 'REFUND_NOT_IN_LEDGER' && reqParts(f.theirReq).includes(key)))).length;
     return {
       reqNum: req, theirTickets: theirSet.size, ourTickets: ourSet.size,
-      onlyTheirs, onlyOurs, misfiled, related, priceDiffers, unconfirmed: unconf,
-      agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0 && priceDiffers === 0 && unconf === 0,
+      onlyTheirs, onlyOurs, misfiled, related, priceDiffers, refundGaps, unconfirmed: unconf,
+      agrees: onlyTheirs === 0 && onlyOurs === 0 && misfiled === 0 && priceDiffers === 0 && refundGaps === 0 && unconf === 0,
     };
   });
 
