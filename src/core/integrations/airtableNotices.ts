@@ -196,23 +196,28 @@ export function missingRefunds(rows: AirtableTicketRow[], index: Map<string, Led
       const k = docKey(s);
       if (!k || seen.has(k)) continue;
       const ours = index.get(k) ?? [];
-      if (!ours.some(t => (t.amount || 0) > 0) || ours.some(t => (t.amount || 0) < 0) || viaApplication.has(k)) continue;
+      /* A sale we hold is any issue of ours, at 0 too: 4862479143 was
+         reissued on KSAML2533 for nothing more (its money is on 4862405610),
+         and its refund of 448.50 on their sheet (16 Nov 2026) never reached
+         the bell because only a positive amount counted as a sale. */
+      const sales = ours.filter(t => (t.amount || 0) >= 0 && !/void|fund/i.test(t.status || ''));
+      if (!sales.length || ours.some(t => (t.amount || 0) < 0) || viaApplication.has(k)) continue;
       const amount = r.refund_amount ?? (r.serials.length === 1 ? r.net_cost : null);
       if (heldElsewhere(k, (r.pnr || '').toUpperCase(), amount)) continue;
       seen.add(k);
-      const src = ours.find(t => (t.amount || 0) > 0)?.source || 'the supplier';
-      const sale = ours.filter(t => (t.amount || 0) > 0).reduce((n, t) => n + (t.amount || 0), 0);
+      const src = sales[0]?.source || 'the supplier';
+      const sale = sales.reduce((n, t) => n + (t.amount || 0), 0);
       const added = (r.created_at || '').slice(0, 10);
       out.push({
         kind: 'REFUND_MISSING', dedupe_key: `REFUND_MISSING|${k}`, record_id: r.record_id, ticket_no: k,
         ticket_ids: ours.map(t => t.id), req_num: r.req_num || ours[0]?.reqNum || '',
         title: `Refund not in our books: ${k}${amount != null ? ` · ${money(String(amount))} ${r.currency}` : ''}${r.req_num ? ` · ${r.req_num}` : ''}`,
-        detail: `Their sheet refunds it${added ? ` (row added ${added})` : ''}; our books hold the sale (${money(String(sale))})`
+        detail: `Their sheet refunds it${added ? ` (row added ${added})` : ''}; our books hold the sale (${sale ? money(String(sale)) : 'a reissue at no extra cost'})`
           + ` and no refund. Waiting in To Review: it closes by itself when the refund comes in with ${src}'s report`
           + ' or statement.',
         payload: { refund: amount, currency: r.currency, source: src, added, pnr: r.pnr, portal: r.portal,
-          cell: r.ticket_cell, theirReq: r.req_num, airline: ours.find(t => (t.amount || 0) > 0)?.airlineCode ?? '',
-          passenger: ours.find(t => (t.amount || 0) > 0)?.passengerName ?? '' },
+          cell: r.ticket_cell, theirReq: r.req_num, airline: sales[0]?.airlineCode ?? '',
+          passenger: sales[0]?.passengerName ?? '' },
       });
     }
   }

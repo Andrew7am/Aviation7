@@ -254,6 +254,16 @@ console.log('\n7. A refund added as a row of its own still reaches the bell');
   check('not for a refund row added before 1 October', missingRefunds(old as any, ledgerIndex([sale])).length, 0);
   check('1 October counts from midnight Riyadh time',
         missingRefunds([r({ status: 'Cancelled/Refunded', created_at: '2026-09-30T21:30:00Z' })] as any, ledgerIndex([sale])).length, 1);
+  /* 4862479143: reissued on KSAML2533 at no extra cost, so ours holds it at
+     0.00; their sheet refunded it (448.50) on 16 Nov and the bell said
+     nothing, as only a positive amount counted as a sale. */
+  const even = { id: 't4', ticketNo: '4862343302', amount: 0, status: 'ISSUE', source: 'Ibtekar', reqNum: 'KSAML2533' };
+  const ev = missingRefunds([r({ record_id: 'd', status: 'Cancelled/Refunded', net_cost: 448.5, created_at: '2026-11-16T11:47:00Z' })] as any, ledgerIndex([even]));
+  check('raised for a reissue held at 0.00', ev.map(x => x.kind), ['REFUND_MISSING']);
+  check('saying it is a reissue at no extra cost', /448.50 SAR/.test(ev[0]?.title ?? '') && /reissue at no extra cost/.test(ev[0]?.detail ?? ''), true);
+  check('not for a ticket we hold only as a void',
+        missingRefunds([r({ record_id: 'd', status: 'Cancelled/Refunded', created_at: '2026-11-16T11:47:00Z' })] as any,
+          ledgerIndex([{ ...even, status: 'VOID' }])).length, 0);
 }
 
 console.log('\n11. Void on their sheet, billed in ours');

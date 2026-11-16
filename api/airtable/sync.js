@@ -2190,12 +2190,13 @@ function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
       const k = docKey(s);
       if (!k || seen.has(k)) continue;
       const ours = index.get(k) ?? [];
-      if (!ours.some((t) => (t.amount || 0) > 0) || ours.some((t) => (t.amount || 0) < 0) || viaApplication.has(k)) continue;
+      const sales = ours.filter((t) => (t.amount || 0) >= 0 && !/void|fund/i.test(t.status || ""));
+      if (!sales.length || ours.some((t) => (t.amount || 0) < 0) || viaApplication.has(k)) continue;
       const amount = r.refund_amount ?? (r.serials.length === 1 ? r.net_cost : null);
       if (heldElsewhere(k, (r.pnr || "").toUpperCase(), amount)) continue;
       seen.add(k);
-      const src = ours.find((t) => (t.amount || 0) > 0)?.source || "the supplier";
-      const sale = ours.filter((t) => (t.amount || 0) > 0).reduce((n, t) => n + (t.amount || 0), 0);
+      const src = sales[0]?.source || "the supplier";
+      const sale = sales.reduce((n, t) => n + (t.amount || 0), 0);
       const added = (r.created_at || "").slice(0, 10);
       out.push({
         kind: "REFUND_MISSING",
@@ -2205,7 +2206,7 @@ function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
         ticket_ids: ours.map((t) => t.id),
         req_num: r.req_num || ours[0]?.reqNum || "",
         title: `Refund not in our books: ${k}${amount != null ? ` \xB7 ${money3(String(amount))} ${r.currency}` : ""}${r.req_num ? ` \xB7 ${r.req_num}` : ""}`,
-        detail: `Their sheet refunds it${added ? ` (row added ${added})` : ""}; our books hold the sale (${money3(String(sale))}) and no refund. Waiting in To Review: it closes by itself when the refund comes in with ${src}'s report or statement.`,
+        detail: `Their sheet refunds it${added ? ` (row added ${added})` : ""}; our books hold the sale (${sale ? money3(String(sale)) : "a reissue at no extra cost"}) and no refund. Waiting in To Review: it closes by itself when the refund comes in with ${src}'s report or statement.`,
         payload: {
           refund: amount,
           currency: r.currency,
@@ -2215,8 +2216,8 @@ function missingRefunds(rows, index, from = REFUND_NOTICES_FROM) {
           portal: r.portal,
           cell: r.ticket_cell,
           theirReq: r.req_num,
-          airline: ours.find((t) => (t.amount || 0) > 0)?.airlineCode ?? "",
-          passenger: ours.find((t) => (t.amount || 0) > 0)?.passengerName ?? ""
+          airline: sales[0]?.airlineCode ?? "",
+          passenger: sales[0]?.passengerName ?? ""
         }
       });
     }
