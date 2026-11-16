@@ -18,6 +18,8 @@ export interface AppUser {
   email:     string;
   role:      Role;
   createdAt: string;
+  /** Offices whose tickets it may close or reopen without being an admin. */
+  closeOffices?: string[];
 }
 
 type AuditRow = {
@@ -64,12 +66,24 @@ export class AuditService {
     return (ROLES as string[]).includes(data.role) || data.role === 'member' ? data.role as Role : 'pending';
   }
 
+  /** The offices whose tickets this account may close or reopen without
+   *  being an admin (migration 0051): ['DUBAI'] for accounting6. */
+  static async myCloseOffices(): Promise<string[]> {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) return [];
+    const { data, error } = await supabase
+      .from('app_users').select('close_offices').eq('id', auth.user.id).maybeSingle();
+    if (error || !data) return [];
+    return Array.isArray(data.close_offices) ? data.close_offices.map(String) : [];
+  }
+
   static async listUsers(): Promise<AppUser[]> {
     const { data, error } = await supabase
       .from('app_users').select('*').order('created_at', { ascending: true });
     if (error) throw new Error(error.message);
     return (data ?? []).map((r: any) => ({
       id: r.id, email: r.email, role: r.role, createdAt: r.created_at,
+      closeOffices: Array.isArray(r.close_offices) ? r.close_offices.map(String) : [],
     }));
   }
 

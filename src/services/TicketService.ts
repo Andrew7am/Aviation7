@@ -458,6 +458,20 @@ export class TicketService {
     if (error) throw new Error(error.message);
   }
 
+  /** Close or reopen as an account allowed to for its own offices only
+   *  (migration 0051). The database checks every ticket's office and
+   *  refuses the whole call if one is outside them. Returns how many moved. */
+  async setClosedByOffice(ticketIds: string[], closed: boolean): Promise<number> {
+    let moved = 0;
+    const CHUNK = 200;
+    for (let i = 0; i < ticketIds.length; i += CHUNK) {
+      const { data, error } = await supabase.rpc('set_tickets_closed', { ids: ticketIds.slice(i, i + CHUNK), to_closed: closed });
+      if (error) throw new Error(error.message);
+      moved += Number(data) || 0;
+    }
+    return moved;
+  }
+
   async bulkUpdateClosed(ticketIds: string[], closed: boolean): Promise<void> {
     const CHUNK = 200;
     for (let i = 0; i < ticketIds.length; i += CHUNK) {

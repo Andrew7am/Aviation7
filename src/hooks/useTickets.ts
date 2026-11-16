@@ -110,6 +110,20 @@ export function useTickets(userId: string) {
     await svc.bulkUpdateClosed(ids, closed);
   };
 
+  /** Close or reopen for an account allowed to for its own offices only. If
+   *  the database refuses, the screen is put back the way it was. */
+  const setClosedByOffice = async (ids: string[], closed: boolean) => {
+    const idSet = new Set(ids);
+    const was = new Map(tickets.filter(t => idSet.has(t.id)).map(t => [t.id, t.closed]));
+    patchLocal(t => ({ ...t, closed }), idSet);
+    try {
+      return await svc.setClosedByOffice(ids, closed);
+    } catch (e) {
+      patchLocal(t => ({ ...t, closed: was.get(t.id) ?? t.closed }), idSet);
+      throw e;
+    }
+  };
+
   /** Take a close (or reopen) back off the tickets it actually moved.
    *  Local state is patched under the same guard the server applies, so the
    *  screen never briefly shows a ticket the undo deliberately left alone. */
@@ -122,5 +136,5 @@ export function useTickets(userId: string) {
   const missingReq = tickets.filter(t => !t.reqNum && t.status !== 'FUND');
   const topUps     = tickets.filter(t => t.status === 'FUND');
 
-  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, revertClosed, addManualTicket, applyImport };
+  return { tickets, loading, missingReq, topUps, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, setClosedByOffice, revertClosed, addManualTicket, applyImport };
 }

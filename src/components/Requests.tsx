@@ -79,6 +79,8 @@ interface Props {
   tickets: Ticket[];
   /** Close or reopen one row, when the viewer is allowed to. */
   onUpdateClosed?: (id: string, closed: boolean) => void;
+  /** Which requests the close/reopen controls are offered on. Absent: all. */
+  canCloseReq?: (reqNum: string) => boolean;
 }
 
 /**
@@ -203,7 +205,7 @@ export function officeTabCounts(list: Facet[], only: 'ALL' | State, search: stri
   } as Record<OfficeSel, number>;
 }
 
-export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
+export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq }) => {
   const [search, setSearch] = useState('');
   const [only, setOnly] = useState<'ALL' | State>('ALL');
   const [office, setOffice] = useState<OfficeSel>('ALL');
@@ -416,7 +418,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed }) => {
   return (
     <div className="flex flex-col h-full bg-slate-100">
       {openReq && (
-        <RequestProfile reqNum={openReq} tickets={tickets} onUpdateClosed={onUpdateClosed}
+        <RequestProfile reqNum={openReq} tickets={tickets} onUpdateClosed={!canCloseReq || canCloseReq(openReq) ? onUpdateClosed : undefined}
           onClose={() => setOpenReq(null)} />
       )}
 

@@ -340,6 +340,12 @@ export const ActivityLog: React.FC<{
                       <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${u.role === 'admin' ? 'bg-violet-100 text-violet-700' : u.role === 'pending' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
                         {(ROLE_LABEL[u.role] ?? u.role).toUpperCase()}
                       </span>
+                      {u.role !== 'admin' && (u.closeOffices?.length ?? 0) > 0 && (
+                        <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700"
+                          title="May close and reopen these offices' tickets">
+                          CLOSES {u.closeOffices!.join(', ')}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-blue-600">{s.edits || '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-red-600">{s.deletes || '—'}</td>

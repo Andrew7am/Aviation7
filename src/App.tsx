@@ -47,6 +47,7 @@ const Loading: React.FC = () => (
   </div>
 );
 import { AuditService, AuditRecord, canRead, type Role } from './services/AuditService';
+import { classifyOffice, OFFICE_LABEL } from './core/helpers/reqOffice';
 import { undoableAction, UNDO_OF } from './core/helpers/undoableAction';
 import { summariseVendor } from './core/helpers/statementMath';
 import type { Reprice } from './core/helpers/statementAgainstBooks';
@@ -96,8 +97,12 @@ function MainApp({ user }: { user: User }) {
   const [showManualEntry, setShowManualEntry] = useState(false);
 
   React.useEffect(() => { AuditService.myRole().then(r => setIsAdmin(r === 'admin')).catch(() => setIsAdmin(false)); }, [user.id]);
+  /* Offices whose tickets this account may close or reopen without being an
+     admin - accounting6, Dubai (16 Nov 2026). The database checks it too. */
+  const [closeOffices, setCloseOffices] = useState<string[]>([]);
+  React.useEffect(() => { AuditService.myCloseOffices().then(setCloseOffices).catch(() => setCloseOffices([])); }, [user.id]);
 
-  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, revertClosed, addManualTicket, applyImport } = useTickets(user.id);
+  const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, setClosedByOffice, revertClosed, addManualTicket, applyImport } = useTickets(user.id);
   const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
   const { statements, saveStatement, deleteStatement } = useStatements(user.id);
   const {
@@ -620,6 +625,30 @@ function MainApp({ user }: { user: User }) {
       .filter(c => Math.abs(c.billedGap) >= 0.011 || !c.foots).length,
     [statements, tickets]);
 
+  /** Closing and reopening for an account allowed to for its own offices
+   *  only: only those tickets are offered, and the database refuses the rest. */
+  const canClose = useCallback((t: Pick<Ticket, 'reqNum'>) =>
+    closeOffices.includes(classifyOffice(t.reqNum)), [closeOffices]);
+  const officeLabel = closeOffices.map(o => OFFICE_LABEL[o as keyof typeof OFFICE_LABEL] ?? o).join(', ');
+  const officeBulkClosed = async (ids: string[], closed: boolean) => {
+    const byId = new Map(tickets.map(t => [t.id, t]));
+    const mine = ids.filter(id => { const t = byId.get(id); return !!t && canClose(t); });
+    if (!mine.length) { alert(`Only the ${officeLabel} office's tickets can be closed or reopened from this account.`); return; }
+    try {
+      const moved = await setClosedByOffice(mine, closed);
+      await importSvc.audit(mine.length > 1 ? 'BULK_UPDATE_CLOSED' : 'UPDATE_CLOSED', mine.join(','),
+        `${closed ? 'Closed' : 'Not Closed'} (${moved} ticket${moved === 1 ? '' : 's'}, ${officeLabel} office)`);
+    } catch (e) {
+      alert(`Not saved: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  const closeHandlers = isAdmin ? {}
+    : closeOffices.length ? {
+      onUpdateClosed: (id: string, closed: boolean) => { void officeBulkClosed([id], closed); },
+      onBulkUpdateClosed: officeBulkClosed,
+      canClose,
+    } : {};
+
   /** Everything that changes data. Passed only to an admin — the database
    *  refuses these writes for anyone else (migration 0019), so offering the
    *  controls to a viewer would only produce failures. */
@@ -725,14 +754,16 @@ function MainApp({ user }: { user: User }) {
       )}
 
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
-      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} companyOf={companyRows.length ? companyFn : undefined} {...(isAdmin ? writeHandlers : {})} />}
+      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} companyOf={companyRows.length ? companyFn : undefined} {...(isAdmin ? writeHandlers : closeHandlers)} />}
       {view === 'companies' && <Companies tickets={tickets} rows={companyRows} loading={companiesLoading}
         assignments={companyAssignments} {...(isAdmin ? { onAssign: assignCompany, onUnassign: unassignCompany } : {})}
-        tableProps={{ afterClose, exchanges, ...(isAdmin ? writeHandlers : {}) }} />}
+        tableProps={{ afterClose, exchanges, ...(isAdmin ? writeHandlers : closeHandlers) }} />}
       {view === 'requests'  && <Requests tickets={tickets}
-        {...(isAdmin ? { onUpdateClosed: handleUpdateClosed } : {})} />}
-      {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : {})} />}
-      {view === 'notclosed' && <TicketTable title="Not Closed — Still To Reconcile" tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : {})} />}
+        {...(isAdmin ? { onUpdateClosed: handleUpdateClosed }
+          : closeOffices.length ? { onUpdateClosed: (id: string, closed: boolean) => { void officeBulkClosed([id], closed); },
+            canCloseReq: (req: string) => canClose({ reqNum: req }) } : {})} />}
+      {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : closeHandlers)} />}
+      {view === 'notclosed' && <TicketTable title="Not Closed — Still To Reconcile" tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : closeHandlers)} />}
       {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
       {/* Read-only, so everybody gets it: the person closing a flight sheet
           is not always the person who can write to the ledger. */}
