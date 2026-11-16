@@ -15,7 +15,8 @@ draws its own ramp:
     shades used for badge and row backgrounds become dark, faintly tinted
     greys, and the strong shades used for text become muted pastels.
 
-There are three looks, picked from the header; the first is the default.
+One look: graphite. There were three (dimmed, graphite, warm); the user kept
+graphite and dropped the others (16 Nov 2026).
 """
 import re
 
@@ -33,12 +34,8 @@ def oklch(v):
 # The greys' hue and strength, where the page, the cards and the text sit,
 # and how much of its strength each colour keeps.
 PRESETS = {
-    # GitHub's "dark dimmed": blue-grey, low contrast, nothing pure black or white.
-    'dimmed':   dict(h=250, c=.016, page=.255, card=.295, ink=.84, share=1.0),
     # Neutral graphite, no tint at all - the closest to a printed page in reverse.
     'graphite': dict(h=0,   c=.0,   page=.175, card=.215, ink=.91, share=1.0),
-    # Warm charcoal, a touch of brown, the least blue light of the three.
-    'warm':     dict(h=70,  c=.010, page=.195, card=.235, ink=.89, share=.85),
 }
 
 def fmt(l, c, h):
@@ -81,24 +78,35 @@ head = """/*
  * from Tailwind's own palette - edit that script and rerun it, not this file.
  *
  * Every screen is drawn with Tailwind's colours, and in Tailwind 4 each shade
- * is a CSS variable, so dark mode is a second set of values. Three looks,
- * picked from the header (data-dark on <html>): dimmed (blue-grey, the
- * default), graphite (neutral) and warm (a touch of brown). In each, the
- * greys are a soft ramp with light-grey text, and every colour keeps its hue
- * but is quieted - pale badge backgrounds turn to dark tinted greys, strong
- * text colours to muted pastels.
+ * is a CSS variable, so dark mode is a second set of values: graphite, a
+ * neutral grey with no tint (the only look since 16 Nov 2026). The greys are
+ * a soft ramp with light-grey text, and every colour keeps its hue but is
+ * quieted - pale badge backgrounds turn to dark tinted greys, strong text
+ * colours to muted pastels.
  *
  * The header, the footer and the sign-in page are dark already: inside an
  * element marked keep-palette the palette is left as it was - except in a
- * panel opened from it (follow-theme), which is a page of its own.
+ * panel opened from it (follow-theme), which is a page of its own. In dark
+ * mode their navy turns graphite too, so the header and footer sit with the
+ * page instead of a blue band across a grey one.
  */
 """
+def neutral(k, v):
+    # A grey family's own lightness, with the blue taken out.
+    if k.rsplit('-', 1)[0] in NEUTRAL:
+        o = oklch(v)
+        if o: return fmt(o[0], 0, 0)
+    return v
+kept = [f'  --color-{k}: {neutral(k, vals[k])};' for f in fams for k in (f'{f}-{s}' for s in steps) if k in vals]
 keep = f"""html.dark .keep-palette:not(.follow-theme) {{
   color-scheme: light;
   --color-white: {white};
   --color-black: {black};
-{chr(10).join(orig)}
+{chr(10).join(kept)}
 }}
+/* The header and the sign-in page are painted navy (#0f172a) by hand. */
+html.dark .keep-palette.bg-\\[\\#0f172a\\] {{ background-color: oklch(13.5% 0 0); }}
+html.dark footer.keep-palette {{ background-color: oklch(15.5% 0 0); }}
 """
 open('src/theme-dark.css', 'w', encoding='utf-8').write(head + '\n'.join(blocks) + '\n' + keep)
 print(len(PRESETS), 'looks,', len(fams), 'families')

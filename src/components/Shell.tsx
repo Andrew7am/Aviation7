@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Plane, Upload, LogOut, PlusCircle, Eye, Menu, Moon, Sun } from 'lucide-react';
-import { useTheme, THEMES } from '../utils/theme';
+import { useTheme } from '../utils/theme';
 
 /**
  * The frame every screen sits in: header, navigation, footer.
@@ -47,7 +47,6 @@ export const Shell: React.FC<Props> = ({
   onAddManually, onImport, onLogout, banner, children, headerExtra,
 }) => {
   const { theme, setTheme } = useTheme();
-  const [themeOpen, setThemeOpen] = useState(false);
   // Closed by default so a phone opens on the ledger rather than on a menu.
   const [navOpen, setNavOpen] = useState(false);
 
@@ -78,24 +77,11 @@ export const Shell: React.FC<Props> = ({
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-          <div className="relative">
-            <button onClick={() => setThemeOpen(o => !o)} title="Light or dark" className="text-white/70 hover:text-white p-1.5">
-              {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
-            </button>
-            {themeOpen && (
-              <div className="follow-theme fixed inset-0 z-50" onClick={() => setThemeOpen(false)}>
-                <div onClick={e => e.stopPropagation()}
-                  className="absolute right-2 sm:right-40 top-14 w-48 bg-white text-slate-700 rounded-lg shadow-2xl border border-slate-200 py-1">
-                  {THEMES.map(t => (
-                    <button key={t.id} onClick={() => { setTheme(t.id); setThemeOpen(false); }}
-                      className={`w-full text-left px-3 py-2 text-xs hover:bg-slate-50 flex items-center justify-between ${theme === t.id ? 'font-bold text-slate-900' : ''}`}>
-                      {t.label}{theme === t.id && <span className="text-emerald-600">✓</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+            title={theme === 'light' ? 'Dark mode' : 'Light mode'} aria-label={theme === 'light' ? 'Dark mode' : 'Light mode'}
+            className="text-white/70 hover:text-white p-1.5 rounded-md hover:bg-white/10 transition-colors">
+            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+          </button>
           {/* Adding and importing both write. A viewer gets a badge instead,
               so the read-only role is stated rather than just felt as a
               missing button.
