@@ -650,6 +650,8 @@ export const DocumentCheck: React.FC<{
     otherCharges: 0,
     sourceFile: fileName,
     note: `${st.lines.length} line(s) read from the statement.`,
+    lines: st.lines.filter(l => l.section !== 'RECEIPT' && l.ticketNo)
+      .map(l => ({ ticketNo: l.ticketNo, date: l.date, document: l.document, debit: l.debit, credit: l.credit })),
   });
 
   return (

@@ -98,6 +98,14 @@ export type ViewState = 'dashboard' | 'tickets' | 'companies' | 'requests' | 'mi
  * movements are positive magnitudes, and the period foots when
  * `opening + paid - billed - otherCharges === closing`.
  */
+export interface StatementTicketLine {
+  ticketNo: string;
+  date: string;
+  document: string;
+  debit: number;
+  credit: number;
+}
+
 export interface VendorStatement {
   id: string;
   vendorName: string;
@@ -114,6 +122,9 @@ export interface VendorStatement {
   /** What the vendor added on their own side: service fees, penalties,
    *  corrections. None of it arrives as a ticket, so nothing else records it. */
   otherCharges: number;
+  /** Its ticket lines, kept so a row recorded after the upload is still
+   *  confirmed by it (0050). Absent on statements keyed by hand or saved before. */
+  lines?: StatementTicketLine[];
   sourceFile?: string;
   note?: string;
   userId?: string;

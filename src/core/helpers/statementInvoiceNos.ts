@@ -1,4 +1,4 @@
-import type { Ticket } from '../../types';
+import type { Ticket, VendorStatement } from '../../types';
 import type { ParsedStatement } from '../parsers/ibtekarStatementPdf';
 import { vendorMatchesSource } from './walletMath';
 import { confirmationsFrom, type Confirmation } from './supplierProof';
@@ -63,6 +63,26 @@ export function invoiceNumbersFromStatement(
  * and still read "not confirmed by the supplier". A row billed at another
  * figure is the reprice's question, not this one.
  */
+/**
+ * The same, from statements already saved: a row recorded from their sheet
+ * after the statement that bills it was uploaded is confirmed by it all the
+ * same. Each row by the first statement that bills it at our figure.
+ */
+export function confirmationsFromSaved(saved: VendorStatement[], tickets: Ticket[]): Confirmation[] {
+  const out: Confirmation[] = [];
+  const done = new Set<string>();
+  for (const s of saved) {
+    if (!s.lines?.length) continue;
+    const billed = s.lines.filter(l => ser(l.ticketNo).length === 10)
+      .map(l => ({ ticketNo: ser(l.ticketNo), amount: Math.round((l.debit - l.credit) * 100) / 100 }) as Ticket);
+    const mine = tickets.filter(t => !done.has(t.id) && vendorMatchesSource(s.vendorName, t.source || ''));
+    for (const c of confirmationsFrom(billed, mine, `${s.vendorName}'s statement ${s.periodStart} to ${s.periodEnd}`).confirm) {
+      done.add(c.id); out.push(c);
+    }
+  }
+  return out;
+}
+
 export function confirmationsFromStatement(st: ParsedStatement, tickets: Ticket[], vendor = 'Ibtekar'): Confirmation[] {
   const billed = st.lines.filter(l => l.section !== 'RECEIPT' && ser(l.ticketNo).length === 10)
     .map(l => ({ ticketNo: ser(l.ticketNo), amount: Math.round((l.debit - l.credit) * 100) / 100 }) as Ticket);

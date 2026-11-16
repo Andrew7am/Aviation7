@@ -63,6 +63,7 @@ import { usePending } from './hooks/usePending';
 import { useTaxInvoices } from './hooks/useTaxInvoices';
 import { cacheGet, cachePut } from './utils/ledgerCache';
 import type { InvoiceNoFill } from './core/helpers/statementInvoiceNos';
+import { confirmationsFromSaved } from './core/helpers/statementInvoiceNos';
 import { useVoids } from './hooks/useVoids';
 import { admKind } from './core/helpers/admRegister';
 import { VoidTicketService } from './services/VoidTicketService';
@@ -476,6 +477,17 @@ function MainApp({ user }: { user: User }) {
       importSvc.audit('DELETE', t.ticketNo, `${t.source} ${t.ticketNo} (${t.amount} ${t.currency}${t.reqNum ? `, ${t.reqNum}` : ''}): ${why}`);
     }
   }, [user.id, refreshVoids, deleteTicket, importSvc]); // eslint-disable-line react-hooks/exhaustive-deps
+  /* A row recorded from their sheet after the statement that bills it was
+     uploaded: the saved statement confirms it all the same, without anybody
+     uploading it again (0050). Writes are the admin's, so it runs there. */
+  const confirmTried = React.useRef(new Set<string>());
+  React.useEffect(() => {
+    if (!isAdmin || !statements.some(s => s.lines?.length)) return;
+    const list = confirmationsFromSaved(statements, tickets).filter(c => !confirmTried.current.has(c.id));
+    if (!list.length) return;
+    list.forEach(c => confirmTried.current.add(c.id));
+    void handleConfirmFromStatement(list).catch(e => console.error('confirm from saved statements', e));
+  }, [isAdmin, statements, tickets, handleConfirmFromStatement]);
   const handleDeleteStatement = (id: string) => {
     deleteStatement(id);
     importSvc.audit('DELETE_STATEMENT', id, 'Statement deleted');

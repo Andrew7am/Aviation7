@@ -15,6 +15,7 @@ type Row = {
   other_charges: number;
   source_file: string | null;
   note: string | null;
+  lines: VendorStatement['lines'] | null;
   created_at: string;
 };
 
@@ -31,6 +32,7 @@ const rowTo = (r: Row): VendorStatement => ({
   otherCharges: Number(r.other_charges),
   sourceFile: r.source_file ?? undefined,
   note: r.note ?? undefined,
+  lines: r.lines ?? undefined,
   userId: r.user_id,
   createdAt: r.created_at,
 });
@@ -78,6 +80,8 @@ export class StatementService {
       other_charges: s.otherCharges,
       source_file: s.sourceFile?.trim() || null,
       note: s.note?.trim() || null,
+      // Left as it is when a statement is edited by hand rather than read.
+      ...(s.lines ? { lines: s.lines } : {}),
     }, { onConflict: 'id' });
     if (error) throw new Error(error.message);
   }

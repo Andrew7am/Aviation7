@@ -1,0 +1,12 @@
+-- A statement's ticket lines, kept with it (12 Nov 2026).
+--
+-- A row recorded from the team's sheet waits for the supplier to vouch for
+-- it. A statement uploaded after the row confirms it on upload; a row
+-- recorded after the statement was uploaded had nothing left to confirm it -
+-- the statement's lines were read and thrown away. 4862676472 and the six
+-- EMDs of XTDH69 sat "not confirmed" for two weeks while Ibtekar's 25-31 Oct
+-- statement billed every one of them at our figure.
+--
+-- Only the ticket lines: document serial, sale or refund, the amount. A
+-- statement is a hundred lines at most.
+alter table public.vendor_statements add column if not exists lines jsonb;

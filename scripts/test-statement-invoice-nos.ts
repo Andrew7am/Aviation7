@@ -2,8 +2,8 @@
  * Reading Ibtekar's statement files each ticket under the invoice number it
  * is billed on - what a request for its ZATCA tax invoice quotes.
  */
-import { invoiceNumbersFromStatement, confirmationsFromStatement } from '../src/core/helpers/statementInvoiceNos';
-import type { Ticket } from '../src/types';
+import { invoiceNumbersFromStatement, confirmationsFromStatement, confirmationsFromSaved } from '../src/core/helpers/statementInvoiceNos';
+import type { Ticket, VendorStatement } from '../src/types';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -65,6 +65,28 @@ console.log('\n4. What we keyed by hand, billed at our figure, is confirmed by i
   check('said by the statement', c[0]?.by, "Ibtekar's statement 2026-10-01 to 2026-10-19");
   check('a figure it bills differently is not confirmed', c.some(x => x.ticketNo === '1950195674'), false);
   check('one it never bills is not confirmed', c.some(x => x.ticketNo === '4862607005'), false);
+}
+
+console.log('\n5. A row recorded after the statement was saved: the saved statement confirms it');
+{
+  /* 4862676472 and the six EMDs of XTDH69: billed on Ibtekar's 25-31 Oct
+     statement at our figure, still "not confirmed" two weeks on, because the
+     statement was uploaded before anything could confirm them. */
+  const saved = (o: Partial<VendorStatement>): VendorStatement => ({ id: 's1', vendorName: 'Ibtekar', periodStart: '2026-10-25', periodEnd: '2026-10-31',
+    currency: 'SAR', openingBalance: 0, closingBalance: 0, billed: 0, paid: 0, otherCharges: 0, ...o });
+  const lines = [{ ticketNo: '065 - 4862676472', date: '2026-10-28', document: 'INV264884', debit: 855, credit: 0 },
+    { ticketNo: '065 - 1950195673', date: '2026-10-30', document: 'INV264913', debit: 180, credit: 0 },
+    { ticketNo: '065 - 4862606961', date: '2026-10-28', document: 'RFD260698', debit: 0, credit: 520.95 }];
+  const hand = (o: Partial<Ticket>) => tkt({ reportName: 'Team sheet — reviewed', ...o });
+  const ours = [hand({ ticketNo: '4862676472', amount: 855 }), hand({ ticketNo: '1950195673', amount: 170 }),
+    hand({ ticketNo: '4862606961', amount: -520.95 }), tkt({ ticketNo: '4862676473', amount: 1185.01, reportName: 'Ibtekar' })];
+  const c = confirmationsFromSaved([saved({ lines })], ours);
+  check('billed at our figure: confirmed, sale and refund', c.map(x => x.id).sort(), ['4862606961R', '4862676472S']);
+  check('...by that statement', c[0]?.by, "Ibtekar's statement 2026-10-25 to 2026-10-31");
+  check('a figure it bills differently is not', c.some(x => x.ticketNo === '1950195673'), false);
+  check('a statement saved without its lines confirms nothing', confirmationsFromSaved([saved({})], ours), []);
+  check("another vendor's statement confirms nothing", confirmationsFromSaved([saved({ vendorName: 'NSA', lines })], ours), []);
+  check('two statements billing it: confirmed once', confirmationsFromSaved([saved({ lines }), saved({ id: 's2', lines })], ours).length, 2);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
