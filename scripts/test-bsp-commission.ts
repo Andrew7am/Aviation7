@@ -19,7 +19,7 @@ import path from 'path';
 import Papa from 'papaparse';
 import { runParser } from '../src/core/parsers';
 import { extractPdfRows, pdfRowsToCsv } from '../src/core/helpers/pdfText';
-import { invoiceGrid, txn } from './helpers/bspFixture';
+import { invoiceGrid, txn, X } from './helpers/bspFixture';
 
 let pass = 0, fail = 0;
 function check(name: string, got: unknown, want: unknown) {
@@ -123,6 +123,24 @@ console.log('\n5-6  credit-card rows settle nothing, and carry no phantom commis
     txn: 1000.00, fare: 800.00, stdRate: 0, stdAmt: 0, suppRate: 0, suppAmt: 30.00, taxOnComm: 0, payable: 970.00,
   })]).rows[0];
   check('   a cash sale still books its payable', c?.amount, 970);
+}
+{
+  /* 9-15 Nov 2026: the form of payment printed on the line under the
+     refund, beside the first tax ("CC -180.00 IO"). 5513658343 came in at
+     0.00 next to the -1,520.00 already held. */
+  const ref = txn({ air: '235', trnc: 'RFND', doc: '5513658343', date: '09NOV26',
+    txn: -1520.00, fare: 0, taxes: { fc: -2180.00, pen: 1110.00 }, stdRate: 0, stdAmt: 0, suppRate: 0, suppAmt: 0, taxOnComm: 0, payable: 0 });
+  const r = parse(['*** REFUNDS', ref, [{ x: X.fop, text: 'CC' }, { x: X.tax, text: '-180.00' }, { x: 390, text: 'IO' }]]).rows[0];
+  check('6c card refund, CC on the line below: held at -1,520.00', r?.amount, -1520);
+  const cash = parse(['*** REFUNDS', txn({ trnc: 'RFND', doc: '5513658254', date: '09NOV26', txn: -1195.00, fare: -1440.00,
+    stdRate: 0, stdAmt: 0, suppRate: 0, suppAmt: 0, taxOnComm: 0, payable: -1195.00 }),
+    [{ x: X.fop, text: 'CA' }, { x: X.tax, text: '-80.00' }, { x: 390, text: 'IO' }]]).rows[0];
+  check('   a cash refund, CA below, still books its payable', cash?.amount, -1195);
+  // A CC under the NEXT transaction belongs to it, not to this one.
+  const two = parse(['*** REFUNDS', txn({ trnc: 'RFND', doc: '5513658298', date: '09NOV26', txn: -188.00, fare: 0,
+    stdRate: 0, stdAmt: 0, suppRate: 0, suppAmt: 0, taxOnComm: 0, payable: -188.00 }), ref,
+    [{ x: X.fop, text: 'CC' }]]).rows;
+  check('   the line below another transaction is not read', two.map(t => t.amount), [-188, -1520]);
 }
 
 /* ── 7-9: memos, fees and signs ─────────────────────────────────────────── */

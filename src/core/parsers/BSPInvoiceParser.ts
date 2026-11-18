@@ -355,9 +355,18 @@ export const BSPInvoiceParser: VendorParser = {
       const finalFare = isVoid ? 0 : fare;
       // Paid with the company's card: BSP settles only the commission, the
       // card paid the fare. The cost is the fare less the commission.
+      /* The form of payment is not always on the transaction's own line: on
+         the 9-15 Nov 2026 invoice STAT "I" is there and CA or CC sits under
+         it, on the first line of taxes ("CC -180.00 IO"). Read only on its
+         own line, the card refunds 5513658343 (-1,520.00) and 5513658344
+         (-370.00) came in at 0.00, beside the same refunds already held. */
       const runs = runsPerRow[lineIdx] ?? [];
+      const next = lines[lineIdx + 1] ?? '';
+      const under = lineIdx + 1 < lines.length && !TXN_RE.test(next) && !/^\s*\+RTDN/i.test(next)
+        ? runsPerRow[lineIdx + 1] ?? [] : [];
+      const atFop = (r: { x: number }) => Math.abs(r.x - columns.fop!) < 20;
       const card = columns.fop !== undefined
-        ? runs.some(r => /^CC/i.test(r.text.trim()) && Math.abs(r.x - columns.fop!) < 20)
+        ? runs.some(r => /^CC/i.test(r.text.trim()) && atFop(r)) || under.some(r => /^CC$/i.test(r.text.trim()) && atFop(r))
         : /^\s*(?:\S+\s+){0,3}CC\b/i.test(rest);
       const finalPayable = isVoid ? 0 : card ? cents(finalFare - commission) : payable;
 
