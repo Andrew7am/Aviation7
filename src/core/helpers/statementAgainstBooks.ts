@@ -259,10 +259,14 @@ export function reviewStatement(
       /* The statement refunds it and we hold no refund. Repricing the sale
          to the net would bury a refund of 1,906.70 inside a 10.30 ticket. */
       const p = parts.get(k)!;
+      /* A refund whose sale was billed on an earlier statement has no debit
+         here; the sale it pays back is the one in our books. */
+      const sale = p.debit || held;
       verdict = 'ASK';
       why = `The statement refunds ${p.credit.toFixed(2)}${p.refundDocs.length ? ` (${p.refundDocs.join(', ')})` : ''}`
-        + ` against a sale of ${p.debit.toFixed(2)}; our books hold the sale at ${held.toFixed(2)} and no refund.`
-        + (p.credit > p.debit + FEE_FLOOR
+        + (p.debit ? ` against a sale of ${p.debit.toFixed(2)}` : ' of a sale billed before this statement')
+        + `; our books hold the sale at ${held.toFixed(2)} and no refund.`
+        + (p.credit > sale + FEE_FLOOR
           ? ' The refund is larger than the sale it is written against - ask them which ticket it belongs to before recording it.'
           : ' Record the refund.');
     } else if ((parts.get(k)?.debit ?? 0) > 0 && !ours.some(t => (t.amount || 0) > 0)) {

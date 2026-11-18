@@ -183,5 +183,32 @@ console.log('\nN. A sale and its refund on the same statement');
         /larger than the sale/.test(by('4862405625').why), true);
 }
 
+console.log('\nO. A refund whose sale was on an earlier statement');
+{
+  /* Ibtekar's 01/11-18/11 statement refunds 4862343290 (1,015.00) and
+     4862343301 (1,207.00) on RFD260774; both were sold in October, so this
+     statement holds no debit for them. That is a plain refund to record,
+     not "a refund larger than its sale". */
+  const mini = {
+    ...st, periodStart: '2026-11-01', periodEnd: '2026-11-18', openingBalance: 0, closingBalance: 0,
+    lines: [
+      { section: 'TICKET', date: '2026-11-16', document: 'RFD260774', airline: '065', ticketNo: '4862343290', debit: 0, credit: 1015, balance: 0 },
+      { section: 'TICKET', date: '2026-11-16', document: 'RFD260774', airline: '065', ticketNo: '4862343301', debit: 0, credit: 1207, balance: 0 },
+      { section: 'TICKET', date: '2026-11-16', document: 'RFD260775', airline: '065', ticketNo: '4862343399', debit: 0, credit: 900, balance: 0 },
+    ],
+  } as typeof st;
+  const ours = [
+    t({ ticketNo: '4862343290', date: '2026-10-06', amount: 1015, totalDoc: 1005.1 }),
+    t({ ticketNo: '4862343301', date: '2026-10-06', amount: 1207.01, totalDoc: 1197.15 }),
+    t({ ticketNo: '4862343399', date: '2026-10-06', amount: 500, totalDoc: 490 }),
+  ];
+  const r = reviewStatement(mini, 'Ibtekar', ours, []);
+  const by = (k: string) => r.lines.find(c => c.line.ticketNo === k)!;
+  check('a refund of an earlier sale is asked as a refund to record',
+        [by('4862343290').verdict, /refunds 1015.00 \(RFD260774\) of a sale billed before this statement.*Record the refund/.test(by('4862343290').why)], ['ASK', true]);
+  check('...not as larger than its sale', /larger than the sale/.test(by('4862343301').why), false);
+  check('a refund above the sale we hold is still questioned', /larger than the sale/.test(by('4862343399').why), true);
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
