@@ -24,7 +24,19 @@ import { parseDate } from '../helpers/parseDate';
 const TXN_TYPES = new Set([
   'PAID_BOOKING', 'UNPAID_BOOKING', 'TICKETING', 'FREE_SEAT', 'PAID_SEAT',
   'REFUND', 'REFUNDED', 'VOID', 'VOIDED', 'CANCELLED', 'CANCELED', 'EXCHANGE',
+  // A hold let go before it was paid: no document, no money.
+  'UNPAID_CANCEL',
 ]);
+
+/* The DSR as downloaded since Nov 2026 has a title row ("DSR Report") and a
+   header row above the data; copied and pasted, both come along. Its header
+   names its columns, so it is recognised by them: "Record Locator" and
+   "Transaction Date" alone read as an RTS report. */
+const key = (c: string) => (c || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+const isDsrHeader = (cells: string[]) => {
+  const k = new Set(cells.map(key));
+  return k.has('txntype') && (k.has('verteilpnr') || k.has('airlineorderid'));
+};
 
 const CURRENCIES = new Set(['AED', 'SAR', 'USD', 'EUR', 'GBP', 'EGP']);
 
@@ -101,10 +113,16 @@ export const RiyadhAirParser: VendorParser = {
   detect: (headers) => {
     // `headers` is really the first data row. Riyadh Air is the only vendor
     // whose rows carry these booking-state enums alongside the RX carrier.
+    if (isDsrHeader(headers)) return true;
     const cells = headers.map(c => (c || '').toString().trim().toUpperCase());
     return cells.some(c => TXN_TYPES.has(c)) && cells.some(c => c === 'RX');
   },
-  parse: (rows, _headers, defaultCurrency): ParserResult => {
+  parse: (allRows, _headers, defaultCurrency): ParserResult => {
+    /* The title and header rows, when the file has them, are not data: the
+       columns are found by the shape of the values under them. */
+    const headerRow = allRows.find(isDsrHeader);
+    const rows = headerRow ? allRows.slice(allRows.indexOf(headerRow) + 1) : allRows;
+    const named = (name: string) => headerRow ? headerRow.findIndex(c => key(c) === name) : -1;
     const errors: string[] = [];
     const warnings: string[] = [];
     const result = [];
@@ -125,7 +143,7 @@ export const RiyadhAirParser: VendorParser = {
 
     // Money columns are indistinguishable by shape, so take them at the
     // vendor's fixed offsets from the currency column and verify.
-    let cTotal = cCurrency !== -1 ? cCurrency - 11 : -1;
+    let cTotal = named('totalfare') !== -1 ? named('totalfare') : cCurrency !== -1 ? cCurrency - 11 : -1;
     if (!looksNumeric(rows, cTotal)) {
       // Currency column missing or layout shifted — fall back to the offset
       // from the status column, then give up rather than guess.
@@ -154,7 +172,9 @@ export const RiyadhAirParser: VendorParser = {
     const extraCols = Math.max(0, width - 80);
 
     let cReq = -1;
-    if (extraCols > 0) {
+    /* With a header row, a Req column added anywhere is found by its name. */
+    if (headerRow) cReq = headerRow.findIndex(c => /^req(uest)?\s*(no|num|number|#)?\.?$/i.test((c || '').trim()));
+    if (cReq === -1 && extraCols > 0) {
       // Anchors before the insertion point keep their native index; anchors
       // after it are pushed right by the number of inserted columns.
       let lo = 0, hi = width - 1;
@@ -192,6 +212,8 @@ export const RiyadhAirParser: VendorParser = {
 
     // ── Walk the rows ────────────────────────────────────────────────────
     let skippedFreeSeats = 0;
+    /** Holds the same report shows let go unpaid (UNPAID_CANCEL). */
+    const cancelledHolds = new Set<string>();
 
     rows.forEach((row, idx) => {
       const txn = val(row, cTxn).toUpperCase();
@@ -208,6 +230,7 @@ export const RiyadhAirParser: VendorParser = {
       const cur       = val(row, cCurrency).toUpperCase();
 
       if (txn === 'FREE_SEAT') { skippedFreeSeats++; return; }
+      if (txn === 'UNPAID_CANCEL') { cancelledHolds.add(`${pnr}|${pax}`); return; }
 
       const isHold   = txn === 'UNPAID_BOOKING' || payStatus === 'UNPAID';
       const isRefund = txn === 'REFUND' || txn === 'REFUNDED';
@@ -270,7 +293,15 @@ export const RiyadhAirParser: VendorParser = {
     if (superseded.length > 0) {
       warnings.push(`${superseded.length} hold(s) already ticketed in this report — superseded by the issued ticket.`);
     }
-    const finalRows = result.filter(r => !(r.status === 'HOLD' && ticketedKeys.has(`${r.pnr}|${r.passengerName}`)));
+    const dropped = result.filter(r => r.status === 'HOLD' && cancelledHolds.has(`${r.pnr}|${r.passengerName}`)).length;
+    for (const k of cancelledHolds) {
+      const [p, x] = k.split('|');
+      const i = warnings.indexOf(`${p} / ${x}: on hold, not ticketed — excluded from balance`);
+      if (i !== -1) warnings.splice(i, 1);
+    }
+    if (dropped > 0) warnings.push(`${dropped} hold(s) cancelled unpaid in this report — left out, never issued.`);
+    const finalRows = result.filter(r => !(r.status === 'HOLD'
+      && (ticketedKeys.has(`${r.pnr}|${r.passengerName}`) || cancelledHolds.has(`${r.pnr}|${r.passengerName}`))));
 
     return { rows: finalRows, errors, warnings };
   },

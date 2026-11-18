@@ -36,8 +36,10 @@ export const ALL_PARSERS: VendorParser[] = [
   FlyAdealDXBParser, FlyAdealKSAParser,
   IbtekarV2Parser, IbtekarParser, GoldMedalParser,
   AirArabiaParser, FlynasParser,
-  FlyDubaiTAParser, FlyDubaiParser, RTSParser,
+  // Riyadh Air before RTS: its DSR header has "Record Locator" and
+  // "Transaction Date", which RTS's own signature also accepts.
   RiyadhAirParser,
+  FlyDubaiTAParser, FlyDubaiParser, RTSParser,
   // Both Turkish exports, each matching only its own header set. The agency
   // sales report is checked first: it is the newer format and the more
   // specific signature.
