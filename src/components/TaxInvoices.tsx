@@ -35,6 +35,25 @@ const fmt = (n: number) =>
 const monthName = (m: string) =>
   new Date(`${m}-01T12:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 
+/** The month's last day, '30' for '2026-11'. */
+const lastDay = (m: string) => String(new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7), 0)).getUTCDate());
+
+/**
+ * A period chosen on the screen: 'ALL', a month ('2026-11'), half a month
+ * ('2026-11-A' is 1-15, '2026-11-B' 16 to the month's end), or 'CUSTOM'.
+ * Ibtekar's tax invoices are asked for every fifteen days (the user,
+ * 18 Nov 2026), so each month offers its two halves.
+ */
+export function periodRange(period: string, from = '', to = ''): { from: string; to: string; label: string } {
+  if (period === 'ALL') return { from: '', to: '', label: '' };
+  if (period === 'CUSTOM') return { from, to, label: from || to ? ` ${from || '…'} to ${to || '…'}` : '' };
+  const m = period.slice(0, 7), half = period.slice(8);
+  const end = lastDay(m), name = monthName(m);
+  if (half === 'A') return { from: `${m}-01`, to: `${m}-15`, label: ` 1-15 ${name}` };
+  if (half === 'B') return { from: `${m}-16`, to: `${m}-${end}`, label: ` 16-${end} ${name}` };
+  return { from: `${m}-01`, to: `${m}-${end}`, label: ` ${name}` };
+}
+
 const CREDIT_BADGE: Record<RefundCoverage, { label: string; cls: string }> = {
   CREDITED:       { label: 'Credit note held',          cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   AMOUNT_DIFFERS: { label: 'Credit note, other amount', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
@@ -215,17 +234,12 @@ export const TaxInvoices: React.FC<{
   const whole = useMemo(() => coverageReport(invoices, ours), [invoices, ours]);
   const months = useMemo(() => [...new Set(whole.tickets.map(r => (r.ticket.date || '').slice(0, 7)).filter(m => /^\d{4}-\d{2}$/.test(m)))]
     .sort().reverse(), [whole]);
-  const [pFrom, pTo] = period === 'ALL' ? ['', '']
-    : period === 'CUSTOM' ? [from, to]
-    : [`${period}-01`, `${period}-31`];
+  const { from: pFrom, to: pTo, label: periodLabel } = periodRange(period, from, to);
   const report = useMemo(() => coverageInPeriod(whole, pFrom, pTo), [whole, pFrom, pTo]);
   /* The money that came back, and the ZATCA credit notes for it - cut by the
      refund's own date, the way the sales are cut by the sale's. */
   const credits = useMemo(() => creditsInPeriod(creditNoteReport(invoices, ours), pFrom, pTo), [invoices, ours, pFrom, pTo]);
   const [creditFilter, setCreditFilter] = useState<RefundCoverage | 'OWED' | 'ALL'>('OWED');
-  const periodLabel = period === 'ALL' ? '' : period === 'CUSTOM'
-    ? (pFrom || pTo ? ` ${pFrom || '…'} to ${pTo || '…'}` : '')
-    : ` ${monthName(period)}`;
   const currency = ours[0]?.currency ?? 'SAR';
 
   /* The uncovered list is the reason to open this screen, so it opens on it.
@@ -294,7 +308,13 @@ export const TaxInvoices: React.FC<{
             <select value={period} onChange={e => setPeriod(e.target.value)} title="Tickets issued in"
               className="text-[11px] border border-slate-200 rounded px-2 py-1.5 text-slate-600 bg-white">
               <option value="ALL">All dates</option>
-              {months.map(m => <option key={m} value={m}>{monthName(m)}</option>)}
+              {months.map(m => (
+                <optgroup key={m} label={monthName(m)}>
+                  <option value={`${m}-A`}>1-15 {monthName(m)}</option>
+                  <option value={`${m}-B`}>16-{lastDay(m)} {monthName(m)}</option>
+                  <option value={m}>All of {monthName(m)}</option>
+                </optgroup>
+              ))}
               <option value="CUSTOM">From / to…</option>
             </select>
             {period === 'CUSTOM' && (<>
