@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { Ticket, VendorStatement, VendorBalance, BalanceTopUp } from '../types';
 import {
-  FileText, Plus, Trash2, X, ChevronDown, ChevronRight, Wallet,
+  FileText, Plus, Trash2, ChevronDown, ChevronRight, Wallet,
   AlertTriangle, CheckCircle2, Edit3, Link2Off,
 } from 'lucide-react';
+import { Dialog, DialogClose } from './ui/Dialog';
 import {
   ledgerAccount, unmatchedInPeriod, LedgerPeriod, Payment,
 } from '../core/helpers/statementMath';
@@ -97,16 +98,12 @@ const StatementForm: React.FC<{
   const foots = Math.abs(gap) < 0.011;
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-           onClick={e => e.stopPropagation()}>
+    <Dialog onClose={onClose} label={`${s.vendorName} statement of account`} className="sm:max-w-2xl overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
           <h3 className="font-bold text-sm text-slate-700">
             {s.vendorName} — statement of account
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-            <X className="w-4 h-4" />
-          </button>
+          <DialogClose onClick={onClose} />
         </div>
 
         <div className="p-5 space-y-4">
@@ -189,8 +186,7 @@ const StatementForm: React.FC<{
             Save statement
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };
 

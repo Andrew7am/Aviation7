@@ -65,3 +65,52 @@ html {
     -webkit-overflow-scrolling: touch;
   }
 }
+
+/*
+ * Motion. Short, and only where it says something: a dialog arriving, a
+ * sheet rising from the bottom of a phone. Both are named in the markup as
+ * motion-safe:animate-[...], so a reader who asked for less motion gets none.
+ */
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/*
+ * Everything else that moves - the drawer, the spinners' neighbours, the
+ * colour fades on hover - stops for a reader who asked the system for less
+ * motion. A spinner still turns: it is the only sign that work is going on.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  *:not(.animate-spin) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/*
+ * Where the keyboard is. Mouse clicks leave no ring (focus-visible only
+ * matches keyboard focus), so the desktop looks as it did; tabbing through a
+ * screen now shows which control is next instead of nothing at all.
+ */
+:where(button, a, summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--color-blue-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/*
+ * A floor for the smallest print on a phone. Labels, badges and column heads
+ * are set at 8px and 9px for a desk monitor, where they read; on a phone held
+ * at arm's length they are a grey smudge. Below md they come up to 10px.
+ * Nothing is reflowed by it - a ledger column of 9px figures is a column of
+ * 10px figures - and from md up nothing changes at all.
+ */
+@media (max-width: 767px) {
+  .text-\[8px\], .text-\[9px\] { font-size: 10px; }
+}

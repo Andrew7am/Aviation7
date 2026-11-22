@@ -185,12 +185,12 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
         <Band rows={report.byMonth.slice(0, 14)} label="By month" />
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-0 sm:flex-none">
           <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="ticket, PNR, passenger, period"
-            className="text-[11px] border border-slate-200 rounded pl-6 pr-2 py-1.5 w-64 text-slate-700" />
+            className="text-[11px] border border-slate-200 rounded pl-6 pr-2 py-1.5 w-full sm:w-64 text-slate-700" />
         </div>
         {sources.length > 1 && (
           <select value={source} onChange={e => setSource(e.target.value)}
@@ -203,7 +203,8 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
       </div>
 
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <table className="w-full text-left">
+        <div className="overflow-x-auto">
+        <table className="w-full text-left whitespace-nowrap">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
               <th className="px-3 py-2">Ticket</th>
@@ -239,6 +240,7 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
             )}
           </tbody>
         </table>
+        </div>
         {rows.length > PER_PAGE && (
           <div className="px-3 py-2 border-t border-slate-100 flex items-center justify-between">
             <span className="text-[10px] text-slate-400">

@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { VendorBalance, BalanceTopUp, Ticket } from '../types';
 import {
   Plus, Trash2, Wallet, ChevronDown, ChevronRight,
-  TrendingUp, TrendingDown, X, PlusCircle, Edit3
+  TrendingUp, TrendingDown, PlusCircle, Edit3
 } from 'lucide-react';
+import { Dialog, DialogClose } from './ui/Dialog';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
 
 interface VendorBalancesProps {
@@ -409,14 +410,8 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
           MODAL OVERLAY
       ════════════════════════════════════════ */}
       {modalMode && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
-          onClick={closeModal}
-        >
-          <div
-            className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
+        <Dialog onClose={closeModal} label={modalMode === 'topup' ? 'Top up a vendor' : 'Add a vendor'}
+          className="sm:max-w-md overflow-y-auto">
 
             {/* ── ADD VENDOR MODAL ── */}
             {(modalMode === 'add_existing' || modalMode === 'add_new') && (
@@ -426,9 +421,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                     <Plus className="w-4 h-4 text-purple-600" />
                     <h3 className="font-bold text-sm uppercase tracking-wider text-slate-700">Add Vendor</h3>
                   </div>
-                  <button onClick={closeModal} className="text-slate-400 hover:text-slate-700">
-                    <X className="w-4 h-4" />
-                  </button>
+                  <DialogClose onClick={closeModal} />
                 </div>
 
                 {/* Tab switcher */}
@@ -542,9 +535,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                       Add Balance — {topUpVendor.vendorName}
                     </h3>
                   </div>
-                  <button onClick={closeModal} className="text-slate-400 hover:text-slate-700">
-                    <X className="w-4 h-4" />
-                  </button>
+                  <DialogClose onClick={closeModal} />
                 </div>
 
                 <div className="p-5 space-y-4">
@@ -598,8 +589,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                 </div>
               </>
             )}
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );

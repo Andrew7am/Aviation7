@@ -1,8 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Ticket } from '../types';
 import {
-  X, AlertTriangle, CheckCircle2, Circle, TrendingDown, TrendingUp, Building2, Download, Copy,
+  AlertTriangle, CheckCircle2, Circle, TrendingDown, TrendingUp, Building2, Download, Copy,
 } from 'lucide-react';
+import { Dialog, DialogClose } from './ui/Dialog';
 import { classifyOffice, OFFICE_LABEL, Office } from '../core/helpers/reqOffice';
 import { ticketLines, copyableTickets } from '../core/helpers/ticketClipboard';
 import { writeClipboard } from '../utils/clipboard';
@@ -185,10 +186,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
-         onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col"
-           onClick={e => e.stopPropagation()}>
+    <Dialog onClose={onClose} label={`Request ${reqNum}`} className="sm:max-w-5xl flex flex-col">
 
         <div className="flex items-start justify-between px-5 py-3 border-b border-slate-100 shrink-0">
           <div>
@@ -225,9 +223,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
                 <Download className="w-3.5 h-3.5" /> Export
               </button>
             )}
-            <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
-              <X className="w-4 h-4" />
-            </button>
+            <DialogClose onClick={onClose} />
           </div>
         </div>
 
@@ -389,8 +385,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };
 

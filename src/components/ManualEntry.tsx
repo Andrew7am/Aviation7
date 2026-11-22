@@ -7,7 +7,8 @@ import { knownSources } from '../core/config/sources';
 import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { splitTicketNo } from '../core/helpers/ticketIdentity';
 import { airlineName } from '../core/config/airlines';
-import { X, PlusCircle, AlertTriangle } from 'lucide-react';
+import { PlusCircle, AlertTriangle } from 'lucide-react';
+import { Dialog, DialogClose } from './ui/Dialog';
 
 interface ManualEntryProps {
   /** Vendors holding a credit wallet. Suggested first, but not a restriction:
@@ -181,14 +182,13 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
   const label = 'text-[10px] font-bold uppercase text-slate-500 block mb-1.5';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl mx-4 overflow-hidden max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+    <Dialog onClose={onClose} label="Add a transaction manually" className="sm:max-w-2xl overflow-hidden flex flex-col">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50 shrink-0">
           <div className="flex items-center space-x-2">
             <PlusCircle className="w-4 h-4 text-blue-600" />
             <h3 className="font-bold text-sm uppercase tracking-wider text-slate-700">Add Transaction Manually</h3>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700"><X className="w-4 h-4" /></button>
+          <DialogClose onClick={onClose} />
         </div>
 
         <div className="p-5 space-y-4 overflow-y-auto">
@@ -388,14 +388,13 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
           )}
         </div>
 
-        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 shrink-0">
+        <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 shrink-0 [&>button]:flex-1 sm:[&>button]:flex-none">
           <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded text-[10px] font-bold uppercase text-slate-500 hover:bg-white">Cancel</button>
           <button onClick={handleSave} disabled={!canSave || saving}
             className="px-4 py-2 bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400">
             {saving ? 'Saving…' : `Save ${TYPES.find(t => t.key === type)!.label}`}
           </button>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 };

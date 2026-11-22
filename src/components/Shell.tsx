@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Plane, Upload, LogOut, PlusCircle, Eye, Menu, Moon, Sun } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Plane, Upload, LogOut, PlusCircle, Eye, Menu, Moon, Sun, X } from 'lucide-react';
 import { useTheme } from '../utils/theme';
 
 /**
@@ -49,6 +49,13 @@ export const Shell: React.FC<Props> = ({
   const { theme, setTheme } = useTheme();
   // Closed by default so a phone opens on the ledger rather than on a menu.
   const [navOpen, setNavOpen] = useState(false);
+  // Escape closes the drawer, as it closes every dialog.
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setNavOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [navOpen]);
 
   return (
     /* 100dvh rather than 100vh: on a phone, 100vh is the height the viewport
@@ -61,7 +68,7 @@ export const Shell: React.FC<Props> = ({
           {/* The only way back to the drawer once it is closed. */}
           <button onClick={() => setNavOpen(true)}
             className="lg:hidden -ml-1 p-2 rounded hover:bg-white/10 shrink-0"
-            aria-label="Open the menu">
+            aria-label="Open the menu" aria-expanded={navOpen} aria-controls="app-nav">
             <Menu className="w-5 h-5" />
           </button>
           <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center shadow shrink-0">
@@ -79,7 +86,7 @@ export const Shell: React.FC<Props> = ({
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
             title={theme === 'light' ? 'Dark mode' : 'Light mode'} aria-label={theme === 'light' ? 'Dark mode' : 'Light mode'}
-            className="text-white/70 hover:text-white p-1.5 rounded-md hover:bg-white/10 transition-colors">
+            className="text-white/70 hover:text-white p-2 rounded-md hover:bg-white/10 transition-colors">
             {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
           {/* Adding and importing both write. A viewer gets a badge instead,
@@ -107,7 +114,9 @@ export const Shell: React.FC<Props> = ({
               <Eye className="w-3.5 h-3.5 md:w-3 md:h-3" /><span className="hidden md:inline">View Only</span>
             </span>
           )}
-          <button onClick={onLogout} className="text-white/30 hover:text-white/70 p-1" title="Sign Out">
+          {/* Was white at 30%: a control nobody could find on a phone in daylight. */}
+          <button onClick={onLogout} className="text-white/60 hover:text-white p-2 -mr-1 rounded-md hover:bg-white/10 transition-colors"
+            title="Sign Out" aria-label="Sign out">
             <LogOut className="w-4 h-4" />
           </button>
         </div>
@@ -120,22 +129,34 @@ export const Shell: React.FC<Props> = ({
           <div className="lg:hidden fixed inset-0 bg-black/40 z-30"
                onClick={() => setNavOpen(false)} aria-hidden="true" />
         )}
-        <aside className={`w-56 bg-white border-r border-slate-200 flex flex-col shrink-0
+        {/* On a phone the drawer is wider than the desktop rail - 18rem, never
+            more than the screen less a strip of page to tap back onto. Hidden
+            from the keyboard and from screen readers while it is off screen. */}
+        <aside id="app-nav" aria-label="Screens"
+          className={`w-[min(18rem,calc(100vw-3rem))] lg:w-56 bg-white border-r border-slate-200 flex flex-col shrink-0
           absolute lg:static inset-y-0 left-0 z-40 lg:z-auto
-          transition-transform duration-200 lg:transition-none
-          ${navOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full lg:translate-x-0'}`}>
-          <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+          transition-[transform,visibility] duration-200 ease-out lg:transition-none
+          ${navOpen ? 'translate-x-0 shadow-xl visible' : '-translate-x-full invisible lg:visible lg:translate-x-0'}`}>
+          <div className="lg:hidden flex items-center justify-between px-4 h-12 border-b border-slate-100 shrink-0">
+            <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">Menu</span>
+            <button onClick={() => setNavOpen(false)} aria-label="Close the menu"
+              className="-mr-2 p-2 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <nav className="flex-1 px-3 py-3 lg:py-4 space-y-0.5 overflow-y-auto overscroll-contain">
             {navItems.map(item => {
               const active  = view === item.id;
               const isRed   = item.badgeColor === 'red';
               const isAmber = item.badgeColor === 'amber';
               return (
                 <button key={item.id} onClick={() => { onView(item.id); setNavOpen(false); }}
-                  className={`w-full flex items-center space-x-2.5 px-3 py-2.5 lg:py-2 rounded text-[11px] font-bold uppercase tracking-wider transition-all ${
+                  aria-current={active ? 'page' : undefined}
+                  className={`w-full flex items-center space-x-2.5 px-3 py-3 lg:py-2 rounded-md text-xs lg:text-[11px] font-bold uppercase tracking-wider transition-colors ${
                     active ? isRed ? 'bg-red-50 text-red-700 border border-red-200'
                            : isAmber ? 'bg-amber-50 text-amber-700 border border-amber-200'
                            : 'bg-slate-100 text-slate-900 border border-slate-200'
-                           : 'text-slate-400 hover:bg-slate-50 hover:text-slate-700 border border-transparent'}`}>
+                           : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800 border border-transparent'}`}>
                   <span className={active ? isRed ? 'text-red-600' : isAmber ? 'text-amber-600' : 'text-slate-700' : 'text-slate-400'}>
                     {item.icon}
                   </span>

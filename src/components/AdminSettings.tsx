@@ -137,8 +137,8 @@ const Vendors: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (v: Ven
           ))}
         </tbody>
       </table>
-      <div className="flex gap-2 mt-3 items-center">
-        <input className={`${input} flex-1`} placeholder="New vendor name, as it should read everywhere" value={name}
+      <div className="flex flex-wrap gap-2 mt-3 items-center">
+        <input className={`${input} flex-1 min-w-0 basis-full sm:basis-auto`} placeholder="New vendor name, as it should read everywhere" value={name}
           onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} />
         <select className={input} value={cur} onChange={e => setCur(e.target.value as VendorCurrencyCode)}>{CURRENCIES.map(c => <option key={c}>{c}</option>)}</select>
         <button onClick={add} className={`${btn} bg-slate-100 text-slate-700 hover:bg-slate-200`}><Plus className="w-3 h-3" /> Add</button>
@@ -184,8 +184,8 @@ const Portals: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (p: Por
           ))}
         </tbody>
       </table>
-      <div className="flex gap-2 mt-3 items-center">
-        <input className={`${input} flex-1`} placeholder="A word in their Portal column, e.g. Saudia Portal" value={word}
+      <div className="flex flex-wrap gap-2 mt-3 items-center">
+        <input className={`${input} flex-1 min-w-0 basis-full sm:basis-auto`} placeholder="A word in their Portal column, e.g. Saudia Portal" value={word}
           onChange={e => setWord(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} />
         <select className={input} value={source} onChange={e => setSource(e.target.value)}>
           <option value="">Our vendor…</option>{vendors.map(v => <option key={v}>{v}</option>)}</select>

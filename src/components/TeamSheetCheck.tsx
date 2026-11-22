@@ -4,6 +4,7 @@ import {
   Upload, AlertTriangle, CheckCircle2, X, Loader2, FileSpreadsheet, Download,
   ChevronDown, ChevronRight, Info, ArrowLeftRight, FolderOpen, Copy, ClipboardCheck, Plus, RefreshCw,
 } from 'lucide-react';
+import { Dialog } from './ui/Dialog';
 import { readFileAsText } from '../core/ImportEngine';
 import Papa from 'papaparse';
 import { AirtableService } from '../services/AirtableService';
@@ -308,9 +309,8 @@ const ByHand: React.FC<{
   const field = 'border border-slate-200 rounded px-1.5 py-1 text-[11px] font-mono w-full';
   return (
     // Over the page rather than inside the row: the table scrolls and would cut it off.
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4" onClick={onClose}>
-    <div onClick={e => e.stopPropagation()}
-      className="w-full max-w-sm bg-white border border-slate-300 rounded-lg shadow-xl p-4 text-left font-sans space-y-2 whitespace-normal">
+    <Dialog onClose={onClose} label={`Add ${p.ticketNo || p.pnr} anyway`}
+      className="sm:max-w-sm border border-slate-300 p-4 text-left font-sans space-y-2 whitespace-normal overflow-y-auto">
       <div className="text-xs font-bold text-slate-700 font-mono">
         {p.ticketNo || p.pnr} · {p.reqNum || p.theirReq || 'no request'}{(p.transactionType || '').toUpperCase() === 'REFUND' ? ' · refund' : ''}
       </div>
@@ -352,8 +352,7 @@ const ByHand: React.FC<{
           {busy ? 'Adding…' : `Add anyway${isRefund ? ' (refund)' : ''}`}
         </button>
       </div>
-    </div>
-    </div>
+    </Dialog>
   );
 };
 
@@ -1154,7 +1153,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
           </p>
         </div>
         {report && (
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2">
             {onAddToLedger && ready.length > 0 && (
               <button onClick={addAll} disabled={addingAll}
                 title={`${ready.length} ticket(s) on their sheet, missing from our books, that pass every check`}
@@ -1249,14 +1248,14 @@ export const TeamSheetCheck: React.FC<Props> = ({
           <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider shrink-0">
             Period
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto">
             <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-              className="font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded
+              className="min-w-0 flex-1 sm:flex-none font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded
                          focus:outline-none focus:ring-2 focus:ring-purple-500/20
                          focus:border-purple-400" />
             <span className="text-[11px] text-slate-400">to</span>
             <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-              className="font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded
+              className="min-w-0 flex-1 sm:flex-none font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded
                          focus:outline-none focus:ring-2 focus:ring-purple-500/20
                          focus:border-purple-400" />
             {(fromDate || toDate) && (
@@ -1264,7 +1263,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
                 className="text-[11px] text-slate-400 hover:text-slate-700 px-1">clear</button>
             )}
           </div>
-          <span className="text-[11px] text-slate-500 flex-1 min-w-[280px]">
+          <span className="text-[11px] text-slate-500 flex-1 basis-full md:basis-auto md:min-w-[280px]">
             What this copy of their sheet covers. Their rows outside it are set aside, and
             nothing of ours outside it is reported as missing.{' '}
             <b className="text-slate-600">Your books are searched in full whatever you put

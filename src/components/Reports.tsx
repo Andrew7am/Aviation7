@@ -688,7 +688,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   return (
     <div className="flex flex-col h-full bg-slate-100">
-      <div className="px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex items-center justify-between gap-4">
+      <div className="px-4 sm:px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex items-center justify-between gap-4">
         <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Reports &amp; Exports</h2>
         <button
           onClick={exportFullBackup}

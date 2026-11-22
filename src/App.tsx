@@ -6,7 +6,6 @@ import { AuthGuard } from './components/AuthGuard';
 import { AlertBanner } from './components/AlertBanner';
 import { Shell } from './components/Shell';
 import { Dashboard } from './components/Dashboard';
-import { TicketTable } from './components/TicketTable';
 
 /**
  * Every screen except the two you land on is fetched when it is opened.
@@ -20,6 +19,9 @@ import { TicketTable } from './components/TicketTable';
  * opens next, and splitting those would trade a smaller download for a
  * spinner on the two screens most used.
  */
+// The ledger is the biggest screen in the app and the dashboard opens first:
+// its code waits until a ticket list is asked for.
+const TicketTable     = React.lazy(() => import('./components/TicketTable').then(m => ({ default: m.TicketTable })));
 const Requests        = React.lazy(() => import('./components/Requests').then(m => ({ default: m.Requests })));
 const ImportData      = React.lazy(() => import('./components/ImportData').then(m => ({ default: m.ImportData })));
 const AirtablePage = React.lazy(() => import('./components/AirtablePage').then(m => ({ default: m.AirtablePage })));
@@ -41,9 +43,18 @@ const ManualEntry     = React.lazy(() => import('./components/ManualEntry').then
 /** Shown while a screen's code is on its way. Deliberately plain: a skeleton
  *  that mimics a table invites the reader to believe figures are loading when
  *  what is loading is the page itself. */
+/** While a screen's code arrives. A skeleton of the page it is about to be -
+ *  a heading and a few rows - so the screen does not jump from a word in the
+ *  middle to a table at the top. */
 const Loading: React.FC = () => (
-  <div className="flex items-center justify-center h-full p-10">
-    <span className="text-[11px] font-mono text-slate-400">loading…</span>
+  <div className="p-4 sm:p-6 space-y-4" role="status" aria-label="Loading">
+    <div className="h-3 w-40 rounded bg-slate-200 motion-safe:animate-pulse" />
+    <div className="bg-white border border-slate-200 rounded-lg p-4 space-y-3">
+      {[0, 1, 2, 3, 4].map(i => (
+        <div key={i} className="h-3 rounded bg-slate-100 motion-safe:animate-pulse"
+             style={{ width: `${92 - i * 9}%` }} />
+      ))}
+    </div>
   </div>
 );
 import { AuditService, AuditRecord, canRead, type Role } from './services/AuditService';

@@ -208,18 +208,18 @@ export const ActivityLog: React.FC<{
       {tab === 'activity' && (
         <>
           <div className="px-4 py-2 bg-white border-b border-slate-200 flex flex-wrap items-center gap-2 shrink-0">
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
               <input type="text" placeholder="Search ticket, detail, person..." value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-mono w-56 focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-mono w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
             </div>
             <select value={actorFilter} onChange={e => setActorFilter(e.target.value)}
-              className="px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
+              className="max-w-full min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
               {actors.map(a => <option key={a} value={a}>{a === 'ALL' ? 'All people' : a}</option>)}
             </select>
             <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
-              className="px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
+              className="max-w-full min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
               {actions.map(a => <option key={a} value={a}>{a === 'ALL' ? 'All actions' : a}</option>)}
             </select>
             <span className="text-[10px] font-mono text-slate-400">{filtered.length} entries</span>
@@ -231,7 +231,7 @@ export const ActivityLog: React.FC<{
             {/* Housekeeping, deliberately not dressed up as a speed control. */}
             <span className="w-px h-5 bg-slate-200" />
             <select value={pruneDays} onChange={e => setPruneDays(Number(e.target.value))}
-              className="px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
+              className="max-w-full min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
               <option value={30}>Older than 30 days</option>
               <option value={90}>Older than 90 days</option>
               <option value={180}>Older than 6 months</option>
