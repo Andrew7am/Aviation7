@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { walletReference } from '../core/config/appSettings';
 import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { VendorBalance, BalanceTopUp, Ticket } from '../types';
@@ -196,7 +197,8 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
     const totalRefunds = vTickets.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
     const remaining = vendor.currentBalance;
     const isNeg = remaining < 0;
-    const pct = vendor.initialBalance > 0 ? (remaining / vendor.initialBalance) * 100 : 0;
+    const ref = walletReference(vendor.vendorName, vendor.initialBalance);
+    const pct = ref > 0 ? (remaining / ref) * 100 : 100;
     return { vTickets, vTopUps, totalTopUp, netIssued: totalIssued - totalRefunds, remaining, isNeg, pct,
              isLow: pct < 20 && remaining >= 0 };
   };

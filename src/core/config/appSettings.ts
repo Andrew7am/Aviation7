@@ -22,6 +22,9 @@ export interface VendorSetting {
   /** Bills on a statement and settles against a credit wallet: its tickets
    *  are never keyed by hand. Unset: the built-in rule (Ibtekar, NSA). */
   onStatement?: boolean;
+  /** The balance the vendor normally holds; the wallet's "Low" is read
+   *  against it. Without one, the opening balance is used. */
+  limit?: number;
 }
 /** A word in the team sheet's Portal column, and the vendor it means. */
 export interface PortalSetting { word: string; source: string }
@@ -89,4 +92,12 @@ export function applyAppSettings(rows: { key: string; value: unknown }[]): Loade
   const ek = s.airlineLimits.find(l => l.airlineCode === EMIRATES_IATA.airlineCode);
   if (ek) Object.assign(EMIRATES_IATA, ek);
   return s;
+}
+
+/** What a vendor's balance is measured against for Low: its normal limit
+ *  (Ibtekar 20,000 SAR, the user, 22 Nov 2026), else its opening balance. */
+const DEFAULT_LIMITS: Record<string, number> = { ibtekar: 20000 };
+export function walletReference(name: string, initialBalance: number): number {
+  const set = vendors.find(v => v.name.toLowerCase() === (name || '').toLowerCase())?.limit;
+  return set && set > 0 ? set : DEFAULT_LIMITS[(name || '').toLowerCase()] ?? initialBalance;
 }
