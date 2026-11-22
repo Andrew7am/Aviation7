@@ -425,6 +425,12 @@ const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean; withCompany?: bo
   );
 };
 
+type TicketKind = 'ISSUE' | 'REISSUE' | 'REFUND' | 'EMD' | 'MEMO' | 'VOID' | 'TOPUP';
+const KIND_ORDER: TicketKind[] = ['ISSUE', 'REISSUE', 'REFUND', 'EMD', 'MEMO', 'VOID', 'TOPUP'];
+const KIND_LABEL: Record<TicketKind, string> = {
+  ISSUE: 'Issue', REISSUE: 'Reissue', REFUND: 'Refund', EMD: 'EMD', MEMO: 'ADM / ACM', VOID: 'Void', TOPUP: 'Top-up',
+};
+
 export const TicketTable: React.FC<TicketTableProps> = ({
   tickets, title, icon, initialSearch = '', defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, exchanges = [], companyOf, onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed, canClose,
 }) => {
@@ -442,6 +448,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const [closedFilter, setClosedFilter] = useState<'ALL' | 'CLOSED' | 'NOT_CLOSED'>(defaultClosed);
   const [travelFilter, setTravelFilter] = useState<'ALL' | TravelScope>('ALL');
   const [cabinFilter, setCabinFilter]   = useState<string>('ALL');
+  /** What kind of document a row is: an issue, a reissue, a refund... */
+  const [typeFilter, setTypeFilter]     = useState<'ALL' | TicketKind>('ALL');
   /** Which office raised the request, read off the req number's prefix. */
   const [officeFilter, setOfficeFilter] = useState<string>('ALL');
   /** Whose ticket: a company from the team's Airtable, or NONE for the ones nothing names. */
@@ -539,6 +547,22 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         || chainOf((t.ticketNo || '').replace(/\D/g, '').slice(-10), chainIdx).position > 0),
   [chainIdx]);
 
+  /** The kind of document a row is. A reissue is an issue that replaced an
+   *  earlier ticket - said by the transaction type, or by the reissue
+   *  register for the ones imported before the type was kept - paid or not. */
+  const kindOf = useCallback((t: Ticket): TicketKind => {
+    if (t.id.startsWith('void:')) return 'VOID';
+    const st = (t.status || '').toUpperCase();
+    if (st === 'FUND') return 'TOPUP';
+    if (/^(REFUND|RFND)$/.test(st)) return 'REFUND';
+    if (/^EMDS?$/.test(st)) return 'EMD';
+    if (/^(ADM|ACM)$/.test(st)) return 'MEMO';
+    if (/^(VOID|CANN|CANX|RFNX)$/.test(st)) return 'VOID';
+    if ((t.transactionType || '').toUpperCase() === 'REISSUE'
+        || chainOf((t.ticketNo || '').replace(/\D/g, '').slice(-10), chainIdx).position > 0) return 'REISSUE';
+    return 'ISSUE';
+  }, [chainIdx]);
+
   /** Every request number the ledger holds, as whole tokens. */
   const reqTokens = useMemo(() => new Set(tickets.flatMap(t => reqTokensOf(t.reqNum || ''))), [tickets]);
 
@@ -569,6 +593,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterMode === 'NO_DATE' && !missingDate(t.date)) return false;
       if (filterMode === 'CHANGED' && !afterClose?.has(t.id)) return false;
       if (filterMode === 'UNCONFIRMED' && !unconfirmed(t)) return false;
+      if (typeFilter !== 'ALL' && kindOf(t) !== typeFilter) return false;
       // No vendor ticked means every vendor, not none.
       if (sourceSel.length > 0 && !sourceSel.includes(t.source)) return false;
       // Dates are YYYY-MM-DD, so these compare as strings. A row with no date
@@ -636,7 +661,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       return true;
     });
     return sortRows(rows);
-  }, [tickets, searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, filterCost, sortRows, isFreeReissue, companyOf, companyFilter, splitOf, reqTokens]);
+  }, [tickets, searchTerm, filterMode, typeFilter, kindOf, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, filterTicket, filterAL, filterPax, filterPNR, filterCost, sortRows, isFreeReissue, companyOf, companyFilter, splitOf, reqTokens]);
 
   /** The voids, shaped as rows so they sort and page with the tickets. */
   const voidRows = useMemo(() => voids.map((v, i): Ticket => ({
@@ -651,6 +676,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
    *  closure state, a cabin) that a void has no answer to. */
   const voidShown = useMemo(() => {
     if (filterMode !== 'ALL' && filterMode !== 'VOIDS') return [];
+    if (typeFilter !== 'ALL' && typeFilter !== 'VOID') return [];
     if (closedFilter !== 'ALL' || travelFilter !== 'ALL' || cabinFilter !== 'ALL' || officeFilter !== 'ALL' || companyFilter !== 'ALL') return [];
     return voidRows.filter(t => {
       if (sourceSel.length > 0 && !sourceSel.includes(t.source)) return false;
@@ -673,7 +699,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       }
       return true;
     });
-  }, [voidRows, filterMode, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, sourceSel, dateFrom, dateTo, filterTicket, filterAL, filterPax, filterPNR, filterCost, searchTerm]);
+  }, [voidRows, filterMode, typeFilter, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, sourceSel, dateFrom, dateTo, filterTicket, filterAL, filterPax, filterPNR, filterCost, searchTerm]);
 
   /** What the table lists: the ledger rows, then the voids - or the two
    *  merged when a column is sorted. */
@@ -682,6 +708,11 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     [filtered, voidShown, sortRows]);
   const isVoidLine = (t: Ticket) => t.id.startsWith('void:');
   const freeReissueCount = useMemo(() => tickets.filter(isFreeReissue).length, [tickets, isFreeReissue]);
+  const kindCounts = useMemo(() => {
+    const c: Partial<Record<TicketKind, number>> = { VOID: voids.length };
+    for (const t of tickets) { const k = kindOf(t); c[k] = (c[k] ?? 0) + 1; }
+    return c;
+  }, [tickets, voids, kindOf]);
 
   /* Only while something is being searched for. A standing list of every
      void under the ledger would be a second table nobody asked for. */
@@ -691,7 +722,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     return voids.filter(v => matchesSearch(`${v.ticketNo} ${v.pnr || ''} ${v.passengerName || ''}`, q));
   }, [voids, searchTerm]);
 
-  useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, filterTicket, filterAL, filterPax, filterPNR, filterCost, sortKey, sortDir]);
+  useEffect(() => setPage(0), [searchTerm, filterMode, typeFilter, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, filterTicket, filterAL, filterPax, filterPNR, filterCost, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
   const paged = useMemo(
@@ -821,6 +852,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
       if (monthSel) parts.push(monthSel);
       else if (dateFrom || dateTo) parts.push(`${dateFrom || 'start'}_to_${dateTo || 'end'}`);
       if (closedFilter !== 'ALL') parts.push(closedFilter === 'CLOSED' ? 'Closed' : 'NotClosed');
+      if (typeFilter !== 'ALL') parts.push(KIND_LABEL[typeFilter].replace(/\W+/g, ''));
       if (filterMode === 'NEED_REQ') parts.push('MissingREQ');
       else if (filterMode === 'DUPLICATE') parts.push('Duplicates');
       else if (filterMode === 'ADJUSTED') parts.push('Adjusted');
@@ -1287,7 +1319,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
   );
 
   const activeColFilters = [filterTicket, filterAL, filterPax, filterPNR, filterCost].filter(Boolean).length;
-  const activeFilterCount = [sourceSel.length > 0, dateFrom || dateTo, filterMode !== 'ALL', closedFilter !== 'ALL',
+  const activeFilterCount = [sourceSel.length > 0, dateFrom || dateTo, filterMode !== 'ALL', typeFilter !== 'ALL', closedFilter !== 'ALL',
     travelFilter !== 'ALL', cabinFilter !== 'ALL', officeFilter !== 'ALL', companyFilter !== 'ALL', activeColFilters > 0].filter(Boolean).length;
 
   return (
@@ -1458,6 +1490,22 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
               </button>
             )}
           </div>
+
+          {/* Type: what kind of document the row is */}
+          <select
+            value={typeFilter}
+            onChange={e => setTypeFilter(e.target.value as 'ALL' | TicketKind)}
+            aria-label="Ticket type"
+            title="Show one kind of ticket: issues, reissues, refunds..."
+            className={`px-2 py-1.5 rounded text-mini font-bold uppercase border focus:outline-none transition-colors ${
+              typeFilter === 'ALL' ? 'bg-white text-slate-500 border-slate-200' : 'bg-blue-50 text-blue-700 border-blue-200'
+            }`}
+          >
+            <option value="ALL">All types</option>
+            {KIND_ORDER.filter(k => kindCounts[k]).map(k => (
+              <option key={k} value={k}>{KIND_LABEL[k]} ({kindCounts[k]!.toLocaleString('en-US')})</option>
+            ))}
+          </select>
 
           {/* Status filter */}
           <select
