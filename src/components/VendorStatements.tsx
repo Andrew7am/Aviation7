@@ -225,17 +225,240 @@ const GapCell: React.FC<{ n: number | null; currency: string }> = ({ n, currency
  * vendor's closing for the same dates is the last column, and the difference
  * beside it is the whole reason the screen exists.
  */
-const PeriodRow: React.FC<{
+type PeriodProps = {
   p: LedgerPeriod; currency: string; canEdit: boolean;
   onEdit: () => void; onDelete: () => void;
-}> = ({ p, currency, canEdit, onEdit, onDelete }) => {
-  const [open, setOpen] = useState(false);
+};
+
+/** What a period's row and its phone card both read: their statement, its
+ *  own footing, and our rows nothing of theirs has been matched to. */
+function usePeriod(p: LedgerPeriod) {
   const s = p.statement;
   const unmatched = useMemo(() => unmatchedInPeriod(p), [p]);
   const footingGap = s
     ? Math.round((s.openingBalance + s.paid - s.billed - s.otherCharges - s.closingBalance) * 100) / 100
     : 0;
-  const foots = Math.abs(footingGap) < 0.011;
+  return { s, unmatched, footingGap, foots: Math.abs(footingGap) < 0.011 };
+}
+
+const PeriodBadges: React.FC<{ p: LedgerPeriod; foots: boolean; footingGap: number }> = ({ p, foots, footingGap }) => (
+  <>
+    {!p.statement && (
+      <span className="ml-2 bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+            title="The vendor has issued no statement covering these dates, so there is nothing of theirs to compare against.">
+        OURS ONLY
+      </span>
+    )}
+    {p.statement && !foots && (
+      <span className="ml-2 bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+            title={`Their statement's own figures do not foot — off by ${fmt(footingGap)}`}>
+        THEIRS OFF {fmt(footingGap)}
+      </span>
+    )}
+  </>
+);
+
+/** What a period opens to: our arithmetic, their statement, what we paid,
+ *  our rows. The same under a table row and under a phone's card. */
+const PeriodDetail: React.FC<{
+  p: LedgerPeriod; currency: string; foots: boolean; unmatched: ReturnType<typeof unmatchedInPeriod>;
+}> = ({ p, currency, foots, unmatched }) => {
+  const s = p.statement;
+  return (
+    <div className="pl-4 sm:pl-10 pr-4 py-3 space-y-3">
+        {/* Our own arithmetic, spelled out, so the closing figure above
+            can be checked by eye rather than taken on trust. */}
+        <div className="bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-[11px]
+                        font-mono text-slate-600">
+          {drCr(p.opening)} + paid {fmt(p.paid)} + refunds {fmt(p.refunded)}
+          {' '}− issued {fmt(p.issued)} = <b className="text-slate-800">{drCr(p.closing)}</b>
+        </div>
+
+        {s && (
+          <div className={`rounded-lg border px-4 py-2.5 text-xs
+            ${Math.abs(p.balanceGap ?? 0) < 0.011
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-white border-slate-200 text-slate-600'}`}>
+            <b>{p.statement!.vendorName}'s own statement for these dates</b> opens at{' '}
+            {drCr(s.openingBalance)}, bills {fmt(s.billed)}, records {fmt(s.paid)} paid
+            {s.otherCharges ? ` and ${fmt(s.otherCharges)} of their own charges` : ''}, and closes
+            at {drCr(s.closingBalance)}.
+            {p.billedGap !== null && Math.abs(p.billedGap) >= 0.011 && (
+              <> They billed <b>{fmt(p.billedGap)} {currency}</b>{' '}
+                {p.billedGap > 0 ? 'more' : 'less'} than our rows come to.</>
+            )}
+            {!foots && (
+              <> Their figures do not foot: they come to {drCr(
+                Math.round((s.openingBalance + s.paid - s.billed - s.otherCharges) * 100) / 100)},
+                not the {drCr(s.closingBalance)} printed.</>
+            )}
+          </div>
+        )}
+
+        {p.payments.length > 0 && (
+          <div className="bg-white border border-emerald-100 rounded-lg overflow-hidden">
+            <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 flex items-center
+                            justify-between">
+              <span className="text-[9px] font-bold uppercase text-emerald-700 flex items-center gap-1.5">
+                <Wallet className="w-3 h-3" /> What we paid them ({p.payments.length})
+              </span>
+              <span className="font-mono text-xs font-bold text-emerald-600">
+                +{fmt(p.paid)} {currency}
+              </span>
+            </div>
+            <table className="w-full text-left">
+              <tbody>
+                {p.payments.map(x => (
+                  <tr key={x.id} className="border-b border-slate-50 text-xs">
+                    <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500 w-28">{x.date}</td>
+                    <td className="px-3 py-1.5 text-slate-600">{x.note}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-emerald-600">
+                      +{fmt(x.amount)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-[9px] font-bold
+                          uppercase text-slate-500 flex items-center gap-1.5">
+            <FileText className="w-3 h-3" />
+            <span>Our rows in this period ({p.tickets.length})</span>
+          </div>
+          {p.tickets.length === 0 ? (
+            <p className="px-4 py-4 text-xs text-slate-400 italic">
+              Nothing in the ledger falls inside these dates.
+            </p>
+          ) : (<>
+            <ul className="md:hidden max-h-80 overflow-y-auto overscroll-contain divide-y divide-slate-50">
+              {p.tickets.map(t => (
+                <li key={t.id} className="px-3 py-2 flex items-start justify-between gap-3 text-xs">
+                  <span className="min-w-0">
+                    <span className="block font-mono text-[11px] font-bold text-slate-700">{t.ticketNo}</span>
+                    <span className="block text-slate-600 truncate">{t.passengerName}</span>
+                    <span className="block font-mono text-[10px] text-slate-400">
+                      {t.date} · {t.vendorReference || <span className="text-red-400">no vendor ref</span>}
+                    </span>
+                  </span>
+                  <span className={`font-mono whitespace-nowrap ${(t.amount || 0) < 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
+                    {(t.amount || 0) < 0 ? '−' : ''}{fmt(t.amount || 0)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="hidden md:block max-h-80 overflow-auto">
+              <table className="w-full text-left min-w-[560px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+                    <th className="px-3 py-2">Date</th>
+                    <th className="px-3 py-2">Ticket</th>
+                    <th className="px-3 py-2">Passenger</th>
+                    <th className="px-3 py-2">Vendor ref</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {p.tickets.map(t => (
+                    <tr key={t.id} className="border-b border-slate-50 text-xs">
+                      <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{t.date}</td>
+                      <td className="px-3 py-1.5 font-mono text-[10px] text-slate-700">{t.ticketNo}</td>
+                      <td className="px-3 py-1.5 text-slate-600">{t.passengerName}</td>
+                      <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">
+                        {t.vendorReference || <span className="text-red-400">none</span>}
+                      </td>
+                      <td className={`px-3 py-1.5 text-right font-mono
+                        ${(t.amount || 0) < 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
+                        {(t.amount || 0) < 0 ? '−' : ''}{fmt(t.amount || 0)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>)}
+        </div>
+
+        {s && unmatched.length > 0 && (
+          <div className="bg-white border border-red-100 rounded-lg px-4 py-2.5 text-xs text-slate-600
+                          flex items-start gap-2">
+            <Link2Off className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
+            <span>
+              <b>{unmatched.length}</b> of these {unmatched.length === 1 ? 'carries' : 'carry'} no
+              document number from the vendor, so nothing on their side has been matched to
+              {unmatched.length === 1 ? ' it' : ' them'}. {unmatched.length === 1 ? 'It is' : 'They are'} the
+              first place to look for the difference.
+            </span>
+          </div>
+        )}
+      </div>
+  );
+};
+
+/**
+ * One period on a phone: a card instead of a ten-column row. The two
+ * closings and the difference between them come first - they are why the
+ * screen exists - and the four figures that make up our closing sit under
+ * them. Tapping it opens the same detail the table row opens.
+ */
+const PeriodCard: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDelete }) => {
+  const [open, setOpen] = useState(false);
+  const { s, unmatched, footingGap, foots } = usePeriod(p);
+  const fig = (label: string, value: React.ReactNode, cls = 'text-slate-600') => (
+    <span><span className="block text-[10px] text-slate-400 uppercase tracking-wide">{label}</span>
+      <span className={`block font-mono text-[11px] ${cls}`}>{value}</span></span>
+  );
+  return (
+    <div className={open ? 'bg-slate-50' : ''}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)}
+        className="w-full text-left px-4 pt-3.5 pb-3 flex items-start gap-3 active:bg-slate-50">
+        <span className="mt-0.5 text-slate-400 shrink-0">
+          {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="flex flex-wrap items-center gap-y-1 font-mono text-[11px] text-slate-600">
+            <span>{p.from} → {p.to}</span>
+            <PeriodBadges p={p} foots={foots} footingGap={footingGap} />
+          </span>
+          <span className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
+            {fig('Our closing', drCr(p.closing), `font-bold ${p.closing < 0 ? 'text-red-600' : 'text-emerald-700'}`)}
+            {fig('Their closing', s ? drCr(s.closingBalance) : '—', 'text-slate-500')}
+          </span>
+          <span className="mt-2 flex items-baseline justify-between gap-2">
+            <span className="text-[10px] text-slate-400 uppercase tracking-wide">Difference</span>
+            <GapCell n={p.balanceGap} currency={currency} />
+          </span>
+          <span className="mt-2.5 pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-x-3 gap-y-2">
+            {fig('Our opening', drCr(p.opening), 'text-slate-500')}
+            {fig('Issued', <>{fmt(p.issued)} <span className="text-slate-400 text-[10px]">({p.tickets.length})</span></>)}
+            {fig('Refunded', p.refunded ? `+${fmt(p.refunded)}` : '—', 'text-emerald-600')}
+            {fig('Paid', p.paid ? `+${fmt(p.paid)}` : '—', 'text-emerald-600')}
+          </span>
+        </span>
+      </button>
+      {canEdit && s && (
+        <div className="flex gap-2 px-4 pb-3 pl-11">
+          <button type="button" onClick={onEdit}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 text-slate-600 text-[11px] font-bold hover:text-purple-600">
+            <Edit3 className="w-3.5 h-3.5" /> Edit statement
+          </button>
+          <button type="button"
+            onClick={() => { if (confirm(`Delete the ${s.periodStart} → ${s.periodEnd} statement?`)) onDelete(); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-red-600">
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
+        </div>
+      )}
+      {open && <PeriodDetail p={p} currency={currency} foots={foots} unmatched={unmatched} />}
+    </div>
+  );
+};
+
+const PeriodRow: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDelete }) => {
+  const [open, setOpen] = useState(false);
+  const { s, unmatched, footingGap, foots } = usePeriod(p);
 
   return (
     <>
@@ -246,18 +469,7 @@ const PeriodRow: React.FC<{
         </td>
         <td className="py-3 px-3 font-mono text-[11px] text-slate-600 whitespace-nowrap">
           {p.from} → {p.to}
-          {!s && (
-            <span className="ml-2 bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                  title="The vendor has issued no statement covering these dates, so there is nothing of theirs to compare against.">
-              OURS ONLY
-            </span>
-          )}
-          {s && !foots && (
-            <span className="ml-2 bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                  title={`Their statement's own figures do not foot — off by ${fmt(footingGap)}`}>
-              THEIRS OFF {fmt(footingGap)}
-            </span>
-          )}
+          <PeriodBadges p={p} foots={foots} footingGap={footingGap} />
         </td>
         <td className="py-3 px-3 text-right font-mono text-xs text-slate-500">{drCr(p.opening)}</td>
         <td className="py-3 px-3 text-right font-mono text-xs text-slate-600">
@@ -297,119 +509,7 @@ const PeriodRow: React.FC<{
       {open && (
         <tr className="bg-slate-50">
           <td colSpan={10} className="p-0">
-            <div className="pl-4 sm:pl-10 pr-4 py-3 space-y-3">
-              {/* Our own arithmetic, spelled out, so the closing figure above
-                  can be checked by eye rather than taken on trust. */}
-              <div className="bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-[11px]
-                              font-mono text-slate-600">
-                {drCr(p.opening)} + paid {fmt(p.paid)} + refunds {fmt(p.refunded)}
-                {' '}− issued {fmt(p.issued)} = <b className="text-slate-800">{drCr(p.closing)}</b>
-              </div>
-
-              {s && (
-                <div className={`rounded-lg border px-4 py-2.5 text-xs
-                  ${Math.abs(p.balanceGap ?? 0) < 0.011
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                    : 'bg-white border-slate-200 text-slate-600'}`}>
-                  <b>{p.statement!.vendorName}'s own statement for these dates</b> opens at{' '}
-                  {drCr(s.openingBalance)}, bills {fmt(s.billed)}, records {fmt(s.paid)} paid
-                  {s.otherCharges ? ` and ${fmt(s.otherCharges)} of their own charges` : ''}, and closes
-                  at {drCr(s.closingBalance)}.
-                  {p.billedGap !== null && Math.abs(p.billedGap) >= 0.011 && (
-                    <> They billed <b>{fmt(p.billedGap)} {currency}</b>{' '}
-                      {p.billedGap > 0 ? 'more' : 'less'} than our rows come to.</>
-                  )}
-                  {!foots && (
-                    <> Their figures do not foot: they come to {drCr(
-                      Math.round((s.openingBalance + s.paid - s.billed - s.otherCharges) * 100) / 100)},
-                      not the {drCr(s.closingBalance)} printed.</>
-                  )}
-                </div>
-              )}
-
-              {p.payments.length > 0 && (
-                <div className="bg-white border border-emerald-100 rounded-lg overflow-hidden">
-                  <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 flex items-center
-                                  justify-between">
-                    <span className="text-[9px] font-bold uppercase text-emerald-700 flex items-center gap-1.5">
-                      <Wallet className="w-3 h-3" /> What we paid them ({p.payments.length})
-                    </span>
-                    <span className="font-mono text-xs font-bold text-emerald-600">
-                      +{fmt(p.paid)} {currency}
-                    </span>
-                  </div>
-                  <table className="w-full text-left">
-                    <tbody>
-                      {p.payments.map(x => (
-                        <tr key={x.id} className="border-b border-slate-50 text-xs">
-                          <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500 w-28">{x.date}</td>
-                          <td className="px-3 py-1.5 text-slate-600">{x.note}</td>
-                          <td className="px-3 py-1.5 text-right font-mono text-emerald-600">
-                            +{fmt(x.amount)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-[9px] font-bold
-                                uppercase text-slate-500 flex items-center gap-1.5">
-                  <FileText className="w-3 h-3" />
-                  <span>Our rows in this period ({p.tickets.length})</span>
-                </div>
-                {p.tickets.length === 0 ? (
-                  <p className="px-4 py-4 text-xs text-slate-400 italic">
-                    Nothing in the ledger falls inside these dates.
-                  </p>
-                ) : (
-                  <div className="max-h-80 overflow-auto">
-                    <table className="w-full text-left min-w-[560px]">
-                      <thead>
-                        <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
-                          <th className="px-3 py-2">Date</th>
-                          <th className="px-3 py-2">Ticket</th>
-                          <th className="px-3 py-2">Passenger</th>
-                          <th className="px-3 py-2">Vendor ref</th>
-                          <th className="px-3 py-2 text-right">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {p.tickets.map(t => (
-                          <tr key={t.id} className="border-b border-slate-50 text-xs">
-                            <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{t.date}</td>
-                            <td className="px-3 py-1.5 font-mono text-[10px] text-slate-700">{t.ticketNo}</td>
-                            <td className="px-3 py-1.5 text-slate-600">{t.passengerName}</td>
-                            <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">
-                              {t.vendorReference || <span className="text-red-400">none</span>}
-                            </td>
-                            <td className={`px-3 py-1.5 text-right font-mono
-                              ${(t.amount || 0) < 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
-                              {(t.amount || 0) < 0 ? '−' : ''}{fmt(t.amount || 0)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {s && unmatched.length > 0 && (
-                <div className="bg-white border border-red-100 rounded-lg px-4 py-2.5 text-xs text-slate-600
-                                flex items-start gap-2">
-                  <Link2Off className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
-                  <span>
-                    <b>{unmatched.length}</b> of these {unmatched.length === 1 ? 'carries' : 'carry'} no
-                    document number from the vendor, so nothing on their side has been matched to
-                    {unmatched.length === 1 ? ' it' : ' them'}. {unmatched.length === 1 ? 'It is' : 'They are'} the
-                    first place to look for the difference.
-                  </span>
-                </div>
-              )}
-            </div>
+            <PeriodDetail p={p} currency={currency} foots={foots} unmatched={unmatched} />
           </td>
         </tr>
       )}
@@ -518,7 +618,15 @@ export const VendorStatements: React.FC<Props> = ({
             /* Ten columns, every one of them a figure. Narrower is not an
                option, so it scrolls sideways rather than losing the right-hand
                end of the row — which is where the difference lives. */
-            <div className="overflow-x-auto">
+            <>
+            <div className="md:hidden divide-y divide-slate-100">
+              {a.periods.map(p => (
+                <PeriodCard key={`${p.from}_${p.to}`} p={p} currency={a.currency} canEdit={canEdit}
+                  onEdit={() => p.statement && setEditing(p.statement)}
+                  onDelete={() => p.statement && onDelete(p.statement.id)} />
+              ))}
+            </div>
+            <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left min-w-[880px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-[9px] uppercase
@@ -544,6 +652,7 @@ export const VendorStatements: React.FC<Props> = ({
               </tbody>
             </table>
             </div>
+            </>
           )}
 
           {a.undated > 0 && (

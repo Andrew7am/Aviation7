@@ -184,11 +184,31 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
 
   const topUpVendor = vendorBalances.find(v => v.id === topUpVendorId);
 
+  /** Every figure a vendor's row shows - one reading for the table and the
+   *  phone's cards, so the two can never disagree. */
+  const figuresOf = (vendor: VendorBalance) => {
+    const vTickets = getVendorTickets(vendor);
+    const vTopUps = getVendorTopUps(vendor.id);
+    const totalTopUp = vTopUps.reduce((s, tu) => s + tu.amount, 0);
+    const totalIssued = vTickets.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+    const totalRefunds = vTickets.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+    const remaining = vendor.currentBalance;
+    const isNeg = remaining < 0;
+    const pct = vendor.initialBalance > 0 ? (remaining / vendor.initialBalance) * 100 : 0;
+    return { vTickets, vTopUps, totalTopUp, netIssued: totalIssued - totalRefunds, remaining, isNeg, pct,
+             isLow: pct < 20 && remaining >= 0 };
+  };
+  const statusBadge = (isNeg: boolean, isLow: boolean) => isNeg
+    ? <span className="bg-red-100 text-red-700 text-[9px] font-bold px-2 py-0.5 rounded-full">OVERDRAFT</span>
+    : isLow
+    ? <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-2 py-0.5 rounded-full">LOW ⚠</span>
+    : <span className="bg-emerald-50 text-emerald-600 text-[9px] font-bold px-2 py-0.5 rounded-full">OK</span>;
+
   return (
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm max-w-6xl mx-auto overflow-hidden">
 
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-slate-100 bg-slate-50">
         <div className="flex items-center space-x-3">
           <Wallet className="text-purple-600 w-5 h-5" />
           <h2 className="text-sm font-bold uppercase text-slate-700 tracking-wider">Vendor Credit Balances</h2>
@@ -208,7 +228,122 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
           On a phone it was simply cut off at the edge of the card, so the
           balance itself, the rightmost column, could not be seen at all. It
           scrolls sideways instead. */}
-      <div className="overflow-x-auto">
+      {/* On a phone each vendor is a card: its balance first and large -
+          the figure the screen is for - then what makes it up. Tapping it
+          opens the same top-ups and tickets the table opens. */}
+      <div className="md:hidden divide-y divide-slate-100">
+        {vendorBalances.length === 0 && (
+          <p className="px-4 py-10 text-center text-slate-400 text-sm">
+            No vendors yet. Tap <strong>Add Vendor</strong> to get started.
+          </p>
+        )}
+        {vendorBalances.map(vendor => {
+          const f = figuresOf(vendor);
+          const cur = sourceToCurrency(vendor.vendorName);
+          const isExpanded = expandedId === vendor.id;
+          const tone = f.isNeg ? 'text-red-600' : f.isLow ? 'text-amber-600' : 'text-emerald-700';
+          const bar = f.isNeg ? 'bg-red-400' : f.isLow ? 'bg-amber-400' : 'bg-emerald-400';
+          return (
+            <div key={vendor.id} className={isExpanded ? 'bg-slate-50' : ''}>
+              <button type="button" aria-expanded={isExpanded}
+                onClick={() => setExpandedId(prev => prev === vendor.id ? null : vendor.id)}
+                className="w-full text-left px-4 pt-3.5 pb-3 flex items-start gap-3 active:bg-slate-50">
+                <span className="mt-0.5 text-slate-400 shrink-0">
+                  {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-slate-700 uppercase text-xs tracking-wide truncate">{vendor.vendorName}</span>
+                    {statusBadge(f.isNeg, f.isLow)}
+                  </span>
+                  <span className={`block mt-1 font-mono font-bold text-lg ${tone}`}>
+                    {f.isNeg ? '-' : ''}{cur} {fmt(Math.abs(f.remaining))}
+                  </span>
+                  <span className="block mt-1.5 w-full bg-slate-100 rounded-full h-1">
+                    <span className={`block h-1 rounded-full ${bar}`}
+                      style={{ width: f.isNeg ? '100%' : `${Math.min(Math.max(f.pct, 0), 100)}%` }} />
+                  </span>
+                  <span className="mt-2.5 grid grid-cols-3 gap-2 text-[10px]">
+                    <span><span className="block text-slate-400 uppercase tracking-wide">Initial</span>
+                      <span className="block font-mono text-slate-600">{fmt(vendor.initialBalance)}</span></span>
+                    <span><span className="block text-slate-400 uppercase tracking-wide">Top-ups</span>
+                      <span className="block font-mono text-emerald-600">{f.totalTopUp > 0 ? `+${fmt(f.totalTopUp)}` : '—'}</span></span>
+                    <span><span className="block text-slate-400 uppercase tracking-wide">Net issued</span>
+                      <span className="block font-mono text-slate-600">{fmt(f.netIssued)}</span></span>
+                  </span>
+                </span>
+              </button>
+              {canEdit && (
+                <div className="flex gap-2 px-4 pb-3 pl-11">
+                  <button type="button" onClick={e => openTopUp(vendor.id, e)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 text-[11px] font-bold">
+                    <PlusCircle className="w-3.5 h-3.5" /> Add balance
+                  </button>
+                  <button type="button" onClick={() => { if (confirm(`Delete ${vendor.vendorName}?`)) onDeleteVendor(vendor.id); }}
+                    aria-label={`Delete ${vendor.vendorName}`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-red-600">
+                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                  </button>
+                </div>
+              )}
+              {isExpanded && (
+                <div className="px-4 pb-4 space-y-3">
+                  {f.vTopUps.length > 0 && (
+                    <div className="bg-white border border-emerald-100 rounded-lg overflow-hidden">
+                      <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-100 text-[10px] font-bold uppercase text-emerald-700 flex items-center gap-1.5">
+                        <TrendingUp className="w-3 h-3" /> Balance top-ups
+                      </div>
+                      <ul className="divide-y divide-slate-50">
+                        {f.vTopUps.map(tu => (
+                          <li key={tu.id} className="px-3 py-2 flex items-start justify-between gap-3 text-xs">
+                            <span className="min-w-0">
+                              <span className="block font-mono text-[10px] text-slate-400">{tu.date}</span>
+                              <span className="block text-slate-600 break-words">{tu.note}</span>
+                            </span>
+                            <span className="font-mono font-bold text-emerald-600 whitespace-nowrap">+{fmt(tu.amount)} {cur}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1.5">
+                      <TrendingDown className="w-3 h-3" /> Tickets ({f.vTickets.length})
+                    </div>
+                    {f.vTickets.length === 0 ? (
+                      <p className="px-3 py-4 text-xs text-slate-400 italic">No tickets linked to this vendor yet.</p>
+                    ) : (
+                      <ul className="max-h-96 overflow-y-auto overscroll-contain divide-y divide-slate-50">
+                        {f.vTickets.map(t => {
+                          const isRefund = t.amount < 0, isCanc = t.amount === 0;
+                          const impact = isCanc ? 'text-slate-400' : isRefund ? 'text-emerald-600' : 'text-red-600';
+                          return (
+                            <li key={t.id} className="px-3 py-2 flex items-start justify-between gap-3 font-mono text-[11px]">
+                              <span className="min-w-0">
+                                <span className="block text-slate-700 font-bold">{t.ticketNo}</span>
+                                <span className="block text-[10px] text-slate-400">{t.date} · {t.pnr || '—'} · {t.status || '—'}</span>
+                                <span className="block text-[10px]">
+                                  {t.reqNum ? <span className="text-blue-600 font-bold">{t.reqNum}</span>
+                                            : <span className="text-red-400 italic">missing req</span>}
+                                </span>
+                              </span>
+                              <span className={`font-bold whitespace-nowrap ${impact}`}>
+                                {isCanc ? '±0' : isRefund ? `+${fmt(Math.abs(t.amount))}` : `-${fmt(t.amount)}`}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden md:block overflow-x-auto">
       <table className="w-full text-left border-collapse min-w-[760px]">
         <thead>
           <tr className="border-b border-slate-200 text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
@@ -232,21 +367,9 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
           )}
 
           {vendorBalances.map(vendor => {
-            const vTickets = getVendorTickets(vendor);
-            const vTopUps = getVendorTopUps(vendor.id);
-            const totalTopUp = vTopUps.reduce((s, tu) => s + tu.amount, 0);
-            const totalIssued = vTickets.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-            const totalRefunds = vTickets.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
-            const netIssued = totalIssued - totalRefunds;
-            const remaining = vendor.currentBalance;
             // One reading for every vendor now that calcVendorBalance uses one
             // convention: positive = credit the agency holds, negative = owed.
-            // Ibtekar used to be flipped here to undo an inverted sign in the
-            // arithmetic; both halves are gone, and the number it shows is
-            // unchanged because Ibtekar's opening balance is 0.
-            const isNeg = remaining < 0;
-            const pct = vendor.initialBalance > 0 ? (remaining / vendor.initialBalance) * 100 : 0;
-            const isLow = pct < 20 && remaining >= 0;
+            const { vTickets, vTopUps, totalTopUp, netIssued, remaining, isNeg, pct, isLow } = figuresOf(vendor);
             const isExpanded = expandedId === vendor.id;
 
             return (
@@ -274,12 +397,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                   </td>
                   <td className="py-3 px-4 text-center">
                     <div className="flex flex-col items-center space-y-1">
-                      {isNeg
-                        ? <span className="bg-red-100 text-red-700 text-[9px] font-bold px-2 py-0.5 rounded-full">OVERDRAFT</span>
-                        : isLow
-                        ? <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-2 py-0.5 rounded-full">LOW ⚠</span>
-                        : <span className="bg-emerald-50 text-emerald-600 text-[9px] font-bold px-2 py-0.5 rounded-full">OK</span>
-                      }
+                      {statusBadge(isNeg, isLow)}
                       <div className="w-20 bg-slate-100 rounded-full h-1">
                         <div
                           className={`h-1 rounded-full transition-all ${isNeg ? 'w-full bg-red-400' : isLow ? 'bg-amber-400' : 'bg-emerald-400'}`}
