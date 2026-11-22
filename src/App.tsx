@@ -806,7 +806,8 @@ function MainApp({ user }: { user: User }) {
             canCloseReq: (req: string) => canClose({ reqNum: req }) } : {})} />}
       {view === 'missing'   && <TicketTable title="Action required · missing request numbers" icon={<AlertTriangle className="w-4 h-4" />} tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : closeHandlers)} />}
       {view === 'notclosed' && <TicketTable title="Not closed · still to reconcile" icon={<Circle className="w-4 h-4" />} tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : closeHandlers)} />}
-      {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
+      {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)}
+        wallets={vendorBalancesLive} ledger={tickets} walletTopUps={topUps} />}
       {/* Read-only, so everybody gets it: the person closing a flight sheet
           is not always the person who can write to the ledger. */}
       {view === 'airtable' && <AirtablePage tickets={tickets} notices={atNotices} sync={atSync} canEdit={isAdmin}

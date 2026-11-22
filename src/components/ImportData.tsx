@@ -1,4 +1,9 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
+import { Wallet } from 'lucide-react';
+import type { VendorBalance, BalanceTopUp } from '../types';
+import { projectWallets } from '../core/helpers/importProjection';
+import { walletReference } from '../core/config/appSettings';
+import { StatusBadge } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import Papa from 'papaparse';
 import type { ExchangeEdge } from '../core/parsers/types';
@@ -19,6 +24,11 @@ interface ImportDataProps {
   userId: string;
   onImport: (newTickets: Ticket[], updateTickets: Ticket[], topUpTickets: Ticket[], settlementTickets: Ticket[], voidedTickets: Ticket[], exchanges: ExchangeEdge[], meta: ImportMeta) => void;
   vendorNames?: string[];
+  /** The wallets, the ledger and the top-ups as they stand - for the balance
+   *  each wallet will read once this import is confirmed. Read only. */
+  wallets?: VendorBalance[];
+  ledger?: Ticket[];
+  walletTopUps?: BalanceTopUp[];
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -47,7 +57,7 @@ const verdictKey = (ticketNo: string, amount: number) =>
   `${ticketNo.trim().toUpperCase()}|${amount < 0 ? '-' : '+'}`;
 
 export const ImportData: React.FC<ImportDataProps> = ({
-  userId, onImport, vendorNames = [],
+  userId, onImport, vendorNames = [], wallets = [], ledger = [], walletTopUps = [],
 }) => {
   const { preview, inputText, setInputText, runValidation, readFileAsText, clear, buildMeta } = useImport(userId);
   const [defaultSource, setDefaultSource] = useState('Auto-detect');
@@ -135,6 +145,13 @@ export const ImportData: React.FC<ImportDataProps> = ({
       setAiAnalyzing(false);
     }
   };
+
+  /* The balance each wallet this import touches will read after Confirm -
+     the wallet's own arithmetic over the ledger as the confirm will leave it. */
+  const projected = useMemo(() => !preview || !wallets.length ? [] : projectWallets(wallets, ledger, walletTopUps, {
+    fresh: preview.fresh, settlements: preview.settlements, topUps: preview.topUps,
+    corrections: preview.corrections, voidedSales: preview.voidedSales,
+  }), [preview, wallets, ledger, walletTopUps]);
 
   const handleConfirm = () => {
     if (!preview) return;
@@ -285,6 +302,36 @@ export const ImportData: React.FC<ImportDataProps> = ({
             </span>
           </div>
           <span className="text-mini font-mono text-slate-500">{preview.totalRows} rows in file</span>
+        </div>
+      )}
+
+      {rows.length > 0 && projected.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm shrink-0 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-slate-200 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <Wallet className="w-4 h-4 text-slate-400 shrink-0" />
+            <span className="text-sm font-semibold text-slate-800 whitespace-nowrap">Balance after this import</span>
+            <span className="text-mini text-slate-500 basis-full sm:basis-auto">what the wallet will read once you press Confirm - nothing is saved yet</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {projected.map(p => {
+              const cur = sourceToCurrency(p.vendorName);
+              const ref = walletReference(p.vendorName, wallets.find(w => w.id === p.vendorId)?.initialBalance ?? 0);
+              const tone = p.after < 0 ? 'danger' : ref > 0 && p.after < ref * 0.2 ? 'warning' : 'success';
+              const money = (n: number) => `${n < 0 ? '-' : ''}${cur} ${fmt(Math.abs(n))}`;
+              return (
+                <div key={p.vendorId} className="px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-1.5">
+                  <span className="w-32 shrink-0 text-xs font-semibold uppercase tracking-wide text-slate-700">{p.vendorName}</span>
+                  <span className="text-mini text-slate-500">now <span className="font-mono text-xs text-slate-700">{money(p.before)}</span></span>
+                  <span className={`font-mono text-xs font-semibold ${p.change < 0 ? 'text-red-600' : p.change > 0 ? 'text-emerald-700' : 'text-slate-500'}`}>
+                    {p.change > 0 ? '+' : p.change < 0 ? '−' : '±'}{fmt(Math.abs(p.change))}
+                  </span>
+                  <span className="text-mini text-slate-500">after <span className="font-mono text-sm font-bold text-slate-900">{money(p.after)}</span></span>
+                  <StatusBadge tone={tone}>{tone === 'danger' ? 'Overdraft' : tone === 'warning' ? 'Low' : 'OK'}</StatusBadge>
+                  <span className="text-mini text-slate-400 ml-auto">{p.rows} row{p.rows === 1 ? '' : 's'} of this file</span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
