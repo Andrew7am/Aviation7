@@ -416,7 +416,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
   const TABS = Object.entries(TAB_LABEL) as ['ALL' | State, string][];
 
   return (
-    <div className="flex flex-col h-full bg-slate-100">
+    <div className="flex flex-col h-full bg-app">
       {openReq && (
         <RequestProfile reqNum={openReq} tickets={tickets} onUpdateClosed={!canCloseReq || canCloseReq(openReq) ? onUpdateClosed : undefined}
           onClose={() => setOpenReq(null)} />
@@ -427,7 +427,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
       {copied && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
                         bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg
-                        text-[11px] font-mono max-w-md">
+                        text-xs font-mono max-w-md">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           <span className="truncate">Copied <span className="font-bold">{copied}</span></span>
         </div>
@@ -435,19 +435,19 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
 
       <div className="p-4 space-y-3 shrink-0 bg-white border-b border-slate-200">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">
+          <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">
             Requests
           </h2>
           <div className="flex items-center gap-2">
             <button onClick={exportList}
-              className="flex items-center gap-1.5 bg-white text-slate-600 text-[11px] font-bold
+              className="flex items-center gap-1.5 bg-white text-slate-600 text-xs font-bold
                          px-3 py-1.5 rounded border border-slate-200 hover:bg-slate-50">
               <Download className="w-3.5 h-3.5" /> Export list
             </button>
             <button onClick={exportTickets} disabled={busy || !shown.length}
               title={`A zip holding one file per request, with its tickets — ${shown.length} of them`}
-              className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
-                         px-3 py-1.5 rounded hover:bg-purple-700 disabled:opacity-50">
+              className="flex items-center gap-1.5 bg-blue-700 text-white text-xs font-bold
+                         px-3 py-1.5 rounded hover:bg-blue-800 disabled:opacity-50">
               <Download className="w-3.5 h-3.5" />
               {busy ? 'Building…' : `Export ${shown.length} with tickets`}
             </button>
@@ -464,7 +464,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
           </div>
           {TABS.map(([k, label]) => (
             <button key={k} onClick={() => setOnly(k)}
-              className={`text-[10px] font-bold uppercase px-2.5 py-1.5 rounded transition
+              className={`text-mini font-bold uppercase px-2.5 py-1.5 rounded transition
                 ${only === k
                   ? 'bg-slate-800 text-white'
                   : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
@@ -483,9 +483,9 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
               title={k === 'NONE'
                 ? 'Req numbers that are not an office code — ADM, VOID, credit memos, names'
                 : undefined}
-              className={`text-[10px] font-bold uppercase px-2.5 py-1.5 rounded border transition
+              className={`text-mini font-bold uppercase px-2.5 py-1.5 rounded border transition
                 ${office === k
-                  ? 'bg-violet-600 text-white border-violet-600'
+                  ? 'bg-blue-700 text-white border-blue-700'
                   : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
               {label} <span className="opacity-60">{officeCounts[k]}</span>
             </button>
@@ -523,11 +523,11 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                 <div className="flex items-center gap-2">
                   <FolderOpen className="w-4 h-4 text-purple-400 shrink-0" />
                   <span className="font-mono font-bold text-[13px] text-purple-700">{r.reqNum}</span>
-                  <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-bold whitespace-nowrap ${STATE_STYLE[r.state].chip}`}>
+                  <span className={`ml-auto px-1.5 py-0.5 rounded text-mini font-bold whitespace-nowrap ${STATE_STYLE[r.state].chip}`}>
                     {STATE_STYLE[r.state].label}
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-[11px] text-slate-500">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-xs text-slate-500">
                   {r.office && <span>{OFFICE_LABEL[r.office as Exclude<Office, ''>]}</span>}
                   <span>{r.rows} rows</span>
                   {r.open > 0 && <span className="font-bold text-orange-600">{r.open} not closed</span>}
@@ -535,9 +535,9 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                 </div>
                 <div className="flex items-baseline gap-3 mt-1.5 font-mono">
                   <span className="text-[13px] font-bold text-slate-800">{show(r.net)}</span>
-                  {r.open > 0 && <span className="text-[11px] text-orange-600">open {show(r.openValue)}</span>}
+                  {r.open > 0 && <span className="text-xs text-orange-600">open {show(r.openValue)}</span>}
                 </div>
-                <div className="text-[10px] text-slate-400 mt-1 truncate">{r.sources.join(', ')}</div>
+                <div className="text-mini text-slate-400 mt-1 truncate">{r.sources.join(', ')}</div>
               </button>
             ))}
           </div>
@@ -545,7 +545,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
             <div className="overflow-x-auto">
               <table className="w-full text-left min-w-[880px]">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[9px] uppercase
+                  <tr className="bg-slate-50 border-b border-slate-200 text-micro uppercase
                                  tracking-wider text-slate-400">
                     <th className="px-3 py-2">Request</th>
                     <th className="px-3 py-2">State</th>
@@ -578,7 +578,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                         </button>
                       </td>
                       <td className="px-3 py-2">
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold
+                        <span className={`px-1.5 py-0.5 rounded text-micro font-sans font-bold
                                           whitespace-nowrap ${STATE_STYLE[r.state].chip}`}>
                           {r.state === 'PART' && <AlertTriangle className="w-2.5 h-2.5 inline mr-1" />}
                           {r.state === 'DONE' && <CheckCircle2 className="w-2.5 h-2.5 inline mr-1" />}
@@ -586,7 +586,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                           {STATE_STYLE[r.state].label}
                         </span>
                       </td>
-                      <td className="px-3 py-2 text-[10px] text-slate-500 whitespace-nowrap">
+                      <td className="px-3 py-2 text-mini text-slate-500 whitespace-nowrap">
                         {r.office ? (
                           <span className="flex items-center gap-1">
                             <Building2 className="w-3 h-3 text-slate-300" />
@@ -599,16 +599,16 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                         ${r.open ? 'text-orange-600' : 'text-slate-300'}`}>
                         {r.open || '—'}
                       </td>
-                      <td className="px-3 py-2 text-right text-[10px] text-slate-600 whitespace-nowrap">
+                      <td className="px-3 py-2 text-right text-mini text-slate-600 whitespace-nowrap">
                         {r.open ? show(r.openValue) : <span className="text-slate-300">—</span>}
                       </td>
-                      <td className="px-3 py-2 text-right text-[10px] text-slate-700 whitespace-nowrap">
+                      <td className="px-3 py-2 text-right text-mini text-slate-700 whitespace-nowrap">
                         {show(r.net)}
                       </td>
-                      <td className="px-3 py-2 text-[10px] text-slate-500 max-w-[180px] truncate">
+                      <td className="px-3 py-2 text-mini text-slate-500 max-w-[180px] truncate">
                         {r.sources.join(', ')}
                       </td>
-                      <td className="px-3 py-2 text-[10px] text-slate-400 whitespace-nowrap">
+                      <td className="px-3 py-2 text-mini text-slate-400 whitespace-nowrap">
                         {r.lastDate || <span className="text-red-400">no date</span>}
                       </td>
                     </tr>
@@ -620,7 +620,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
         </>)}
       </div>
 
-      <div className="px-4 py-2 bg-white border-t border-slate-200 shrink-0 text-[10px]
+      <div className="px-4 py-2 bg-white border-t border-slate-200 shrink-0 text-mini
                       font-mono text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
         <span>
           {shown.length} of {all.length} requests

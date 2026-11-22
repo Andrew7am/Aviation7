@@ -25,36 +25,38 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   if (loading) {
     return (
-      <div className="keep-palette h-screen bg-[#0f172a] flex items-center justify-center">
-        <div className="w-4 h-4 bg-blue-500 rounded-full animate-ping"></div>
+      <div className="keep-palette h-[100dvh] bg-[#111C2D] flex items-center justify-center" role="status" aria-label="Loading">
+        <div className="w-5 h-5 rounded-full border-2 border-[#304158] border-t-[#C6A15B] animate-spin" />
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="keep-palette h-screen bg-[#0f172a] flex items-center justify-center font-sans text-white relative overflow-hidden">
-        {/* Background visual */}
-        <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500 rounded-full mix-blend-screen filter blur-3xl opacity-50 animate-blob"></div>
-          <div className="absolute top-1/3 right-1/4 w-96 h-96 bg-purple-500 rounded-full mix-blend-screen filter blur-3xl opacity-50 animate-blob animation-delay-2000"></div>
-          <div className="absolute bottom-1/4 left-1/3 w-96 h-96 bg-indigo-500 rounded-full mix-blend-screen filter blur-3xl opacity-50 animate-blob animation-delay-4000"></div>
-        </div>
+      /* The sign-in page: the brand at its plainest - midnight navy, the plane
+         in gold, the name. No blurred shapes behind it: a finance tool's
+         front door should look like one. */
+      <div className="keep-palette min-h-[100dvh] bg-[#111C2D] flex items-center justify-center p-4 font-sans">
+        <div className="w-full max-w-sm bg-[#19263A] border border-[#304158] rounded-xl shadow-2xl overflow-hidden">
+          <div className="h-1 bg-[#C6A15B]" aria-hidden="true" />
+          <div className="px-8 pt-9 pb-8 flex flex-col items-center text-center">
+            <div className="w-14 h-14 rounded-xl bg-[#111C2D] ring-1 ring-[#C6A15B]/50 flex items-center justify-center mb-6">
+              <Plane className="w-7 h-7 text-[#C6A15B]" />
+            </div>
+            <h1 className="text-lg font-extrabold tracking-[0.18em] uppercase text-[#E8EDF4]">Luxury Explorers</h1>
+            <p className="mt-1.5 text-xs font-semibold uppercase tracking-[0.16em] text-[#C6A15B]">Travel Accounting ERP</p>
+            <p className="mt-5 text-sm text-[#B0BDCE]">Reconciliation &amp; audit portal</p>
 
-        <div className="z-10 bg-white/10 backdrop-blur-md p-10 rounded-2xl border border-white/20 shadow-2xl flex flex-col items-center max-w-sm w-full text-center">
-          <div className="w-16 h-16 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg mb-6">
-            <Plane className="w-8 h-8 text-white" />
+            <button
+              onClick={() => loginWithGoogle()}
+              className="mt-8 w-full h-11 bg-[#3A72BD] hover:bg-[#4A85D4] text-white font-semibold rounded-md
+                         transition-colors text-sm flex items-center justify-center gap-2
+                         focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C6A15B]"
+            >
+              <LogIn className="w-4 h-4" />
+              Sign in with Google
+            </button>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight uppercase text-white mb-2">Luxury Explorers</h1>
-          <p className="text-slate-400 text-sm mb-8">Reconciliation & Audit Portal</p>
-
-          <button
-            onClick={() => loginWithGoogle()}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded transition-colors uppercase tracking-widest text-xs flex items-center justify-center gap-2"
-          >
-            <LogIn className="w-4 h-4" />
-            Sign in with Google
-          </button>
         </div>
       </div>
     );

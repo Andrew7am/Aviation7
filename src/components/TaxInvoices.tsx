@@ -84,9 +84,9 @@ const Tile: React.FC<{
       className={`text-left px-4 py-3 rounded-lg border ${tones[tone]}
         ${onClick ? 'hover:shadow-sm cursor-pointer' : 'cursor-default'}
         ${active ? 'ring-2 ring-slate-400' : ''}`}>
-      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="text-mini font-bold uppercase tracking-wide text-slate-500">{label}</div>
       <div className="text-lg font-bold text-slate-800 font-mono mt-0.5">{value}</div>
-      {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
+      {sub && <div className="text-mini text-slate-500 mt-0.5">{sub}</div>}
     </button>
   );
 };
@@ -113,35 +113,35 @@ const InvoiceRow: React.FC<{
         </button>
         <span className="font-mono font-bold text-xs text-slate-700 w-32">{i.invoiceNo}</span>
         {i.theirSerial && (
-          <span className="text-[10px] text-slate-400 font-mono">their no. {i.theirSerial}</span>
+          <span className="text-mini text-slate-400 font-mono">their no. {i.theirSerial}</span>
         )}
-        <span className="text-[10px] text-slate-400 font-mono w-24">{i.invoiceDate || '—'}</span>
+        <span className="text-mini text-slate-400 font-mono w-24">{i.invoiceDate || '—'}</span>
         {i.kind === 'CREDIT_NOTE' && (
-          <span className="bg-purple-50 text-purple-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+          <span className="bg-purple-50 text-purple-700 text-micro font-bold px-1.5 py-0.5 rounded-full">
             CREDIT NOTE{i.against ? ` against ${i.against}` : ''}
           </span>
         )}
         {i.isTaxInvoice ? (
-          <span className="bg-emerald-50 text-emerald-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+          <span className="bg-emerald-50 text-emerald-700 text-micro font-bold px-1.5 py-0.5 rounded-full"
             title={i.qr ? `ZATCA QR: ${i.qr.seller} · VAT no. ${i.qr.vatNo} · ${i.qr.timestamp} · total ${i.qr.total} · VAT ${i.qr.vat}` : undefined}>
             QR ✓ FINAL{i.qr?.signatureOk ? ' · SIGNED ✓' : ''}
           </span>
         ) : (
-          <span className="bg-red-50 text-red-700 border border-red-200 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+          <span className="bg-red-50 text-red-700 border border-red-200 text-micro font-bold px-1.5 py-0.5 rounded-full"
             title="No ZATCA QR code on it. A printout headed TAX INVOICE is not a final tax invoice.">
             NOT FINAL — NO QR
           </span>
         )}
         {!i.isTaxInvoice && c.finalFor.length > 0 && (
-          <span className="text-[10px] text-emerald-700">final one held: {c.finalFor.join(', ')}</span>
+          <span className="text-mini text-emerald-700">final one held: {c.finalFor.join(', ')}</span>
         )}
         {i.layout === 'ZATCA' && i.kind !== 'CREDIT_NOTE' && (
-          <span className="bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+          <span className="bg-slate-100 text-slate-500 text-micro font-bold px-1.5 py-0.5 rounded-full"
             title="This template prints no per-ticket amounts — only its total can be compared.">
             TOTAL ONLY
           </span>
         )}
-        <span className="text-[10px] text-slate-500 ml-auto">
+        <span className="text-mini text-slate-500 ml-auto">
           {i.serials.length} ticket(s)
         </span>
         <span className="font-mono text-xs text-slate-700 w-28 text-right">
@@ -161,7 +161,7 @@ const InvoiceRow: React.FC<{
       {open && (
         <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3 space-y-2">
           {c.credits.length > 0 && i.total !== null && (
-            <div className="text-[11px] text-purple-700">
+            <div className="text-xs text-purple-700">
               {c.credits.map(cn => (
                 <span key={cn.invoiceNo} className="mr-3">
                   less credit note {cn.theirSerial}: −{fmt(cn.total ?? 0)}
@@ -172,7 +172,7 @@ const InvoiceRow: React.FC<{
               </span>
             </div>
           )}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[11px]">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div><span className="text-slate-400">Net</span>{' '}
               <span className="font-mono text-slate-700">{i.net === null ? '—' : fmt(i.net)}</span></div>
             <div><span className="text-slate-400">VAT</span>{' '}
@@ -184,21 +184,21 @@ const InvoiceRow: React.FC<{
           </div>
 
           {c.notInLedger.length > 0 && (
-            <div className="text-[11px]">
+            <div className="text-xs">
               <div className="font-bold text-red-700 mb-1">
                 {c.notInLedger.length} document(s) it bills that our books have never seen
               </div>
-              <div className="font-mono text-[10px] text-slate-600 flex flex-wrap gap-x-3 gap-y-0.5">
+              <div className="font-mono text-mini text-slate-600 flex flex-wrap gap-x-3 gap-y-0.5">
                 {c.notInLedger.map(s => <span key={s}>{s}</span>)}
               </div>
             </div>
           )}
 
-          <div className="text-[11px]">
+          <div className="text-xs">
             <div className="font-bold text-slate-600 mb-1">
               {c.inLedger.length} in the ledger
             </div>
-            <div className="font-mono text-[10px] text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5">
+            <div className="font-mono text-mini text-slate-500 flex flex-wrap gap-x-3 gap-y-0.5">
               {c.inLedger.slice(0, 60).map(t => <span key={t.id}>{t.ticketNo}</span>)}
               {c.inLedger.length > 60 && <span>… and {c.inLedger.length - 60} more</span>}
             </div>
@@ -300,7 +300,7 @@ export const TaxInvoices: React.FC<{
           </h2>
           <div className="sm:ml-auto flex flex-wrap items-center gap-1.5">
             <select value={period} onChange={e => setPeriod(e.target.value)} title="Tickets issued in"
-              className="text-[11px] border border-slate-200 rounded px-2 py-1.5 text-slate-600 bg-white">
+              className="text-xs border border-slate-200 rounded px-2 py-1.5 text-slate-600 bg-white">
               <option value="ALL">All dates</option>
               {months.map(m => (
                 <optgroup key={m} label={monthName(m)}>
@@ -313,22 +313,22 @@ export const TaxInvoices: React.FC<{
             </select>
             {period === 'CUSTOM' && (<>
               <input type="date" value={from} max={to || undefined} onChange={e => setFrom(e.target.value)} title="Issued from"
-                className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600" />
+                className="text-xs border border-slate-200 rounded px-2 py-1 text-slate-600" />
               <input type="date" value={to} min={from || undefined} onChange={e => setTo(e.target.value)} title="Issued to"
-                className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600" />
+                className="text-xs border border-slate-200 rounded px-2 py-1 text-slate-600" />
             </>)}
           </div>
           {owed + creditsOwed > 0 && (
             <button onClick={exportRequest}
               title={`The invoices to ask ${vendorName} for, and every ticket under them, as Excel`}
-              className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded border
+              className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded border
                 border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
               <Download className="w-3.5 h-3.5" />
               Export what to request{periodLabel} ({owed} tickets{creditsOwed ? `, ${creditsOwed} refunds` : ''})
             </button>
           )}
         </div>
-        <p className="text-[11px] text-slate-500 mt-1 max-w-3xl">
+        <p className="text-xs text-slate-500 mt-1 max-w-3xl">
           Not the invoice number on the sales sheet. That one was typed off a statement of
           account and proves nothing. A ticket counts as covered here only when its document
           number is printed on a final tax invoice — one with Ibtekar's ZATCA QR code. A printout
@@ -357,7 +357,7 @@ export const TaxInvoices: React.FC<{
               <div className="text-xs font-bold text-slate-600">
                 Drop {vendorName}'s tax invoices here — as many at once as you like
               </div>
-              <div className="text-[10px] text-slate-400 mt-0.5">
+              <div className="text-mini text-slate-400 mt-0.5">
                 Both templates and credit notes are read. Only a document with Ibtekar's ZATCA
                 QR code counts as a final tax invoice; anything else is flagged.
               </div>
@@ -372,7 +372,7 @@ export const TaxInvoices: React.FC<{
             <AlertTriangle className="w-4 h-4" />
             Not a final tax invoice — no ZATCA QR code
           </div>
-          <div className="text-[11px] text-red-700 mt-1">
+          <div className="text-xs text-red-700 mt-1">
             {outcomes.flatMap(o => o.notFinal.map(n => n.split(':')[0])).join(', ')}{' '}
             {outcomes.flatMap(o => o.notFinal).length === 1 ? 'is' : 'are'} recorded, but cannot carry the VAT.
             Ask {vendorName} for the e-invoice from their ZATCA system — the one with the QR code.
@@ -383,7 +383,7 @@ export const TaxInvoices: React.FC<{
       {outcomes && (
         <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
           <div className="flex items-center justify-between px-4 py-2">
-            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <span className="text-mini font-bold uppercase tracking-wide text-slate-500">
               Last upload — {outcomes.length} file(s)
             </span>
             <button onClick={() => setOutcomes(null)} className="text-slate-300 hover:text-slate-600">
@@ -391,7 +391,7 @@ export const TaxInvoices: React.FC<{
             </button>
           </div>
           {outcomes.map(o => (
-            <div key={o.file} className="px-4 py-2 text-[11px]">
+            <div key={o.file} className="px-4 py-2 text-xs">
               <div className="flex items-center gap-2">
                 {o.failed || o.notFinal.length || (!o.saved.length && !o.alreadyHeld.length && !o.upgraded.length)
                   ? <FileWarning className="w-3.5 h-3.5 text-red-500 shrink-0" />
@@ -432,10 +432,10 @@ export const TaxInvoices: React.FC<{
             {report.awaitingFinal.length} document(s) on file are not final tax invoices, and no final one
             covers their tickets yet
           </div>
-          <div className="text-[11px] text-amber-800 mt-0.5 font-mono">
+          <div className="text-xs text-amber-800 mt-0.5 font-mono">
             {report.awaitingFinal.map(a => a.invoice.invoiceNo).join(', ')}
           </div>
-          <div className="text-[10px] text-amber-700 mt-0.5">
+          <div className="text-mini text-amber-700 mt-0.5">
             Ask {vendorName} for the e-invoice (with the QR code) for these.
           </div>
         </button>
@@ -449,12 +449,12 @@ export const TaxInvoices: React.FC<{
             {report.wrongTotals.length} final invoice(s) do not add up to their tickets - their tickets are not counted as covered
           </div>
           {report.wrongTotals.map(w => (
-            <div key={w.invoice.invoiceNo} className="text-[11px] text-red-800 mt-0.5 font-mono">
+            <div key={w.invoice.invoiceNo} className="text-xs text-red-800 mt-0.5 font-mono">
               {w.invoice.invoiceNo}{w.invoice.theirSerial ? ` (no. ${w.invoice.theirSerial})` : ''}: prints {fmt(w.invoice.total ?? 0)}, its tickets come to {fmt(w.ledgerTotal)}
               {' '}- {fmt(Math.abs(w.difference ?? 0))} {currency} {(w.difference ?? 0) > 0 ? 'short' : 'over'}
             </div>
           ))}
-          <div className="text-[10px] text-red-700 mt-0.5">Ask {vendorName} to issue them again.</div>
+          <div className="text-mini text-red-700 mt-0.5">Ask {vendorName} to issue them again.</div>
         </button>
       )}
       {report.printedTwice.length > 0 && (
@@ -463,13 +463,13 @@ export const TaxInvoices: React.FC<{
             <FileWarning className="w-4 h-4" />
             {report.printedTwice.length} ticket(s) are on more than one final invoice - their VAT is on paper twice
           </div>
-          <div className="text-[11px] text-amber-800 mt-0.5 font-mono">
+          <div className="text-xs text-amber-800 mt-0.5 font-mono">
             {[...report.printedTwice.reduce((m, p) => {
               const k = p.invoices.join(' + ');
               return m.set(k, (m.get(k) ?? 0) + 1);
             }, new Map<string, number>())].map(([k, n]) => `${k}: ${n} ticket(s)`).join(' · ')}
           </div>
-          <div className="text-[10px] text-amber-700 mt-0.5">The one that does not stand should be cancelled with a credit note for its full balance.</div>
+          <div className="text-mini text-amber-700 mt-0.5">The one that does not stand should be cancelled with a credit note for its full balance.</div>
         </div>
       )}
 
@@ -503,7 +503,7 @@ export const TaxInvoices: React.FC<{
       <div className="flex flex-wrap items-center gap-1 border-b border-slate-200">
         {([['tickets', 'By ticket'], ['invoices', 'By invoice'], ['refunds', `Refunds & credit notes${creditsOwed ? ` (${creditsOwed})` : ''}`]] as const).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide border-b-2 -mb-px
+            className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wide border-b-2 -mb-px
               ${tab === id ? 'border-purple-500 text-purple-700' : 'border-transparent text-slate-400 hover:text-slate-600'}`}>
             {label}
           </button>
@@ -511,7 +511,7 @@ export const TaxInvoices: React.FC<{
         <div className="w-full sm:w-auto sm:ml-auto flex flex-wrap items-center gap-2 pb-1">
           {tab === 'tickets' && (
             <select value={filter} onChange={e => setFilter(e.target.value as Coverage | 'ALL')}
-              className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600">
+              className="text-xs border border-slate-200 rounded px-2 py-1 text-slate-600">
               <option value="NONE">No invoice</option>
               <option value="COVERED">Covered</option>
               <option value="TOTAL_OFF">Invoice total wrong</option>
@@ -521,7 +521,7 @@ export const TaxInvoices: React.FC<{
           )}
           {tab === 'refunds' && (
             <select value={creditFilter} onChange={e => setCreditFilter(e.target.value as RefundCoverage | 'OWED' | 'ALL')}
-              className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600">
+              className="text-xs border border-slate-200 rounded px-2 py-1 text-slate-600">
               <option value="OWED">Still owed a credit note</option>
               <option value="NONE">No credit note</option>
               <option value="AMOUNT_DIFFERS">Credit note, other amount</option>
@@ -534,7 +534,7 @@ export const TaxInvoices: React.FC<{
             <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="ticket, passenger, req, invoice"
-              className="text-[11px] border border-slate-200 rounded pl-6 pr-2 py-1 w-full sm:w-56 text-slate-700" />
+              className="text-xs border border-slate-200 rounded pl-6 pr-2 py-1 w-full sm:w-56 text-slate-700" />
           </div>
         </div>
       </div>
@@ -543,7 +543,7 @@ export const TaxInvoices: React.FC<{
         <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-50 border-b border-slate-200">
-              <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+              <tr className="text-mini font-bold uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-2 text-left">Date</th>
                 <th className="px-3 py-2 text-left">Ticket</th>
                 <th className="px-3 py-2 text-left">Passenger</th>
@@ -556,21 +556,21 @@ export const TaxInvoices: React.FC<{
             <tbody>
               {rows.slice(0, 500).map(r => (
                 <tr key={r.ticket.id} className="border-b border-slate-50 hover:bg-slate-50/60">
-                  <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{r.ticket.date}</td>
-                  <td className="px-3 py-1.5 font-mono text-[11px] text-slate-700">{r.ticket.ticketNo}</td>
-                  <td className="px-3 py-1.5 text-[11px] text-slate-600 max-w-[16rem] truncate">
+                  <td className="px-3 py-1.5 font-mono text-mini text-slate-500">{r.ticket.date}</td>
+                  <td className="px-3 py-1.5 font-mono text-xs text-slate-700">{r.ticket.ticketNo}</td>
+                  <td className="px-3 py-1.5 text-xs text-slate-600 max-w-[16rem] truncate">
                     {r.ticket.passengerName || '—'}
                   </td>
-                  <td className="px-3 py-1.5 font-mono text-[10px] text-blue-600">{r.ticket.reqNum || '—'}</td>
-                  <td className="px-3 py-1.5 text-right font-mono text-[11px] text-slate-700">
+                  <td className="px-3 py-1.5 font-mono text-mini text-blue-600">{r.ticket.reqNum || '—'}</td>
+                  <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-700">
                     {fmt(r.ticket.amount ?? 0)}
                   </td>
                   <td className="px-3 py-1.5">
-                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${BADGE[r.coverage].cls}`}>
+                    <span className={`text-micro font-bold px-1.5 py-0.5 rounded-full border ${BADGE[r.coverage].cls}`}>
                       {r.invoices.length ? r.invoices.join(', ') : BADGE[r.coverage].label}
                     </span>
                   </td>
-                  <td className="px-3 py-1.5 font-mono text-[10px] text-slate-400">
+                  <td className="px-3 py-1.5 font-mono text-mini text-slate-400">
                     {r.ticket.vendorReference || '—'}
                   </td>
                 </tr>
@@ -585,14 +585,14 @@ export const TaxInvoices: React.FC<{
             </tbody>
           </table>
           {rows.length > 500 && (
-            <div className="px-3 py-2 text-[10px] text-slate-400 border-t border-slate-100">
+            <div className="px-3 py-2 text-mini text-slate-400 border-t border-slate-100">
               showing the first 500 of {rows.length} — narrow it with the search
             </div>
           )}
         </div>
       ) : tab === 'refunds' ? (
         <div className="space-y-3">
-          <p className="text-[11px] text-slate-500 max-w-3xl">
+          <p className="text-xs text-slate-500 max-w-3xl">
             A refund reduces the VAT claimed on its sale, and only {vendorName}'s ZATCA credit note documents it. Their
             credit note names no ticket - only the invoice it reduces - so a refund is matched through its sale's final
             invoice, then by amount. A sale with no e-invoice yet cannot have a credit note against it.
@@ -614,7 +614,7 @@ export const TaxInvoices: React.FC<{
           <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
-                <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                <tr className="text-mini font-bold uppercase tracking-wide text-slate-500">
                   <th className="px-3 py-2 text-left">Refund date</th>
                   <th className="px-3 py-2 text-left">Ticket</th>
                   <th className="px-3 py-2 text-left">Passenger</th>
@@ -627,14 +627,14 @@ export const TaxInvoices: React.FC<{
               <tbody>
                 {refundRows.map(r => (
                   <tr key={r.ticket.id} className="border-b border-slate-50 hover:bg-slate-50/60">
-                    <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{r.ticket.date}</td>
-                    <td className="px-3 py-1.5 font-mono text-[11px] text-slate-700">{r.ticket.relatedTicket || r.ticket.ticketNo}</td>
-                    <td className="px-3 py-1.5 text-[11px] text-slate-600 max-w-[16rem] truncate">{r.ticket.passengerName || '—'}</td>
-                    <td className="px-3 py-1.5 font-mono text-[10px] text-blue-600">{r.ticket.reqNum || '—'}</td>
-                    <td className="px-3 py-1.5 text-right font-mono text-[11px] text-slate-700">−{fmt(r.ticket.amount ?? 0)}</td>
-                    <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{r.saleInvoices.length ? r.saleInvoices.join(', ') : '—'}</td>
+                    <td className="px-3 py-1.5 font-mono text-mini text-slate-500">{r.ticket.date}</td>
+                    <td className="px-3 py-1.5 font-mono text-xs text-slate-700">{r.ticket.relatedTicket || r.ticket.ticketNo}</td>
+                    <td className="px-3 py-1.5 text-xs text-slate-600 max-w-[16rem] truncate">{r.ticket.passengerName || '—'}</td>
+                    <td className="px-3 py-1.5 font-mono text-mini text-blue-600">{r.ticket.reqNum || '—'}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-700">−{fmt(r.ticket.amount ?? 0)}</td>
+                    <td className="px-3 py-1.5 font-mono text-mini text-slate-500">{r.saleInvoices.length ? r.saleInvoices.join(', ') : '—'}</td>
                     <td className="px-3 py-1.5">
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${CREDIT_BADGE[r.coverage].cls}`}>
+                      <span className={`text-micro font-bold px-1.5 py-0.5 rounded-full border ${CREDIT_BADGE[r.coverage].cls}`}>
                         {r.creditNotes.length
                           ? `CN ${r.creditNotes.join(', ')}${r.noteTotal !== undefined ? ` · ${fmt(r.noteTotal)}` : ''}`
                           : CREDIT_BADGE[r.coverage].label}
@@ -649,7 +649,7 @@ export const TaxInvoices: React.FC<{
             </table>
           </div>
           {credits.unmatched.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-[11px] text-amber-800">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-xs text-amber-800">
               <span className="font-bold">{credits.unmatched.length} credit note(s) no refund of ours accounts for: </span>
               {credits.unmatched.map(n => `${n.theirSerial || n.invoiceNo} against ${n.against || '?'} (${fmt(n.total ?? 0)})`).join(', ')}
             </div>

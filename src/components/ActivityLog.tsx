@@ -190,16 +190,16 @@ export const ActivityLog: React.FC<{
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-100">
+    <div className="flex flex-col h-full bg-app">
       <div className="px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex items-center justify-between">
-        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Activity &amp; Access — Admin Only</h2>
+        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">Activity &amp; Access — Admin Only</h2>
         <div className="flex gap-1">
           <button onClick={() => setTab('activity')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase rounded border transition-colors ${tab === 'activity' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`}>
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-mini font-bold uppercase rounded border transition-colors ${tab === 'activity' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`}>
             <Activity className="w-3 h-3" /> Activity ({rows.length})
           </button>
           <button onClick={() => setTab('people')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-bold uppercase rounded border transition-colors ${tab === 'people' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`}>
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-mini font-bold uppercase rounded border transition-colors ${tab === 'people' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`}>
             <Users className="w-3 h-3" /> People ({users.length})
           </button>
         </div>
@@ -212,26 +212,26 @@ export const ActivityLog: React.FC<{
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
               <input type="text" placeholder="Search ticket, detail, person..." value={search}
                 onChange={e => setSearch(e.target.value)}
-                className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-mono w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
+                className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-mini font-mono w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
             </div>
             <select value={actorFilter} onChange={e => setActorFilter(e.target.value)}
-              className="max-w-full min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
+              className="max-w-full min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded text-mini font-bold uppercase focus:outline-none">
               {actors.map(a => <option key={a} value={a}>{a === 'ALL' ? 'All people' : a}</option>)}
             </select>
             <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
-              className="max-w-full min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
+              className="max-w-full min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded text-mini font-bold uppercase focus:outline-none">
               {actions.map(a => <option key={a} value={a}>{a === 'ALL' ? 'All actions' : a}</option>)}
             </select>
-            <span className="text-[10px] font-mono text-slate-400">{filtered.length} entries</span>
+            <span className="text-mini font-mono text-slate-400">{filtered.length} entries</span>
             <button onClick={exportLog}
-              className="ml-auto px-2 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-blue-700 flex items-center gap-1">
+              className="ml-auto px-2 py-1.5 bg-blue-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-blue-700 flex items-center gap-1">
               <Download className="w-3 h-3" /> Export
             </button>
 
             {/* Housekeeping, deliberately not dressed up as a speed control. */}
             <span className="w-px h-5 bg-slate-200" />
             <select value={pruneDays} onChange={e => setPruneDays(Number(e.target.value))}
-              className="max-w-full min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-bold uppercase focus:outline-none">
+              className="max-w-full min-w-0 px-2 py-1.5 bg-white border border-slate-200 rounded text-mini font-bold uppercase focus:outline-none">
               <option value={30}>Older than 30 days</option>
               <option value={90}>Older than 90 days</option>
               <option value={180}>Older than 6 months</option>
@@ -241,7 +241,7 @@ export const ActivityLog: React.FC<{
               title={pruneCount
                 ? `Download a copy, then delete ${pruneCount.toLocaleString()} entries`
                 : 'Nothing is old enough to clear'}
-              className="px-2 py-1.5 rounded text-[10px] font-bold uppercase tracking-widest
+              className="px-2 py-1.5 rounded text-mini font-bold uppercase tracking-widest
                          flex items-center gap-1 transition
                          disabled:bg-slate-100 disabled:text-slate-400
                          bg-red-50 text-red-700 border border-red-200 hover:bg-red-100">
@@ -254,7 +254,7 @@ export const ActivityLog: React.FC<{
           </div>
 
           {pruneMsg && (
-            <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900 shrink-0">
+            <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 shrink-0">
               {pruneMsg}
             </div>
           )}
@@ -264,7 +264,7 @@ export const ActivityLog: React.FC<{
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                   {['When', 'Who', 'Action', 'Type', 'Entity', 'What changed', ''].map((c, i) => (
-                    <th key={c || `c${i}`} className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">{c}</th>
+                    <th key={c || `c${i}`} className="px-3 py-2 text-micro font-bold text-slate-500 uppercase whitespace-nowrap">{c}</th>
                   ))}
                 </tr>
               </thead>
@@ -274,11 +274,11 @@ export const ActivityLog: React.FC<{
                     <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{fmtWhen(r.performedAt)}</td>
                     <td className="px-3 py-2 text-slate-700 font-sans">{r.actorEmail}</td>
                     <td className="px-3 py-2">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold ${ACTION_COLORS[r.action] ?? 'bg-slate-100 text-slate-600'}`}>
+                      <span className={`px-1.5 py-0.5 rounded text-micro font-sans font-bold ${ACTION_COLORS[r.action] ?? 'bg-slate-100 text-slate-600'}`}>
                         {r.action}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-slate-400 text-[10px]">{r.entityType || '—'}</td>
+                    <td className="px-3 py-2 text-slate-400 text-mini">{r.entityType || '—'}</td>
                     {/* A bulk action lists every id it touched. Printed in
                         full, sixty of them push the rest of the row off the
                         screen — including the Undo button. The count is what
@@ -287,19 +287,19 @@ export const ActivityLog: React.FC<{
                         title={r.entity}>
                       {entityLabel(r.entity)}
                     </td>
-                    <td className="px-3 py-2 text-slate-600 text-[10px] max-w-[420px]">{r.detail || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 text-mini max-w-[420px]">{r.detail || '—'}</td>
                     {/* Undo sits on the row that did the thing, so taking it
                         back is one click from seeing it — not a screen away. */}
                     <td className="px-3 py-2 text-right whitespace-nowrap">
                       {undone.has(r.id) ? (
-                        <span className="text-[9px] font-sans font-bold text-slate-400 px-1.5 py-0.5 rounded bg-slate-100"
+                        <span className="text-micro font-sans font-bold text-slate-400 px-1.5 py-0.5 rounded bg-slate-100"
                               title="Already taken back — the entry below this one is the reversal.">
                           UNDONE
                         </span>
                       ) : undoableAction(r) && onUndo ? (
                         <button onClick={() => runUndo(r)} disabled={undoing === r.id}
                           title="Put these tickets back the way they were"
-                          className="px-2 py-1 rounded text-[9px] font-sans font-bold uppercase border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-40 flex items-center gap-1 ml-auto">
+                          className="px-2 py-1 rounded text-micro font-sans font-bold uppercase border border-amber-200 text-amber-700 hover:bg-amber-50 disabled:opacity-40 flex items-center gap-1 ml-auto">
                           <Undo2 className="w-3 h-3" />
                           {undoing === r.id ? 'Undoing…' : 'Undo'}
                         </button>
@@ -324,7 +324,7 @@ export const ActivityLog: React.FC<{
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                 {['Email', 'Role', 'Edits', 'Deletions', 'Other', 'Last activity', ''].map(c => (
-                  <th key={c} className="px-4 py-2 text-[9px] font-bold text-slate-500 uppercase whitespace-nowrap">{c}</th>
+                  <th key={c} className="px-4 py-2 text-micro font-bold text-slate-500 uppercase whitespace-nowrap">{c}</th>
                 ))}
               </tr>
             </thead>
@@ -335,14 +335,14 @@ export const ActivityLog: React.FC<{
                 return (
                   <tr key={u.id} className="border-b border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-2.5 font-sans font-bold text-slate-700">
-                      {u.email}{u.id === currentUserId && <span className="ml-1.5 text-[9px] text-blue-500">(you)</span>}
+                      {u.email}{u.id === currentUserId && <span className="ml-1.5 text-micro text-blue-500">(you)</span>}
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${u.role === 'admin' ? 'bg-violet-100 text-violet-700' : u.role === 'pending' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
+                      <span className={`px-1.5 py-0.5 rounded text-micro font-bold ${u.role === 'admin' ? 'bg-violet-100 text-violet-700' : u.role === 'pending' ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-600'}`}>
                         {(ROLE_LABEL[u.role] ?? u.role).toUpperCase()}
                       </span>
                       {u.role !== 'admin' && (u.closeOffices?.length ?? 0) > 0 && (
-                        <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700"
+                        <span className="ml-1 px-1.5 py-0.5 rounded text-micro font-bold bg-emerald-50 text-emerald-700"
                           title="May close and reopen these offices' tickets">
                           CLOSES {u.closeOffices!.join(', ')}
                         </span>
@@ -351,12 +351,12 @@ export const ActivityLog: React.FC<{
                     <td className="px-4 py-2.5 font-mono text-blue-600">{s.edits || '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-red-600">{s.deletes || '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-slate-500">{s.other || '—'}</td>
-                    <td className="px-4 py-2.5 font-mono text-slate-400 text-[10px]">
+                    <td className="px-4 py-2.5 font-mono text-slate-400 text-mini">
                       {s.last ? fmtWhen(s.last) : <span className="text-slate-300">never — no changes made</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <select value={u.role} onChange={e => changeRole(u, e.target.value as Role)}
-                        className="ml-auto block px-2 py-1 rounded text-[10px] font-bold border border-slate-200 bg-white text-slate-700">
+                        className="ml-auto block px-2 py-1 rounded text-mini font-bold border border-slate-200 bg-white text-slate-700">
                         {ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
                       </select>
                     </td>
@@ -368,7 +368,7 @@ export const ActivityLog: React.FC<{
               )}
             </tbody>
           </table>
-          <p className="px-4 py-3 text-[10px] text-slate-400 font-mono border-t border-slate-100">
+          <p className="px-4 py-3 text-mini text-slate-400 font-mono border-t border-slate-100">
             Everyone who signs in can view and edit the tickets. Only admins see this screen.
           </p>
         </div>

@@ -720,31 +720,31 @@ function MainApp({ user }: { user: User }) {
     return r.uncovered.length + r.totalOff.length;
   }, [taxInvoices, tickets]);
 
-  type NavItem = { id: ViewState; label: string; icon: React.ReactNode; badge?: number; badgeColor?: 'red' | 'amber' | 'slate' };
+  type NavItem = { id: ViewState; group: string; label: string; icon: React.ReactNode; badge?: number; badgeColor?: 'red' | 'amber' | 'slate' };
   // Real memos only - an airline's ADM or ACM, or a supplier's. BSP's own fee is not counted.
   const admCount = React.useMemo(() => tickets.filter(t => { const k = admKind(t); return k && k !== 'BSP_FEE'; }).length, [tickets]);
   const NAV: NavItem[] = [
-    { id: 'dashboard', label: 'Dashboard',       icon: <LayoutDashboard className="w-4 h-4" /> },
-    { id: 'tickets',   label: 'All Tickets',     icon: <List className="w-4 h-4" />, badge: tickets.length },
-    { id: 'companies', label: 'Companies',       icon: <Building2 className="w-4 h-4" /> },
-    { id: 'requests',  label: 'Requests',        icon: <FolderOpen className="w-4 h-4" />, badge: partClosedCount || undefined, badgeColor: 'amber' },
-    { id: 'missing',   label: 'Action Required', icon: <AlertTriangle className="w-4 h-4" />, badge: missingReqCount, badgeColor: 'red' },
-    { id: 'notclosed', label: 'Not Closed',      icon: <Circle className="w-4 h-4" />, badge: notClosedCount || undefined, badgeColor: 'amber' },
-    ...(isAdmin ? [{ id: 'import' as ViewState, label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
-    { id: 'teamsheet', label: 'Team Sheet Check', icon: <FileSearch className="w-4 h-4" /> },
-    { id: 'airtable',  label: 'Airtable',        icon: <Table2 className="w-4 h-4" />, badge: atNotices.filter(n => n.state === 'OPEN' && NEEDS_APPROVAL.has(n.kind)).length || undefined, badgeColor: 'red' },
-    { id: 'review',    label: 'To Review',        icon: <ClipboardCheck className="w-4 h-4" />,
+    { id: 'dashboard', group: 'Overview', label: 'Dashboard',       icon: <LayoutDashboard className="w-4 h-4" /> },
+    { id: 'tickets', group: 'Ledger',   label: 'All Tickets',     icon: <List className="w-4 h-4" />, badge: tickets.length },
+    { id: 'companies', group: 'Ledger', label: 'Companies',       icon: <Building2 className="w-4 h-4" /> },
+    { id: 'requests', group: 'Ledger',  label: 'Requests',        icon: <FolderOpen className="w-4 h-4" />, badge: partClosedCount || undefined, badgeColor: 'amber' },
+    { id: 'missing', group: 'Ledger',   label: 'Action Required', icon: <AlertTriangle className="w-4 h-4" />, badge: missingReqCount, badgeColor: 'red' },
+    { id: 'notclosed', group: 'Ledger', label: 'Not Closed',      icon: <Circle className="w-4 h-4" />, badge: notClosedCount || undefined, badgeColor: 'amber' },
+    ...(isAdmin ? [{ id: 'import' as ViewState, group: 'Imports & checks', label: 'Import Data', icon: <Upload className="w-4 h-4" /> }] : []),
+    { id: 'teamsheet', group: 'Imports & checks', label: 'Team Sheet Check', icon: <FileSearch className="w-4 h-4" /> },
+    { id: 'airtable', group: 'Imports & checks',  label: 'Airtable',        icon: <Table2 className="w-4 h-4" />, badge: atNotices.filter(n => n.state === 'OPEN' && NEEDS_APPROVAL.has(n.kind)).length || undefined, badgeColor: 'red' },
+    { id: 'review', group: 'Imports & checks',    label: 'To Review',        icon: <ClipboardCheck className="w-4 h-4" />,
       badge: pendingCount || undefined, badgeColor: 'amber' },
-    { id: 'history',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
-    { id: 'vendors',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
-    { id: 'statements', label: 'Vendor Statements', icon: <FileText className="w-4 h-4" />, badge: statementGapCount || undefined, badgeColor: 'red' },
-    { id: 'taxinvoices', label: 'Tax Invoices', icon: <Receipt className="w-4 h-4" />, badge: noTaxInvoiceCount || undefined, badgeColor: 'red' },
-    { id: 'voids',     label: 'Voids',           icon: <Ban className="w-4 h-4" />, badge: voids.length || undefined, badgeColor: 'slate' },
-    { id: 'adms',      label: 'ADMs',            icon: <FileWarning className="w-4 h-4" />, badge: admCount || undefined, badgeColor: 'red' },
-    { id: 'reports',   label: 'Reports',         icon: <BarChart2 className="w-4 h-4" /> },
-    { id: 'profit',    label: 'Aviation Profit', icon: <BarChart2 className="w-4 h-4" /> },
-    ...(isAdmin ? [{ id: 'activity' as ViewState, label: 'Activity Log', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
-    ...(isAdmin ? [{ id: 'settings' as ViewState, label: 'Settings', icon: <SettingsIcon className="w-4 h-4" /> }] : []),
+    { id: 'history', group: 'Imports & checks',   label: 'Import History',  icon: <History className="w-4 h-4" />, badge: importHistory.length || undefined },
+    { id: 'vendors', group: 'Suppliers',   label: 'Vendor Credit',   icon: <Wallet className="w-4 h-4" />, badge: lowVendorCount || undefined, badgeColor: 'amber' },
+    { id: 'statements', group: 'Suppliers', label: 'Vendor Statements', icon: <FileText className="w-4 h-4" />, badge: statementGapCount || undefined, badgeColor: 'red' },
+    { id: 'taxinvoices', group: 'Suppliers', label: 'Tax Invoices', icon: <Receipt className="w-4 h-4" />, badge: noTaxInvoiceCount || undefined, badgeColor: 'red' },
+    { id: 'voids', group: 'Suppliers',     label: 'Voids',           icon: <Ban className="w-4 h-4" />, badge: voids.length || undefined, badgeColor: 'slate' },
+    { id: 'adms', group: 'Suppliers',      label: 'ADMs',            icon: <FileWarning className="w-4 h-4" />, badge: admCount || undefined, badgeColor: 'red' },
+    { id: 'reports', group: 'Reports',   label: 'Reports',         icon: <BarChart2 className="w-4 h-4" /> },
+    { id: 'profit', group: 'Reports',    label: 'Aviation Profit', icon: <BarChart2 className="w-4 h-4" /> },
+    ...(isAdmin ? [{ id: 'activity' as ViewState, group: 'Admin', label: 'Activity Log', icon: <ShieldCheck className="w-4 h-4" /> }] : []),
+    ...(isAdmin ? [{ id: 'settings' as ViewState, group: 'Admin', label: 'Settings', icon: <SettingsIcon className="w-4 h-4" /> }] : []),
   ];
 
   return (

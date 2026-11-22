@@ -100,7 +100,7 @@ export class ErrorBoundary extends Component<Props, State> {
               has been replaced. Nothing is wrong with your data. Load the page again.
             </p>
             <button onClick={() => location.reload()}
-              className="mt-3 flex items-center gap-1.5 bg-slate-800 text-white text-[11px]
+              className="mt-3 flex items-center gap-1.5 bg-slate-800 text-white text-xs
                          font-bold px-3 py-1.5 rounded hover:bg-slate-700">
               <RefreshCw className="w-3.5 h-3.5" /> Reload
             </button>
@@ -124,30 +124,30 @@ export class ErrorBoundary extends Component<Props, State> {
           </div>
 
           <div className="px-5 py-4 space-y-3">
-            <div className="font-mono text-[11px] text-red-700 bg-red-50/60 border border-red-100
+            <div className="font-mono text-xs text-red-700 bg-red-50/60 border border-red-100
                             rounded px-3 py-2 break-words">
               {this.state.error.message || String(this.state.error)}
             </div>
 
-            <details className="text-[11px]">
+            <details className="text-xs">
               <summary className="cursor-pointer text-slate-500 hover:text-slate-700">
                 What went wrong, in detail
               </summary>
               <pre className="mt-2 max-h-64 overflow-auto bg-slate-50 border border-slate-200
-                              rounded p-3 text-[10px] text-slate-600 whitespace-pre-wrap">
+                              rounded p-3 text-mini text-slate-600 whitespace-pre-wrap">
                 {this.report()}
               </pre>
             </details>
 
             <div className="flex items-center gap-2 pt-1">
               <button onClick={() => location.reload()}
-                className="flex items-center gap-1.5 bg-slate-800 text-white text-[11px] font-bold
+                className="flex items-center gap-1.5 bg-slate-800 text-white text-xs font-bold
                            px-3 py-1.5 rounded hover:bg-slate-700">
                 <RefreshCw className="w-3.5 h-3.5" /> Reload
               </button>
               <button
                 onClick={() => { void navigator.clipboard?.writeText(this.report()); }}
-                className="flex items-center gap-1.5 bg-white text-slate-600 text-[11px] font-bold
+                className="flex items-center gap-1.5 bg-white text-slate-600 text-xs font-bold
                            px-3 py-1.5 rounded border border-slate-200 hover:bg-slate-50">
                 <Copy className="w-3.5 h-3.5" /> Copy the details
               </button>

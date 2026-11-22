@@ -64,7 +64,7 @@ type ModalMode = null | 'add_existing' | 'add_new' | 'topup';
 const OpeningDateField: React.FC<{ value: string; onChange: (v: string) => void }> =
 ({ value, onChange }) => (
   <div>
-    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+    <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">
       Balance starts from
     </label>
     <input
@@ -73,7 +73,7 @@ const OpeningDateField: React.FC<{ value: string; onChange: (v: string) => void 
       onChange={e => onChange(e.target.value)}
       className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500/20"
     />
-    <p className="text-[9px] text-slate-400 mt-1 leading-tight">
+    <p className="text-micro text-slate-400 mt-1 leading-tight">
       {value
         ? 'Only tickets from this date onward are charged to this balance.'
         : 'Empty — every ticket this vendor ever issued is charged to it.'}
@@ -199,10 +199,10 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
              isLow: pct < 20 && remaining >= 0 };
   };
   const statusBadge = (isNeg: boolean, isLow: boolean) => isNeg
-    ? <span className="bg-red-100 text-red-700 text-[9px] font-bold px-2 py-0.5 rounded-full">OVERDRAFT</span>
+    ? <span className="bg-red-100 text-red-700 text-micro font-bold px-2 py-0.5 rounded-full">OVERDRAFT</span>
     : isLow
-    ? <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-2 py-0.5 rounded-full">LOW ⚠</span>
-    : <span className="bg-emerald-50 text-emerald-600 text-[9px] font-bold px-2 py-0.5 rounded-full">OK</span>;
+    ? <span className="bg-amber-100 text-amber-700 text-micro font-bold px-2 py-0.5 rounded-full">LOW ⚠</span>
+    : <span className="bg-emerald-50 text-emerald-600 text-micro font-bold px-2 py-0.5 rounded-full">OK</span>;
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm max-w-6xl mx-auto overflow-hidden">
@@ -215,7 +215,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
         </div>
         {canEdit && <button
           onClick={() => setModalMode('add_existing')}
-          className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm transition-colors"
+          className="flex items-center space-x-2 bg-blue-700 hover:bg-blue-800 text-white px-3 py-1.5 rounded text-mini font-bold uppercase tracking-wider shadow-sm transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>Add Vendor</span>
@@ -263,7 +263,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                     <span className={`block h-1 rounded-full ${bar}`}
                       style={{ width: f.isNeg ? '100%' : `${Math.min(Math.max(f.pct, 0), 100)}%` }} />
                   </span>
-                  <span className="mt-2.5 grid grid-cols-3 gap-2 text-[10px]">
+                  <span className="mt-2.5 grid grid-cols-3 gap-2 text-mini">
                     <span><span className="block text-slate-400 uppercase tracking-wide">Initial</span>
                       <span className="block font-mono text-slate-600">{fmt(vendor.initialBalance)}</span></span>
                     <span><span className="block text-slate-400 uppercase tracking-wide">Top-ups</span>
@@ -276,12 +276,12 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
               {canEdit && (
                 <div className="flex gap-2 px-4 pb-3 pl-11">
                   <button type="button" onClick={e => openTopUp(vendor.id, e)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 text-[11px] font-bold">
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-bold">
                     <PlusCircle className="w-3.5 h-3.5" /> Add balance
                   </button>
                   <button type="button" onClick={() => { if (confirm(`Delete ${vendor.vendorName}?`)) onDeleteVendor(vendor.id); }}
                     aria-label={`Delete ${vendor.vendorName}`}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-red-600">
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 text-slate-500 text-xs font-bold hover:text-red-600">
                     <Trash2 className="w-3.5 h-3.5" /> Delete
                   </button>
                 </div>
@@ -290,14 +290,14 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                 <div className="px-4 pb-4 space-y-3">
                   {f.vTopUps.length > 0 && (
                     <div className="bg-white border border-emerald-100 rounded-lg overflow-hidden">
-                      <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-100 text-[10px] font-bold uppercase text-emerald-700 flex items-center gap-1.5">
+                      <div className="px-3 py-2 bg-emerald-50 border-b border-emerald-100 text-mini font-bold uppercase text-emerald-700 flex items-center gap-1.5">
                         <TrendingUp className="w-3 h-3" /> Balance top-ups
                       </div>
                       <ul className="divide-y divide-slate-50">
                         {f.vTopUps.map(tu => (
                           <li key={tu.id} className="px-3 py-2 flex items-start justify-between gap-3 text-xs">
                             <span className="min-w-0">
-                              <span className="block font-mono text-[10px] text-slate-400">{tu.date}</span>
+                              <span className="block font-mono text-mini text-slate-400">{tu.date}</span>
                               <span className="block text-slate-600 break-words">{tu.note}</span>
                             </span>
                             <span className="font-mono font-bold text-emerald-600 whitespace-nowrap">+{fmt(tu.amount)} {cur}</span>
@@ -307,7 +307,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                     </div>
                   )}
                   <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1.5">
+                    <div className="px-3 py-2 bg-slate-50 border-b border-slate-100 text-mini font-bold uppercase text-slate-500 flex items-center gap-1.5">
                       <TrendingDown className="w-3 h-3" /> Tickets ({f.vTickets.length})
                     </div>
                     {f.vTickets.length === 0 ? (
@@ -318,11 +318,11 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                           const isRefund = t.amount < 0, isCanc = t.amount === 0;
                           const impact = isCanc ? 'text-slate-400' : isRefund ? 'text-emerald-600' : 'text-red-600';
                           return (
-                            <li key={t.id} className="px-3 py-2 flex items-start justify-between gap-3 font-mono text-[11px]">
+                            <li key={t.id} className="px-3 py-2 flex items-start justify-between gap-3 font-mono text-xs">
                               <span className="min-w-0">
                                 <span className="block text-slate-700 font-bold">{t.ticketNo}</span>
-                                <span className="block text-[10px] text-slate-400">{t.date} · {t.pnr || '—'} · {t.status || '—'}</span>
-                                <span className="block text-[10px]">
+                                <span className="block text-mini text-slate-400">{t.date} · {t.pnr || '—'} · {t.status || '—'}</span>
+                                <span className="block text-mini">
                                   {t.reqNum ? <span className="text-blue-600 font-bold">{t.reqNum}</span>
                                             : <span className="text-red-400 italic">missing req</span>}
                                 </span>
@@ -346,7 +346,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
       <div className="hidden md:block overflow-x-auto">
       <table className="w-full text-left border-collapse min-w-[760px]">
         <thead>
-          <tr className="border-b border-slate-200 text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
+          <tr className="border-b border-slate-200 text-micro font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
             <th className="py-3 px-4 w-8"></th>
             <th className="py-3 px-4">Vendor</th>
             <th className="py-3 px-4 text-right">Initial</th>
@@ -384,7 +384,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                       : <ChevronRight className="w-3.5 h-3.5" />
                     }
                   </td>
-                  <td className="py-3 px-4 font-bold text-slate-700 uppercase text-[11px] tracking-wide">
+                  <td className="py-3 px-4 font-bold text-slate-700 uppercase text-xs tracking-wide">
                     {vendor.vendorName}
                   </td>
                   <td className="py-3 px-4 text-right font-mono text-xs text-slate-500">{fmt(vendor.initialBalance)}</td>
@@ -426,7 +426,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                           </button>
                         </>
                       ) : (
-                        <span className="text-slate-300 text-[9px]">—</span>
+                        <span className="text-slate-300 text-micro">—</span>
                       )}
                     </div>
                   </td>
@@ -440,7 +440,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                         {/* Top-ups history */}
                         {vTopUps.length > 0 && (
                           <div className="bg-white border border-emerald-100 rounded-lg overflow-hidden">
-                            <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 text-[9px] font-bold uppercase text-emerald-700 flex items-center space-x-1.5">
+                            <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 text-micro font-bold uppercase text-emerald-700 flex items-center space-x-1.5">
                               <TrendingUp className="w-3 h-3" />
                               <span>Balance Top-ups</span>
                             </div>
@@ -448,7 +448,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                               <tbody>
                                 {vTopUps.map(tu => (
                                   <tr key={tu.id} className="border-b border-slate-50 text-xs hover:bg-slate-50">
-                                    <td className="px-4 py-2 text-slate-500 font-mono text-[10px]">{tu.date}</td>
+                                    <td className="px-4 py-2 text-slate-500 font-mono text-mini">{tu.date}</td>
                                     <td className="px-4 py-2 text-slate-600">{tu.note}</td>
                                     <td className="px-4 py-2 text-right font-mono font-bold text-emerald-600">+{fmt(tu.amount)} {sourceToCurrency(vendor.vendorName)}</td>
                                   </tr>
@@ -460,7 +460,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
 
                         {/* Linked tickets */}
                         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                          <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-[9px] font-bold uppercase text-slate-500 flex items-center space-x-1.5">
+                          <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-micro font-bold uppercase text-slate-500 flex items-center space-x-1.5">
                             <TrendingDown className="w-3 h-3" />
                             <span>Tickets ({vTickets.length})</span>
                           </div>
@@ -475,7 +475,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                             <div className="max-h-96 overflow-y-auto">
                               <table className="w-full text-left">
                                 <thead>
-                                  <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+                                  <tr className="border-b border-slate-100 text-micro uppercase tracking-wider text-slate-400">
                                     <th className="px-3 py-2">Date</th>
                                     <th className="px-3 py-2">Ticket No</th>
                                     <th className="px-3 py-2">PNR</th>
@@ -491,18 +491,18 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                                     const isCanc = t.amount === 0;
                                     return (
                                       <tr key={t.id} className="border-b border-slate-50 text-xs hover:bg-slate-50 font-mono">
-                                        <td className="px-3 py-2 text-slate-400 text-[10px]">{t.date}</td>
-                                        <td className="px-3 py-2 text-[10px] text-slate-700">{t.ticketNo}</td>
-                                        <td className="px-3 py-2 text-[10px] text-slate-500">{t.pnr || '—'}</td>
-                                        <td className="px-3 py-2 text-[10px]">
+                                        <td className="px-3 py-2 text-slate-400 text-mini">{t.date}</td>
+                                        <td className="px-3 py-2 text-mini text-slate-700">{t.ticketNo}</td>
+                                        <td className="px-3 py-2 text-mini text-slate-500">{t.pnr || '—'}</td>
+                                        <td className="px-3 py-2 text-mini">
                                           {t.reqNum
                                             ? <span className="text-blue-600 font-bold">{t.reqNum}</span>
                                             : <span className="text-red-400 italic">missing</span>
                                           }
                                         </td>
-                                        <td className="px-3 py-2 text-[9px] font-bold text-slate-400">{t.status || '—'}</td>
-                                        <td className="px-3 py-2 text-right text-[10px]">{fmt(Math.abs(t.amount))}</td>
-                                        <td className={`px-3 py-2 text-right font-bold text-[10px] ${isCanc ? 'text-slate-400' : isRefund ? 'text-emerald-600' : 'text-red-600'}`}>
+                                        <td className="px-3 py-2 text-micro font-bold text-slate-400">{t.status || '—'}</td>
+                                        <td className="px-3 py-2 text-right text-mini">{fmt(Math.abs(t.amount))}</td>
+                                        <td className={`px-3 py-2 text-right font-bold text-mini ${isCanc ? 'text-slate-400' : isRefund ? 'text-emerald-600' : 'text-red-600'}`}>
                                           {isCanc ? '±0' : isRefund ? `+${fmt(Math.abs(t.amount))}` : `-${fmt(t.amount)}`}
                                         </td>
                                       </tr>
@@ -546,13 +546,13 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                 <div className="flex border-b border-slate-100">
                   <button
                     onClick={() => setModalMode('add_existing')}
-                    className={`flex-1 py-2.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${modalMode === 'add_existing' ? 'border-b-2 border-purple-600 text-purple-700' : 'text-slate-400 hover:text-slate-600'}`}
+                    className={`flex-1 py-2.5 text-mini font-bold uppercase tracking-wider transition-colors ${modalMode === 'add_existing' ? 'border-b-2 border-purple-600 text-purple-700' : 'text-slate-400 hover:text-slate-600'}`}
                   >
                     Known Vendors
                   </button>
                   <button
                     onClick={() => setModalMode('add_new')}
-                    className={`flex-1 py-2.5 text-[10px] font-bold uppercase tracking-wider transition-colors ${modalMode === 'add_new' ? 'border-b-2 border-purple-600 text-purple-700' : 'text-slate-400 hover:text-slate-600'}`}
+                    className={`flex-1 py-2.5 text-mini font-bold uppercase tracking-wider transition-colors ${modalMode === 'add_new' ? 'border-b-2 border-purple-600 text-purple-700' : 'text-slate-400 hover:text-slate-600'}`}
                   >
                     Custom Vendor
                   </button>
@@ -562,7 +562,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                   {modalMode === 'add_existing' ? (
                     <>
                       <div>
-                        <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                        <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">
                           Select Vendor
                         </label>
                         {availablePresets.length === 0 ? (
@@ -581,7 +581,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                         )}
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                        <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">
                           Initial Balance
                         </label>
                         <input
@@ -597,7 +597,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                       <button
                         onClick={handleAddPreset}
                         disabled={!selectedPreset || isNaN(Number(presetBalance)) || presetBalance === ''}
-                        className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded py-2 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                        className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded py-2 text-mini font-bold uppercase tracking-wider transition-colors"
                       >
                         Add {selectedPreset || 'Vendor'}
                       </button>
@@ -605,7 +605,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                   ) : (
                     <>
                       <div>
-                        <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                        <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">
                           Vendor Name
                         </label>
                         <input
@@ -617,7 +617,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                        <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">
                           Initial Balance
                         </label>
                         <input
@@ -633,7 +633,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                       <button
                         onClick={handleAddCustom}
                         disabled={!customName.trim() || isNaN(Number(customBalance)) || customBalance === ''}
-                        className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded py-2 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                        className="w-full bg-blue-700 hover:bg-blue-800 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded py-2 text-mini font-bold uppercase tracking-wider transition-colors"
                       >
                         Add Custom Vendor
                       </button>
@@ -664,7 +664,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                     </span>
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                    <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">
                       Amount to Add ({sourceToCurrency(topUpVendor.vendorName)})
                     </label>
                     <input
@@ -677,7 +677,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">
+                    <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">
                       Note (optional)
                     </label>
                     <input
@@ -700,7 +700,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                   <button
                     onClick={handleTopUpSubmit}
                     disabled={!topUpAmount || parseFloat(topUpAmount) <= 0}
-                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded py-2 text-[10px] font-bold uppercase tracking-wider transition-colors"
+                    className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded py-2 text-mini font-bold uppercase tracking-wider transition-colors"
                   >
                     Confirm Top-up
                   </button>

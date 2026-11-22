@@ -18,10 +18,10 @@ export const ImportHistory: React.FC<ImportHistoryProps> = ({ records, getErrors
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-100">
+    <div className="flex flex-col h-full bg-app">
       <div className="px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex items-center space-x-2">
         <History className="w-4 h-4 text-slate-500" />
-        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Import History</h2>
+        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">Import History</h2>
       </div>
 
       <div className="flex-1 overflow-auto p-4 space-y-2">
@@ -49,12 +49,12 @@ export const ImportHistory: React.FC<ImportHistoryProps> = ({ records, getErrors
                     }
                     <span className="font-bold text-sm uppercase text-slate-700">{r.vendor}</span>
                   </div>
-                  <span className="text-[9px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{r.parserName}</span>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${r.confidence >= 90 ? 'bg-emerald-100 text-emerald-700' : r.confidence >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                  <span className="text-micro font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{r.parserName}</span>
+                  <span className={`text-micro font-bold px-1.5 py-0.5 rounded ${r.confidence >= 90 ? 'bg-emerald-100 text-emerald-700' : r.confidence >= 60 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
                     {r.confidence}% confidence
                   </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] font-mono text-slate-500">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-mini font-mono text-slate-500">
                   <span className="flex items-center space-x-1"><Clock className="w-3 h-3" /><span>{(r.duration/1000).toFixed(1)}s</span></span>
                   <span className="text-emerald-600 font-bold">{r.imported} imported</span>
                   {r.updated > 0 && <span className="text-blue-600">{r.updated} updated</span>}
@@ -67,14 +67,14 @@ export const ImportHistory: React.FC<ImportHistoryProps> = ({ records, getErrors
 
               {isExpanded && (
                 <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
-                  <div className="text-[10px] font-bold uppercase text-slate-500 mb-2">
+                  <div className="text-mini font-bold uppercase text-slate-500 mb-2">
                     Report: {r.reportName} · {r.totalRows} total rows
                   </div>
                   {errors.length > 0 ? (
                     <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs font-mono min-w-[520px]">
                       <thead>
-                        <tr className="text-[9px] uppercase text-slate-400 border-b border-slate-200">
+                        <tr className="text-micro uppercase text-slate-400 border-b border-slate-200">
                           <th className="py-1.5">Row</th><th className="py-1.5">Error</th><th className="py-1.5">Raw Data</th>
                         </tr>
                       </thead>

@@ -93,7 +93,7 @@ export const Companies: React.FC<Props> = ({ tickets, rows, assignments, onAssig
       <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
         <table className="w-full text-sm min-w-[900px]">
           <thead className="bg-slate-50 border-b border-slate-200">
-            <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <tr className="text-mini font-bold uppercase tracking-wide text-slate-500">
               <th className="px-3 py-2 text-left">Company</th>
               <th className="px-3 py-2 text-right">Requests</th>
               <th className="px-3 py-2 text-right">Tickets</th>
@@ -114,7 +114,7 @@ export const Companies: React.FC<Props> = ({ tickets, rows, assignments, onAssig
                   <td className="px-3 py-2 font-bold text-blue-700">{s.company}</td>
                   <td className="px-3 py-2 text-right font-mono">{s.requests}</td>
                   <td className="px-3 py-2 text-right font-mono">
-                    {s.tickets}{s.refunds ? <span className="text-red-500 text-[11px]"> +{s.refunds} refunds</span> : null}
+                    {s.tickets}{s.refunds ? <span className="text-red-500 text-xs"> +{s.refunds} refunds</span> : null}
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{moneyLine(nets(s.money))}</td>
                   <td className="px-3 py-2 text-right font-mono text-emerald-700">{s.billed}</td>
@@ -136,7 +136,7 @@ export const Companies: React.FC<Props> = ({ tickets, rows, assignments, onAssig
           onAssign={onAssign} onUnassign={onUnassign} />
       )}
 
-      <p className="text-[11px] text-slate-500">
+      <p className="text-xs text-slate-500">
         Billed: in our books from the supplier's report or invoice. Not billed yet: recorded from the team's sheet or by
         hand, or on their sheet and in nobody's books. Closed and open are our own closure, ticket by ticket. VIP and
         Corporate tickets name no company and are grouped under their department.
@@ -168,7 +168,7 @@ const AssignRequests: React.FC<{
   return (
     <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-2">
       <div className="text-xs font-bold text-slate-700">Place a request under a company</div>
-      <div className="text-[11px] text-slate-500">For requests the team's Airtable does not carry. This wins over what their sheet says.</div>
+      <div className="text-xs text-slate-500">For requests the team's Airtable does not carry. This wins over what their sheet says.</div>
       <div className="flex flex-wrap items-center gap-2">
         <input value={req} onChange={e => setReq(e.target.value)} placeholder="Request number, e.g. KSACO363"
           className="px-2 py-1.5 text-sm border border-slate-200 rounded w-56 font-mono" />
@@ -179,13 +179,13 @@ const AssignRequests: React.FC<{
           className="px-3 py-1.5 text-xs font-bold rounded bg-blue-600 text-white disabled:opacity-40">
           {busy ? 'Saving…' : 'Assign'}
         </button>
-        {key && <span className="text-[11px] text-slate-500">{held} ticket(s) of ours under {key}</span>}
-        {msg && <span className="text-[11px] text-emerald-700">{msg}</span>}
+        {key && <span className="text-xs text-slate-500">{held} ticket(s) of ours under {key}</span>}
+        {msg && <span className="text-xs text-emerald-700">{msg}</span>}
       </div>
       {assignments.length > 0 && (
         <div className="flex flex-wrap gap-1.5 pt-1">
           {assignments.map(a => (
-            <span key={a.req_key} className="inline-flex items-center gap-1.5 text-[11px] bg-slate-100 rounded px-2 py-0.5"
+            <span key={a.req_key} className="inline-flex items-center gap-1.5 text-xs bg-slate-100 rounded px-2 py-0.5"
               title={a.set_by ? `Set by ${a.set_by}` : undefined}>
               <span className="font-mono font-bold">{a.req_key}</span> → {a.company}
               {onUnassign && (
@@ -201,9 +201,9 @@ const AssignRequests: React.FC<{
 
 const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string; sub?: string }> = ({ label, value, tone, sub }) => (
   <div className="bg-white border border-slate-200 rounded-lg px-4 py-3">
-    <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+    <div className="text-mini font-bold uppercase tracking-wide text-slate-500">{label}</div>
     <div className={`text-xl font-bold font-mono ${tone ?? 'text-slate-800'}`}>{value}</div>
-    {sub && <div className="text-[11px] text-slate-500 mt-0.5">{sub}</div>}
+    {sub && <div className="text-xs text-slate-500 mt-0.5">{sub}</div>}
   </div>
 );
 

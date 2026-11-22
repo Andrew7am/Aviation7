@@ -18,11 +18,11 @@ export const LimitChip: React.FC<{ cfg: AirlineLimit; use: LimitUse }> = ({ cfg,
   return (
     <>
       <button onClick={() => setOpen(o => !o)} title={`${cfg.airline} (${cfg.airlineCode}) on IATA this week`}
-        className="flex flex-col items-stretch gap-0.5 text-white/80 hover:text-white px-1.5 py-1">
-        <span className="flex items-center gap-1 text-[10px] font-mono whitespace-nowrap">
-          <Plane className="w-3 h-3" />{cfg.airlineCode} <b>{fmt(use.used)}</b><span className="hidden sm:inline text-white/50"> / {fmt(cfg.limit)}</span>
+        className="flex flex-col items-stretch gap-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-md px-2 py-1.5 transition-colors">
+        <span className="flex items-center gap-1 text-mini font-mono whitespace-nowrap">
+          <Plane className="w-3 h-3" /><span className="hidden sm:inline">{cfg.airlineCode}</span> <b>{fmt(use.used)}</b><span className="hidden sm:inline text-slate-400"> / {fmt(cfg.limit)}</span>
         </span>
-        <span className="h-1 rounded bg-white/20 overflow-hidden"><span className={`block h-full ${bar}`} style={{ width: `${pct}%` }} /></span>
+        <span className="h-1 rounded bg-slate-200 overflow-hidden"><span className={`block h-full ${bar}`} style={{ width: `${pct}%` }} /></span>
       </button>
 
       {open && (
@@ -33,7 +33,7 @@ export const LimitChip: React.FC<{ cfg: AirlineLimit; use: LimitUse }> = ({ cfg,
               <Plane className="w-4 h-4 text-red-600 mt-0.5" />
               <div className="flex-1">
                 <div className="text-xs font-bold">{cfg.airline} ({cfg.airlineCode}) on IATA</div>
-                <div className="text-[10px] text-slate-500">Week {day(use.from)} - {day(use.to)} · weekly limit {fmt(cfg.limit)} {cfg.currency}, warning at {fmt(cfg.warnAt)}</div>
+                <div className="text-mini text-slate-500">Week {day(use.from)} - {day(use.to)} · weekly limit {fmt(cfg.limit)} {cfg.currency}, warning at {fmt(cfg.warnAt)}</div>
               </div>
               <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
             </div>
@@ -45,7 +45,7 @@ export const LimitChip: React.FC<{ cfg: AirlineLimit; use: LimitUse }> = ({ cfg,
                 </span>
               </div>
               <div className="h-2 rounded bg-slate-100 overflow-hidden"><div className={`h-full ${bar}`} style={{ width: `${pct}%` }} /></div>
-              <div className="text-[10px] text-slate-500">
+              <div className="text-mini text-slate-500">
                 {use.docs} document{use.docs === 1 ? '' : 's'} · {fmt2(use.fromBooks)} in our books
                 {use.fromSheet > 0 && <> · {fmt2(use.fromSheet)} on the team's Airtable, not yet in a BSP report</>}
               </div>
@@ -53,13 +53,13 @@ export const LimitChip: React.FC<{ cfg: AirlineLimit; use: LimitUse }> = ({ cfg,
             <div className="overflow-y-auto">
               {use.items.length === 0
                 ? <div className="px-4 py-6 text-xs text-slate-400 text-center">Nothing issued this week yet.</div>
-                : <table className="w-full text-[11px]">
+                : <table className="w-full text-xs">
                     <tbody>
                       {use.items.map(i => (
                         <tr key={`${i.from}${i.ticketNo}`} className="border-b border-slate-50">
                           <td className="px-4 py-1.5 font-mono">{i.ticketNo}</td>
                           <td className="px-2 py-1.5 text-slate-500">{day(i.date)}</td>
-                          <td className="px-2 py-1.5 text-[9px] text-slate-400">{i.from === 'SHEET' ? 'Airtable' : 'BSP'}</td>
+                          <td className="px-2 py-1.5 text-micro text-slate-400">{i.from === 'SHEET' ? 'Airtable' : 'BSP'}</td>
                           <td className="px-4 py-1.5 text-right font-mono">{fmt2(i.amount)}</td>
                         </tr>
                       ))}

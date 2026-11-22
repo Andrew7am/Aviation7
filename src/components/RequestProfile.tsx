@@ -64,7 +64,7 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
   ({ label, value, tone }) => (
   <div className="bg-slate-50 border border-slate-200 rounded px-3 py-2.5">
     <div className={`font-mono font-bold text-sm ${tone ?? 'text-slate-700'}`}>{value}</div>
-    <div className="text-[9px] uppercase text-slate-400 font-bold mt-0.5">{label}</div>
+    <div className="text-micro uppercase text-slate-400 font-bold mt-0.5">{label}</div>
   </div>
 );
 
@@ -191,7 +191,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
         <div className="flex items-start justify-between px-5 py-3 border-b border-slate-100 shrink-0">
           <div>
             <h3 className="font-bold text-slate-800 font-mono text-base">{reqNum}</h3>
-            <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+            <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
               <span>{r.rows.length} row{r.rows.length === 1 ? '' : 's'}</span>
               {r.office && (
                 <span className="flex items-center gap-1">
@@ -206,7 +206,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
             {copyRows.length > 0 && (
               <button onClick={copyAll}
                 title={`Copy all ${copyRows.length} ticket(s) — airline, number, passenger, PNR, one to a line`}
-                className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded
                             border transition ${copied
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
@@ -218,8 +218,8 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
             {r.rows.length > 0 && (
               <button onClick={exportSheet}
                 title="Download this request as a spreadsheet"
-                className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px]
-                           font-bold px-3 py-1.5 rounded hover:bg-purple-700">
+                className="flex items-center gap-1.5 bg-blue-700 text-white text-xs
+                           font-bold px-3 py-1.5 rounded hover:bg-blue-800">
                 <Download className="w-3.5 h-3.5" /> Export
               </button>
             )}
@@ -249,7 +249,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
                     {onUpdateClosed && (
                       <button
                         onClick={() => r.open.forEach(t => onUpdateClosed(t.id, true))}
-                        className="ml-2 bg-amber-600 text-white text-[10px] font-bold px-2 py-1
+                        className="ml-2 bg-amber-600 text-white text-mini font-bold px-2 py-1
                                    rounded hover:bg-amber-700 whitespace-nowrap">
                         Close the remaining {r.open.length}
                       </button>
@@ -284,7 +284,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
 
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center
-                                justify-between text-[9px] font-bold uppercase text-slate-500">
+                                justify-between text-micro font-bold uppercase text-slate-500">
                   <span>Every row on this request</span>
                   <span>
                     <span className="text-orange-600">{r.open.length} not closed</span>
@@ -295,7 +295,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
                 <div className="max-h-[46vh] overflow-auto">
                   <table className="w-full text-left min-w-[720px]">
                     <thead className="sticky top-0 bg-white">
-                      <tr className="border-b border-slate-100 text-[9px] uppercase
+                      <tr className="border-b border-slate-100 text-micro uppercase
                                      tracking-wider text-slate-400">
                         <th className="px-3 py-2">Date</th>
                         <th className="px-3 py-2">Ticket</th>
@@ -311,15 +311,15 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
                       {r.sorted.map(t => (
                         <tr key={t.id}
                             className={`border-b border-slate-50 ${t.closed ? '' : 'bg-orange-50/50'}`}>
-                          <td className="px-3 py-1.5 text-[10px] text-slate-500 whitespace-nowrap">
+                          <td className="px-3 py-1.5 text-mini text-slate-500 whitespace-nowrap">
                             {t.date || <span className="text-red-400">no date</span>}
                           </td>
-                          <td className="px-3 py-1.5 text-[10px] font-bold text-slate-700 whitespace-nowrap">
+                          <td className="px-3 py-1.5 text-mini font-bold text-slate-700 whitespace-nowrap">
                             {t.airlineCode ? `${t.airlineCode}-${t.ticketNo}` : t.ticketNo}
                           </td>
-                          <td className="px-3 py-1.5 text-[10px] text-slate-500">{t.source}</td>
+                          <td className="px-3 py-1.5 text-mini text-slate-500">{t.source}</td>
                           <td className="px-3 py-1.5">
-                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold
+                            <span className={`px-1.5 py-0.5 rounded text-micro font-sans font-bold
                               ${(t.amount || 0) < 0
                                 ? 'bg-emerald-100 text-emerald-700'
                                 : 'bg-slate-100 text-slate-600'}`}>
@@ -329,13 +329,13 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
                           <td className="px-3 py-1.5 text-slate-600 max-w-[160px] truncate">
                             {t.passengerName || '—'}
                           </td>
-                          <td className="px-3 py-1.5 text-[10px] text-slate-500">
+                          <td className="px-3 py-1.5 text-mini text-slate-500">
                             {t.vendorReference || <span className="text-slate-300">—</span>}
                           </td>
                           <td className={`px-3 py-1.5 text-right font-bold
                             ${(t.amount || 0) < 0 ? 'text-emerald-600' : 'text-slate-700'}`}>
                             {(t.amount || 0) < 0 ? '−' : ''}{fmt(t.amount || 0)}
-                            <span className="text-slate-400 font-normal ml-1 text-[9px]">
+                            <span className="text-slate-400 font-normal ml-1 text-micro">
                               {t.currency}
                             </span>
                           </td>
@@ -350,7 +350,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
                               <button
                                 onClick={() => onUpdateClosed(t.id, !t.closed)}
                                 title={t.closed ? 'Reopen this row' : 'Close this row'}
-                                className={`text-[8px] font-sans font-bold px-1.5 py-0.5 rounded
+                                className={`text-micro font-sans font-bold px-1.5 py-0.5 rounded
                                   transition ${t.closed
                                     ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
                                     : 'bg-orange-100 text-orange-700 hover:bg-orange-200'}`}>
@@ -358,7 +358,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
                               </button>
                             ) : t.closed
                               ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 inline" />
-                              : <span className="bg-orange-100 text-orange-700 text-[8px] font-sans
+                              : <span className="bg-orange-100 text-orange-700 text-micro font-sans
                                                  font-bold px-1.5 py-0.5 rounded">OPEN</span>}
                           </td>
                         </tr>
@@ -371,7 +371,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
               {/* Tickets and refunds are counted separately above; this says
                   what the request cost once the refunds are taken off, which
                   is the figure a client conversation actually turns on. */}
-              <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+              <div className="flex items-center justify-between text-xs text-slate-500 px-1">
                 <span className="flex items-center gap-3">
                   <span className="flex items-center gap-1">
                     <TrendingDown className="w-3 h-3" /> {r.issues.length} issued

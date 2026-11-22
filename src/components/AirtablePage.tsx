@@ -135,15 +135,15 @@ export const AirtablePage: React.FC<{
     <div className="p-4 space-y-3 h-full overflow-auto">
       <div className="flex items-center gap-2 flex-wrap">
         <Table2 className="w-4 h-4 text-purple-600" />
-        <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Airtable</h2>
-        <span className="text-[11px] text-slate-400">The aviation team's "Aviation Tickets", kept here two minutes old at most.</span>
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Airtable</h2>
+        <span className="text-xs text-slate-400">The aviation team's "Aviation Tickets", kept here two minutes old at most.</span>
       </div>
 
       <div className="flex flex-wrap gap-1 border-b border-slate-200">
         {tabs.map(([k, label, n]) => (
           <button key={k} onClick={() => { setTab(k); setQ(''); }}
             className={`px-3 py-2 text-xs font-bold border-b-2 -mb-px ${tab === k ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            {label}{n != null && <span className="ml-1.5 text-[10px] font-normal text-slate-400">{n}</span>}
+            {label}{n != null && <span className="ml-1.5 text-mini font-normal text-slate-400">{n}</span>}
           </button>
         ))}
       </div>
@@ -161,13 +161,13 @@ export const AirtablePage: React.FC<{
             </span>
             <button onClick={() => act('sync', async () => { await onSyncNow(); await load(); })} disabled={busy === 'sync'}
               title={AIRTABLE_API_ON ? undefined : 'Fill requests, names, cabins and routes from the last export uploaded'}
-              className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded hover:bg-slate-50">
+              className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded hover:bg-slate-50">
               {busy === 'sync' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} {AIRTABLE_API_ON ? 'Sync now' : 'Fill from export'}
             </button>
             {canEdit && (
               <label title="Their Airtable's CSV export, read in place of the live connection"
-                className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded cursor-pointer ${sync?.lastError || !AIRTABLE_API_ON
-                  ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
+                className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded cursor-pointer ${sync?.lastError || !AIRTABLE_API_ON
+                  ? 'bg-blue-700 text-white hover:bg-blue-800' : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'}`}>
                 {busy === 'csv' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Upload their export (CSV)
                 <input type="file" accept=".csv,text/csv" className="hidden" disabled={busy === 'csv'}
                   onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadExport(f); }} />
@@ -175,13 +175,13 @@ export const AirtablePage: React.FC<{
             )}
           </div>
           {(!AIRTABLE_API_ON || (sync?.lastError && /401|authenticat/i.test(sync.lastError))) && (
-            <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-[11px] text-purple-900">
+            <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-xs text-purple-900">
               Their Airtable is not read live. Export the Aviation Tickets table from Airtable as CSV and upload it here:
               everything the live connection does - the bell, requests filled, the Emirates limit - runs on the file instead.
               The whole table is best; part of it updates only the rows it carries.
             </div>
           )}
-          {uploaded && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-[11px] text-emerald-800">{uploaded}</div>}
+          {uploaded && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-800">{uploaded}</div>}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
             {([
               ['Their tickets', records?.length ?? sync?.recordCount ?? '—', 'tickets'],
@@ -193,12 +193,12 @@ export const AirtablePage: React.FC<{
               <button key={label} onClick={() => setTab(t)}
                 className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-left hover:border-purple-300">
                 <div className="font-mono font-black text-lg text-slate-800">{v}</div>
-                <div className="text-[10px] font-bold uppercase text-slate-400">{label}</div>
+                <div className="text-mini font-bold uppercase text-slate-400">{label}</div>
               </button>
             ))}
           </div>
           <button onClick={onOpenSheetCheck}
-            className="flex items-center gap-2 bg-purple-600 text-white text-xs font-bold px-3 py-2 rounded hover:bg-purple-700">
+            className="flex items-center gap-2 bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded hover:bg-blue-800">
             Compare with our books — Team Sheet Check, live <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -209,7 +209,7 @@ export const AirtablePage: React.FC<{
           <div className="flex gap-2 items-center">
             {(['OPEN', 'INFO', 'DECIDED'] as const).map(s => (
               <button key={s} onClick={() => setNoticeState(s)}
-                className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase border ${noticeState === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>
+                className={`px-2.5 py-1 rounded text-mini font-bold uppercase border ${noticeState === s ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200'}`}>
                 {s === 'OPEN' ? `Waiting for you ${openNotices.length}` : s === 'INFO' ? `For information ${infoNotices.length}` : 'Decided (last 7 days)'}
               </button>
             ))}
@@ -217,17 +217,17 @@ export const AirtablePage: React.FC<{
           <div className="bg-white border border-slate-200 rounded-lg divide-y divide-slate-100">
             {shownNotices.map(n => (
               <div key={n.id} className="px-4 py-2.5 flex flex-wrap items-start gap-3">
-                <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">{KIND_LABEL[n.kind] ?? n.kind}</span>
+                <span className="text-mini font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">{KIND_LABEL[n.kind] ?? n.kind}</span>
                 <div className="flex-1 min-w-[240px]">
                   <div className="text-xs font-bold text-slate-700">{n.title}</div>
-                  {n.detail && <div className="text-[11px] text-slate-500">{n.detail}</div>}
-                  <div className="text-[10px] text-slate-400 mt-0.5">{when(n.createdAt)}{n.state !== 'OPEN' ? ` · ${n.state.toLowerCase()} by ${n.decidedBy || '—'} ${when(n.decidedAt)}` : ''}</div>
+                  {n.detail && <div className="text-xs text-slate-500">{n.detail}</div>}
+                  <div className="text-mini text-slate-400 mt-0.5">{when(n.createdAt)}{n.state !== 'OPEN' ? ` · ${n.state.toLowerCase()} by ${n.decidedBy || '—'} ${when(n.decidedAt)}` : ''}</div>
                 </div>
                 {canEdit && n.state === 'OPEN' && (
                   <div className="flex gap-2 shrink-0">
-                    <button onClick={() => act(n.id, () => onDismiss([n]))} disabled={!!busy} className="text-[10px] text-slate-400 hover:text-red-600">Dismiss</button>
+                    <button onClick={() => act(n.id, () => onDismiss([n]))} disabled={!!busy} className="text-mini text-slate-400 hover:text-red-600">Dismiss</button>
                     <button onClick={() => act(n.id, () => onAccept([n]))} disabled={!!busy}
-                      className="text-[10px] font-bold bg-emerald-600 text-white px-2 py-0.5 rounded hover:bg-emerald-700">
+                      className="text-mini font-bold bg-emerald-600 text-white px-2 py-0.5 rounded hover:bg-emerald-700">
                       {busy === n.id ? '…' : ACCEPT_LABEL[n.kind] ?? 'Accept'}
                     </button>
                   </div>
@@ -249,7 +249,7 @@ export const AirtablePage: React.FC<{
               className="pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded w-64 focus:outline-none focus:ring-2 focus:ring-purple-500/20" />
           </div>
           {tab === 'tickets' && (
-            <label className="flex items-center gap-1.5 text-[11px] text-slate-600">
+            <label className="flex items-center gap-1.5 text-xs text-slate-600">
               <input type="checkbox" checked={onlyMissing} onChange={e => setOnlyMissing(e.target.checked)} /> Only issued ones with no ticket of ours by that number
               <span className="text-slate-400">— what is really missing is the comparison's answer (Overview → Team Sheet Check)</span>
             </label>
@@ -257,13 +257,13 @@ export const AirtablePage: React.FC<{
           {tab === 'fixes' && (
             <>
               <select value={fixKind} onChange={e => setFixKind(e.target.value as FixKind | 'ALL')}
-                className="text-[11px] border border-slate-200 rounded px-2 py-1.5">
+                className="text-xs border border-slate-200 rounded px-2 py-1.5">
                 <option value="ALL">Every problem ({fixes.length})</option>
                 {(Object.keys(FIX_LABEL) as FixKind[]).map(k => (
                   <option key={k} value={k}>{FIX_LABEL[k]} ({fixes.filter(f => f.kind === k).length})</option>
                 ))}
               </select>
-              <button onClick={exportFixes} className="flex items-center gap-1.5 bg-blue-600 text-white text-[10px] font-bold uppercase px-3 py-1.5 rounded hover:bg-blue-700">
+              <button onClick={exportFixes} className="flex items-center gap-1.5 bg-blue-600 text-white text-mini font-bold uppercase px-3 py-1.5 rounded hover:bg-blue-700">
                 <Download className="w-3.5 h-3.5" /> Export for the team
               </button>
             </>
@@ -275,7 +275,7 @@ export const AirtablePage: React.FC<{
       {tab === 'changes' && changes && (
         <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto max-h-[70vh]">
           <table className="w-full text-left min-w-[720px] text-xs">
-            <thead className="bg-slate-50 sticky top-0"><tr className="text-[9px] uppercase tracking-wider text-slate-400">
+            <thead className="bg-slate-50 sticky top-0"><tr className="text-micro uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">When</th><th className="px-3 py-2">Ticket</th><th className="px-3 py-2">Field</th>
               <th className="px-3 py-2">Was</th><th className="px-3 py-2">Now</th></tr></thead>
             <tbody>
@@ -297,7 +297,7 @@ export const AirtablePage: React.FC<{
       {tab === 'tickets' && records && (
         <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto max-h-[70vh]">
           <table className="w-full text-left min-w-[1000px] text-xs">
-            <thead className="bg-slate-50 sticky top-0"><tr className="text-[9px] uppercase tracking-wider text-slate-400">
+            <thead className="bg-slate-50 sticky top-0"><tr className="text-micro uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">Ticket</th><th className="px-3 py-2">PNR</th><th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Request</th><th className="px-3 py-2">Client</th><th className="px-3 py-2 text-right">Cost</th>
               <th className="px-3 py-2">Portal</th><th className="px-3 py-2">Team</th><th className="px-3 py-2">Issued</th><th className="px-3 py-2">Ours</th></tr></thead>
@@ -310,11 +310,11 @@ export const AirtablePage: React.FC<{
                   <td className="px-3 py-1.5">{r.status}</td>
                   <td className="px-3 py-1.5 font-mono text-purple-700">{r.req_num || '—'}</td>
                   <td className="px-3 py-1.5">{r.client_name}</td>
-                  <td className="px-3 py-1.5 text-right font-mono">{fmt(r.net_cost)} <span className="text-[9px] text-slate-400">{r.currency}</span></td>
+                  <td className="px-3 py-1.5 text-right font-mono">{fmt(r.net_cost)} <span className="text-micro text-slate-400">{r.currency}</span></td>
                   <td className="px-3 py-1.5 text-slate-500">{r.portal}</td>
                   <td className="px-3 py-1.5 text-slate-500">{r.team_member}</td>
                   <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{r.issued_at ? r.issued_at.slice(0, 10) : '—'}</td>
-                  <td className="px-3 py-1.5">{held(r) ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <span className="text-[10px] text-slate-400" title="No ticket of ours under this number or PNR - a conjunction coupon, a reissue or an EMD may still be held another way. The Team Sheet Check says what is really missing.">no number match</span>}</td>
+                  <td className="px-3 py-1.5">{held(r) ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <span className="text-mini text-slate-400" title="No ticket of ours under this number or PNR - a conjunction coupon, a reissue or an EMD may still be held another way. The Team Sheet Check says what is really missing.">no number match</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -325,7 +325,7 @@ export const AirtablePage: React.FC<{
       {tab === 'fixes' && records && (
         <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto max-h-[70vh]">
           <table className="w-full text-left min-w-[900px] text-xs">
-            <thead className="bg-slate-50 sticky top-0"><tr className="text-[9px] uppercase tracking-wider text-slate-400">
+            <thead className="bg-slate-50 sticky top-0"><tr className="text-micro uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">Problem</th><th className="px-3 py-2">Ticket column</th><th className="px-3 py-2">PNR</th>
               <th className="px-3 py-2">Status</th><th className="px-3 py-2">Request</th><th className="px-3 py-2">Team</th><th className="px-3 py-2">What to fix</th></tr></thead>
             <tbody>

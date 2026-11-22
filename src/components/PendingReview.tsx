@@ -165,13 +165,13 @@ const Row = React.memo(function Row({
                 value and printing it twice is noise. */}
             {p.pnr && p.pnr !== p.ticketNo && (
               <button type="button" onClick={() => onCopy(p.pnr!)}
-                className="group flex items-center gap-1.5 font-mono text-[11px] text-slate-500
+                className="group flex items-center gap-1.5 font-mono text-xs text-slate-500
                            rounded px-1 -mx-1 hover:bg-slate-100">
                 <Copy className="w-3 h-3 text-slate-300 group-hover:text-slate-500" />
                 {p.pnr}
               </button>
             )}
-            <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5
+            <span className={`text-micro font-bold uppercase tracking-wider px-1.5 py-0.5
                               rounded ${p.transactionType === 'REFUND'
                 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
               {p.transactionType || 'ISSUE'}
@@ -186,7 +186,7 @@ const Row = React.memo(function Row({
               && !p.theirCell.endsWith(p.ticketNo) && (
               <button type="button" onClick={() => onCopy(p.theirCell!)}
                 title="Search their sheet for this — it is the cell the number came out of"
-                className="group flex items-center gap-1.5 text-[10px] font-mono
+                className="group flex items-center gap-1.5 text-mini font-mono
                            text-sky-700 bg-sky-50 rounded px-1.5 py-0.5 hover:bg-sky-100">
                 <Copy className="w-3 h-3 text-sky-300 group-hover:text-sky-600" />
                 their cell: {p.theirCell.length > 40
@@ -194,14 +194,14 @@ const Row = React.memo(function Row({
               </button>
             )}
             {p.theirPortal && (
-              <span className="text-[10px] text-slate-400 font-mono"
+              <span className="text-mini text-slate-400 font-mono"
                     title="Their own word for where it was bought">
                 their portal: {p.theirPortal}
               </span>
             )}
             {/* Their figure, labelled every time it is shown. */}
             {!!p.theirCost && (
-              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+              <span className={`text-mini font-mono px-1.5 py-0.5 rounded ${
                 shared ? 'bg-sky-50 text-sky-700'
                 : untouched ? 'bg-amber-50 text-amber-700' : 'text-slate-400'}`}>
                 {/* A shared cell is the one case where their figure is
@@ -216,7 +216,7 @@ const Row = React.memo(function Row({
               </span>
             )}
             {p.state !== 'PENDING' && (
-              <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5
+              <span className={`text-micro font-bold uppercase tracking-wider px-1.5 py-0.5
                                 rounded ml-auto ${p.state === 'CONFIRMED'
                   ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                 {p.state === 'CONFIRMED' ? 'recorded' : 'turned down'}
@@ -226,7 +226,7 @@ const Row = React.memo(function Row({
 
           <div className="px-4 py-3 flex flex-wrap items-end gap-3">
             <label className="block">
-              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+              <span className="text-micro font-bold uppercase text-slate-400 block mb-1">
                 Vendor that billed it
               </span>
               <select
@@ -247,7 +247,7 @@ const Row = React.memo(function Row({
             </label>
 
             <label className="block">
-              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+              <span className="text-micro font-bold uppercase text-slate-400 block mb-1">
                 Date
               </span>
               <input type="date" value={p.date}
@@ -257,7 +257,7 @@ const Row = React.memo(function Row({
             </label>
 
             <label className="block">
-              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+              <span className="text-micro font-bold uppercase text-slate-400 block mb-1">
                 What it cost{' '}
                 {shared
                   ? <span className="text-sky-500">· 1 of {passengersNamed(p)}</span>
@@ -278,7 +278,7 @@ const Row = React.memo(function Row({
             </label>
 
             <label className="block">
-              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+              <span className="text-micro font-bold uppercase text-slate-400 block mb-1">
                 Currency
               </span>
               <select value={p.currency || 'AED'}
@@ -290,7 +290,7 @@ const Row = React.memo(function Row({
             </label>
 
             <label className="block">
-              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+              <span className="text-micro font-bold uppercase text-slate-400 block mb-1">
                 Request {p.theirReq && <span className="text-slate-300">(theirs)</span>}
               </span>
               <input defaultValue={p.reqNum}
@@ -303,7 +303,7 @@ const Row = React.memo(function Row({
             </label>
 
             <label className="block">
-              <span className="text-[9px] font-bold uppercase text-slate-400 block mb-1">
+              <span className="text-micro font-bold uppercase text-slate-400 block mb-1">
                 Passenger
               </span>
               <input defaultValue={p.passengerName || ''}
@@ -325,7 +325,7 @@ const Row = React.memo(function Row({
                     click rather than a sum on paper and five edits. */}
                 {shared && !priced && canWrite && p.state === 'PENDING' && (
                   blockedSplit ? (
-                    <span className="flex items-center gap-1.5 text-[10px] text-slate-500
+                    <span className="flex items-center gap-1.5 text-mini text-slate-500
                                      max-w-[260px] leading-snug">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                       {blockedSplit}
@@ -340,7 +340,7 @@ const Row = React.memo(function Row({
                         : `Give each of the ${group.length} tickets that shared this cell an`
                           + ` equal share. They add back to ${money(p.theirCost ?? 0)}`
                           + ` ${p.currency} exactly.`}
-                      className="flex items-center gap-1.5 bg-sky-600 text-white text-[11px]
+                      className="flex items-center gap-1.5 bg-sky-600 text-white text-xs
                                  font-bold px-3 py-1.5 rounded hover:bg-sky-700
                                  disabled:opacity-50">
                       {working ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -350,7 +350,7 @@ const Row = React.memo(function Row({
                   )
                 )}
                 {conjOf ? (
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-red-700
+                  <span className="flex items-center gap-1.5 text-mini font-bold text-red-700
                                    bg-red-50 border border-red-200 rounded px-2 py-1
                                    max-w-[260px] leading-snug">
                     <Ban className="w-3.5 h-3.5 shrink-0" />
@@ -362,7 +362,7 @@ const Row = React.memo(function Row({
                      document that does not exist: money against nothing, in
                      a request's cost and a vendor's balance. The button is
                      closed rather than merely warned against. */
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-red-700
+                  <span className="flex items-center gap-1.5 text-mini font-bold text-red-700
                                    bg-red-50 border border-red-200 rounded px-2 py-1
                                    max-w-[260px] leading-snug">
                     <Ban className="w-3.5 h-3.5 shrink-0" />
@@ -370,7 +370,7 @@ const Row = React.memo(function Row({
                     never updated. Reject it.
                   </span>
                 ) : blocked ? (
-                  <span className="flex items-center gap-1.5 text-[10px] text-slate-500
+                  <span className="flex items-center gap-1.5 text-mini text-slate-500
                                    max-w-[240px] leading-snug">
                     {p.heldBack
                       ? <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
@@ -393,7 +393,7 @@ const Row = React.memo(function Row({
                             + 'statement bills a different figure in the same currency, its figure replaces this one.')) return;
                           onPatch(p, { heldBack: false, heldBackWhy: '', reviewNote: `Unlocked by hand: ${p.heldBackWhy || 'held back'}` });
                         }}
-                        className="ml-1 text-[10px] font-bold text-amber-700 underline hover:text-amber-900">
+                        className="ml-1 text-mini font-bold text-amber-700 underline hover:text-amber-900">
                         Unlock
                       </button>
                     )}
@@ -407,7 +407,7 @@ const Row = React.memo(function Row({
                   <button onMouseDown={e => e.preventDefault()}
                     onClick={() => onConfirm(asTyped)}
                     disabled={working}
-                    className="flex items-center gap-1.5 bg-emerald-600 text-white text-[11px]
+                    className="flex items-center gap-1.5 bg-emerald-600 text-white text-xs
                                font-bold px-3 py-1.5 rounded hover:bg-emerald-700
                                disabled:opacity-50">
                     {working ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -418,7 +418,7 @@ const Row = React.memo(function Row({
                 {onReject && (
                   <button onClick={() => onReject(p)} disabled={working}
                     title="Not a ticket for our books"
-                    className="text-[11px] font-bold text-slate-400 hover:text-red-600 px-2 py-1.5">
+                    className="text-xs font-bold text-slate-400 hover:text-red-600 px-2 py-1.5">
                     Not ours
                   </button>
                 )}
@@ -429,7 +429,7 @@ const Row = React.memo(function Row({
               <div className="flex items-center gap-2 ml-auto">
                 {onReopen && (
                   <button onClick={() => onReopen(p)} disabled={working}
-                    className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-500
                                hover:text-slate-800 px-2 py-1.5">
                     <Undo2 className="w-3.5 h-3.5" /> Put it back
                   </button>
@@ -448,15 +448,15 @@ const Row = React.memo(function Row({
           {(p.note || p.heldBackWhy || p.reviewNote) && (
             <div className="px-4 pb-2.5 space-y-1">
               {p.heldBackWhy && (
-                <p className="text-[10px] text-amber-700 leading-relaxed flex items-start gap-1.5">
+                <p className="text-mini text-amber-700 leading-relaxed flex items-start gap-1.5">
                   <Lock className="w-3 h-3 mt-px shrink-0" />{p.heldBackWhy}
                 </p>
               )}
               {p.note && !p.heldBackWhy && (
-                <p className="text-[10px] text-slate-500 leading-relaxed">{p.note}</p>
+                <p className="text-mini text-slate-500 leading-relaxed">{p.note}</p>
               )}
               {p.reviewNote && (
-                <p className="text-[10px] text-slate-600 leading-relaxed">
+                <p className="text-mini text-slate-600 leading-relaxed">
                   <b>Turned down:</b> {p.reviewNote}
                 </p>
               )}
@@ -686,10 +686,10 @@ export const PendingReview: React.FC<Props> = ({
   }, [onReject, run]);
 
   const tabClass = (t: Tab) =>
-    `px-3 py-1.5 text-[11px] font-bold rounded transition-colors ${
+    `px-3 py-1.5 text-xs font-bold rounded transition-colors ${
       tab === t ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:bg-slate-100'}`;
 
-  const field = 'bg-white border border-slate-200 rounded px-2 py-1 text-[11px] font-mono '
+  const field = 'bg-white border border-slate-200 rounded px-2 py-1 text-xs font-mono '
     + 'focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-400';
 
   return (
@@ -697,14 +697,14 @@ export const PendingReview: React.FC<Props> = ({
       {copied && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
                         bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg
-                        text-[11px] font-mono max-w-md">
+                        text-xs font-mono max-w-md">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           <span className="truncate">Copied <span className="font-bold">{copied}</span></span>
         </div>
       )}
 
       <div>
-        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">
+        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">
           To review
         </h2>
         <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
@@ -719,7 +719,7 @@ export const PendingReview: React.FC<Props> = ({
 
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 flex items-start
-                        gap-2 text-[11px] text-red-700">
+                        gap-2 text-xs text-red-700">
           <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
           <span className="font-mono">{error}</span>
           <button onClick={() => setError('')} className="ml-auto text-red-400 hover:text-red-700">
@@ -744,18 +744,18 @@ export const PendingReview: React.FC<Props> = ({
 
       {byVendor.length > 1 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[9px] font-bold uppercase text-slate-400 tracking-wider mr-1">
+          <span className="text-micro font-bold uppercase text-slate-400 tracking-wider mr-1">
             Bought from
           </span>
           <button onClick={() => setVendorFilter('')}
-            className={`px-2 py-1 text-[10px] font-mono rounded border ${
+            className={`px-2 py-1 text-mini font-mono rounded border ${
               vendorFilter === '' ? 'bg-slate-800 text-white border-slate-800'
                                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
             all <span className="opacity-60">{byVendor.reduce((s, [, n]) => s + n, 0)}</span>
           </button>
           {byVendor.map(([v, n]) => (
             <button key={v} onClick={() => setVendorFilter(v)}
-              className={`px-2 py-1 text-[10px] font-mono rounded border ${
+              className={`px-2 py-1 text-mini font-mono rounded border ${
                 vendorFilter === v ? 'bg-slate-800 text-white border-slate-800'
                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
               {v} <span className="opacity-60">{n}</span>
@@ -765,7 +765,7 @@ export const PendingReview: React.FC<Props> = ({
       )}
 
       {tab === 'PENDING' && queueVoids.matched.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-[11px]
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-xs
                         text-red-800 flex items-start gap-2">
           <Ban className="w-3.5 h-3.5 mt-px shrink-0" />
           <span>
@@ -782,7 +782,7 @@ export const PendingReview: React.FC<Props> = ({
 
       {tab === 'PENDING' && rows.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-lg px-4 py-3 flex flex-wrap
-                        items-center gap-x-8 gap-y-2 text-[11px]">
+                        items-center gap-x-8 gap-y-2 text-xs">
           <span><b className="text-slate-700 text-sm">{rows.length}</b>
             <span className="text-slate-500"> waiting</span></span>
           <span><b className="text-emerald-600 text-sm">{ready}</b>
@@ -850,17 +850,17 @@ export const PendingReview: React.FC<Props> = ({
       {pages > 1 && (
         <div className="flex items-center justify-center gap-2 pt-1">
           <button onClick={() => setPageNo(n => Math.max(0, n - 1))} disabled={pageNo === 0}
-            className="flex items-center gap-1 text-[11px] font-bold text-slate-500
+            className="flex items-center gap-1 text-xs font-bold text-slate-500
                        hover:text-slate-800 disabled:opacity-30 px-2 py-1.5">
             <ChevronLeft className="w-3.5 h-3.5" /> Back
           </button>
-          <span className="text-[11px] text-slate-500 font-mono">
+          <span className="text-xs text-slate-500 font-mono">
             {pageNo * PER_PAGE + 1}–{Math.min((pageNo + 1) * PER_PAGE, rows.length)}
             {' '}of <b className="text-slate-700">{rows.length}</b>
           </span>
           <button onClick={() => setPageNo(n => Math.min(pages - 1, n + 1))}
             disabled={pageNo >= pages - 1}
-            className="flex items-center gap-1 text-[11px] font-bold text-slate-500
+            className="flex items-center gap-1 text-xs font-bold text-slate-500
                        hover:text-slate-800 disabled:opacity-30 px-2 py-1.5">
             Next <ChevronRight className="w-3.5 h-3.5" />
           </button>

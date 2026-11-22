@@ -1,5 +1,78 @@
 @import "tailwindcss";
+@import "./theme-light.css";
 @import "./theme-dark.css";
+
+/* The dark theme is a class on <html> (utils/theme.ts), not the device setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * The Luxury Explorers design system - the tokens every screen is built from.
+ *
+ * Colours: the two palettes are generated (scripts/gen-theme.py) into
+ * theme-light.css and theme-dark.css as values for Tailwind's own colour
+ * variables, so every slate, blue, emerald... on every screen is already the
+ * brand's. What follows are the tokens Tailwind has no name for: the app's
+ * surfaces, the type scale below text-xs, the faces and the motion.
+ */
+@theme {
+  /* Inter for reading, IBM Plex Mono for ticket numbers and figures. Both
+     carry tabular figures, so a column of amounts lines up digit by digit. */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+
+  /* The small end of the type scale. The screens were set at 8-11px by hand;
+     each size now has a name and a line height, one step up from where it
+     was: micro 10px (column heads, badges), mini 11px (labels, captions),
+     and xs (12px) for the body of a dense table. */
+  --text-micro: 0.625rem;
+  --text-micro--line-height: 0.875rem;
+  --text-mini: 0.6875rem;
+  --text-mini--line-height: 1rem;
+
+  /* Motion: fast and short. */
+  --default-transition-duration: 150ms;
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The app's surfaces, one value per theme. A component asks for the layer
+   it sits on (bg-app, bg-app-header, bg-app-sidebar) and gets the right one
+   in either mode. Cards are bg-white, which the dark palette turns navy. */
+:root {
+  --app-bg: #F3F5F8;
+  --app-header: #FFFFFF;
+  --app-sidebar: #FFFFFF;
+  --app-footer: #FFFFFF;
+  --app-nav-active: #EEF3F9;
+}
+html.dark {
+  --app-bg: #111C2D;
+  --app-header: #162238;
+  --app-sidebar: #19263A;
+  --app-footer: #162238;
+  --app-nav-active: #223249;
+}
+@theme inline {
+  --color-app: var(--app-bg);
+  --color-app-header: var(--app-header);
+  --color-app-sidebar: var(--app-sidebar);
+  --color-app-footer: var(--app-footer);
+  --color-app-nav-active: var(--app-nav-active);
+}
+
+/*
+ * Figures line up. Every amount in the app is a column of digits somebody
+ * reads down; tabular numerals give every digit the same width, so 1,111.00
+ * sits under 8,888.00 instead of drifting left.
+ */
+html {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--app-bg);
+  color: var(--color-slate-800);
+}
 
 /**
  * What a touch screen needs that a mouse does not.
@@ -105,12 +178,13 @@ html {
 }
 
 /*
- * A floor for the smallest print on a phone. Labels, badges and column heads
- * are set at 8px and 9px for a desk monitor, where they read; on a phone held
- * at arm's length they are a grey smudge. Below md they come up to 10px.
- * Nothing is reflowed by it - a ledger column of 9px figures is a column of
- * 10px figures - and from md up nothing changes at all.
+ * Tables, everywhere. The screens draw their own cells; what every table
+ * shares is set once here: rows a shade apart on hover, and the head of a
+ * column that can scroll sideways stays legible against the rows under it.
  */
-@media (max-width: 767px) {
-  .text-\[8px\], .text-\[9px\] { font-size: 10px; }
-}
+tbody tr { transition: background-color 120ms ease; }
+thead th { font-weight: 600; letter-spacing: 0.04em; }
+
+/* Two faces render small caps-and-tracking labels differently: Inter needs a
+   little less tracking than the widest Tailwind gives. */
+.tracking-widest { letter-spacing: 0.12em; }

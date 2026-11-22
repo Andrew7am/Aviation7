@@ -32,8 +32,8 @@ const ChartCard: React.FC<{
   <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
     <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <div className="text-[10px] font-bold uppercase text-slate-500">{title}</div>
-        {subtitle && <div className="text-[9px] text-slate-400 mt-0.5">{subtitle}</div>}
+        <div className="text-mini font-bold uppercase text-slate-500">{title}</div>
+        {subtitle && <div className="text-micro text-slate-400 mt-0.5">{subtitle}</div>}
       </div>
       {right}
     </div>
@@ -60,15 +60,15 @@ const NetCell: React.FC<{
   net: number; issued: number; refunded: number; fmt: (n: number) => string;
 }> = ({ net, issued, refunded, fmt }) => {
   if (net === 0 && issued === 0 && refunded === 0) {
-    return <td className="px-3 py-2 text-right"><span className="text-slate-300 text-[11px]">—</span></td>;
+    return <td className="px-3 py-2 text-right"><span className="text-slate-300 text-xs">—</span></td>;
   }
   return (
     <td className="px-3 py-2 text-right">
-      <div className={`font-mono text-[11px] ${net < 0 ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
+      <div className={`font-mono text-xs ${net < 0 ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
         {fmt(net)}
       </div>
       {refunded < 0 && (
-        <div className="text-[9px] text-slate-400 leading-tight font-mono">
+        <div className="text-micro text-slate-400 leading-tight font-mono">
           {fmt(issued)} − {fmt(Math.abs(refunded))} credited
         </div>
       )}
@@ -97,14 +97,14 @@ const CabinCell: React.FC<{ cabins: ShareRow['cabins'] }> = ({ cabins }) => {
   if (!shown.length) {
     return (
       <td className="px-3 py-2 text-right">
-        <span className="text-slate-300 text-[11px]"
+        <span className="text-slate-300 text-xs"
               title={`${cabins.unknown} ticket(s), no cabin recorded`}>—</span>
       </td>
     );
   }
   return (
     <td className="px-3 py-2 text-right whitespace-nowrap">
-      <span className="font-mono text-[11px] space-x-1.5">
+      <span className="font-mono text-xs space-x-1.5">
         {shown.map(([k, letter, tone]) => (
           <span key={k} className={tone} title={CABIN_LABEL[k as Exclude<Cabin, ''>]}>
             {cabins[k]}{letter}
@@ -112,7 +112,7 @@ const CabinCell: React.FC<{ cabins: ShareRow['cabins'] }> = ({ cabins }) => {
         ))}
       </span>
       {cabins.unknown > 0 && (
-        <div className="text-[9px] text-slate-400 leading-tight font-mono"
+        <div className="text-micro text-slate-400 leading-tight font-mono"
              title="Tickets with no cabin recorded">
           {cabins.unknown} not recorded
         </div>
@@ -181,15 +181,15 @@ const ShareTable: React.FC<{
   return (
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
       <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
-        <div className="text-[10px] font-bold uppercase text-slate-500">{title}</div>
-        <div className="text-[9px] text-slate-400 mt-0.5">{subtitle}</div>
+        <div className="text-mini font-bold uppercase text-slate-500">{title}</div>
+        <div className="text-micro text-slate-400 mt-0.5">{subtitle}</div>
       </div>
       {rows.length === 0 ? (
         <p className="px-4 py-6 text-xs text-slate-400 italic">Nothing to show yet.</p>
       ) : (
         <table className="w-full text-left">
           <thead>
-            <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+            <tr className="border-b border-slate-100 text-micro uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">{keyHeader}</th>
               <th className="px-3 py-2 text-right">Tickets</th>
               <th className="px-3 py-2 text-right" title="Refunds, and memos or EMDs — money that moved without a ticket being sold. Their amounts are already in the totals.">
@@ -218,15 +218,15 @@ const ShareTable: React.FC<{
                     <span className="w-2 h-2 rounded-sm shrink-0"
                           style={{ background: i < colored ? paletteAt(i) : '#cbd5e1' }} />
                     <div>
-                      <div className="font-mono text-[11px] font-bold text-slate-700">{r.key}</div>
+                      <div className="font-mono text-xs font-bold text-slate-700">{r.key}</div>
                       {subLabel?.(r.key) && (
-                        <div className="text-[9px] text-slate-400 leading-tight">{subLabel(r.key)}</div>
+                        <div className="text-micro text-slate-400 leading-tight">{subLabel(r.key)}</div>
                       )}
                     </div>
                   </div>
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-[11px] text-slate-600">{r.tickets}</td>
-                <td className="px-3 py-2 text-right font-mono text-[11px]">
+                <td className="px-3 py-2 text-right font-mono text-xs text-slate-600">{r.tickets}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs">
                   {r.refunds + r.otherDocs === 0
                     ? <span className="text-slate-300">—</span>
                     : (
@@ -243,7 +243,7 @@ const ShareTable: React.FC<{
                            style={{ width: `${Math.max(2, (basisValue(r) / top) * 100)}%`,
                                     background: i < colored ? paletteAt(i) : '#94a3b8' }} />
                     </div>
-                    <span className="font-mono text-[11px] font-bold text-slate-700 w-11 text-right">
+                    <span className="font-mono text-xs font-bold text-slate-700 w-11 text-right">
                       {basisPct(r).toFixed(1)}%
                     </span>
                   </div>
@@ -257,7 +257,7 @@ const ShareTable: React.FC<{
         </table>
       )}
       {rows.length > shown.length && (
-        <div className="px-4 py-2 text-[9px] text-slate-400 border-t border-slate-100">
+        <div className="px-4 py-2 text-micro text-slate-400 border-t border-slate-100">
           showing the top {shown.length} of {rows.length}
         </div>
       )}
@@ -287,14 +287,14 @@ const PeriodBar: React.FC<{
 
   return (
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm px-4 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Period</span>
+      <span className="text-micro font-bold uppercase tracking-widest text-slate-400">Period</span>
 
       <div className="flex flex-wrap gap-1">
         {PERIOD_PRESETS.map(p => (
           <button
             key={p.key}
             onClick={() => { const r = p.range(); onChange(r.from, r.to); }}
-            className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+            className={`px-2.5 py-1 rounded text-mini font-bold uppercase tracking-wider border transition-colors ${
               activePreset === p.key
                 ? 'bg-blue-600 text-white border-blue-600'
                 : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-700'
@@ -316,7 +316,7 @@ const PeriodBar: React.FC<{
             if (!m) onChange('', ''); else onChange(`${m}-01`, endOfMonth(m));
           }}
           title="Jump to a whole month"
-          className={`pl-7 pr-2 py-1 rounded text-[10px] font-bold uppercase border focus:outline-none ${
+          className={`pl-7 pr-2 py-1 rounded text-mini font-bold uppercase border focus:outline-none ${
             monthSel ? 'bg-blue-50 text-blue-700 border-blue-200'
                      : 'bg-white text-slate-500 border-slate-200'
           }`}
@@ -329,15 +329,15 @@ const PeriodBar: React.FC<{
       <input
         type="date" value={from} max={to || undefined} title="From date"
         onChange={e => onChange(e.target.value, to)}
-        className={`px-1.5 py-1 rounded text-[10px] font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+        className={`px-1.5 py-1 rounded text-mini font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
           from ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-200'
         }`}
       />
-      <span className="text-[9px] font-bold uppercase text-slate-400">to</span>
+      <span className="text-micro font-bold uppercase text-slate-400">to</span>
       <input
         type="date" value={to} min={from || undefined} title="To date"
         onChange={e => onChange(from, e.target.value)}
-        className={`px-1.5 py-1 rounded text-[10px] font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+        className={`px-1.5 py-1 rounded text-mini font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
           to ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-200'
         }`}
       />
@@ -352,12 +352,12 @@ const PeriodBar: React.FC<{
 
       {/* Narrows every figure on the tab, not just the cabin card — the point
           is to ask which airlines and routes a cabin was sold on. */}
-      <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Cabin</span>
+      <span className="text-micro font-bold uppercase tracking-widest text-slate-400">Cabin</span>
       <select
         value={cabin}
         onChange={e => onCabin(e.target.value)}
         title="Narrow everything on this tab to one cabin"
-        className={`px-2 py-1 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+        className={`px-2 py-1 rounded text-mini font-bold uppercase border focus:outline-none transition-colors ${
           cabin === 'ALL' ? 'bg-white text-slate-500 border-slate-200'
                           : 'bg-blue-600 text-white border-blue-600'
         }`}
@@ -390,9 +390,9 @@ const Kpi: React.FC<{
     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex">
       <div className={`w-1 shrink-0 ${accent}`} />
       <div className="px-4 py-3 min-w-0">
-        <div className="text-[9px] font-bold uppercase tracking-widest text-slate-400">{label}</div>
+        <div className="text-micro font-bold uppercase tracking-widest text-slate-400">{label}</div>
         <div className={`font-mono font-bold text-lg leading-tight truncate ${color}`}>{value}</div>
-        {sub && <div className="text-[9px] text-slate-400 leading-tight truncate">{sub}</div>}
+        {sub && <div className="text-micro text-slate-400 leading-tight truncate">{sub}</div>}
       </div>
     </div>
   );
@@ -687,13 +687,13 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
   ];
 
   return (
-    <div className="flex flex-col h-full bg-slate-100">
+    <div className="flex flex-col h-full bg-app">
       <div className="px-4 sm:px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex items-center justify-between gap-4">
-        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Reports &amp; Exports</h2>
+        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">Reports &amp; Exports</h2>
         <button
           onClick={exportFullBackup}
           title="Download every ticket of every vendor — one sheet per vendor, plus balances and top-ups"
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-slate-700 shadow-sm"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-slate-700 shadow-sm"
         >
           <Database className="w-3 h-3" />
           <span>Backup All Tickets ({tickets.length})</span>
@@ -710,7 +710,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`flex items-center space-x-1.5 px-3 sm:px-4 py-3 text-[10px] font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+              className={`flex items-center space-x-1.5 px-3 sm:px-4 py-3 text-mini font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                 tab === t.key
                   ? 'border-blue-600 text-blue-700'
                   : 'border-transparent text-slate-400 hover:text-slate-700'
@@ -739,8 +739,8 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                 narrower question rather than as money having gone missing. */}
             {cabinFilter !== 'ALL' && (
               <div className="flex items-start gap-2 px-4 py-2.5 bg-blue-50 border border-blue-200 rounded-lg">
-                <span className="text-blue-500 text-[11px] leading-none mt-0.5">▸</span>
-                <p className="text-[10px] text-blue-800 leading-relaxed">
+                <span className="text-blue-500 text-xs leading-none mt-0.5">▸</span>
+                <p className="text-mini text-blue-800 leading-relaxed">
                   Showing <span className="font-bold">
                     {cabinFilter === 'NONE' ? 'tickets with no cabin recorded'
                       : `${CABIN_LABEL[cabinFilter as Exclude<Cabin, ''>]} only`}
@@ -753,8 +753,8 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                 counted, so the warning would be false. */}
             {undated > 0 && (anFrom || anTo) && (
               <div className="flex items-start gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-lg">
-                <span className="text-amber-500 text-[11px] leading-none mt-0.5">▲</span>
-                <p className="text-[10px] text-amber-800 leading-relaxed">
+                <span className="text-amber-500 text-xs leading-none mt-0.5">▲</span>
+                <p className="text-mini text-amber-800 leading-relaxed">
                   <span className="font-bold">{undated.toLocaleString('en-US')} tickets carry no date</span>
                   {' '}and cannot fall inside any period, so they are missing from the figures above.
                   They are counted under <span className="font-bold">All time</span>.
@@ -798,7 +798,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                         key={c}
                         onClick={() => setAirlineShareCurrency(c)}
                         title={c === 'TOTAL' ? `SAR ÷ ${SAR_TO_AED_RATE} + AED, combined into one AED figure` : undefined}
-                        className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+                        className={`px-2.5 py-1 rounded text-mini font-bold uppercase tracking-wider border transition-colors ${
                           airlineShareCurrency === c
                             ? 'bg-slate-800 text-white border-slate-800'
                             : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
@@ -886,7 +886,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                     <button
                       key={m}
                       onClick={() => setTrendMetric(m)}
-                      className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider border transition-colors ${
+                      className={`px-2.5 py-1 rounded text-mini font-bold uppercase tracking-wider border transition-colors ${
                         trendMetric === m
                           ? 'bg-slate-800 text-white border-slate-800'
                           : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
@@ -947,15 +947,15 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
         {tab === 'summary' && (
           <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
             <div className="flex justify-between items-center px-4 py-3 border-b border-slate-100 bg-slate-50">
-              <span className="text-[10px] font-bold uppercase text-slate-500">All Vendor Balances</span>
-              <button onClick={exportSummary} className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase hover:bg-blue-700">
+              <span className="text-mini font-bold uppercase text-slate-500">All Vendor Balances</span>
+              <button onClick={exportSummary} className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 text-white rounded text-mini font-bold uppercase hover:bg-blue-700">
                 <Download className="w-3 h-3" />
                 <span>Export</span>
               </button>
             </div>
             <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+                <tr className="border-b border-slate-100 text-micro uppercase tracking-wider text-slate-400">
                   <th className="px-4 py-2">Vendor</th>
                   <th className="px-4 py-2 text-right">Initial</th>
                   <th className="px-4 py-2 text-right">Top-ups</th>
@@ -977,7 +977,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                   const isLow = !isNeg && v.initialBalance > 0 && (rem / v.initialBalance) < 0.2;
                   return (
                     <tr key={v.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5 font-sans font-bold text-slate-700 text-[11px] uppercase">{v.vendorName}</td>
+                      <td className="px-4 py-2.5 font-sans font-bold text-slate-700 text-xs uppercase">{v.vendorName}</td>
                       <td className="px-4 py-2.5 text-right text-slate-500">{fmt(v.initialBalance)}</td>
                       <td className="px-4 py-2.5 text-right text-emerald-600">{totalTopUp > 0 ? `+${fmt(totalTopUp)}` : '—'}</td>
                       <td className="px-4 py-2.5 text-right text-slate-600">{fmt(issued)}</td>
@@ -987,10 +987,10 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         {isNeg
-                          ? <span className="bg-red-100 text-red-700 text-[9px] font-bold px-2 py-0.5 rounded">OVERDRAFT</span>
+                          ? <span className="bg-red-100 text-red-700 text-micro font-bold px-2 py-0.5 rounded">OVERDRAFT</span>
                           : isLow
-                          ? <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-2 py-0.5 rounded">LOW</span>
-                          : <span className="bg-emerald-50 text-emerald-600 text-[9px] font-bold px-2 py-0.5 rounded">OK</span>
+                          ? <span className="bg-amber-100 text-amber-700 text-micro font-bold px-2 py-0.5 rounded">LOW</span>
+                          : <span className="bg-emerald-50 text-emerald-600 text-micro font-bold px-2 py-0.5 rounded">OK</span>
                         }
                       </td>
                     </tr>
@@ -1007,7 +1007,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             {overdraftVendors.length > 0 && (
               <div className="bg-white border border-red-200 rounded-lg shadow-sm overflow-hidden">
                 <div className="px-4 py-3 bg-red-50 border-b border-red-100">
-                  <span className="text-[10px] font-bold uppercase text-red-700">Overdraft Vendors ({overdraftVendors.length})</span>
+                  <span className="text-mini font-bold uppercase text-red-700">Overdraft Vendors ({overdraftVendors.length})</span>
                 </div>
                 {overdraftVendors.map(v => (
                   <div key={v.id} className="flex justify-between items-center px-4 py-3 border-b border-red-50">
@@ -1020,7 +1020,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             {lowVendors.length > 0 && (
               <div className="bg-white border border-amber-200 rounded-lg shadow-sm overflow-hidden">
                 <div className="px-4 py-3 bg-amber-50 border-b border-amber-100">
-                  <span className="text-[10px] font-bold uppercase text-amber-700">Low Balance (Below 20%) — {lowVendors.length} Vendors</span>
+                  <span className="text-mini font-bold uppercase text-amber-700">Low Balance (Below 20%) — {lowVendors.length} Vendors</span>
                 </div>
                 {lowVendors.map(v => {
                   const pct = (v.currentBalance / v.initialBalance) * 100;
@@ -1062,7 +1062,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
                 className="bg-white border border-slate-200 text-xs px-3 py-1.5 rounded focus:outline-none" />
               <button onClick={exportVendorDetail}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase hover:bg-blue-700 ml-auto">
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 text-white rounded text-mini font-bold uppercase hover:bg-blue-700 ml-auto">
                 <Download className="w-3 h-3" />
                 <span>Export {filteredTickets.length} rows</span>
               </button>
@@ -1070,7 +1070,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
             <div className="overflow-auto max-h-[500px]">
               <table className="w-full text-left min-w-[800px]">
                 <thead className="sticky top-0 bg-slate-50 shadow-sm">
-                  <tr className="border-b border-slate-200 text-[9px] uppercase tracking-wider text-slate-400">
+                  <tr className="border-b border-slate-200 text-micro uppercase tracking-wider text-slate-400">
                     {['Date', 'Ticket No.', 'Source', 'Status', 'PNR', 'Passenger', 'Net Amt', 'Req Num'].map(c => (
                       <th key={c} className="px-3 py-2">{c}</th>
                     ))}
@@ -1082,7 +1082,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                       <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{t.date}</td>
                       <td className="px-3 py-2 font-bold">{t.ticketNo}</td>
                       <td className="px-3 py-2 text-slate-500">{t.source}</td>
-                      <td className="px-3 py-2 text-slate-400 text-[9px]">{t.status || '—'}</td>
+                      <td className="px-3 py-2 text-slate-400 text-micro">{t.status || '—'}</td>
                       <td className="px-3 py-2">{t.pnr || '—'}</td>
                       <td className="px-3 py-2 text-slate-500 max-w-[120px] truncate">{t.passengerName || '—'}</td>
                       <td className={`px-3 py-2 font-bold ${t.amount < 0 ? 'text-red-600' : ''}`}>
@@ -1103,20 +1103,20 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
         {tab === 'missing_req' && (
           <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
             <div className="flex justify-between items-center px-4 py-3 border-b border-slate-100 bg-red-50">
-              <span className="text-[10px] font-bold uppercase text-red-700">{missingReq.length} Tickets Missing Req Num</span>
+              <span className="text-mini font-bold uppercase text-red-700">{missingReq.length} Tickets Missing Req Num</span>
               <button onClick={exportMissingReq}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-600 text-white rounded text-[10px] font-bold uppercase hover:bg-red-700">
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-red-600 text-white rounded text-mini font-bold uppercase hover:bg-red-700">
                 <Download className="w-3 h-3" />
                 <span>Export & Fill In Excel</span>
               </button>
             </div>
-            <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-[10px] text-amber-700 font-mono">
+            <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 text-mini text-amber-700 font-mono">
               💡 Export → Fill in the "Req Num" column → Re-import via Import Data. The system will match by Ticket No. and update existing records.
             </div>
             <div className="overflow-auto max-h-[500px]">
               <table className="w-full text-left">
                 <thead className="sticky top-0 bg-slate-50 shadow-sm">
-                  <tr className="border-b border-slate-200 text-[9px] uppercase tracking-wider text-slate-400">
+                  <tr className="border-b border-slate-200 text-micro uppercase tracking-wider text-slate-400">
                     {['Ticket No.', 'Source', 'Date', 'Amount', 'PNR', 'Passenger'].map(c => (
                       <th key={c} className="px-3 py-2">{c}</th>
                     ))}
@@ -1189,23 +1189,23 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                       <thead className="sticky top-0 bg-slate-50 border-b border-slate-200">
                         <tr>
                           {['Date','Type','Description','Debit','Credit','Balance'].map(c => (
-                            <th key={c} className="px-3 py-2 text-[9px] font-bold uppercase text-slate-400">{c}</th>
+                            <th key={c} className="px-3 py-2 text-micro font-bold uppercase text-slate-400">{c}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
                         {ledgerEntries.map((e, i) => (
                           <tr key={i} className={`hover:bg-slate-50 ${e.type === 'FUND' ? 'bg-emerald-50/40' : e.type === 'REFUND' ? 'bg-red-50/30' : ''}`}>
-                            <td className="px-3 py-1.5 text-slate-400 text-[10px]">{e.date}</td>
+                            <td className="px-3 py-1.5 text-slate-400 text-mini">{e.date}</td>
                             <td className="px-3 py-1.5">
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              <span className={`px-1.5 py-0.5 rounded text-micro font-bold ${
                                 e.type === 'FUND' ? 'bg-emerald-100 text-emerald-700' :
                                 e.type === 'REFUND' ? 'bg-red-100 text-red-700' :
                                 e.type === 'OPENING' ? 'bg-blue-100 text-blue-700' :
                                 'bg-slate-100 text-slate-600'
                               }`}>{e.type}</span>
                             </td>
-                            <td className="px-3 py-1.5 text-slate-600 max-w-[200px] truncate text-[10px]">{e.desc}</td>
+                            <td className="px-3 py-1.5 text-slate-600 max-w-[200px] truncate text-mini">{e.desc}</td>
                             <td className="px-3 py-1.5 text-red-600 text-right">{e.debit > 0 ? fmt(e.debit) : '—'}</td>
                             <td className="px-3 py-1.5 text-emerald-600 text-right">{e.credit > 0 ? fmt(e.credit) : '—'}</td>
                             <td className={`px-3 py-1.5 text-right font-bold ${e.running < 0 ? 'text-red-600' : 'text-slate-700'}`}>{fmt(e.running)}</td>

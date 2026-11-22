@@ -56,7 +56,7 @@ export const Settings: React.FC<{ onSettingsChanged?: () => void }> = ({ onSetti
   return (
     <div className="p-6 space-y-6 max-w-5xl">
       <div>
-        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Settings — Admin Only</h2>
+        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">Settings — Admin Only</h2>
         <p className="text-sm text-slate-600 mt-1">
           Vendors and their currencies, the weekly limit on IATA, the request alerts, and the report
           formats the app has been taught to read on top of its built-in vendors. Every change is in the Activity log.
@@ -65,21 +65,21 @@ export const Settings: React.FC<{ onSettingsChanged?: () => void }> = ({ onSetti
       <AdminSettings onChanged={onSettingsChanged} />
 
       {error && (
-        <div className="rounded px-3 py-2 bg-red-50 border border-red-200 text-[11px] text-red-700 font-mono">{error}</div>
+        <div className="rounded px-3 py-2 bg-red-50 border border-red-200 text-xs text-red-700 font-mono">{error}</div>
       )}
 
       <section className="bg-white border border-slate-200 rounded-lg shadow-sm">
         <header className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
           <div>
-            <div className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1.5">
+            <div className="text-mini font-bold uppercase text-slate-500 flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5" /> Report formats
             </div>
-            <div className="text-[10px] text-slate-400 mt-0.5">
+            <div className="text-mini text-slate-400 mt-0.5">
               {loading ? 'Loading…' : `${profiles.length} taught format${profiles.length === 1 ? '' : 's'}. Built-in vendors are always on and are not listed here.`}
             </div>
           </div>
           <button onClick={() => setTeaching(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700">
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded text-mini font-bold uppercase tracking-wider hover:bg-blue-700">
             <Plus className="w-3 h-3" /> Teach a new format
           </button>
         </header>
@@ -108,15 +108,15 @@ const ProfileGroup: React.FC<{
   profiles: LearnedProfile[]; onRemove: (p: LearnedProfile) => void;
 }> = ({ title, icon, tone, profiles, onRemove }) => (
   <div>
-    <div className={`px-4 py-2 border-b border-slate-100 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${
+    <div className={`px-4 py-2 border-b border-slate-100 flex items-center gap-1.5 text-mini font-bold uppercase tracking-wider ${
       tone === 'blue' ? 'text-blue-700 bg-blue-50/50' : 'text-violet-700 bg-violet-50/50'
     }`}>
       {icon} {title} <span className="text-slate-400 font-mono">· {profiles.length}</span>
     </div>
     <div className="overflow-x-auto">
-    <table className="w-full text-[11px] min-w-[620px]">
+    <table className="w-full text-xs min-w-[620px]">
       <thead>
-        <tr className="text-left text-[9px] font-bold uppercase text-slate-400 border-b border-slate-100">
+        <tr className="text-left text-micro font-bold uppercase text-slate-400 border-b border-slate-100">
           <th className="px-4 py-2">Vendor</th>
           <th className="px-4 py-2">Columns mapped</th>
           <th className="px-4 py-2">Row identifier</th>

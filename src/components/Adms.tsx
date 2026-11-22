@@ -72,7 +72,7 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
 
   const chip = (k: AdmKind | 'ALL' | 'REAL', label: string, n: number) => (
     <button key={k} onClick={() => setKind(k)}
-      className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wide border
+      className={`px-2.5 py-1 rounded text-mini font-bold uppercase tracking-wide border
         ${kind === k ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
       {label} <span className="opacity-60">{n}</span>
     </button>
@@ -83,8 +83,8 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
     <div className="p-4 space-y-3 h-full overflow-auto">
       <div className="flex items-center gap-2">
         <FileWarning className="w-4 h-4 text-red-500" />
-        <h2 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">ADMs</h2>
-        <span className="text-[11px] text-slate-400">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">ADMs</h2>
+        <span className="text-xs text-slate-400">
           Debit and credit memos, and what they are about. They stay in All Tickets and the balances too.
         </span>
       </div>
@@ -92,17 +92,17 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {totals.map(t => (
           <div key={`${t.kind}${t.currency}`} className="bg-white border border-slate-200 rounded-lg px-3 py-2">
-            <div className="text-[9px] font-bold uppercase text-slate-400">{ADM_KIND_LABEL[t.kind]}</div>
+            <div className="text-micro font-bold uppercase text-slate-400">{ADM_KIND_LABEL[t.kind]}</div>
             <div className={`font-mono font-black text-base ${t.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
-              {fmt(t.amount)} <span className="text-[10px] text-slate-400">{t.currency}</span>
+              {fmt(t.amount)} <span className="text-mini text-slate-400">{t.currency}</span>
             </div>
-            <div className="text-[10px] text-slate-400">{t.count} document{t.count === 1 ? '' : 's'}</div>
+            <div className="text-mini text-slate-400">{t.count} document{t.count === 1 ? '' : 's'}</div>
           </div>
         ))}
       </div>
 
       {flagged > 0 && (
-        <div className="flex items-center gap-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-3 py-2">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
           {flagged} memo{flagged === 1 ? '' : 's'} to look at: the ticket it names is not in our books, or it names none.
         </div>
@@ -116,7 +116,7 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
         {chip('BSP_FEE', 'BSP fee', count('BSP_FEE'))}
         {chip('ALL', 'All', all.length)}
         <select value={vendor} onChange={e => setVendor(e.target.value)}
-          className="px-2 py-1 text-[10px] font-bold uppercase border border-slate-200 rounded bg-white text-slate-600">
+          className="px-2 py-1 text-mini font-bold uppercase border border-slate-200 rounded bg-white text-slate-600">
           <option value="ALL">Every vendor</option>
           {vendors.map(v => <option key={v} value={v}>{v}</option>)}
         </select>
@@ -126,14 +126,14 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
             className="pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded w-56 focus:outline-none focus:ring-2 focus:ring-blue-500/20" />
         </div>
         <button onClick={exportXls}
-          className="flex items-center gap-1.5 bg-blue-600 text-white text-[10px] font-bold uppercase px-3 py-1.5 rounded hover:bg-blue-700">
+          className="flex items-center gap-1.5 bg-blue-600 text-white text-mini font-bold uppercase px-3 py-1.5 rounded hover:bg-blue-700">
           <Download className="w-3.5 h-3.5" /> Export XLS
         </button>
       </div>
 
       {byVendor.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-          <div className="px-3 py-2 border-b border-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <div className="px-3 py-2 border-b border-slate-100 text-mini font-bold uppercase tracking-wider text-slate-400">
             By vendor <span className="normal-case font-normal">— who billed it, and under it the airline that raised it</span>
           </div>
           <table className="w-full text-left min-w-[480px]">
@@ -144,16 +144,16 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
                     <td className="px-3 py-1.5 font-bold text-slate-700">
                       <button onClick={() => setVendor(vendor === v.vendor ? 'ALL' : v.vendor)} className="hover:underline">{v.vendor}</button>
                     </td>
-                    <td className="px-3 py-1.5 text-slate-400 text-[11px]">{v.count} document{v.count === 1 ? '' : 's'}</td>
+                    <td className="px-3 py-1.5 text-slate-400 text-xs">{v.count} document{v.count === 1 ? '' : 's'}</td>
                     <td className={`px-3 py-1.5 text-right font-mono font-bold ${v.amount < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
-                      {fmt(v.amount)} <span className="text-[9px] text-slate-400">{v.currency}</span>
+                      {fmt(v.amount)} <span className="text-micro text-slate-400">{v.currency}</span>
                     </td>
                   </tr>
                   {v.airlines.length > 1 || v.airlines[0]?.code ? v.airlines.map(a => (
                     <tr key={a.code} className="border-b border-slate-50">
-                      <td className="pl-8 pr-3 py-1 text-slate-500 text-[11px]">{carrier(a.code) || 'no airline'}</td>
-                      <td className="px-3 py-1 text-slate-400 text-[11px]">{a.count}</td>
-                      <td className={`px-3 py-1 text-right font-mono text-[11px] ${a.amount < 0 ? 'text-emerald-600' : 'text-slate-600'}`}>{fmt(a.amount)}</td>
+                      <td className="pl-8 pr-3 py-1 text-slate-500 text-xs">{carrier(a.code) || 'no airline'}</td>
+                      <td className="px-3 py-1 text-slate-400 text-xs">{a.count}</td>
+                      <td className={`px-3 py-1 text-right font-mono text-xs ${a.amount < 0 ? 'text-emerald-600' : 'text-slate-600'}`}>{fmt(a.amount)}</td>
                     </tr>
                   )) : null}
                 </React.Fragment>
@@ -166,7 +166,7 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
       <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
         <table className="w-full text-left min-w-[1000px]">
           <thead className="bg-slate-50 border-b border-slate-100">
-            <tr className="text-[9px] uppercase tracking-wider text-slate-400">
+            <tr className="text-micro uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">Kind</th>
               <th className="px-3 py-2">Vendor</th>
               <th className="px-3 py-2">Document</th>
@@ -185,11 +185,11 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
               return (
                 <tr key={r.ticket.id} className="border-b border-slate-50 align-top">
                   <td className="px-3 py-2">
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold ${KIND_STYLE[r.kind]}`}>
+                    <span className={`px-1.5 py-0.5 rounded text-micro font-sans font-bold ${KIND_STYLE[r.kind]}`}>
                       {ADM_KIND_LABEL[r.kind]}
                     </span>
                   </td>
-                  <td className="px-3 py-2 font-sans text-[11px] whitespace-nowrap">
+                  <td className="px-3 py-2 font-sans text-xs whitespace-nowrap">
                     <div className="font-bold text-slate-700">{r.ticket.source || '—'}</div>
                     {carrier(r.ticket.airlineCode) && <div className="text-slate-400">{carrier(r.ticket.airlineCode)}</div>}
                   </td>
@@ -199,10 +199,10 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
                   </td>
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.ticket.date || '—'}</td>
                   <td className={`px-3 py-2 text-right font-bold whitespace-nowrap ${(r.ticket.amount || 0) < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
-                    {fmt(r.ticket.amount || 0)} <span className="text-[9px] text-slate-400">{r.ticket.currency}</span>
+                    {fmt(r.ticket.amount || 0)} <span className="text-micro text-slate-400">{r.ticket.currency}</span>
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">{r.onTicket || <span className="text-slate-300">—</span>}</td>
-                  <td className="px-3 py-2 font-sans text-[11px]">
+                  <td className="px-3 py-2 font-sans text-xs">
                     {r.flag
                       ? <span className="text-amber-700 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{r.flag}</span>
                       : sale || r.onTicketRows.length
@@ -215,8 +215,8 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
                         : <span className="text-slate-300">—</span>}
                   </td>
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.ticket.reqNum || '—'}</td>
-                  <td className="px-3 py-2 text-slate-400 text-[10px] whitespace-nowrap">{r.ticket.vendorReference || '—'}</td>
-                  <td className="px-3 py-2 text-[10px]">
+                  <td className="px-3 py-2 text-slate-400 text-mini whitespace-nowrap">{r.ticket.vendorReference || '—'}</td>
+                  <td className="px-3 py-2 text-mini">
                     {r.ticket.closed ? <span className="text-emerald-600 font-bold">Closed</span> : <span className="text-amber-600 font-bold">Not closed</span>}
                   </td>
                 </tr>

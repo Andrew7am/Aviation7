@@ -74,14 +74,14 @@ const Num: React.FC<{
   label: string; hint?: string; value: number; onChange: (n: number) => void;
 }> = ({ label, hint, value, onChange }) => (
   <div>
-    <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">{label}</label>
+    <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">{label}</label>
     <input
       type="number" step="0.01" value={Number.isFinite(value) ? value : 0}
       onChange={e => onChange(parseFloat(e.target.value) || 0)}
       className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-mono
                  focus:outline-none focus:ring-2 focus:ring-purple-500/20"
     />
-    {hint && <p className="text-[9px] text-slate-400 mt-1 leading-tight">{hint}</p>}
+    {hint && <p className="text-micro text-slate-400 mt-1 leading-tight">{hint}</p>}
   </div>
 );
 
@@ -109,19 +109,19 @@ const StatementForm: React.FC<{
         <div className="p-5 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Vendor</label>
+              <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">Vendor</label>
               <select value={s.vendorName} onChange={e => set({ vendorName: e.target.value })}
                 className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm">
                 {STATEMENT_VENDORS.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Period from</label>
+              <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">Period from</label>
               <input type="date" value={s.periodStart} onChange={e => set({ periodStart: e.target.value })}
                 className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-mono" />
             </div>
             <div>
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Period to</label>
+              <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">Period to</label>
               <input type="date" value={s.periodEnd} onChange={e => set({ periodEnd: e.target.value })}
                 className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-mono" />
             </div>
@@ -165,13 +165,13 @@ const StatementForm: React.FC<{
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Source file</label>
+              <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">Source file</label>
               <input value={s.sourceFile ?? ''} onChange={e => set({ sourceFile: e.target.value })}
                 placeholder="AlSafar AlMutmiz.pdf"
                 className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm" />
             </div>
             <div>
-              <label className="text-[10px] font-bold uppercase text-slate-500 block mb-1.5">Note</label>
+              <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">Note</label>
               <input value={s.note ?? ''} onChange={e => set({ note: e.target.value })}
                 className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm" />
             </div>
@@ -182,7 +182,7 @@ const StatementForm: React.FC<{
           <button onClick={onClose}
             className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700">Cancel</button>
           <button onClick={() => { onSave(s); onClose(); }}
-            className="px-4 py-2 text-xs font-bold bg-purple-600 text-white rounded hover:bg-purple-700">
+            className="px-4 py-2 text-xs font-bold bg-blue-700 text-white rounded hover:bg-blue-800">
             Save statement
           </button>
         </div>
@@ -201,7 +201,7 @@ const StatementForm: React.FC<{
  */
 const Stat: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="flex items-baseline justify-between gap-3 w-full sm:w-auto sm:block sm:text-right">
-    <div className="text-[9px] uppercase text-slate-400 font-bold">{label}</div>
+    <div className="text-micro uppercase text-slate-400 font-bold">{label}</div>
     <div className="text-sm whitespace-nowrap">{children}</div>
   </div>
 );
@@ -244,13 +244,13 @@ function usePeriod(p: LedgerPeriod) {
 const PeriodBadges: React.FC<{ p: LedgerPeriod; foots: boolean; footingGap: number }> = ({ p, foots, footingGap }) => (
   <>
     {!p.statement && (
-      <span className="ml-2 bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+      <span className="ml-2 bg-slate-100 text-slate-500 text-micro font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
             title="The vendor has issued no statement covering these dates, so there is nothing of theirs to compare against.">
         OURS ONLY
       </span>
     )}
     {p.statement && !foots && (
-      <span className="ml-2 bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+      <span className="ml-2 bg-amber-100 text-amber-700 text-micro font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
             title={`Their statement's own figures do not foot — off by ${fmt(footingGap)}`}>
         THEIRS OFF {fmt(footingGap)}
       </span>
@@ -268,7 +268,7 @@ const PeriodDetail: React.FC<{
     <div className="pl-4 sm:pl-10 pr-4 py-3 space-y-3">
         {/* Our own arithmetic, spelled out, so the closing figure above
             can be checked by eye rather than taken on trust. */}
-        <div className="bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-[11px]
+        <div className="bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-xs
                         font-mono text-slate-600">
           {drCr(p.opening)} + paid {fmt(p.paid)} + refunds {fmt(p.refunded)}
           {' '}− issued {fmt(p.issued)} = <b className="text-slate-800">{drCr(p.closing)}</b>
@@ -299,7 +299,7 @@ const PeriodDetail: React.FC<{
           <div className="bg-white border border-emerald-100 rounded-lg overflow-hidden">
             <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 flex items-center
                             justify-between">
-              <span className="text-[9px] font-bold uppercase text-emerald-700 flex items-center gap-1.5">
+              <span className="text-micro font-bold uppercase text-emerald-700 flex items-center gap-1.5">
                 <Wallet className="w-3 h-3" /> What we paid them ({p.payments.length})
               </span>
               <span className="font-mono text-xs font-bold text-emerald-600">
@@ -310,7 +310,7 @@ const PeriodDetail: React.FC<{
               <tbody>
                 {p.payments.map(x => (
                   <tr key={x.id} className="border-b border-slate-50 text-xs">
-                    <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500 w-28">{x.date}</td>
+                    <td className="px-3 py-1.5 font-mono text-mini text-slate-500 w-28">{x.date}</td>
                     <td className="px-3 py-1.5 text-slate-600">{x.note}</td>
                     <td className="px-3 py-1.5 text-right font-mono text-emerald-600">
                       +{fmt(x.amount)}
@@ -323,7 +323,7 @@ const PeriodDetail: React.FC<{
         )}
 
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-          <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-[9px] font-bold
+          <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-micro font-bold
                           uppercase text-slate-500 flex items-center gap-1.5">
             <FileText className="w-3 h-3" />
             <span>Our rows in this period ({p.tickets.length})</span>
@@ -337,9 +337,9 @@ const PeriodDetail: React.FC<{
               {p.tickets.map(t => (
                 <li key={t.id} className="px-3 py-2 flex items-start justify-between gap-3 text-xs">
                   <span className="min-w-0">
-                    <span className="block font-mono text-[11px] font-bold text-slate-700">{t.ticketNo}</span>
+                    <span className="block font-mono text-xs font-bold text-slate-700">{t.ticketNo}</span>
                     <span className="block text-slate-600 truncate">{t.passengerName}</span>
-                    <span className="block font-mono text-[10px] text-slate-400">
+                    <span className="block font-mono text-mini text-slate-400">
                       {t.date} · {t.vendorReference || <span className="text-red-400">no vendor ref</span>}
                     </span>
                   </span>
@@ -352,7 +352,7 @@ const PeriodDetail: React.FC<{
             <div className="hidden md:block max-h-80 overflow-auto">
               <table className="w-full text-left min-w-[560px]">
                 <thead>
-                  <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+                  <tr className="border-b border-slate-100 text-micro uppercase tracking-wider text-slate-400">
                     <th className="px-3 py-2">Date</th>
                     <th className="px-3 py-2">Ticket</th>
                     <th className="px-3 py-2">Passenger</th>
@@ -363,10 +363,10 @@ const PeriodDetail: React.FC<{
                 <tbody>
                   {p.tickets.map(t => (
                     <tr key={t.id} className="border-b border-slate-50 text-xs">
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{t.date}</td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-slate-700">{t.ticketNo}</td>
+                      <td className="px-3 py-1.5 font-mono text-mini text-slate-500">{t.date}</td>
+                      <td className="px-3 py-1.5 font-mono text-mini text-slate-700">{t.ticketNo}</td>
                       <td className="px-3 py-1.5 text-slate-600">{t.passengerName}</td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">
+                      <td className="px-3 py-1.5 font-mono text-mini text-slate-500">
                         {t.vendorReference || <span className="text-red-400">none</span>}
                       </td>
                       <td className={`px-3 py-1.5 text-right font-mono
@@ -407,8 +407,8 @@ const PeriodCard: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDel
   const [open, setOpen] = useState(false);
   const { s, unmatched, footingGap, foots } = usePeriod(p);
   const fig = (label: string, value: React.ReactNode, cls = 'text-slate-600') => (
-    <span><span className="block text-[10px] text-slate-400 uppercase tracking-wide">{label}</span>
-      <span className={`block font-mono text-[11px] ${cls}`}>{value}</span></span>
+    <span><span className="block text-mini text-slate-400 uppercase tracking-wide">{label}</span>
+      <span className={`block font-mono text-xs ${cls}`}>{value}</span></span>
   );
   return (
     <div className={open ? 'bg-slate-50' : ''}>
@@ -418,7 +418,7 @@ const PeriodCard: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDel
           {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </span>
         <span className="flex-1 min-w-0">
-          <span className="flex flex-wrap items-center gap-y-1 font-mono text-[11px] text-slate-600">
+          <span className="flex flex-wrap items-center gap-y-1 font-mono text-xs text-slate-600">
             <span>{p.from} → {p.to}</span>
             <PeriodBadges p={p} foots={foots} footingGap={footingGap} />
           </span>
@@ -427,12 +427,12 @@ const PeriodCard: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDel
             {fig('Their closing', s ? drCr(s.closingBalance) : '—', 'text-slate-500')}
           </span>
           <span className="mt-2 flex items-baseline justify-between gap-2">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wide">Difference</span>
+            <span className="text-mini text-slate-400 uppercase tracking-wide">Difference</span>
             <GapCell n={p.balanceGap} currency={currency} />
           </span>
           <span className="mt-2.5 pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-x-3 gap-y-2">
             {fig('Our opening', drCr(p.opening), 'text-slate-500')}
-            {fig('Issued', <>{fmt(p.issued)} <span className="text-slate-400 text-[10px]">({p.tickets.length})</span></>)}
+            {fig('Issued', <>{fmt(p.issued)} <span className="text-slate-400 text-mini">({p.tickets.length})</span></>)}
             {fig('Refunded', p.refunded ? `+${fmt(p.refunded)}` : '—', 'text-emerald-600')}
             {fig('Paid', p.paid ? `+${fmt(p.paid)}` : '—', 'text-emerald-600')}
           </span>
@@ -441,12 +441,12 @@ const PeriodCard: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDel
       {canEdit && s && (
         <div className="flex gap-2 px-4 pb-3 pl-11">
           <button type="button" onClick={onEdit}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 text-slate-600 text-[11px] font-bold hover:text-purple-600">
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 text-slate-600 text-xs font-bold hover:text-purple-600">
             <Edit3 className="w-3.5 h-3.5" /> Edit statement
           </button>
           <button type="button"
             onClick={() => { if (confirm(`Delete the ${s.periodStart} → ${s.periodEnd} statement?`)) onDelete(); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 text-slate-500 text-[11px] font-bold hover:text-red-600">
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-slate-200 text-slate-500 text-xs font-bold hover:text-red-600">
             <Trash2 className="w-3.5 h-3.5" /> Delete
           </button>
         </div>
@@ -467,14 +467,14 @@ const PeriodRow: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDele
         <td className="py-3 px-3 text-slate-400">
           {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
         </td>
-        <td className="py-3 px-3 font-mono text-[11px] text-slate-600 whitespace-nowrap">
+        <td className="py-3 px-3 font-mono text-xs text-slate-600 whitespace-nowrap">
           {p.from} → {p.to}
           <PeriodBadges p={p} foots={foots} footingGap={footingGap} />
         </td>
         <td className="py-3 px-3 text-right font-mono text-xs text-slate-500">{drCr(p.opening)}</td>
         <td className="py-3 px-3 text-right font-mono text-xs text-slate-600">
           {fmt(p.issued)}
-          <span className="text-slate-400 ml-1 text-[10px]">({p.tickets.length})</span>
+          <span className="text-slate-400 ml-1 text-mini">({p.tickets.length})</span>
         </td>
         <td className="py-3 px-3 text-right font-mono text-xs text-emerald-600">
           {p.refunded ? `+${fmt(p.refunded)}` : '—'}
@@ -502,7 +502,7 @@ const PeriodRow: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDele
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
-          ) : <span className="text-slate-300 text-[9px]">—</span>}
+          ) : <span className="text-slate-300 text-micro">—</span>}
         </td>
       </tr>
 
@@ -559,8 +559,8 @@ export const VendorStatements: React.FC<Props> = ({
         {canEdit && (
           <button
             onClick={() => setEditing(blank('Ibtekar'))}
-            className="shrink-0 flex items-center gap-1.5 bg-purple-600 text-white text-xs font-bold
-                       px-3 py-2 rounded hover:bg-purple-700">
+            className="shrink-0 flex items-center gap-1.5 bg-blue-700 text-white text-xs font-bold
+                       px-3 py-2 rounded hover:bg-blue-800">
             <Plus className="w-3.5 h-3.5" /> Add statement
           </button>
         )}
@@ -580,7 +580,7 @@ export const VendorStatements: React.FC<Props> = ({
         <div key={a.vendorName} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
           <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between
                           gap-4 flex-wrap">
-            <span className="font-bold text-slate-700 uppercase text-[11px] tracking-wide">
+            <span className="font-bold text-slate-700 uppercase text-xs tracking-wide">
               {a.vendorName}
             </span>
             {/* The headline is our own balance, because it is the one the
@@ -593,7 +593,7 @@ export const VendorStatements: React.FC<Props> = ({
                   ${(a.balance ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                   {a.balance === null ? '—' : drCr(a.balance)}
                 </span>
-                {a.balanceAsOf && <span className="text-[9px] text-slate-400 ml-1.5">
+                {a.balanceAsOf && <span className="text-micro text-slate-400 ml-1.5">
                   as of {a.balanceAsOf}</span>}
               </Stat>
               <Stat label="They last stated">
@@ -601,7 +601,7 @@ export const VendorStatements: React.FC<Props> = ({
                   ${(a.statedBalance ?? 0) < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                   {a.statedBalance === null ? '—' : drCr(a.statedBalance)}
                 </span>
-                {a.statedAsOf && <span className="text-[9px] text-slate-400 ml-1.5">
+                {a.statedAsOf && <span className="text-micro text-slate-400 ml-1.5">
                   on {a.statedAsOf}</span>}
               </Stat>
               <Stat label="Difference that day">
@@ -629,7 +629,7 @@ export const VendorStatements: React.FC<Props> = ({
             <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left min-w-[880px]">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-100 text-[9px] uppercase
+                <tr className="bg-slate-50 border-b border-slate-100 text-micro uppercase
                                tracking-wider text-slate-400">
                   <th className="px-3 py-2 w-8" />
                   <th className="px-3 py-2">Period</th>
@@ -656,7 +656,7 @@ export const VendorStatements: React.FC<Props> = ({
           )}
 
           {a.undated > 0 && (
-            <p className="px-5 py-2.5 text-[11px] text-slate-500 border-t border-slate-100 bg-slate-50">
+            <p className="px-5 py-2.5 text-xs text-slate-500 border-t border-slate-100 bg-slate-50">
               {a.undated} {a.vendorName} row(s) worth {fmt(a.undatedAmount)} {a.currency} carry no date,
               so they cannot be placed in any period above. They are counted in every opening and closing
               figure alike — the wallet counts them — so each period still foots and the closing balance

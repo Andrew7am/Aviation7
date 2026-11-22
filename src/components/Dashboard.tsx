@@ -10,6 +10,15 @@ interface DashboardProps {
   topUps?: BalanceTopUp[];
 }
 
+/** The icon chip of a KPI card, per tone. */
+const TONE: Record<string, string> = {
+  blue: 'bg-blue-50 text-blue-700',
+  emerald: 'bg-emerald-50 text-emerald-700',
+  red: 'bg-red-50 text-red-700',
+  amber: 'bg-amber-50 text-amber-700',
+  slate: 'bg-slate-100 text-slate-500',
+};
+
 export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, topUps = [] }) => {
   // Centralized stats — single source of truth, shared with Reports.tsx
   const { totalIssued, totalRefunds, bySource: sources, missingReq } = useReports(tickets, vendorBalances, topUps);
@@ -33,31 +42,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
   const fmt = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
-    <div className="flex flex-col min-h-full lg:h-full bg-slate-100">
-      <div className="px-6 py-4 border-b border-slate-200 bg-white shrink-0">
-        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">Dashboard Overview</h2>
+    <div className="flex flex-col min-h-full lg:h-full bg-app">
+      <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-white shrink-0">
+        <h2 className="text-base font-semibold text-slate-900">Dashboard</h2>
+        <p className="text-xs text-slate-500 mt-0.5">The ledger at a glance: what is recorded, matched and still owed a request.</p>
       </div>
 
-      {/* KPI cards */}
+      {/* KPI cards. The figure is the card: large, in ink, not in colour. The
+          colour sits in the small icon chip and only says something when
+          there is something to say - a red chip for missing requests when
+          there are some, a quiet one when there are none - and the line
+          under the figure says it in words as well. */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 shrink-0">
         {[
-          { label: 'Total Tickets', value: tickets.length, color: 'slate', icon: <FileText className="w-4 h-4" />, sub: `SAR ${fmt(sarNet)} · AED ${fmt(aedNet)}` },
-          { label: 'Matched', value: matchedCount, color: 'emerald', icon: <CheckCircle2 className="w-4 h-4" />, sub: `${((matchedCount / Math.max(tickets.length, 1)) * 100).toFixed(0)}% match rate` },
-          { label: 'Missing REQ', value: needsReqCount, color: 'red', icon: <AlertCircle className="w-4 h-4" />, sub: 'need req number' },
-          { label: 'Duplicates', value: duplicateCount, color: 'amber', icon: <AlertCircle className="w-4 h-4" />, sub: 'in current dataset' },
+          { label: 'Total tickets', value: tickets.length, tone: 'blue', icon: <FileText className="w-4 h-4" />, sub: `SAR ${fmt(sarNet)} · AED ${fmt(aedNet)}` },
+          { label: 'Matched', value: matchedCount, tone: 'emerald', icon: <CheckCircle2 className="w-4 h-4" />, sub: `${((matchedCount / Math.max(tickets.length, 1)) * 100).toFixed(0)}% match rate` },
+          { label: 'Missing REQ', value: needsReqCount, tone: needsReqCount > 0 ? 'red' : 'slate', icon: <AlertCircle className="w-4 h-4" />, sub: needsReqCount > 0 ? 'need a request number' : 'none missing' },
+          { label: 'Duplicates', value: duplicateCount, tone: duplicateCount > 0 ? 'amber' : 'slate', icon: <AlertCircle className="w-4 h-4" />, sub: duplicateCount > 0 ? 'in the current dataset' : 'none found' },
         ].map(card => (
-          <div key={card.label} className={`bg-white border border-${card.color}-100 rounded-lg p-4 shadow-sm`}>
+          <div key={card.label} className="bg-white border border-slate-200 rounded-lg p-4 shadow-[0_1px_2px_rgba(17,28,45,0.04)]">
             {/* shrink-0 on the icon and min-w-0 on the label: two cards
                 across a phone leaves the label wider than the card, and flex
                 answers that by squeezing the icon to nothing rather than
-                letting the label wrap. The icon vanished; the label still
-                overflowed. */}
-            <div className={`flex items-center justify-between gap-1 mb-2 text-${card.color}-500`}>
-              <span className={`text-[10px] font-bold uppercase tracking-wider min-w-0 text-${card.color}-600`}>{card.label}</span>
-              <span className="shrink-0">{card.icon}</span>
+                letting the label wrap. */}
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <span className="text-mini font-semibold uppercase tracking-wider min-w-0 text-slate-500">{card.label}</span>
+              <span className={`shrink-0 w-7 h-7 rounded-md flex items-center justify-center ${TONE[card.tone]}`}>{card.icon}</span>
             </div>
-            <div className={`text-2xl sm:text-3xl font-mono font-black text-${card.color}-700`}>{card.value}</div>
-            <div className={`text-[10px] text-${card.color}-400 mt-1 font-mono`}>{card.sub}</div>
+            <div className="text-2xl sm:text-[1.75rem] leading-none font-semibold text-slate-900 tracking-tight">
+              {card.value.toLocaleString('en-US')}
+            </div>
+            <div className="text-mini text-slate-500 mt-2 font-mono truncate" title={card.sub}>{card.sub}</div>
           </div>
         ))}
       </div>
@@ -83,14 +98,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
             sized for eight, with the last two cut in half and no way to scroll
             to them, because the card clipped and the grid had nothing to
             scroll. */}
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
-            <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Source Breakdown</h3>
+        <div className="bg-white border border-slate-200 rounded-lg shadow-[0_1px_2px_rgba(17,28,45,0.04)] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-slate-200 shrink-0">
+            <h3 className="text-sm font-semibold text-slate-800">Source breakdown</h3>
           </div>
           <div className="overflow-auto flex-1 min-h-0">
           <table className="w-full text-left min-w-[440px]">
-            <thead>
-              <tr className="border-b border-slate-100 text-[9px] uppercase text-slate-400 tracking-wider">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200 text-micro uppercase text-slate-500 tracking-wider">
                 <th className="px-4 py-2">Source</th>
                 <th className="px-4 py-2 text-right">Tickets</th>
                 <th className="px-4 py-2 text-right">Net Amount</th>
@@ -99,16 +114,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
             </thead>
             <tbody className="text-xs font-mono">
               {sources.map(s => (
-                <tr key={s.name} className="border-b border-slate-50 hover:bg-slate-50">
-                  <td className="px-4 py-2.5 font-sans font-bold text-slate-700 text-[11px]">{s.name}</td>
+                <tr key={s.name} className="border-b border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-2.5 font-sans font-semibold text-slate-800 text-xs">{s.name}</td>
                   <td className="px-4 py-2.5 text-right text-slate-500">{s.count}</td>
-                  <td className={`px-4 py-2.5 text-right font-bold ${s.amount < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${s.amount < 0 ? 'text-red-600' : 'text-slate-800'}`}>
                     {sourceToCurrency(s.name)} {fmt(s.amount)}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     {s.missing > 0
-                      ? <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[9px] font-bold">{s.missing}</span>
-                      : <span className="text-slate-300 text-[9px]">—</span>
+                      ? <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-micro font-bold">{s.missing}</span>
+                      : <span className="text-slate-300 text-micro">—</span>
                     }
                   </td>
                 </tr>
@@ -122,19 +137,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
         </div>
 
         {/* Vendor balances summary */}
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
-          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
-            <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Vendor Credit Status</h3>
+        <div className="bg-white border border-slate-200 rounded-lg shadow-[0_1px_2px_rgba(17,28,45,0.04)] overflow-hidden flex flex-col">
+          <div className="px-4 py-3 border-b border-slate-200 flex justify-between items-center shrink-0">
+            <h3 className="text-sm font-semibold text-slate-800">Vendor credit status</h3>
             {lowBalanceVendors.length > 0 && (
-              <span className="bg-red-100 text-red-700 text-[9px] font-bold px-2 py-0.5 rounded-full">
+              <span className="bg-red-100 text-red-700 text-micro font-bold px-2 py-0.5 rounded-full">
                 {lowBalanceVendors.length} LOW
               </span>
             )}
           </div>
           <div className="overflow-auto flex-1 min-h-0">
           <table className="w-full text-left min-w-[440px]">
-            <thead>
-              <tr className="border-b border-slate-100 text-[9px] uppercase text-slate-400 tracking-wider">
+            <thead className="bg-slate-50">
+              <tr className="border-b border-slate-200 text-micro uppercase text-slate-500 tracking-wider">
                 <th className="px-4 py-2">Vendor</th>
                 <th className="px-4 py-2 text-right">Balance</th>
                 <th className="px-4 py-2 text-right">Usage</th>
@@ -147,9 +162,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
                 const isLow = pct < 20;
                 const isNeg = v.currentBalance < 0;
                 return (
-                  <tr key={v.id} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="px-4 py-2.5 font-sans font-bold text-slate-700 text-[11px] uppercase">{v.vendorName}</td>
-                    <td className={`px-4 py-2.5 text-right font-bold ${isNeg ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
+                  <tr key={v.id} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-2.5 font-sans font-semibold text-slate-800 text-xs uppercase">{v.vendorName}</td>
+                    <td className={`px-4 py-2.5 text-right font-bold whitespace-nowrap ${isNeg ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-emerald-600'}`}>
                       {isNeg && '-'}{sourceToCurrency(v.vendorName)} {fmt(Math.abs(v.currentBalance))}
                     </td>
                     <td className="px-4 py-2.5 text-right">
@@ -160,15 +175,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
                             style={{ width: `${Math.min(Math.max(pct, 0), 100)}%` }}
                           />
                         </div>
-                        <span className={`text-[9px] ${isLow ? 'text-amber-600' : 'text-slate-400'}`}>{pct.toFixed(0)}%</span>
+                        <span className={`text-micro ${isLow ? 'text-amber-600' : 'text-slate-400'}`}>{pct.toFixed(0)}%</span>
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-center">
                       {isNeg
-                        ? <span className="bg-red-100 text-red-700 text-[9px] font-bold px-1.5 py-0.5 rounded">OVERDRAFT</span>
+                        ? <span className="bg-red-100 text-red-700 text-micro font-bold px-1.5 py-0.5 rounded">OVERDRAFT</span>
                         : isLow
-                        ? <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded">LOW</span>
-                        : <span className="bg-emerald-50 text-emerald-600 text-[9px] font-bold px-1.5 py-0.5 rounded">OK</span>
+                        ? <span className="bg-amber-100 text-amber-700 text-micro font-bold px-1.5 py-0.5 rounded">LOW</span>
+                        : <span className="bg-emerald-50 text-emerald-600 text-micro font-bold px-1.5 py-0.5 rounded">OK</span>
                       }
                     </td>
                   </tr>
@@ -183,33 +198,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
         </div>
 
         {/* Financial summary */}
-        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden lg:col-span-2">
-          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
-            <h3 className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Financial Summary</h3>
+        <div className="bg-white border border-slate-200 rounded-lg shadow-[0_1px_2px_rgba(17,28,45,0.04)] overflow-hidden lg:col-span-2">
+          <div className="px-4 py-3 border-b border-slate-200">
+            <h3 className="text-sm font-semibold text-slate-800">Financial summary</h3>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 text-center">
             <div className="p-4">
               <div className="flex items-center space-x-2 mb-1">
                 <TrendingUp className="w-4 h-4 text-emerald-500" />
-                <span className="text-[10px] font-bold uppercase text-slate-500">Total Issued</span>
+                <span className="text-mini font-bold uppercase text-slate-500">Total Issued</span>
               </div>
               <div className="text-sm font-mono font-black text-emerald-700">SAR {fmt(sarIssued)}</div>
               <div className="text-sm font-mono font-black text-emerald-600">AED {fmt(aedIssued)}</div>
-              <div className="text-[10px] text-slate-400 mt-1">{tickets.filter(t => t.amount > 0).length} tickets</div>
+              <div className="text-mini text-slate-400 mt-1">{tickets.filter(t => t.amount > 0).length} tickets</div>
             </div>
             <div className="p-4">
               <div className="flex items-center space-x-2 mb-1">
                 <TrendingDown className="w-4 h-4 text-red-500" />
-                <span className="text-[10px] font-bold uppercase text-slate-500">Total Refunds</span>
+                <span className="text-mini font-bold uppercase text-slate-500">Total Refunds</span>
               </div>
               <div className="text-sm font-mono font-black text-red-700">SAR {fmt(sarRefundsAmt)}</div>
               <div className="text-sm font-mono font-black text-red-600">AED {fmt(aedRefundsAmt)}</div>
-              <div className="text-[10px] text-slate-400 mt-1">{tickets.filter(t => t.amount < 0).length} tickets</div>
+              <div className="text-mini text-slate-400 mt-1">{tickets.filter(t => t.amount < 0).length} tickets</div>
             </div>
             <div className="p-4">
               <div className="flex items-center space-x-2 mb-1">
                 <Wallet className="w-4 h-4 text-blue-500" />
-                <span className="text-[10px] font-bold uppercase text-slate-500">Net Total</span>
+                <span className="text-mini font-bold uppercase text-slate-500">Net Total</span>
               </div>
               <div className={`text-sm font-mono font-black ${sarNet < 0 ? 'text-red-700' : 'text-blue-700'}`}>
                 SAR {fmt(sarNet)}

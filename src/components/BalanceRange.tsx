@@ -50,7 +50,7 @@ const TicketList: React.FC<{
 }> = ({ title, rows, total, currency, tone, icon }) => (
   <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
     <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-      <span className="text-[9px] font-bold uppercase text-slate-500 flex items-center gap-1.5">
+      <span className="text-micro font-bold uppercase text-slate-500 flex items-center gap-1.5">
         {icon}{title} ({rows.length})
       </span>
       <span className={`font-mono text-xs font-bold ${tone === 'in' ? 'text-emerald-600' : 'text-slate-700'}`}>
@@ -63,7 +63,7 @@ const TicketList: React.FC<{
       <div className="max-h-72 overflow-auto">
         <table className="w-full text-left">
           <thead className="sticky top-0 bg-white">
-            <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+            <tr className="border-b border-slate-100 text-micro uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">Date</th>
               <th className="px-3 py-2">Ticket</th>
               <th className="px-3 py-2">Passenger</th>
@@ -74,12 +74,12 @@ const TicketList: React.FC<{
           <tbody>
             {rows.map(t => (
               <tr key={t.id} className="border-b border-slate-50 text-xs">
-                <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{t.date}</td>
-                <td className="px-3 py-1.5 font-mono text-[10px] text-slate-700">
+                <td className="px-3 py-1.5 font-mono text-mini text-slate-500">{t.date}</td>
+                <td className="px-3 py-1.5 font-mono text-mini text-slate-700">
                   {t.airlineCode ? `${t.airlineCode}-${t.ticketNo}` : t.ticketNo}
                 </td>
                 <td className="px-3 py-1.5 text-slate-600">{t.passengerName}</td>
-                <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">
+                <td className="px-3 py-1.5 font-mono text-mini text-slate-500">
                   {t.vendorReference || <span className="text-slate-300">—</span>}
                 </td>
                 <td className={`px-3 py-1.5 text-right font-mono
@@ -177,7 +177,7 @@ export const BalanceRange: React.FC<Props> = ({
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-3 flex-wrap">
-        <h3 className="font-bold text-slate-700 uppercase text-[11px] tracking-wide flex items-center gap-2 mr-auto">
+        <h3 className="font-bold text-slate-700 uppercase text-xs tracking-wide flex items-center gap-2 mr-auto">
           <CalendarRange className="w-3.5 h-3.5 text-purple-600" />
           The account between two dates
         </h3>
@@ -192,8 +192,8 @@ export const BalanceRange: React.FC<Props> = ({
           className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs font-mono" />
         <button onClick={exportStatement} disabled={bad}
           title="Every line in date order with the balance after each — issues lower it, refunds and payments raise it"
-          className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
-                     px-3 py-1.5 rounded hover:bg-purple-700 disabled:opacity-40">
+          className="flex items-center gap-1.5 bg-blue-700 text-white text-xs font-bold
+                     px-3 py-1.5 rounded hover:bg-blue-800 disabled:opacity-40">
           <Download className="w-3.5 h-3.5" /> Statement
         </button>
       </div>
@@ -231,7 +231,7 @@ export const BalanceRange: React.FC<Props> = ({
               ] as const).map(([label, value, cls]) => (
                 <div key={label} className="bg-slate-50 border border-slate-200 rounded px-2 py-2.5">
                   <div className={`font-mono font-bold text-sm ${cls}`}>{value}</div>
-                  <div className="text-[9px] uppercase text-slate-400 font-bold mt-0.5">{label}</div>
+                  <div className="text-micro uppercase text-slate-400 font-bold mt-0.5">{label}</div>
                 </div>
               ))}
             </div>
@@ -252,7 +252,7 @@ export const BalanceRange: React.FC<Props> = ({
                 {r.balanceGap !== null && (
                   <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 mt-2 pt-2
                                   border-t border-slate-100">
-                    <span className="text-slate-500 text-[11px]">
+                    <span className="text-slate-500 text-xs">
                       {Math.abs(r.balanceGap) < 0.011
                         ? `Our books and theirs agree.`
                         : `Our books and theirs disagree. Every period's difference is listed below; `
@@ -268,14 +268,14 @@ export const BalanceRange: React.FC<Props> = ({
               </div>
             )}
 
-            <div className={`rounded-lg border px-4 py-2.5 text-[11px] flex items-start gap-2
+            <div className={`rounded-lg border px-4 py-2.5 text-xs flex items-start gap-2
               ${ANCHOR_STYLE[r.anchor]}`}>
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>{r.anchorLabel}</span>
             </div>
 
             {r.undated > 0 && (
-              <div className="bg-slate-50 border border-slate-200 rounded px-4 py-2 text-[11px] text-slate-500">
+              <div className="bg-slate-50 border border-slate-200 rounded px-4 py-2 text-xs text-slate-500">
                 {r.undated} {vendor} row(s) carry no date at all, so they cannot be placed in these
                 dates or outside them. They are in no period on this screen.
               </div>
@@ -291,7 +291,7 @@ export const BalanceRange: React.FC<Props> = ({
             {r.payments.length > 0 && (
               <div className="bg-white border border-emerald-100 rounded-lg overflow-hidden">
                 <div className="px-4 py-2 bg-emerald-50 border-b border-emerald-100 flex items-center justify-between">
-                  <span className="text-[9px] font-bold uppercase text-emerald-700 flex items-center gap-1.5">
+                  <span className="text-micro font-bold uppercase text-emerald-700 flex items-center gap-1.5">
                     <Wallet className="w-3 h-3" /> Paid to {vendor} ({r.payments.length})
                   </span>
                   <span className="font-mono text-xs font-bold text-emerald-600">
@@ -302,7 +302,7 @@ export const BalanceRange: React.FC<Props> = ({
                   <tbody>
                     {r.payments.map(p => (
                       <tr key={p.id} className="border-b border-slate-50 text-xs">
-                        <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500 w-28">{p.date}</td>
+                        <td className="px-3 py-1.5 font-mono text-mini text-slate-500 w-28">{p.date}</td>
                         <td className="px-3 py-1.5 text-slate-600">{p.note}</td>
                         <td className="px-3 py-1.5 text-right font-mono text-emerald-600">
                           +{fmt(p.amount)}

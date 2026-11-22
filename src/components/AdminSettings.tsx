@@ -24,15 +24,15 @@ const AED_BUILTIN = /(iata|rts|gold medal|goldmedal|flyadeal dxb|air arabia|aira
 const builtinCurrency = (name: string): VendorCurrencyCode => (AED_BUILTIN.test(name) ? 'AED' : 'SAR');
 
 const input = 'border border-slate-200 rounded px-2 py-1 text-xs bg-white text-slate-800 focus:outline-none focus:border-blue-400';
-const btn = 'flex items-center gap-1.5 px-3 py-1.5 rounded text-[10px] font-bold uppercase tracking-wider disabled:opacity-50';
+const btn = 'flex items-center gap-1.5 px-3 py-1.5 rounded text-mini font-bold uppercase tracking-wider disabled:opacity-50';
 
 const Section: React.FC<{ icon: React.ReactNode; title: string; note: string; action?: React.ReactNode; children: React.ReactNode }> =
   ({ icon, title, note, action, children }) => (
   <section className="bg-white border border-slate-200 rounded-lg shadow-sm">
     <header className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
       <div>
-        <div className="text-[10px] font-bold uppercase text-slate-500 flex items-center gap-1.5">{icon} {title}</div>
-        <div className="text-[10px] text-slate-400 mt-0.5">{note}</div>
+        <div className="text-mini font-bold uppercase text-slate-500 flex items-center gap-1.5">{icon} {title}</div>
+        <div className="text-mini text-slate-400 mt-0.5">{note}</div>
       </div>
       {action}
     </header>
@@ -65,8 +65,8 @@ export const AdminSettings: React.FC<{ onChanged?: () => void }> = ({ onChanged 
   if (!loaded) return <div className="text-xs text-slate-400">{error || 'Loading settings…'}</div>;
   return (
     <div className="space-y-6">
-      {error && <div className="rounded px-3 py-2 bg-red-50 border border-red-200 text-[11px] text-red-700">{error}</div>}
-      {saved && <div className="rounded px-3 py-2 bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800">Saved: {saved}</div>}
+      {error && <div className="rounded px-3 py-2 bg-red-50 border border-red-200 text-xs text-red-700">{error}</div>}
+      {saved && <div className="rounded px-3 py-2 bg-emerald-50 border border-emerald-200 text-xs text-emerald-800">Saved: {saved}</div>}
       <Vendors loaded={loaded} busy={busy === 'vendors'} onSave={(list, detail) => run('vendors', 'vendors and currencies', async () => {
         await svc.saveVendors(list, loaded); await svc.audit('Vendors', detail);
       })} />
@@ -121,11 +121,11 @@ const Vendors: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (v: Ven
       action={<button disabled={!dirty || busy} onClick={() => onSave(toSave, toSave.map(v => `${v.name} ${v.currency}${v.onStatement ? ' (statement)' : ''}`).join(', ') || 'built-in rule only')}
         className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}>{busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save</button>}>
       <table className="w-full text-xs">
-        <thead><tr className="text-[9px] uppercase text-slate-400 text-left"><th className="py-1">Vendor</th><th>Currency</th><th>Statement + wallet</th><th></th></tr></thead>
+        <thead><tr className="text-micro uppercase text-slate-400 text-left"><th className="py-1">Vendor</th><th>Currency</th><th>Statement + wallet</th><th></th></tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={r.name} className="border-t border-slate-100">
-              <td className="py-1.5 font-mono text-slate-700">{r.name}{isBuiltin(r.name) && <span className="ml-2 text-[9px] text-slate-400">built in</span>}</td>
+              <td className="py-1.5 font-mono text-slate-700">{r.name}{isBuiltin(r.name) && <span className="ml-2 text-micro text-slate-400">built in</span>}</td>
               <td><select className={input} value={r.currency}
                 onChange={e => setRows(rows.map((x, j) => j === i ? { ...x, currency: e.target.value as VendorCurrencyCode } : x))}>
                 {CURRENCIES.map(c => <option key={c}>{c}</option>)}</select></td>
@@ -167,7 +167,7 @@ const Portals: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (p: Por
       action={<button disabled={!dirty || busy} onClick={() => onSave(rows, rows.map(r => `${r.word} -> ${r.source}`).join(', ') || 'built-in only')}
         className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}>{busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save</button>}>
       <table className="w-full text-xs">
-        <thead><tr className="text-[9px] uppercase text-slate-400 text-left"><th className="py-1">Their word</th><th>Our vendor</th><th></th></tr></thead>
+        <thead><tr className="text-micro uppercase text-slate-400 text-left"><th className="py-1">Their word</th><th>Our vendor</th><th></th></tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={r.word} className="border-t border-slate-100">
@@ -179,7 +179,7 @@ const Portals: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (p: Por
           ))}
           {BUILTIN_PORTALS.map(p => (
             <tr key={p.words} className="border-t border-slate-100 text-slate-400">
-              <td className="py-1.5 font-mono">{p.words}</td><td>{p.source}</td><td className="text-right text-[9px]">built in</td>
+              <td className="py-1.5 font-mono">{p.words}</td><td>{p.source}</td><td className="text-right text-micro">built in</td>
             </tr>
           ))}
         </tbody>
@@ -225,7 +225,7 @@ const Offices: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (o: Off
               value={draft[k]} onChange={e => setDraft({ ...draft, [k]: e.target.value })} />
           </div>
         ))}
-        {clash && <div className="text-[10px] text-red-600">{clash} is already a prefix{allBuiltin.includes(clash) ? ' built in' : ' of another office'} - each prefix belongs to one office.</div>}
+        {clash && <div className="text-mini text-red-600">{clash} is already a prefix{allBuiltin.includes(clash) ? ' built in' : ' of another office'} - each prefix belongs to one office.</div>}
       </div>
     </Section>
   );
@@ -253,15 +253,15 @@ const Limits: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (l: Airl
         className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}>{busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save</button>}>
       {rows.map((r, i) => (
         <div key={r.airlineCode} className="flex flex-wrap gap-4 items-end text-xs">
-          <div><div className="text-[9px] uppercase text-slate-400 mb-1">Airline</div><div className="font-mono font-bold text-slate-700 py-1">{r.airline} ({r.airlineCode})</div></div>
-          <label><div className="text-[9px] uppercase text-slate-400 mb-1">Limit ({r.currency})</div>
+          <div><div className="text-micro uppercase text-slate-400 mb-1">Airline</div><div className="font-mono font-bold text-slate-700 py-1">{r.airline} ({r.airlineCode})</div></div>
+          <label><div className="text-micro uppercase text-slate-400 mb-1">Limit ({r.currency})</div>
             <input type="number" min={0} className={`${input} w-32`} value={r.limit} onChange={e => set(i, { limit: Number(e.target.value) })} /></label>
-          <label><div className="text-[9px] uppercase text-slate-400 mb-1">Warn at</div>
+          <label><div className="text-micro uppercase text-slate-400 mb-1">Warn at</div>
             <input type="number" min={0} className={`${input} w-32`} value={r.warnAt} onChange={e => set(i, { warnAt: Number(e.target.value) })} /></label>
-          <label><div className="text-[9px] uppercase text-slate-400 mb-1">The week starts on</div>
+          <label><div className="text-micro uppercase text-slate-400 mb-1">The week starts on</div>
             <select className={input} value={dayOf(r.weekFrom)} onChange={e => set(i, { weekFrom: fromDay(Number(e.target.value)) })}>
               {DAYS.map((d, k) => <option key={d} value={k}>{d}, midnight</option>)}</select></label>
-          {r.warnAt > r.limit && <div className="text-[10px] text-red-600">The warning must be at or below the limit.</div>}
+          {r.warnAt > r.limit && <div className="text-mini text-red-600">The warning must be at or below the limit.</div>}
         </div>
       ))}
     </Section>
@@ -304,13 +304,13 @@ const AlertRow: React.FC<{ a: RequestAlertSetting; isNew?: boolean; busy: boolea
     : a.lastTotal != null ? 'Not reached yet' : isNew ? 'New' : 'Not checked yet';
   return (
     <div className="border border-slate-100 rounded p-3 flex flex-wrap gap-3 items-end text-xs">
-      <label><div className="text-[9px] uppercase text-slate-400 mb-1">Request</div>
+      <label><div className="text-micro uppercase text-slate-400 mb-1">Request</div>
         <input className={`${input} w-32 font-mono uppercase`} value={req} onChange={e => setReq(e.target.value)} /></label>
-      <label><div className="text-[9px] uppercase text-slate-400 mb-1">Figure</div>
+      <label><div className="text-micro uppercase text-slate-400 mb-1">Figure</div>
         <input type="number" min={0} className={`${input} w-36`} value={threshold || ''} onChange={e => setThreshold(Number(e.target.value))} /></label>
-      <label><div className="text-[9px] uppercase text-slate-400 mb-1">Currency</div>
+      <label><div className="text-micro uppercase text-slate-400 mb-1">Currency</div>
         <select className={input} value={currency} onChange={e => setCurrency(e.target.value)}>{CURRENCIES.map(c => <option key={c}>{c}</option>)}</select></label>
-      <label className="flex-1 min-w-[16rem]"><div className="text-[9px] uppercase text-slate-400 mb-1">Email to (comma between)</div>
+      <label className="flex-1 min-w-[16rem]"><div className="text-micro uppercase text-slate-400 mb-1">Email to (comma between)</div>
         <input className={`${input} w-full`} value={to} onChange={e => setTo(e.target.value)} /></label>
       <div className="flex gap-2">
         <button disabled={!dirty || !valid || busy} onClick={() => onSave({ id: a.id, reqNum: req, threshold, currency, recipients }, isNew, changedFigure)}
@@ -319,7 +319,7 @@ const AlertRow: React.FC<{ a: RequestAlertSetting; isNew?: boolean; busy: boolea
         {onDelete && <button disabled={busy} onClick={() => { if (confirm(`Remove the alert on ${a.reqNum}?`)) onDelete(a); }}
           className="text-slate-400 hover:text-red-600 p-1" title="Remove"><Trash2 className="w-3.5 h-3.5" /></button>}
       </div>
-      <div className="w-full text-[10px] text-slate-400">
+      <div className="w-full text-mini text-slate-400">
         {state}{a.lastTotal != null && <> · now {fmt(a.lastTotal)} {a.currency} net</>}
       </div>
     </div>

@@ -182,8 +182,8 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string; sub
   ({ label, value, tone, sub }) => (
   <div className="bg-white border border-slate-200 rounded-lg px-3 py-2.5">
     <div className={`font-mono font-bold text-lg ${tone ?? 'text-slate-700'}`}>{value}</div>
-    <div className="text-[9px] uppercase text-slate-400 font-bold mt-0.5">{label}</div>
-    {sub && <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>}
+    <div className="text-micro uppercase text-slate-400 font-bold mt-0.5">{label}</div>
+    {sub && <div className="text-mini text-slate-500 mt-0.5">{sub}</div>}
   </div>
 );
 
@@ -192,14 +192,14 @@ const DocTypeTable: React.FC<{ docTypes: TeamSheetReport['docTypes'] }> = ({ doc
   const kinds = [['tickets', 'Tickets'], ['refunds', 'Refunds'], ['emds', 'EMDs'], ['voids', 'Voids']] as const;
   const chips = (xs: string[]) => (
     <div className="flex flex-wrap gap-1 mt-1.5">
-      {xs.map(x => <span key={x} className="font-mono text-[10px] bg-slate-100 text-slate-700 rounded px-1.5 py-0.5">{x}</span>)}
+      {xs.map(x => <span key={x} className="font-mono text-mini bg-slate-100 text-slate-700 rounded px-1.5 py-0.5">{x}</span>)}
     </div>
   );
   return (
     <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
       <table className="w-full text-xs">
         <thead className="bg-slate-50 border-b border-slate-200">
-          <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+          <tr className="text-mini font-bold uppercase tracking-wide text-slate-500">
             <th className="px-3 py-2 text-left">Document</th>
             <th className="px-3 py-2 text-right">In our books</th>
             <th className="px-3 py-2 text-right">On their sheet</th>
@@ -219,13 +219,13 @@ const DocTypeTable: React.FC<{ docTypes: TeamSheetReport['docTypes'] }> = ({ doc
                   {/* One PNR can be two of our tickets, so these are why the
                       counts can differ with nothing missing either side. */}
                   {!!d.byPnrOnly && (
-                    <span className="block font-sans text-[10px] text-slate-500 whitespace-nowrap"
+                    <span className="block font-sans text-mini text-slate-500 whitespace-nowrap"
                       title="Rows on their sheet with no ticket number, matched to ours by PNR. One PNR can be several of our tickets.">
                       {d.byPnrOnly} by PNR only
                     </span>
                   )}
                   {!!d.conjunctions?.length && (
-                    <span className="block font-sans text-[10px] text-sky-700 whitespace-nowrap"
+                    <span className="block font-sans text-mini text-sky-700 whitespace-nowrap"
                       title={`Second coupon of a conjunction ticket - one passenger, one fare, billed on the first number: ${d.conjunctions.join('; ')}`}>
                       + {d.conjunctions.length} conjunction coupon{d.conjunctions.length === 1 ? '' : 's'}
                     </span>
@@ -247,7 +247,7 @@ const DocTypeTable: React.FC<{ docTypes: TeamSheetReport['docTypes'] }> = ({ doc
                   {/* Not in our books and nothing to do - each says why. */}
                   {!!d.noted?.length && (
                     <button onClick={() => setOpen(open === k + 'N' ? null : k + 'N')}
-                      className="block text-[10px] text-slate-500 hover:underline">
+                      className="block text-mini text-slate-500 hover:underline">
                       + {d.noted.length} with nothing to do</button>
                   )}
                   {open === k + 'N' && chips(d.noted ?? [])}
@@ -257,7 +257,7 @@ const DocTypeTable: React.FC<{ docTypes: TeamSheetReport['docTypes'] }> = ({ doc
           })}
         </tbody>
       </table>
-      <div className="px-3 py-1.5 text-[10px] text-slate-400 border-t border-slate-100">
+      <div className="px-3 py-1.5 text-mini text-slate-400 border-t border-slate-100">
         A refund is money back on a ticket already counted, not another ticket. A ticket of ours their sheet carries under
         another number of the same exchange, or by its PNR, counts as carried. A conjunction ticket (176-4861731808-09)
         is one ticket: its second coupon has no fare of its own and is shown beside the count, not as missing.
@@ -306,7 +306,7 @@ const ByHand: React.FC<{
     amount: Math.abs(Number(amount) || 0), totalDoc: Math.abs(Number(amount) || 0),
   };
   const blocked = neverByHand(next) || whyNotConfirmable(next);
-  const field = 'border border-slate-200 rounded px-1.5 py-1 text-[11px] font-mono w-full';
+  const field = 'border border-slate-200 rounded px-1.5 py-1 text-xs font-mono w-full';
   return (
     // Over the page rather than inside the row: the table scrolls and would cut it off.
     <Dialog onClose={onClose} label={`Add ${p.ticketNo || p.pnr} anyway`}
@@ -314,33 +314,33 @@ const ByHand: React.FC<{
       <div className="text-xs font-bold text-slate-700 font-mono">
         {p.ticketNo || p.pnr} · {p.reqNum || p.theirReq || 'no request'}{(p.transactionType || '').toUpperCase() === 'REFUND' ? ' · refund' : ''}
       </div>
-      <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 leading-snug">
+      <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 leading-snug">
         <b>Held back:</b> {why}
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <label className="col-span-2 text-[10px] text-slate-500">Vendor
+        <label className="col-span-2 text-mini text-slate-500">Vendor
           <input list="byhand-sources" value={source} onChange={e => setSource(e.target.value)} className={field} />
         </label>
-        <label className="text-[10px] text-slate-500">Date
+        <label className="text-mini text-slate-500">Date
           <input type="date" value={date} onChange={e => setDate(e.target.value)} className={field} />
         </label>
-        <label className="text-[10px] text-slate-500">{isRefund ? 'Refund' : 'Cost'}
+        <label className="text-mini text-slate-500">{isRefund ? 'Refund' : 'Cost'}
           <div className="flex gap-1">
             <input value={amount} onChange={e => setAmount(e.target.value.replace(/[^\d.]/g, ''))} className={field} placeholder="0.00" />
-            <select value={currency} onChange={e => setCurrency(e.target.value)} className="border border-slate-200 rounded text-[11px]">
+            <select value={currency} onChange={e => setCurrency(e.target.value)} className="border border-slate-200 rounded text-xs">
               {['AED', 'SAR', 'USD', 'EUR'].map(c => <option key={c}>{c}</option>)}
             </select>
           </div>
         </label>
       </div>
       <datalist id="byhand-sources">{sources.map(s => <option key={s} value={s} />)}</datalist>
-      <div className="text-[10px] text-slate-500 leading-snug">
+      <div className="text-mini text-slate-500 leading-snug">
         Goes in as recorded from their sheet: marked <b>not confirmed by supplier</b> until a report carries it,
         and that report's figure replaces this one if they differ.
       </div>
-      {(blocked || err) && <div className="text-[11px] text-red-700">{err || blocked}</div>}
+      {(blocked || err) && <div className="text-xs text-red-700">{err || blocked}</div>}
       <div className="flex justify-end gap-2">
-        <button type="button" onClick={onClose} className="text-[11px] text-slate-500 px-2 py-1">Cancel</button>
+        <button type="button" onClick={onClose} className="text-xs text-slate-500 px-2 py-1">Cancel</button>
         <button type="button" disabled={!!blocked || busy}
           onClick={async () => {
             setBusy(true); setErr('');
@@ -348,7 +348,7 @@ const ByHand: React.FC<{
             catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
             finally { setBusy(false); }
           }}
-          className="text-[11px] font-bold bg-blue-600 text-white px-3 py-1 rounded disabled:opacity-40">
+          className="text-xs font-bold bg-blue-600 text-white px-3 py-1 rounded disabled:opacity-40">
           {busy ? 'Adding…' : `Add anyway${isRefund ? ' (refund)' : ''}`}
         </button>
       </div>
@@ -369,7 +369,7 @@ const RowAdd: React.FC<{
   const [byHand, setByHand] = useState(false);
   if (byHand)
     return (
-      <span className="text-[10px] font-bold text-emerald-700 inline-flex items-center gap-1">
+      <span className="text-mini font-bold text-emerald-700 inline-flex items-center gap-1">
         <CheckCircle2 className="w-3 h-3" /> Added by hand
       </span>
     );
@@ -377,15 +377,15 @@ const RowAdd: React.FC<{
     return <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400 inline" />;
   if (state === 'added')
     return (
-      <span className="text-[10px] font-bold text-emerald-700 inline-flex items-center gap-1">
+      <span className="text-mini font-bold text-emerald-700 inline-flex items-center gap-1">
         <CheckCircle2 className="w-3 h-3" /> Added
       </span>
     );
   if (state === 'queued')
-    return <span className="text-[10px] font-bold text-amber-700">To Review</span>;
+    return <span className="text-mini font-bold text-amber-700">To Review</span>;
 
   if (why === VOIDED_WHY)
-    return <span title={why} className="text-[10px] text-slate-400 italic cursor-help">voided</span>;
+    return <span title={why} className="text-mini text-slate-400 italic cursor-help">voided</span>;
   // Known in advance: say so rather than offering a button that refuses -
   // and where a person may decide otherwise, let them.
   if (why) {
@@ -393,14 +393,14 @@ const RowAdd: React.FC<{
     if (!canDecide)
       return (
         <span title={why}
-          className="text-[10px] text-slate-400 italic cursor-help">
+          className="text-mini text-slate-400 italic cursor-help">
           needs a look
         </span>
       );
     return (
       <span className="inline-block">
         <button type="button" onClick={() => setOpen(o => !o)} title={why}
-          className="text-[10px] italic text-amber-700 underline decoration-dotted hover:text-amber-900">
+          className="text-mini italic text-amber-700 underline decoration-dotted hover:text-amber-900">
           needs a look
         </button>
         {open && proposal && onAddByHand && (
@@ -415,7 +415,7 @@ const RowAdd: React.FC<{
     <button type="button" onClick={() => void onAdd(f)}
       title="Record this one in the ledger now"
       className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200
-                 text-[10px] font-bold px-2 py-0.5 rounded hover:bg-blue-100">
+                 text-mini font-bold px-2 py-0.5 rounded hover:bg-blue-100">
       <Plus className="w-3 h-3" /> Add
     </button>
   );
@@ -465,7 +465,7 @@ const Group: React.FC<{
         className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50 text-left">
         {open ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${title ? 'bg-slate-100 text-slate-600' : tone.chip}`}>
+        <span className={`px-2 py-0.5 rounded text-mini font-bold ${title ? 'bg-slate-100 text-slate-600' : tone.chip}`}>
           {title ?? VERDICT_LABEL[verdict]}
         </span>
         <span className="font-mono text-xs font-bold text-slate-700">{rows.length}</span>
@@ -473,7 +473,7 @@ const Group: React.FC<{
 
       {open && (
         <>
-          <p className="px-4 pb-2 text-[11px] text-slate-500 leading-relaxed">
+          <p className="px-4 pb-2 text-xs text-slate-500 leading-relaxed">
             {title ? 'Differences somebody has looked at and explained. They stay out of the lists above while'
               + ' their figures stay what they were; a change brings them back.' : WHY[verdict]}
           </p>
@@ -484,7 +484,7 @@ const Group: React.FC<{
           <div className="overflow-auto max-h-[70vh] border-t border-slate-100">
             <table className="w-full text-left min-w-[1280px]">
               <thead className="sticky top-0 z-10">
-                <tr className="bg-slate-50 border-b border-slate-100 text-[9px] uppercase
+                <tr className="bg-slate-50 border-b border-slate-100 text-micro uppercase
                                tracking-wider text-slate-400">
                   <th className="px-3 py-1.5">Ticket</th>
                   <th className="px-3 py-1.5">PNR</th>
@@ -503,7 +503,7 @@ const Group: React.FC<{
                   {onAddOne && <th className="px-3 py-1.5 text-right">Add</th>}
                 </tr>
               </thead>
-              <tbody className="font-mono text-[11px]">
+              <tbody className="font-mono text-xs">
                 {rows.map(f => (
                   <tr key={`${f.verdict}-${f.serial || f.pnr}-${f.sheet?.rowNo ?? 0}`}
                       className="border-b border-slate-50">
@@ -554,7 +554,7 @@ const Group: React.FC<{
                         : f.ours[0]?.date
                           ? <span title="Their sheet states no date — this is ours"
                                   className="text-slate-400">{f.ours[0].date}<span
-                                  className="font-sans text-[9px]"> · ours</span></span>
+                                  className="font-sans text-micro"> · ours</span></span>
                           : <span className="text-slate-300">—</span>}
                     </td>
                     {/* Where it was bought. The first question anybody asks
@@ -566,7 +566,7 @@ const Group: React.FC<{
                               title={f.heldBackWhy || f.portal}>
                           {f.issuedFrom}
                           {f.heldBack && (
-                            <span className="text-[9px] font-sans text-amber-600"> · held</span>
+                            <span className="text-micro font-sans text-amber-600"> · held</span>
                           )}
                         </span>
                       ) : <span className="text-slate-300">—</span>}
@@ -603,7 +603,7 @@ const Group: React.FC<{
                                 is 5513261453 — correct, and not findable by
                                 searching their sheet for it. */}
                             {f.serial && !f.sheet.rawTicket.includes(f.serial) && (
-                              <span className="block text-[9px] text-sky-700 font-mono">
+                              <span className="block text-micro text-sky-700 font-mono">
                                 their cell: {f.sheet.rawTicket.length > 34
                                   ? f.sheet.rawTicket.slice(0, 34) + '…'
                                   : f.sheet.rawTicket}
@@ -626,7 +626,7 @@ const Group: React.FC<{
                           {f.sheet.groupSize > 1 && (() => {
                             const tickets = f.sheet.cellTickets ?? f.sheet.groupSize;
                             return (
-                              <span className="block text-[9px] text-slate-400 font-sans">
+                              <span className="block text-micro text-slate-400 font-sans">
                                 {tickets <= 1
                                   ? `one ticket on ${f.sheet.groupSize} numbers`
                                   : tickets < f.sheet.groupSize
@@ -660,7 +660,7 @@ const Group: React.FC<{
                         );
                       })() : <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="px-3 py-1.5 text-slate-500 font-sans text-[11px] leading-snug min-w-[320px] max-w-[460px]">
+                    <td className="px-3 py-1.5 text-slate-500 font-sans text-xs leading-snug min-w-[320px] max-w-[460px]">
                       {(() => {
                         /* A ticket missing from our books usually means a
                            supplier who has not billed yet. When we already
@@ -676,7 +676,7 @@ const Group: React.FC<{
                                 <b>Ignored:</b> {f.explained}
                                 {onUnexplain && (
                                   <button onClick={() => onUnexplain(f)}
-                                    className="ml-2 text-[10px] font-bold text-slate-400 hover:text-red-600 underline">undo</button>
+                                    className="ml-2 text-mini font-bold text-slate-400 hover:text-red-600 underline">undo</button>
                                 )}
                               </span>
                             )}
@@ -687,7 +687,7 @@ const Group: React.FC<{
                             )}
                             {onExplain && !f.explained && f.verdict !== 'OK' && (
                               <button onClick={() => onExplain(f)}
-                                className="block mt-1 text-[10px] font-bold text-sky-700 hover:text-sky-900 underline">
+                                className="block mt-1 text-mini font-bold text-sky-700 hover:text-sky-900 underline">
                                 {f.explainedBefore ? 'Ignore again' : 'Ignore'}
                               </button>
                             )}
@@ -1134,14 +1134,14 @@ export const TeamSheetCheck: React.FC<Props> = ({
       {copied && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
                         bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg
-                        text-[11px] font-mono max-w-md">
+                        text-xs font-mono max-w-md">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           <span className="truncate">Copied <span className="font-bold">{copied}</span></span>
         </div>
       )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">
+          <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">
             Team sheet check
           </h2>
           <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
@@ -1157,7 +1157,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
             {onAddToLedger && ready.length > 0 && (
               <button onClick={addAll} disabled={addingAll}
                 title={`${ready.length} ticket(s) on their sheet, missing from our books, that pass every check`}
-                className="flex items-center gap-1.5 bg-blue-600 text-white text-[11px]
+                className="flex items-center gap-1.5 bg-blue-600 text-white text-xs
                            font-bold px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50">
                 {addingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
                 Add {ready.length} ready to the books
@@ -1166,7 +1166,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
             {onSendToReview && proposable.length > 0 && (
               <button onClick={sendToReview} disabled={sending}
                 title={`${proposable.length} ticket(s) on their sheet and in nobody's books`}
-                className="flex items-center gap-1.5 bg-emerald-600 text-white text-[11px]
+                className="flex items-center gap-1.5 bg-emerald-600 text-white text-xs
                            font-bold px-3 py-1.5 rounded hover:bg-emerald-700
                            disabled:opacity-50">
                 {sending
@@ -1176,8 +1176,8 @@ export const TeamSheetCheck: React.FC<Props> = ({
               </button>
             )}
             <button onClick={exportReport}
-              className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
-                         px-3 py-1.5 rounded hover:bg-purple-700">
+              className="flex items-center gap-1.5 bg-blue-700 text-white text-xs font-bold
+                         px-3 py-1.5 rounded hover:bg-blue-800">
               <Download className="w-3.5 h-3.5" /> Export
             </button>
           </div>
@@ -1185,7 +1185,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
       </div>
 
       {addedMsg && (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-[11px] text-blue-800 flex items-start gap-2">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-xs text-blue-800 flex items-start gap-2">
           <CheckCircle2 className="w-3.5 h-3.5 mt-px shrink-0" />
           <span>{addedMsg}. Each is in All Tickets, marked as recorded from their sheet until a supplier report confirms it.</span>
         </div>
@@ -1193,7 +1193,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
 
       {sent && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2.5
-                        text-[11px] text-emerald-800 flex items-start gap-2">
+                        text-xs text-emerald-800 flex items-start gap-2">
           <CheckCircle2 className="w-3.5 h-3.5 mt-px shrink-0" />
           <span>
             {sent}. Nothing has been recorded yet — they are waiting on{' '}
@@ -1212,7 +1212,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
             className={`flex-1 text-left rounded px-3 py-2 border ${mode === m
               ? 'bg-purple-50 border-purple-300' : 'bg-white border-transparent hover:bg-slate-50'}`}>
             <div className={`text-xs font-bold ${mode === m ? 'text-purple-800' : 'text-slate-600'}`}>{label}</div>
-            <div className="text-[11px] text-slate-500 leading-snug">{hint}</div>
+            <div className="text-xs text-slate-500 leading-snug">{hint}</div>
           </button>
         ))}
       </div>
@@ -1220,7 +1220,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
       {/* Before the drop zone, because it is meant to be filled in first. */}
       <div className={`bg-white border rounded-lg px-4 py-3 ${mode === 'request' && !reviewing.length ? 'border-purple-300' : 'border-slate-200'}`}>
         <label className="flex flex-wrap items-center gap-3">
-          <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider shrink-0">
+          <span className="text-mini font-bold uppercase text-slate-500 tracking-wider shrink-0">
             Request number
           </span>
           <input
@@ -1230,7 +1230,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
             className="font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded w-56
                        focus:outline-none focus:ring-2 focus:ring-purple-500/20
                        focus:border-purple-400" />
-          <span className="text-[11px] text-slate-500">
+          <span className="text-xs text-slate-500">
             {mode === 'request'
               ? <>The request to review. Drop in the whole sheet or an export of just that request -
                   only its rows are compared. Several, separated by commas.</>
@@ -1245,7 +1245,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
             request - whichever you are doing, one of these two rows is the
             one you fill in. */}
         <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-slate-100">
-          <span className="text-[10px] font-bold uppercase text-slate-500 tracking-wider shrink-0">
+          <span className="text-mini font-bold uppercase text-slate-500 tracking-wider shrink-0">
             Period
           </span>
           <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto">
@@ -1253,17 +1253,17 @@ export const TeamSheetCheck: React.FC<Props> = ({
               className="min-w-0 flex-1 sm:flex-none font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded
                          focus:outline-none focus:ring-2 focus:ring-purple-500/20
                          focus:border-purple-400" />
-            <span className="text-[11px] text-slate-400">to</span>
+            <span className="text-xs text-slate-400">to</span>
             <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
               className="min-w-0 flex-1 sm:flex-none font-mono text-xs px-2.5 py-1.5 border border-slate-200 rounded
                          focus:outline-none focus:ring-2 focus:ring-purple-500/20
                          focus:border-purple-400" />
             {(fromDate || toDate) && (
               <button onClick={() => { setFromDate(''); setToDate(''); }}
-                className="text-[11px] text-slate-400 hover:text-slate-700 px-1">clear</button>
+                className="text-xs text-slate-400 hover:text-slate-700 px-1">clear</button>
             )}
           </div>
-          <span className="text-[11px] text-slate-500 flex-1 basis-full md:basis-auto md:min-w-[280px]">
+          <span className="text-xs text-slate-500 flex-1 basis-full md:basis-auto md:min-w-[280px]">
             What this copy of their sheet covers. Their rows outside it are set aside, and
             nothing of ours outside it is reported as missing.{' '}
             <b className="text-slate-600">Your books are searched in full whatever you put
@@ -1278,10 +1278,10 @@ export const TeamSheetCheck: React.FC<Props> = ({
       <div className="bg-white border border-purple-200 rounded-lg px-4 py-3 flex flex-wrap items-center gap-3">
         <button type="button" disabled={busy}
           onClick={runLive}
-          className="flex items-center gap-1.5 bg-purple-600 text-white text-xs font-bold px-3 py-2 rounded hover:bg-purple-700 disabled:opacity-50">
+          className="flex items-center gap-1.5 bg-blue-700 text-white text-xs font-bold px-3 py-2 rounded hover:bg-blue-800 disabled:opacity-50">
           <RefreshCw className="w-3.5 h-3.5" /> Live from Airtable
         </button>
-        <span className="text-[11px] text-slate-500 flex-1 min-w-[200px]">
+        <span className="text-xs text-slate-500 flex-1 min-w-[200px]">
           Their Airtable as it is now - kept in step every two minutes, so there is nothing to export.
           {mode === 'request' ? ' Type the request above first; only its rows are read.' : ''}
         </span>
@@ -1306,7 +1306,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
               Drop their CSV or Excel export here, or click to choose one
             </p>
             {fileName && !busy && (
-              <p className="text-[10px] text-slate-400 mt-1 font-mono">{fileName}</p>
+              <p className="text-mini text-slate-400 mt-1 font-mono">{fileName}</p>
             )}
           </>
         )}
@@ -1334,10 +1334,10 @@ export const TeamSheetCheck: React.FC<Props> = ({
                   try { await memory.saveSnapshot(toMark.name, toMark.snap); setMarked(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })); }
                   catch (e) { setError(e instanceof Error ? e.message : String(e)); }
                 }}
-                className="text-[11px] font-bold bg-sky-600 text-white px-2.5 py-1 rounded hover:bg-sky-700 disabled:opacity-60">
+                className="text-xs font-bold bg-sky-600 text-white px-2.5 py-1 rounded hover:bg-sky-700 disabled:opacity-60">
                 {marked ? `Marked as reviewed at ${marked}` : 'Mark as reviewed'}
               </button>
-              <span className="text-[11px] text-sky-700">The next "what is new" is counted from here.</span>
+              <span className="text-xs text-sky-700">The next "what is new" is counted from here.</span>
             </div>
           )}
           <label className="flex items-center gap-2 px-4 pb-2.5 -mt-1 cursor-pointer select-none">
@@ -1351,7 +1351,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
                 .filter(([, l]) => l.length).map(([label, l]) => (
                   <div key={label}>
                     <div className="font-bold mb-0.5">{label} ({l.length})</div>
-                    <ul className="space-y-0.5 font-mono text-[11px]">
+                    <ul className="space-y-0.5 font-mono text-xs">
                       {l.map((c, i) => (
                         <li key={i}><span className="font-bold">{c.ref}</span>{c.rowNo ? <span className="text-sky-600"> · row {c.rowNo}</span> : null} — {c.what}</li>
                       ))}
@@ -1502,7 +1502,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
               of how much of our books this check can speak to. */}
           {(report.beforeTheirSystem > 0 || report.onHold > 0
             || report.theirOutsidePeriod > 0) && (
-            <div className="flex items-start gap-2 text-[11px] text-slate-500 bg-slate-50
+            <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-50
                             border border-slate-200 rounded-lg px-3 py-2">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" />
               <span>
@@ -1545,7 +1545,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
             </div>
           )}
 
-          <div className="flex items-start gap-2 text-[11px] text-slate-500 bg-slate-50
+          <div className="flex items-start gap-2 text-xs text-slate-500 bg-slate-50
                           border border-slate-200 rounded-lg px-3 py-2">
             <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" />
             <span>
@@ -1566,7 +1566,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
             <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
               <button onClick={() => setReqOpen(!(reqOpen ?? report.byRequest.length <= 8))}
                 className="w-full px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center
-                           justify-between text-[9px] font-bold uppercase text-slate-500 hover:bg-slate-100">
+                           justify-between text-micro font-bold uppercase text-slate-500 hover:bg-slate-100">
                 <span className="flex items-center gap-1.5">
                   {(reqOpen ?? report.byRequest.length <= 8)
                     ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
@@ -1582,12 +1582,12 @@ export const TeamSheetCheck: React.FC<Props> = ({
                 </span>
               </button>
               {(reqOpen ?? report.byRequest.length <= 8) && (<>
-              <p className="px-4 pt-2 text-[11px] text-slate-500">
+              <p className="px-4 pt-2 text-xs text-slate-500">
                 One line per request. The first two numbers count its tickets on each side; every column after them
                 counts something keeping it from agreeing - a ticket only one side has, one filed under another request,
                 a price that differs, a refund one side does not show. A request agrees when they are all "—".
               </p>
-              <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-slate-100 text-[11px]">
+              <div className="flex flex-wrap items-center gap-3 px-4 py-2 border-b border-slate-100 text-xs">
                 <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer">
                   <input type="checkbox" checked={reqOnlyBad} onChange={e => setReqOnlyBad(e.target.checked)} />
                   Only the ones that do not agree
@@ -1601,7 +1601,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
               <div className="overflow-auto max-h-[55vh]">
                 <table className="w-full text-left min-w-[620px]">
                   <thead className="sticky top-0 z-10 bg-white">
-                    <tr className="border-b border-slate-100 text-[9px] uppercase
+                    <tr className="border-b border-slate-100 text-micro uppercase
                                    tracking-wider text-slate-400">
                       <th className="px-3 py-1.5">Request</th>
                       <th className="px-3 py-1.5 text-right">On their sheet</th>
@@ -1629,7 +1629,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
                             {/* A request whose other half is elsewhere. Without
                                 this, its count reads as short. */}
                             {r.related.length > 0 && (
-                              <span className="text-[9px] font-sans font-bold text-sky-700
+                              <span className="text-micro font-sans font-bold text-sky-700
                                                bg-sky-50 border border-sky-200 rounded px-1 py-0.5"
                                 title="Recorded in the ledger as one piece of work with these">
                                 with {r.related.join(', ')}
@@ -1690,7 +1690,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
                 <summary className="px-4 py-3 cursor-pointer text-xs text-slate-600 select-none">
                   <b>Their sheet to tidy — nothing missing on our side</b>{' '}
                   <span className="text-slate-400">({forThem.length})</span>
-                  <span className="block text-[11px] text-slate-400 mt-0.5">
+                  <span className="block text-xs text-slate-400 mt-0.5">
                     Both sides hold these tickets. Their sheet writes them untidily — a ticket column reading
                     "EMD" or a name, a refund not marked, a refund written twice. Not counted as things to settle;
                     send them to the team (Airtable → For the team to fix).
@@ -1715,7 +1715,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
       )}
 
       {!report && !busy && !error && (
-        <p className="text-[11px] text-slate-400 italic flex items-center gap-1.5">
+        <p className="text-xs text-slate-400 italic flex items-center gap-1.5">
           <FileSpreadsheet className="w-3.5 h-3.5" />
           Their export needs a ticket number column, and should carry the request number —
           that is what the comparison is built on. PNR, status and refund are used when

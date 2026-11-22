@@ -107,7 +107,7 @@ export const Donut: React.FC<{
 
       <ul className="flex-1 min-w-[170px] space-y-1">
         {shown.map(s => (
-          <li key={s.key} className="flex items-center gap-2 text-[10px]">
+          <li key={s.key} className="flex items-center gap-2 text-mini">
             <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: s.color }} />
             <span className="flex-1 truncate text-slate-600" title={s.label}>{s.label}</span>
             <span className="font-mono text-slate-500">{fmtInt(s.value)}</span>

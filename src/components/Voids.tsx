@@ -36,11 +36,11 @@ const tone = (r: number) =>
 
 const Band: React.FC<{ rows: RatioRow[]; label: string }> = ({ rows, label }) => (
   <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-    <div className="px-4 py-2 border-b border-slate-100 text-[10px] font-bold uppercase
+    <div className="px-4 py-2 border-b border-slate-100 text-mini font-bold uppercase
                     tracking-wide text-slate-500">{label}</div>
     <table className="w-full text-left">
       <thead className="bg-slate-50 border-b border-slate-100">
-        <tr className="text-[9px] uppercase tracking-wider text-slate-400">
+        <tr className="text-micro uppercase tracking-wider text-slate-400">
           <th className="px-3 py-1.5">Period</th>
           <th className="px-3 py-1.5 text-right">Issued</th>
           <th className="px-3 py-1.5 text-right">Voided</th>
@@ -48,7 +48,7 @@ const Band: React.FC<{ rows: RatioRow[]; label: string }> = ({ rows, label }) =>
           <th className="px-3 py-1.5 text-right">Void share</th>
         </tr>
       </thead>
-      <tbody className="font-mono text-[11px]">
+      <tbody className="font-mono text-xs">
         {rows.map(r => (
           <tr key={r.key} className="border-b border-slate-50">
             <td className="px-3 py-1.5 text-slate-700">{r.key}</td>
@@ -129,7 +129,7 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
             <Ban className="w-4 h-4 text-slate-500" />
             Voids
           </h2>
-          <p className="text-[11px] text-slate-500 mt-1 max-w-3xl">
+          <p className="text-xs text-slate-500 mt-1 max-w-3xl">
             Documents that were cancelled. They are in no balance, no request and no
             report of money — a void moves none — so they carry no request number and
             nothing to close. They are here to be found and counted: IATA caps how much
@@ -137,30 +137,30 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
           </p>
         </div>
         <button onClick={exportAll}
-          className="flex items-center gap-1.5 bg-purple-600 text-white text-[11px] font-bold
-                     px-3 py-1.5 rounded hover:bg-purple-700 shrink-0">
+          className="flex items-center gap-1.5 bg-blue-700 text-white text-xs font-bold
+                     px-3 py-1.5 rounded hover:bg-blue-800 shrink-0">
           <Download className="w-3.5 h-3.5" /> Export
         </button>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white border border-slate-200 rounded-lg px-4 py-3">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Voided</div>
+          <div className="text-mini font-bold uppercase tracking-wide text-slate-500">Voided</div>
           <div className="text-lg font-bold font-mono text-slate-800 mt-0.5">{report.overall.voided}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg px-4 py-3">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Issued</div>
+          <div className="text-mini font-bold uppercase tracking-wide text-slate-500">Issued</div>
           <div className="text-lg font-bold font-mono text-slate-800 mt-0.5">{report.overall.issued}</div>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg px-4 py-3">
-          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Drawn</div>
+          <div className="text-mini font-bold uppercase tracking-wide text-slate-500">Drawn</div>
           <div className="text-lg font-bold font-mono text-slate-800 mt-0.5">
             {report.overall.issued + report.overall.voided}
           </div>
         </div>
         <div className={`bg-white border rounded-lg px-4 py-3 ${
           report.overall.ratio >= 10 ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
-          <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Void share</div>
+          <div className="text-mini font-bold uppercase tracking-wide text-slate-500">Void share</div>
           <div className={`text-lg font-mono mt-0.5 ${tone(report.overall.ratio)}`}>
             {pct(report.overall.ratio)}
           </div>
@@ -168,7 +168,7 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
       </div>
 
       {report.alsoLive.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-[11px]
+        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2.5 text-xs
                         text-red-800 flex items-start gap-2">
           <AlertTriangle className="w-3.5 h-3.5 mt-px shrink-0" />
           <span>
@@ -190,23 +190,23 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
           <Search className="w-3 h-3 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
           <input value={search} onChange={e => setSearch(e.target.value)}
             placeholder="ticket, PNR, passenger, period"
-            className="text-[11px] border border-slate-200 rounded pl-6 pr-2 py-1.5 w-full sm:w-64 text-slate-700" />
+            className="text-xs border border-slate-200 rounded pl-6 pr-2 py-1.5 w-full sm:w-64 text-slate-700" />
         </div>
         {sources.length > 1 && (
           <select value={source} onChange={e => setSource(e.target.value)}
-            className="text-[11px] border border-slate-200 rounded px-2 py-1.5 text-slate-600">
+            className="text-xs border border-slate-200 rounded px-2 py-1.5 text-slate-600">
             <option value="ALL">All suppliers</option>
             {sources.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         )}
-        <span className="text-[11px] text-slate-400 ml-auto">{rows.length} shown</span>
+        <span className="text-xs text-slate-400 ml-auto">{rows.length} shown</span>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
         <table className="w-full text-left whitespace-nowrap">
           <thead className="bg-slate-50 border-b border-slate-200">
-            <tr className="text-[10px] font-bold uppercase tracking-wide text-slate-500">
+            <tr className="text-mini font-bold uppercase tracking-wide text-slate-500">
               <th className="px-3 py-2">Ticket</th>
               {has.pnr && <th className="px-3 py-2">PNR</th>}
               {has.pax && <th className="px-3 py-2">Passenger</th>}
@@ -215,7 +215,7 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
               <th className="px-3 py-2">Period</th>
             </tr>
           </thead>
-          <tbody className="font-mono text-[11px]">
+          <tbody className="font-mono text-xs">
             {shown.map(v => (
               <tr key={v.id} className="border-b border-slate-50 hover:bg-slate-50/60">
                 <td className="px-3 py-1.5 font-bold text-slate-700">
@@ -243,7 +243,7 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
         </div>
         {rows.length > PER_PAGE && (
           <div className="px-3 py-2 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-[10px] text-slate-400">
+            <span className="text-mini text-slate-400">
               {page * PER_PAGE + 1}–{Math.min(rows.length, (page + 1) * PER_PAGE)} of {rows.length}
             </span>
             <div className="flex items-center gap-1">
@@ -252,7 +252,7 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
                            hover:bg-slate-50">
                 <ChevronLeft className="w-3.5 h-3.5" />
               </button>
-              <span className="text-[10px] font-mono text-slate-500 px-1">
+              <span className="text-mini font-mono text-slate-500 px-1">
                 {page + 1} / {pages}
               </span>
               <button onClick={() => setPage(p => Math.min(pages - 1, p + 1))}

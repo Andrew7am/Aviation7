@@ -179,7 +179,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
   };
 
   const field = 'w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20';
-  const label = 'text-[10px] font-bold uppercase text-slate-500 block mb-1.5';
+  const label = 'text-mini font-bold uppercase text-slate-500 block mb-1.5';
 
   return (
     <Dialog onClose={onClose} label="Add a transaction manually" className="sm:max-w-2xl overflow-hidden flex flex-col">
@@ -198,7 +198,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {TYPES.map(t => (
                 <button key={t.key} onClick={() => setType(t.key)} title={t.hint}
-                  className={`px-2 py-2 rounded text-[10px] font-bold uppercase border transition-colors ${
+                  className={`px-2 py-2 rounded text-mini font-bold uppercase border transition-colors ${
                     type === t.key
                       ? t.key === 'REFUND' ? 'bg-red-50 text-red-700 border-red-300'
                         : t.key === 'VOID' ? 'bg-slate-100 text-slate-700 border-slate-300'
@@ -209,7 +209,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
                 </button>
               ))}
             </div>
-            <p className="text-[10px] text-slate-400 mt-1.5 font-mono">{TYPES.find(t => t.key === type)!.hint}</p>
+            <p className="text-mini text-slate-400 mt-1.5 font-mono">{TYPES.find(t => t.key === type)!.hint}</p>
           </div>
 
           {/* Vendor + date */}
@@ -250,7 +250,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
                   <option value={OTHER}>Other — type a name…</option>
                 </select>
               )}
-              <p className="text-[10px] text-slate-400 mt-1 font-mono">
+              <p className="text-mini text-slate-400 mt-1 font-mono">
                 {vendor.trim() ? `Settles in ${currency}` : 'Pick or type a vendor'}
                 {vendor.trim() && isNewVendor && ' · new vendor'}
                 {pinnedCurrency && pinnedCurrency !== impliedCurrency && ' · currency set by hand'}
@@ -278,7 +278,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
                   </option>
                 ))}
               </select>
-              <p className="text-[10px] text-slate-400 mt-1 font-mono">
+              <p className="text-mini text-slate-400 mt-1 font-mono">
                 {pinnedCurrency && pinnedCurrency !== impliedCurrency
                   ? 'Set by hand. The vendor implies ' + impliedCurrency + '.'
                   : 'Follows the vendor. Change it for a ticket bought in another currency.'}
@@ -291,7 +291,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
               <input value={ref} onChange={e => setRef(e.target.value)}
                      placeholder="confirmation or invoice number"
                      className={field} />
-              <p className="text-[10px] text-slate-400 mt-1 font-mono">
+              <p className="text-mini text-slate-400 mt-1 font-mono">
                 Optional — what the airline or site called this booking.
               </p>
             </div>
@@ -322,7 +322,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
               <input type="text" value={pnr} onChange={e => setPnr(e.target.value)} placeholder="e.g. 8DFMBW" className={field} />
             </div>
           </div>
-          <p className="text-[10px] text-slate-400 -mt-2 font-mono">Enter a ticket number or a PNR — at least one is needed to identify the row.</p>
+          <p className="text-mini text-slate-400 -mt-2 font-mono">Enter a ticket number or a PNR — at least one is needed to identify the row.</p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -340,7 +340,7 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
               <label className={label}>Airline code</label>
               <input type="text" value={airline} onChange={e => setAirline(e.target.value)}
                      maxLength={3} placeholder="e.g. 065" className={field} />
-              <p className="text-[9px] text-slate-400 mt-1 leading-tight">
+              <p className="text-micro text-slate-400 mt-1 leading-tight">
                 {identity.airlineCode
                   ? (airlineName(identity.airlineCode)
                       ? `${identity.airlineCode} · ${airlineName(identity.airlineCode)}`
@@ -382,16 +382,16 @@ export const ManualEntry: React.FC<ManualEntryProps> = ({
           )}
 
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-[11px] text-red-700 font-mono flex items-start gap-2">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700 font-mono flex items-start gap-2">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{error}</span>
             </div>
           )}
         </div>
 
         <div className="px-5 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2 shrink-0 [&>button]:flex-1 sm:[&>button]:flex-none">
-          <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded text-[10px] font-bold uppercase text-slate-500 hover:bg-white">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 border border-slate-200 rounded text-mini font-bold uppercase text-slate-500 hover:bg-white">Cancel</button>
           <button onClick={handleSave} disabled={!canSave || saving}
-            className="px-4 py-2 bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-wider hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400">
+            className="px-4 py-2 bg-blue-600 text-white rounded text-mini font-bold uppercase tracking-wider hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-400">
             {saving ? 'Saving…' : `Save ${TYPES.find(t => t.key === type)!.label}`}
           </button>
         </div>

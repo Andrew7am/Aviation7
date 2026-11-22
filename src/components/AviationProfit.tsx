@@ -72,9 +72,9 @@ export const AviationProfit: React.FC<{ tickets: Ticket[]; voidedNos: string[] }
           ] as const).map(([k, label, value, sub, cls]) => (
             <button key={label} onClick={() => setShow(show === k ? '' : k as typeof show)}
               className={`text-left px-4 py-3 rounded-lg border ${cls} ${show === k && k ? 'ring-2 ring-slate-400' : ''}`}>
-              <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+              <div className="text-mini font-bold uppercase tracking-wide text-slate-500">{label}</div>
               <div className="text-lg font-bold text-slate-800 font-mono mt-0.5">{value}</div>
-              <div className="text-[10px] text-slate-500 mt-0.5">{sub}</div>
+              <div className="text-mini text-slate-500 mt-0.5">{sub}</div>
             </button>
           ))}
         </div>
@@ -84,7 +84,7 @@ export const AviationProfit: React.FC<{ tickets: Ticket[]; voidedNos: string[] }
             <div key={title as string} className="bg-white border border-slate-200 rounded-lg overflow-hidden">
               <div className="px-4 py-2 text-xs font-bold text-slate-600 border-b border-slate-100">{title as string}</div>
               <table className="w-full text-xs">
-                <thead><tr className="text-slate-400 text-[10px] uppercase"><th className="text-left px-4 py-1.5">Name</th><th className="text-right px-2">Tickets</th><th className="text-right px-2">Profit</th><th className="text-right px-4">In SAR</th></tr></thead>
+                <thead><tr className="text-slate-400 text-mini uppercase"><th className="text-left px-4 py-1.5">Name</th><th className="text-right px-2">Tickets</th><th className="text-right px-2">Profit</th><th className="text-right px-4">In SAR</th></tr></thead>
                 <tbody>
                   {(list2 as ReturnType<typeof profitBy>).slice(0, 40).map(t => (
                     <tr key={t.key} onClick={onPick ? () => (onPick as (k: string) => void)(t.key) : undefined}
@@ -104,7 +104,7 @@ export const AviationProfit: React.FC<{ tickets: Ticket[]; voidedNos: string[] }
 
         <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
           <table className="w-full text-xs">
-            <thead><tr className="text-slate-400 text-[10px] uppercase border-b border-slate-100">
+            <thead><tr className="text-slate-400 text-mini uppercase border-b border-slate-100">
               {['Issued', 'Request', 'Team member', 'Ticket', 'Quoted', 'Our cost', 'Profit', 'State'].map(h =>
                 <th key={h} className={`px-3 py-2 ${['Quoted', 'Our cost', 'Profit'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>)}
             </tr></thead>
@@ -118,7 +118,7 @@ export const AviationProfit: React.FC<{ tickets: Ticket[]; voidedNos: string[] }
                   <td className="px-3 py-1.5 text-right font-mono">{fmt(l.quoted)} {l.currency}{l.perTicket ? <span className="text-slate-400" title="Their row priced each ticket"> ×{l.docs.length}</span> : null}</td>
                   <td className="px-3 py-1.5 text-right font-mono">{l.cost === null ? '—' : fmt(l.cost)}{l.converted ? <span className="text-slate-400" title="Converted at the peg"> *</span> : null}</td>
                   <td className={`px-3 py-1.5 text-right font-mono font-bold ${(l.profit ?? 0) < -0.005 ? 'text-red-600' : 'text-emerald-700'}`}>{l.profit === null ? '—' : fmt(l.profit)}</td>
-                  <td className="px-3 py-1.5"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${STATE[l.state].tone}`}>{STATE[l.state].label}</span></td>
+                  <td className="px-3 py-1.5"><span className={`px-1.5 py-0.5 rounded text-mini font-bold ${STATE[l.state].tone}`}>{STATE[l.state].label}</span></td>
                 </tr>
               ))}
               {!list.length && <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400">No tickets on their sheet from {from < PROFIT_FROM ? PROFIT_FROM : from}{to ? ` to ${to}` : ''} yet.</td></tr>}

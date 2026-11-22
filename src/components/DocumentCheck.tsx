@@ -56,26 +56,26 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
         {open ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
               : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
         <span className="font-mono font-bold text-xs text-slate-700">{inv.invoice}</span>
-        <span className="text-[10px] text-slate-400 font-mono">{inv.invoiceDate}</span>
+        <span className="text-mini text-slate-400 font-mono">{inv.invoiceDate}</span>
         {!inv.taxInvoice && (
-          <span className="bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+          <span className="bg-slate-100 text-slate-500 text-micro font-bold px-1.5 py-0.5 rounded-full">
             NOT HEADED TAX INVOICE
           </span>
         )}
-        <span className="text-[10px] text-slate-400">{inv.lines.length} line(s)</span>
+        <span className="text-mini text-slate-400">{inv.lines.length} line(s)</span>
         <span className="ml-auto flex items-center gap-4">
           <span className="text-right">
-            <span className="block text-[9px] uppercase text-slate-400 font-bold">Invoice</span>
+            <span className="block text-micro uppercase text-slate-400 font-bold">Invoice</span>
             <span className="font-mono text-xs text-slate-700">
               {inv.total === null ? '—' : fmt(inv.total)}
             </span>
           </span>
           <span className="text-right">
-            <span className="block text-[9px] uppercase text-slate-400 font-bold">Ledger</span>
+            <span className="block text-micro uppercase text-slate-400 font-bold">Ledger</span>
             <span className="font-mono text-xs text-slate-700">{fmt(r.ledgerTotal)}</span>
           </span>
           <span className="text-right w-28">
-            <span className="block text-[9px] uppercase text-slate-400 font-bold">Difference</span>
+            <span className="block text-micro uppercase text-slate-400 font-bold">Difference</span>
             <span className={`font-mono text-xs font-bold ${
               inv.total === null ? 'text-slate-400' : r.agrees ? 'text-emerald-600' : 'text-red-600'}`}>
               {inv.total === null ? 'unread'
@@ -114,13 +114,13 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
             ].map(([label, n, cls]) => (
               <div key={label as string} className="bg-white border border-slate-200 rounded px-2 py-2">
                 <div className={`font-mono font-bold text-sm ${cls}`}>{n as number}</div>
-                <div className="text-[9px] uppercase text-slate-400 font-bold">{label as string}</div>
+                <div className="text-micro uppercase text-slate-400 font-bold">{label as string}</div>
               </div>
             ))}
           </div>
 
           {inv.subTotal !== null && inv.vat !== null && (
-            <p className="text-[10px] text-slate-500 font-mono">
+            <p className="text-mini text-slate-500 font-mono">
               net {fmt(inv.subTotal)} + VAT {fmt(inv.vat)} = {fmt(inv.total ?? 0)}
               {inv.subTotal > 0 && (
                 <span className="text-slate-400">
@@ -135,7 +135,7 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
             <div className="max-h-96 overflow-auto">
               <table className="w-full text-left min-w-[720px]">
                 <thead className="sticky top-0 bg-slate-50">
-                  <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+                  <tr className="border-b border-slate-100 text-micro uppercase tracking-wider text-slate-400">
                     <th className="px-3 py-2">Ticket</th>
                     <th className="px-3 py-2">Passenger</th>
                     <th className="px-3 py-2">Sector</th>
@@ -148,12 +148,12 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
                 <tbody>
                   {r.lines.map((l, i) => (
                     <tr key={i} className="border-b border-slate-50 text-xs">
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-slate-700">
+                      <td className="px-3 py-1.5 font-mono text-mini text-slate-700">
                         {l.line.airline}-{l.line.ticketNo}
                       </td>
                       <td className="px-3 py-1.5 text-slate-600">{l.line.passenger}</td>
-                      <td className="px-3 py-1.5 text-slate-500 text-[10px]">{l.line.sector}</td>
-                      <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{l.line.pnr}</td>
+                      <td className="px-3 py-1.5 text-slate-500 text-mini">{l.line.sector}</td>
+                      <td className="px-3 py-1.5 font-mono text-mini text-slate-500">{l.line.pnr}</td>
                       <td className="px-3 py-1.5 text-right font-mono text-slate-700">
                         {l.line.amount === null ? '—' : fmt(l.line.amount)}
                       </td>
@@ -161,7 +161,7 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
                         {l.ticket ? fmt(l.ticket.amount ?? 0) : '—'}
                       </td>
                       <td className="px-3 py-1.5">
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${VERDICT[l.verdict].cls}`}>
+                        <span className={`text-micro font-bold px-1.5 py-0.5 rounded-full ${VERDICT[l.verdict].cls}`}>
                           {VERDICT[l.verdict].label}
                           {l.heldUnder ? `: ${l.heldUnder}` : ''}
                         </span>
@@ -177,7 +177,7 @@ const InvoicePanel: React.FC<{ r: InvoiceResult }> = ({ r }) => {
             <div className="bg-white border border-amber-200 rounded px-3 py-2 text-xs text-slate-600">
               <b className="text-amber-700">{r.notOnInvoice.length} row(s)</b> are filed under{' '}
               {inv.invoice} in the ledger but are not on this invoice:{' '}
-              <span className="font-mono text-[10px]">
+              <span className="font-mono text-mini">
                 {r.notOnInvoice.map(t => t.ticketNo).join(', ')}
               </span>
             </div>
@@ -234,7 +234,7 @@ const ReviewPanel: React.FC<{
           </span>
         </div>
         {!agrees && r.reprice.length > 0 && (
-          <div className="mt-1 text-[11px]">
+          <div className="mt-1 text-xs">
             Once the {r.reprice.length} ticket(s) below take the statement's figure, the difference is{' '}
             <b className="font-mono">{signed(r.gapAfterReprice)}</b>.
           </div>
@@ -253,7 +253,7 @@ const ReviewPanel: React.FC<{
         </div>
       )}
       {r.since && Math.abs(r.since.change) < 0.005 && (
-        <div className="text-[11px] text-slate-500 px-1">
+        <div className="text-xs text-slate-500 px-1">
           Nothing changed on their side since their statement for {r.since.previous.periodStart} → {r.since.previous.periodEnd}:
           both put {r.since.on} at {drCr(r.since.now)}.
         </div>
@@ -271,7 +271,7 @@ const ReviewPanel: React.FC<{
       )}
 
       {issues === 0 ? (
-        <div className="text-[11px] text-emerald-700 px-1 flex items-center gap-1.5">
+        <div className="text-xs text-emerald-700 px-1 flex items-center gap-1.5">
           <CheckCircle2 className="w-3.5 h-3.5" /> Every line on the statement agrees with our books, and every receipt is recorded.
         </div>
       ) : (
@@ -287,13 +287,13 @@ const ReviewPanel: React.FC<{
                       try { await onReprice(r.reprice); setDone(r.reprice.length); } finally { setBusy(false); }
                     }}
                     className={`text-xs font-bold px-3 py-1.5 rounded ${done != null
-                      ? 'bg-emerald-50 text-emerald-700' : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
+                      ? 'bg-emerald-50 text-emerald-700' : 'bg-blue-700 text-white hover:bg-blue-800'}`}>
                     {done != null ? `${done} corrected` : busy ? 'Correcting…' : `Correct ${r.reprice.length} ticket(s)`}
                   </button>
                 )}
               </div>
               {r.reprice.map(x => (
-                <div key={x.id} className="font-mono text-[11px] text-slate-600 flex gap-3 flex-wrap">
+                <div key={x.id} className="font-mono text-xs text-slate-600 flex gap-3 flex-wrap">
                   <span className="text-slate-800">{x.ticketNo}</span>
                   <span>{fmt(x.was)} → <b>{fmt(x.amount)}</b></span>
                   <span className={x.amount > x.was ? 'text-red-600' : 'text-emerald-600'}>{signed(x.amount - x.was)}</span>
@@ -305,7 +305,7 @@ const ReviewPanel: React.FC<{
             <div className="px-4 py-3 space-y-1.5">
               <b className="text-slate-700">For a person — not changed</b>
               {r.ask.map(c => (
-                <div key={c.line.ticketNo} className="text-[11px] text-slate-600">
+                <div key={c.line.ticketNo} className="text-xs text-slate-600">
                   <span className="font-mono text-slate-800">{c.line.ticketNo}</span>{' '}
                   <span className="font-mono">{signed(c.gap)}</span> — {c.why}
                 </div>
@@ -316,7 +316,7 @@ const ReviewPanel: React.FC<{
             <div className="px-4 py-3 space-y-1">
               <b className="text-red-700">Billed, and not in our books</b>
               {r.notInBooks.map(c => (
-                <div key={c.line.ticketNo} className="font-mono text-[11px] text-slate-600">
+                <div key={c.line.ticketNo} className="font-mono text-xs text-slate-600">
                   {c.line.date} {c.line.document} {c.line.airline ? `${c.line.airline}-` : ''}{c.line.ticketNo} {fmt(c.theirs)}
                 </div>
               ))}
@@ -345,14 +345,14 @@ const ReviewPanel: React.FC<{
                   </button>
                 )}
               </div>
-              <div className="text-[11px] text-slate-600">
+              <div className="text-xs text-slate-600">
                 Their statement for {r.dropped.previous.periodStart} → {r.dropped.previous.periodEnd} closed on{' '}
                 <b className="font-mono">{drCr(r.dropped.was)}</b>; this one puts the same day at{' '}
                 <b className="font-mono">{drCr(r.dropped.now)}</b> — <b className="font-mono">{fmt(r.dropped.total)}</b> in our
                 favour, exactly what these cost, and bills none of them.
               </div>
               {r.dropped.tickets.map(t => (
-                <div key={t.id} className="font-mono text-[11px] text-slate-600">
+                <div key={t.id} className="font-mono text-xs text-slate-600">
                   {t.date} {t.ticketNo} {fmt(t.amount)} {t.reqNum} {t.pnr}
                 </div>
               ))}
@@ -362,7 +362,7 @@ const ReviewPanel: React.FC<{
             <div className="px-4 py-3 space-y-1">
               <b className="text-amber-700">Ours in this period, never billed</b>
               {unbilled.map(t => (
-                <div key={t.id} className="font-mono text-[11px] text-slate-600">
+                <div key={t.id} className="font-mono text-xs text-slate-600">
                   {t.date} {t.ticketNo} {fmt(t.amount)} {t.reqNum}
                 </div>
               ))}
@@ -372,7 +372,7 @@ const ReviewPanel: React.FC<{
             <div className="px-4 py-3 space-y-1">
               <b className="text-amber-700">Receipts we have not recorded as a payment</b>
               {missingReceipts.map(x => (
-                <div key={x.line.document} className="font-mono text-[11px] text-slate-600">
+                <div key={x.line.document} className="font-mono text-xs text-slate-600">
                   {x.line.date} {x.line.document} +{fmt(x.line.credit)}
                 </div>
               ))}
@@ -420,10 +420,10 @@ const StatementPanel: React.FC<{
       <div className="flex items-center gap-2 text-xs">
         <Receipt className="w-3.5 h-3.5 text-purple-600" />
         <b className="text-slate-700">{fileName}</b>
-        <span className="bg-purple-50 text-purple-700 text-[9px] font-bold px-2 py-0.5 rounded-full">
+        <span className="bg-purple-50 text-purple-700 text-micro font-bold px-2 py-0.5 rounded-full">
           STATEMENT OF ACCOUNT
         </span>
-        <span className="font-mono text-[11px] text-slate-500">
+        <span className="font-mono text-xs text-slate-500">
           {st.periodStart} → {st.periodEnd}
         </span>
       </div>
@@ -438,7 +438,7 @@ const StatementPanel: React.FC<{
         ] as const).map(([label, value, cls]) => (
           <div key={label} className="bg-white border border-slate-200 rounded px-2 py-2">
             <div className={`font-mono font-bold text-xs ${cls}`}>{value}</div>
-            <div className="text-[9px] uppercase text-slate-400 font-bold">{label}</div>
+            <div className="text-micro uppercase text-slate-400 font-bold">{label}</div>
           </div>
         ))}
       </div>
@@ -470,7 +470,7 @@ const StatementPanel: React.FC<{
 
       <div className="flex items-center justify-between">
         <button onClick={() => setOpen(o => !o)}
-          className="text-[11px] text-slate-500 hover:text-slate-700 flex items-center gap-1">
+          className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1">
           {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           {st.lines.length} movement(s) on the statement
         </button>
@@ -478,7 +478,7 @@ const StatementPanel: React.FC<{
           <button onClick={onSave} disabled={saved}
             className={`flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded
               ${saved ? 'bg-emerald-50 text-emerald-700 cursor-default'
-                      : 'bg-purple-600 text-white hover:bg-purple-700'}`}>
+                      : 'bg-blue-700 text-white hover:bg-blue-800'}`}>
             {saved
               ? <><CheckCircle2 className="w-3.5 h-3.5" /> Saved to {vendorName}</>
               : <><Save className="w-3.5 h-3.5" /> Save to {vendorName}</>}
@@ -492,7 +492,7 @@ const StatementPanel: React.FC<{
         <div className="bg-white border border-slate-200 rounded max-h-96 overflow-auto">
           <table className="w-full text-left min-w-[720px]">
             <thead className="sticky top-0 bg-slate-50">
-              <tr className="border-b border-slate-100 text-[9px] uppercase tracking-wider text-slate-400">
+              <tr className="border-b border-slate-100 text-micro uppercase tracking-wider text-slate-400">
                 <th className="px-3 py-2">Date</th>
                 <th className="px-3 py-2">Document</th>
                 <th className="px-3 py-2">Ticket</th>
@@ -506,9 +506,9 @@ const StatementPanel: React.FC<{
             <tbody>
               {st.lines.map((l, i) => (
                 <tr key={i} className="border-b border-slate-50 text-xs">
-                  <td className="px-3 py-1.5 font-mono text-[10px] text-slate-500">{l.date}</td>
-                  <td className="px-3 py-1.5 font-mono text-[10px] text-slate-700">{l.document}</td>
-                  <td className="px-3 py-1.5 font-mono text-[10px] text-slate-600">
+                  <td className="px-3 py-1.5 font-mono text-mini text-slate-500">{l.date}</td>
+                  <td className="px-3 py-1.5 font-mono text-mini text-slate-700">{l.document}</td>
+                  <td className="px-3 py-1.5 font-mono text-mini text-slate-600">
                     {l.airline ? `${l.airline}-${l.ticketNo}` : l.ticketNo}
                   </td>
                   <td className="px-3 py-1.5 text-right font-mono text-slate-700">
@@ -658,11 +658,11 @@ export const DocumentCheck: React.FC<{
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
       <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
         <div>
-          <h3 className="font-bold text-slate-700 uppercase text-[11px] tracking-wide flex items-center gap-2">
+          <h3 className="font-bold text-slate-700 uppercase text-xs tracking-wide flex items-center gap-2">
             <FileCheck2 className="w-3.5 h-3.5 text-purple-600" />
             Read a document
           </h3>
-          <p className="text-[11px] text-slate-500 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             Drop in a tax invoice and it says where it and the ledger disagree. Drop in a
             statement of account and it reads the period and the balances, ready to save.
             Nothing here is kept — to record an invoice so it can be answered for later,
@@ -702,7 +702,7 @@ export const DocumentCheck: React.FC<{
               <div className="flex flex-col items-center gap-2 text-slate-400">
                 <Upload className="w-5 h-5" />
                 <span className="text-xs font-bold text-slate-600">Drop a PDF here, or click to choose</span>
-                <span className="text-[10px]">
+                <span className="text-mini">
                   A tax invoice, a bundle of them, or a statement of account.
                 </span>
               </div>
@@ -724,7 +724,7 @@ export const DocumentCheck: React.FC<{
                   <AlertTriangle className="w-4 h-4" />
                   Not a final tax invoice — there is no ZATCA QR code on it
                 </div>
-                <div className="text-[11px] text-red-700 mt-0.5">
+                <div className="text-xs text-red-700 mt-0.5">
                   The figures can still be checked against the ledger here, but this printout cannot
                   carry the VAT. Ask Ibtekar for the e-invoice from their ZATCA system, the one with
                   the QR code.
@@ -749,7 +749,7 @@ export const DocumentCheck: React.FC<{
         )}
 
         {statement && invoiceNos && (invoiceNos.filled.length > 0 || invoiceNos.conflicts.length > 0) && (
-          <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-[11px] text-emerald-900">
+          <div className="mb-3 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 text-xs text-emerald-900">
             {invoiceNos.filled.length > 0 && (
               <div>
                 <b>Invoice numbers filled on {invoiceNos.filled.length} ticket{invoiceNos.filled.length === 1 ? '' : 's'}</b> from

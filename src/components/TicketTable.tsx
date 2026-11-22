@@ -138,18 +138,18 @@ const ChangedBadge: React.FC<{
         onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
         onBlur={() => setOpen(false)}
         title="Changed after it was closed — press to see what changed"
-        className="ml-1 bg-orange-100 text-orange-700 border border-orange-300 text-[8px]
+        className="ml-1 bg-orange-100 text-orange-700 border border-orange-300 text-micro
                    font-bold px-1 rounded hover:bg-orange-200">
         CHANGED{history.changes.length > 1 ? ` ${history.changes.length}` : ''}
       </button>
       {open && (
         <span className="absolute right-0 top-full mt-1 z-30 w-80 bg-white border border-slate-200
                          rounded-lg shadow-lg p-3 text-left font-sans block">
-          <span className="block text-[10px] font-bold text-slate-700">
+          <span className="block text-mini font-bold text-slate-700">
             Closed {when(history.closedAt)}, then changed:
           </span>
           {history.changes.map((c, i) => (
-            <span key={i} className="block mt-1.5 text-[10px] leading-snug">
+            <span key={i} className="block mt-1.5 text-mini leading-snug">
               <span className="font-mono text-slate-500">{when(c.at)}</span>
               <span className="block font-mono text-slate-800">{c.detail}</span>
               <span className="block text-slate-400">{c.by}</span>
@@ -344,9 +344,9 @@ const cabinText = (t: Ticket): string =>
 /** Domestic / International, or an em-dash when there is no route to read. */
 const TravelBadge: React.FC<{ route?: string }> = ({ route }) => {
   const scope = classifyTravel(route);
-  if (!scope) return <span className="text-slate-300 text-[9px]">—</span>;
+  if (!scope) return <span className="text-slate-300 text-micro">—</span>;
   return (
-    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap ${
+    <span className={`px-1.5 py-0.5 rounded text-micro font-bold whitespace-nowrap ${
       scope === 'DOMESTIC' ? 'bg-teal-100 text-teal-700' : 'bg-blue-100 text-blue-700'
     }`}>
       {TRAVEL_LABEL[scope]}
@@ -374,13 +374,13 @@ const CabinBadge: React.FC<{ cabin?: string; raw?: string }> = ({ cabin, raw }) 
     // A cabin name the reader could not place still gets shown, greyed, rather
     // than reduced to an em-dash as if the source had said nothing.
     return raw
-      ? <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-50 text-amber-700 whitespace-nowrap"
+      ? <span className="px-1.5 py-0.5 rounded text-micro bg-amber-50 text-amber-700 whitespace-nowrap"
               title={`Not recognised as a cabin: ${raw}`}>{raw}</span>
-      : <span className="text-slate-300 text-[9px]">—</span>;
+      : <span className="text-slate-300 text-micro">—</span>;
   }
   const label = CABIN_LABEL[cabin as Exclude<Cabin, ''>] ?? cabin;
   return (
-    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap ${
+    <span className={`px-1.5 py-0.5 rounded text-micro font-bold whitespace-nowrap ${
       CABIN_STYLE[cabin] ?? 'bg-slate-100 text-slate-600'}`}
       title={raw && raw.toLowerCase() !== label.toLowerCase() ? `Source: ${raw}` : label}>
       {label}
@@ -401,17 +401,17 @@ const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean; withCompany?: bo
       <td className="px-3 py-2">{dash}</td>
       <td className="px-3 py-2 text-center">
         {ticket.airlineCode
-          ? <span className="font-mono font-black text-[11px] bg-slate-100 px-1.5 py-0.5 rounded">{ticket.airlineCode}</span>
+          ? <span className="font-mono font-black text-xs bg-slate-100 px-1.5 py-0.5 rounded">{ticket.airlineCode}</span>
           : dash}
       </td>
       <td className="px-3 py-2 font-bold select-all whitespace-nowrap line-through decoration-slate-300">{ticket.ticketNo}</td>
       <td className="px-3 py-2">
-        <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold uppercase opacity-60 ${getSourceColor(ticket.source || '')}`}>
+        <span className={`px-1.5 py-0.5 rounded text-micro font-sans font-bold uppercase opacity-60 ${getSourceColor(ticket.source || '')}`}>
           {ticket.source || 'UNKNOWN'}
         </span>
       </td>
       <td className="px-3 py-2">
-        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-600">VOID</span>
+        <span className="px-1.5 py-0.5 rounded text-micro font-bold bg-slate-200 text-slate-600">VOID</span>
       </td>
       <td className="px-3 py-2 whitespace-nowrap">{ticket.date || dash}</td>
       <td className="px-3 py-2">{dash}</td>
@@ -421,13 +421,13 @@ const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean; withCompany?: bo
       <td className="px-3 py-2">{dash}</td>
       <td className="px-3 py-2 font-bold">0.00</td>
       <td className="px-3 py-2">{dash}</td>
-      <td className="px-3 py-2 text-[9px] font-bold">{ticket.currency || ''}</td>
+      <td className="px-3 py-2 text-micro font-bold">{ticket.currency || ''}</td>
       <td className="px-3 py-2">{ticket.pnr || dash}</td>
       <td className="px-3 py-2 max-w-[140px]"><span className="block truncate">{ticket.passengerName || dash}</span></td>
       <td className="px-3 py-2">{dash}</td>
       {withCompany && <td className="px-3 py-2">{dash}</td>}
-      <td className="px-3 py-2 font-mono text-[10px] whitespace-nowrap">{ticket.vendorReference || dash}</td>
-      <td className="px-3 py-2 font-bold text-[9px]">VOIDED</td>
+      <td className="px-3 py-2 font-mono text-mini whitespace-nowrap">{ticket.vendorReference || dash}</td>
+      <td className="px-3 py-2 font-bold text-micro">VOIDED</td>
       <td className="px-3 py-2">{dash}</td>
       {withDelete && <td className="px-3 py-2" />}
     </tr>
@@ -1300,7 +1300,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
     travelFilter !== 'ALL', cabinFilter !== 'ALL', officeFilter !== 'ALL', companyFilter !== 'ALL', activeColFilters > 0].filter(Boolean).length;
 
   return (
-    <div className="flex flex-col h-full bg-slate-100">
+    <div className="flex flex-col h-full bg-app">
       {profileReq && (
         <RequestProfile reqNum={profileReq} tickets={tickets} onUpdateClosed={!canClose || canClose({ reqNum: profileReq } as Ticket) ? onUpdateClosed : undefined}
           onClose={() => setProfileReq(null)} />
@@ -1310,7 +1310,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           anyone noticing. */}
       {voidHits.length > 0 && filterMode !== 'ALL' && filterMode !== 'VOIDS' && (
         <div className="mx-4 mt-3 bg-slate-100 border border-slate-300 rounded-lg px-3 py-2
-                        text-[11px] text-slate-700 flex items-start gap-2">
+                        text-xs text-slate-700 flex items-start gap-2">
           <Ban className="w-3.5 h-3.5 mt-px shrink-0 text-slate-500" />
           <span>
             {voidHits.length} cancelled document{voidHits.length === 1 ? '' : 's'} also
@@ -1326,14 +1326,14 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
       {copied && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2
                         bg-slate-800 text-white px-4 py-2 rounded-lg shadow-lg
-                        text-[11px] font-mono max-w-md">
+                        text-xs font-mono max-w-md">
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           <span className="truncate">Copied <span className="font-bold">{copied}</span></span>
         </div>
       )}
       {/* Header */}
       <div className="p-4 flex flex-wrap justify-between items-center gap-2 shrink-0 bg-white border-b border-slate-200">
-        <h2 className="text-[10px] font-bold uppercase text-slate-400 tracking-widest">{title}</h2>
+        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">{title}</h2>
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* General search */}
           <div className="relative flex-1 sm:flex-none min-w-0">
@@ -1343,11 +1343,11 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
               placeholder="Search ticket, PNR, req, invoice..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-[10px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-full sm:w-48"
+              className="pl-7 pr-2 py-1.5 bg-white border border-slate-200 rounded text-mini font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/20 w-full sm:w-48"
             />
           </div>
           <button type="button" onClick={() => setMobileFilters(v => !v)}
-            className={`sm:hidden px-3 py-1.5 rounded text-[11px] font-bold uppercase border flex items-center gap-1.5 ${
+            className={`sm:hidden px-3 py-1.5 rounded text-xs font-bold uppercase border flex items-center gap-1.5 ${
               mobileFilters ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>
             <Filter className="w-3.5 h-3.5" /> Filters{activeFilterCount ? ` (${activeFilterCount})` : ''}
           </button>
@@ -1364,7 +1364,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
               type="button"
               onClick={() => setShowSources(v => !v)}
               title="Filter by one or more vendors"
-              className={`pl-7 pr-6 py-1.5 rounded text-[10px] font-bold uppercase border transition-colors flex items-center ${
+              className={`pl-7 pr-6 py-1.5 rounded text-mini font-bold uppercase border transition-colors flex items-center ${
                 sourceSel.length > 0
                   ? 'bg-blue-50 text-blue-700 border-blue-200'
                   : 'bg-white text-slate-500 border-slate-200'
@@ -1380,13 +1380,13 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
             {showSources && (
               <div className="absolute z-30 mt-1 left-0 w-56 max-h-72 overflow-y-auto bg-white border border-slate-200 rounded shadow-lg py-1">
                 <div className="flex items-center justify-between px-2 py-1 border-b border-slate-100 mb-1">
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                  <span className="text-micro font-bold uppercase tracking-widest text-slate-400">
                     {sourceSel.length || 'all'} selected
                   </span>
                   {sourceSel.length > 0 && (
                     <button
                       onClick={() => setSourceSel([])}
-                      className="text-[9px] font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
+                      className="text-micro font-bold uppercase tracking-widest text-blue-600 hover:text-blue-800"
                     >
                       Clear
                     </button>
@@ -1405,7 +1405,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                         onChange={() => toggleSource(s)}
                         className="w-3 h-3 accent-blue-600"
                       />
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${getSourceColor(s)}`}>
+                      <span className={`px-1.5 py-0.5 rounded text-micro font-bold uppercase ${getSourceColor(s)}`}>
                         {s}
                       </span>
                     </label>
@@ -1424,7 +1424,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                 value={monthSel}
                 onChange={e => pickMonth(e.target.value)}
                 title="Jump to a whole month"
-                className={`pl-7 pr-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+                className={`pl-7 pr-2 py-1.5 rounded text-mini font-bold uppercase border focus:outline-none transition-colors ${
                   monthSel ? 'bg-blue-50 text-blue-700 border-blue-200'
                            : 'bg-white text-slate-500 border-slate-200'
                 }`}
@@ -1440,19 +1440,19 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
               max={dateTo || undefined}
               onChange={e => setDateFrom(e.target.value)}
               title="From date"
-              className={`px-1.5 py-1.5 rounded text-[10px] font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+              className={`px-1.5 py-1.5 rounded text-mini font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
                 dateFrom ? 'bg-blue-50 text-blue-700 border-blue-200'
                          : 'bg-white text-slate-500 border-slate-200'
               }`}
             />
-            <span className="text-[9px] font-bold uppercase text-slate-400">to</span>
+            <span className="text-micro font-bold uppercase text-slate-400">to</span>
             <input
               type="date"
               value={dateTo}
               min={dateFrom || undefined}
               onChange={e => setDateTo(e.target.value)}
               title="To date"
-              className={`px-1.5 py-1.5 rounded text-[10px] font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+              className={`px-1.5 py-1.5 rounded text-mini font-mono border focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
                 dateTo ? 'bg-blue-50 text-blue-700 border-blue-200'
                        : 'bg-white text-slate-500 border-slate-200'
               }`}
@@ -1472,7 +1472,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           <select
             value={filterMode}
             onChange={e => setFilterMode(e.target.value as any)}
-            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+            className={`px-2 py-1.5 rounded text-mini font-bold uppercase border focus:outline-none transition-colors ${
               filterMode === 'NEED_REQ' ? 'bg-red-50 text-red-600 border-red-200'
               : filterMode === 'DUPLICATE' ? 'bg-amber-50 text-amber-700 border-amber-200'
               : filterMode === 'ADJUSTED' ? 'bg-amber-50 text-amber-700 border-amber-200'
@@ -1504,7 +1504,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
             value={travelFilter}
             onChange={e => setTravelFilter(e.target.value as 'ALL' | TravelScope)}
             title="Domestic = every airport on the route is in Saudi Arabia"
-            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+            className={`px-2 py-1.5 rounded text-mini font-bold uppercase border focus:outline-none transition-colors ${
               travelFilter === 'DOMESTIC' ? 'bg-teal-50 text-teal-700 border-teal-200'
               : travelFilter === 'INTERNATIONAL' ? 'bg-blue-50 text-blue-700 border-blue-200'
               : 'bg-white text-slate-500 border-slate-200'
@@ -1521,7 +1521,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
             value={cabinFilter}
             onChange={e => setCabinFilter(e.target.value)}
             title="Cabin the ticket was sold in"
-            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+            className={`px-2 py-1.5 rounded text-mini font-bold uppercase border focus:outline-none transition-colors ${
               cabinFilter === 'ALL' ? 'bg-white text-slate-500 border-slate-200'
                                     : 'bg-blue-50 text-blue-700 border-blue-200'
             }`}
@@ -1539,7 +1539,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
             value={officeFilter}
             onChange={e => setOfficeFilter(e.target.value)}
             title="Office that raised the request, read from the req number"
-            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+            className={`px-2 py-1.5 rounded text-mini font-bold uppercase border focus:outline-none transition-colors ${
               officeFilter === 'ALL' ? 'bg-white text-slate-500 border-slate-200'
                                      : 'bg-violet-50 text-violet-700 border-violet-200'
             }`}
@@ -1557,7 +1557,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
               value={companyFilter}
               onChange={e => setCompanyFilter(e.target.value)}
               title="The company the ticket was issued for, from the team's Airtable"
-              className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+              className={`px-2 py-1.5 rounded text-mini font-bold uppercase border focus:outline-none transition-colors ${
                 companyFilter === 'ALL' ? 'bg-white text-slate-500 border-slate-200'
                                         : 'bg-blue-50 text-blue-700 border-blue-200'
               }`}
@@ -1572,7 +1572,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           <select
             value={closedFilter}
             onChange={e => setClosedFilter(e.target.value as any)}
-            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border focus:outline-none transition-colors ${
+            className={`px-2 py-1.5 rounded text-mini font-bold uppercase border focus:outline-none transition-colors ${
               closedFilter === 'CLOSED' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
               : closedFilter === 'NOT_CLOSED' ? 'bg-orange-50 text-orange-700 border-orange-200'
               : 'bg-white text-slate-500 border-slate-200'
@@ -1590,7 +1590,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                 onClick={() => applyBulkClosed(true)}
                 disabled={bulkClosedBusy}
                 title={`Mark all ${filtered.length} filtered tickets as Closed`}
-                className="px-2 py-1.5 bg-emerald-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-40 flex items-center gap-1"
+                className="px-2 py-1.5 bg-emerald-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-40 flex items-center gap-1"
               >
                 <CheckCircle2 className="w-3 h-3" />
                 Close ({filtered.length})
@@ -1599,7 +1599,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                 onClick={() => applyBulkClosed(false)}
                 disabled={bulkClosedBusy}
                 title={`Mark all ${filtered.length} filtered tickets as Not Closed`}
-                className="px-2 py-1.5 bg-orange-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1"
+                className="px-2 py-1.5 bg-orange-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1"
               >
                 <Circle className="w-3 h-3" />
                 Reopen
@@ -1610,7 +1610,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           {/* Column filters toggle */}
           <button
             onClick={() => setShowColFilters(v => !v)}
-            className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border transition-colors flex items-center gap-1 ${
+            className={`px-2 py-1.5 rounded text-mini font-bold uppercase border transition-colors flex items-center gap-1 ${
               showColFilters || activeColFilters > 0
                 ? 'bg-blue-50 text-blue-700 border-blue-200'
                 : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
@@ -1624,7 +1624,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           {onBulkUpdateReqNum && (
             <button
               onClick={() => setShowFindReplace(v => !v)}
-              className={`px-2 py-1.5 rounded text-[10px] font-bold uppercase border transition-colors flex items-center gap-1 ${
+              className={`px-2 py-1.5 rounded text-mini font-bold uppercase border transition-colors flex items-center gap-1 ${
                 showFindReplace ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
               }`}
             >
@@ -1637,7 +1637,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           {defaultFilter === 'NEED_REQ' && (
             <button
               onClick={exportMissingReq}
-              className="px-2 py-1.5 bg-red-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-red-700 flex items-center gap-1"
+              className="px-2 py-1.5 bg-red-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-red-700 flex items-center gap-1"
             >
               <Download className="w-3 h-3" />
               Export Missing REQ
@@ -1650,7 +1650,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
             <button
               onClick={exportNotClosed}
               title="Export every ticket that is still Not Closed, ignoring the filters above"
-              className="px-2 py-1.5 bg-orange-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-orange-700 flex items-center gap-1"
+              className="px-2 py-1.5 bg-orange-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-orange-700 flex items-center gap-1"
             >
               <Download className="w-3 h-3" />
               Not Closed ({notClosedCount})
@@ -1664,7 +1664,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
             <button
               onClick={copyAll}
               title={`Copy ${copyRows.length.toLocaleString()} ticket(s) \u2014 airline, number, passenger, PNR, one to a line`}
-              className="px-2 py-1.5 bg-white text-slate-600 border border-slate-200 rounded text-[10px] font-bold uppercase tracking-widest hover:bg-slate-50 flex items-center gap-1"
+              className="px-2 py-1.5 bg-white text-slate-600 border border-slate-200 rounded text-mini font-bold uppercase tracking-widest hover:bg-slate-50 flex items-center gap-1"
             >
               <Copy className="w-3 h-3" />
               Copy ({copyRows.length.toLocaleString()})
@@ -1674,7 +1674,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           {/* Export all */}
           <button
             onClick={exportToExcel}
-            className="px-2 py-1.5 bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-blue-700 flex items-center gap-1"
+            className="px-2 py-1.5 bg-blue-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-blue-700 flex items-center gap-1"
           >
             <Download className="w-3 h-3" />
             Export XLS
@@ -1686,55 +1686,55 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
       {/* Column-specific filters panel */}
       {showColFilters && (
         <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex flex-wrap items-center gap-3 shrink-0">
-          <span className="text-[9px] font-bold uppercase text-blue-500 tracking-wider">Filter by column:</span>
+          <span className="text-micro font-bold uppercase text-blue-500 tracking-wider">Filter by column:</span>
           {/* Ordered to match the table's own columns — A/L then Ticket No —
               so the eye moves the same way in the filter bar as in the rows. */}
           <div className="flex items-center gap-1">
-            <span className="text-[9px] text-blue-400 font-mono uppercase">A/L</span>
+            <span className="text-micro text-blue-400 font-mono uppercase">A/L</span>
             <input
               type="text" placeholder="e.g. 065"
               value={filterAL} onChange={e => setFilterAL(e.target.value)}
-              className="w-20 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
+              className="w-20 px-1.5 py-1 text-mini font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
             />
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[9px] text-blue-400 font-mono uppercase">Ticket No</span>
+            <span className="text-micro text-blue-400 font-mono uppercase">Ticket No</span>
             <input
               type="text" placeholder="2540225922"
               title="Full or partial ticket number. The 13-digit form works too — the airline code is ignored."
               value={filterTicket} onChange={e => setFilterTicket(e.target.value)}
-              className="w-32 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
+              className="w-32 px-1.5 py-1 text-mini font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
             />
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[9px] text-blue-400 font-mono uppercase">Passenger</span>
+            <span className="text-micro text-blue-400 font-mono uppercase">Passenger</span>
             <input
               type="text" placeholder="name..."
               value={filterPax} onChange={e => setFilterPax(e.target.value)}
-              className="w-32 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
+              className="w-32 px-1.5 py-1 text-mini font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
             />
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[9px] text-blue-400 font-mono uppercase">PNR</span>
+            <span className="text-micro text-blue-400 font-mono uppercase">PNR</span>
             <input
               type="text" placeholder="PNR..."
               value={filterPNR} onChange={e => setFilterPNR(e.target.value)}
-              className="w-24 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
+              className="w-24 px-1.5 py-1 text-mini font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
             />
           </div>
           <div className="flex items-center gap-1">
-            <span className="text-[9px] text-blue-400 font-mono uppercase">Cost</span>
+            <span className="text-micro text-blue-400 font-mono uppercase">Cost</span>
             <input
               type="text" inputMode="decimal" placeholder="2,320 or 1000-2000"
               title="Balance payable or fare. 2,320.50 finds that figure; 2320 finds any 2,320.xx; 1000-2000 finds a range. Refunds are found by their size."
               value={filterCost} onChange={e => setFilterCost(e.target.value)}
-              className="w-32 px-1.5 py-1 text-[10px] font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
+              className="w-32 px-1.5 py-1 text-mini font-mono border border-blue-200 rounded focus:outline-none focus:ring-1 ring-blue-400 bg-white"
             />
           </div>
           {activeColFilters > 0 && (
             <button
               onClick={() => { setFilterTicket(''); setFilterAL(''); setFilterPax(''); setFilterPNR(''); setFilterCost(''); }}
-              className="text-[9px] text-blue-500 hover:text-blue-700 font-bold underline"
+              className="text-micro text-blue-500 hover:text-blue-700 font-bold underline"
             >
               Clear all
             </button>
@@ -1745,37 +1745,37 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
       {/* Find & Replace panel */}
       {showFindReplace && (
         <div className="px-4 py-2 bg-violet-50 border-b border-violet-100 flex flex-wrap items-center gap-3 shrink-0">
-          <span className="text-[9px] font-bold uppercase text-violet-500 tracking-wider">Find &amp; Replace REQ:</span>
+          <span className="text-micro font-bold uppercase text-violet-500 tracking-wider">Find &amp; Replace REQ:</span>
           <div className="flex items-center gap-1">
-            <span className="text-[9px] text-violet-400 font-mono">Find</span>
+            <span className="text-micro text-violet-400 font-mono">Find</span>
             <input
               type="text" placeholder="current req num..."
               value={findVal} onChange={e => setFindVal(e.target.value)}
-              className="w-36 px-1.5 py-1 text-[10px] font-mono border border-violet-200 rounded focus:outline-none focus:ring-1 ring-violet-400 bg-white"
+              className="w-36 px-1.5 py-1 text-mini font-mono border border-violet-200 rounded focus:outline-none focus:ring-1 ring-violet-400 bg-white"
             />
           </div>
           <span className="text-violet-300 font-bold">→</span>
           <div className="flex items-center gap-1">
-            <span className="text-[9px] text-violet-400 font-mono">Replace</span>
+            <span className="text-micro text-violet-400 font-mono">Replace</span>
             <input
               type="text" placeholder="new req num..."
               value={replaceVal} onChange={e => setReplaceVal(e.target.value)}
-              className="w-36 px-1.5 py-1 text-[10px] font-mono border border-violet-200 rounded focus:outline-none focus:ring-1 ring-violet-400 bg-white"
+              className="w-36 px-1.5 py-1 text-mini font-mono border border-violet-200 rounded focus:outline-none focus:ring-1 ring-violet-400 bg-white"
             />
           </div>
           {findVal.trim() && (
-            <span className={`text-[9px] font-bold font-mono ${frTargets.length > 0 ? 'text-violet-600' : 'text-slate-400'}`}>
+            <span className={`text-micro font-bold font-mono ${frTargets.length > 0 ? 'text-violet-600' : 'text-slate-400'}`}>
               {frTargets.length} ticket{frTargets.length !== 1 ? 's' : ''} will be updated
             </span>
           )}
           <button
             onClick={applyFindReplace}
             disabled={frBusy || frTargets.length === 0 || !replaceVal.trim()}
-            className="px-3 py-1 bg-violet-600 text-white rounded text-[10px] font-bold uppercase tracking-widest hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="px-3 py-1 bg-blue-700 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {frBusy ? 'Applying...' : 'Apply'}
           </button>
-          <button onClick={() => { setShowFindReplace(false); setFindVal(''); setReplaceVal(''); }} className="text-[9px] text-violet-400 hover:text-violet-600 font-bold">✕ Close</button>
+          <button onClick={() => { setShowFindReplace(false); setFindVal(''); setReplaceVal(''); }} className="text-micro text-violet-400 hover:text-violet-600 font-bold">✕ Close</button>
         </div>
       )}
 
@@ -1784,7 +1784,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           than the screen, which took the "not closed" count and the hint about
           clicking a cell off the edge entirely. The dividers go with it: a
           pipe at the start of a wrapped line reads as a typo. */}
-      <div className="touch-compact flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-[10px] font-mono text-slate-500">
+      <div className="touch-compact flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 bg-slate-50 border-b border-slate-200 shrink-0 text-mini font-mono text-slate-500">
         <span>{filtered.length} tickets</span>
         {voidShown.length > 0 && (
           <span className="text-slate-400" title="Listed for reference: a void is in no balance, total or count here">
@@ -1845,13 +1845,13 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
               voided ? 'border-slate-200 opacity-60' : !ticket.reqNum ? 'border-red-200' : 'border-slate-200'}`}>
               <div className="flex items-center gap-2">
                 <span className="font-mono font-bold text-[13px] text-slate-800">{ticket.airlineCode ? `${ticket.airlineCode}-` : ''}{ticket.ticketNo}</span>
-                <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-bold ${voided ? STATUS_COLORS.VOID : STATUS_COLORS[ticket.status] ?? 'bg-slate-100 text-slate-500'}`}>
+                <span className={`ml-auto px-1.5 py-0.5 rounded text-mini font-bold ${voided ? STATUS_COLORS.VOID : STATUS_COLORS[ticket.status] ?? 'bg-slate-100 text-slate-500'}`}>
                   {voided ? 'VOID' : ticket.status}
                 </span>
               </div>
               <div className="text-[12px] text-slate-700 mt-1 truncate">{ticket.passengerName || '—'}</div>
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[11px] text-slate-500">
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${getSourceColor(ticket.source || '')}`}>{ticket.source}</span>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-xs text-slate-500">
+                <span className={`px-1.5 py-0.5 rounded text-mini font-bold ${getSourceColor(ticket.source || '')}`}>{ticket.source}</span>
                 <span className="font-mono">{ticket.date || 'no date'}</span>
                 {ticket.route && <span className="font-mono">{ticket.route}</span>}
                 {ticket.pnr && <span className="font-mono">{ticket.pnr}</span>}
@@ -1864,25 +1864,25 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   </button>
                 ) : canEdit && !voided ? (
                   <button onClick={() => startEdit(ticket, 'reqNum')}
-                    className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">+ Add REQ</button>
+                    className="text-xs font-bold text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1">+ Add REQ</button>
                 ) : (
-                  <span className="text-[11px] font-bold text-red-600">No REQ</span>
+                  <span className="text-xs font-bold text-red-600">No REQ</span>
                 )}
                 <span className={`ml-auto font-mono font-bold text-[14px] ${(ticket.amount ?? 0) < 0 ? 'text-red-600' : 'text-slate-800'}`}>
-                  {fmt(ticket.amount ?? 0)} <span className="text-[10px] text-slate-400">{cur}</span>
+                  {fmt(ticket.amount ?? 0)} <span className="text-mini text-slate-400">{cur}</span>
                 </span>
               </div>
               {!voided && ticket.status !== 'FUND' && (
                 <div className="mt-2">
                   {onUpdateClosed && (!canClose || canClose(ticket)) ? (
                     <button onClick={() => onUpdateClosed(ticket.id, !ticket.closed)}
-                      className={`px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1 ${
+                      className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 ${
                         ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
                       {ticket.closed ? <CheckCircle2 className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
                       {ticket.closed ? 'Closed' : 'Not Closed'}
                     </button>
                   ) : (
-                    <span className={`px-2 py-1 rounded text-[11px] font-bold ${ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                    <span className={`px-2 py-1 rounded text-xs font-bold ${ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
                       {ticket.closed ? 'Closed' : 'Not Closed'}
                     </span>
                   )}
@@ -1938,7 +1938,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   key={label}
                   onClick={key ? () => toggleSort(key) : undefined}
                   title={key ? `Sort by ${label}` : undefined}
-                  className={`px-3 py-2 text-[9px] font-bold uppercase whitespace-nowrap ${
+                  className={`px-3 py-2 text-micro font-bold uppercase whitespace-nowrap ${
                     key
                       ? `cursor-pointer select-none hover:text-slate-700 ${sortKey === key ? 'text-blue-600' : 'text-slate-500'}`
                       : 'text-slate-500'
@@ -1947,7 +1947,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   {label}{key ? sortArrow(key) : ''}
                 </th>
               ))}
-              {onDelete && <th className="px-3 py-2 text-[9px] font-bold text-slate-500 uppercase text-right">Del</th>}
+              {onDelete && <th className="px-3 py-2 text-micro font-bold text-slate-500 uppercase text-right">Del</th>}
             </tr>
           </thead>
           {/* Click any cell you cannot edit to copy what it says.
@@ -1965,7 +1965,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                       <span className="text-slate-500">{ticket.serial}</span>
                     ) : <span className="text-slate-300">—</span>}
                     {serialGapBefore.has(ticket.id) && (
-                      <span className="ml-1.5 bg-red-100 text-red-700 px-1 py-0.5 rounded text-[8px] font-bold">
+                      <span className="ml-1.5 bg-red-100 text-red-700 px-1 py-0.5 rounded text-micro font-bold">
                         GAP −{serialGapBefore.get(ticket.id)}
                       </span>
                     )}
@@ -1974,15 +1974,15 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                     {ticket.airlineCode
                       ? <span
                           title={airlineName(ticket.airlineCode) || `Airline code ${ticket.airlineCode}`}
-                          className="font-mono font-black text-[11px] text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded"
+                          className="font-mono font-black text-xs text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded"
                         >{ticket.airlineCode}</span>
-                      : <span className="text-slate-300 text-[9px]">—</span>
+                      : <span className="text-slate-300 text-micro">—</span>
                     }
                   </td>
                   <td className="px-3 py-2 font-bold select-all whitespace-nowrap">
                     {ticket.ticketNo}
                     {ticket.isDuplicate && (
-                      <span className="ml-1.5 bg-amber-400 text-black px-1 py-0.5 rounded text-[8px] font-bold">DUP</span>
+                      <span className="ml-1.5 bg-amber-400 text-black px-1 py-0.5 rounded text-micro font-bold">DUP</span>
                     )}
                     {/* A refund filed under a number of its own — a refund
                         application — says which ticket it pays back. Shown
@@ -1993,7 +1993,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                         carried it yet. 7,025.00 on 5513408117 sat as an RTS
                         refund that way while RTS's report never showed it. */}
                     {unconfirmed(ticket) && (
-                      <span className="block text-[9px] font-normal text-violet-600 select-none"
+                      <span className="block text-micro font-normal text-violet-600 select-none"
                         title={`Recorded from ${ticket.reportName || 'their sheet'}. No ${ticket.source} report has carried it yet - it is confirmed when one does, at the same amount.`}>
                         not confirmed by {ticket.source}
                       </span>
@@ -2008,7 +2008,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                       if (!sp) return null;
                       const refund = (ticket.amount || 0) < 0;
                       return (
-                        <span className="block text-[9px] font-bold text-violet-700 bg-violet-50 rounded px-1 mt-0.5 select-none w-fit"
+                        <span className="block text-micro font-bold text-violet-700 bg-violet-50 rounded px-1 mt-0.5 select-none w-fit"
                           title={`Sold under ${sp.sale}, refunded under ${sp.refund}`}>
                           ⇄ {refund ? `sold under ${sp.sale}` : `refunded under ${sp.refund}`}
                         </span>
@@ -2019,7 +2019,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                       const c = chainOf(own, chainIdx);
                       const before = c.position > 0 ? c.documents[c.position - 1] : '';
                       return (
-                        <span className="block text-[9px] font-normal text-sky-600 select-none"
+                        <span className="block text-micro font-normal text-sky-600 select-none"
                           title={c.documents.length > 1 ? `The chain: ${c.documents.join(' → ')}` : 'Reissued at no charge'}>
                           free reissue{before ? ` of ${before}` : ''}
                         </span>
@@ -2028,7 +2028,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                     {/* A debit or credit memo: the ticket the airline charged
                         or credited us over, as BSP's +RTDN line names it. */}
                     {/^(ADM|ACM)$/i.test(ticket.status || '') && ticket.relatedTicket && (
-                      <span className="block text-[9px] font-normal text-violet-600 select-none"
+                      <span className="block text-micro font-normal text-violet-600 select-none"
                         title={`${(ticket.status || '').toUpperCase() === 'ADM' ? 'Debit' : 'Credit'} memo on ticket ${ticket.relatedTicket}`}>
                         {(ticket.status || '').toUpperCase()} on {ticket.relatedTicket}
                       </span>
@@ -2045,7 +2045,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                       const viaReissue = chain.original !== named;
                       if (named === own && !viaReissue) return null;
                       return (
-                        <span className="block text-[9px] font-normal text-violet-600 select-none"
+                        <span className="block text-micro font-normal text-violet-600 select-none"
                           title={`Refunds ${named}`
                             + (viaReissue ? `, a reissue. The chain: ${chain.documents.join(' → ')}` : '')}>
                           ↩ refunds {named}
@@ -2056,13 +2056,13 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   </td>
                   <td className="px-3 py-2 cursor-copy" data-copy-row={ticket.id}
                       title="Copy the ticket — airline, number, passenger, PNR">
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-sans font-bold uppercase ${getSourceColor(ticket.source || '')}`}>
+                    <span className={`px-1.5 py-0.5 rounded text-micro font-sans font-bold uppercase ${getSourceColor(ticket.source || '')}`}>
                       {ticket.source || 'UNKNOWN'}
                     </span>
                   </td>
                   <td className="px-3 py-2">
                     {ticket.status
-                      ? <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${STATUS_COLORS[ticket.status] ?? 'bg-slate-100 text-slate-500'}`}>{ticket.status}</span>
+                      ? <span className={`px-1.5 py-0.5 rounded text-micro font-bold ${STATUS_COLORS[ticket.status] ?? 'bg-slate-100 text-slate-500'}`}>{ticket.status}</span>
                       : <span className="text-slate-300">—</span>
                     }
                   </td>
@@ -2085,7 +2085,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                         >{ticket.date ? `[${ticket.date}]` : '[+ DATE]'}</span>
                       ) : <span className="text-red-400 italic">no date</span>}
                   </td>
-                  <td className="px-3 py-2 text-[10px] text-slate-400">
+                  <td className="px-3 py-2 text-mini text-slate-400">
                     {isEditing(ticket.id, 'route') ? editorInput : (
                       <span
                         data-editable
@@ -2158,7 +2158,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                       </span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-[9px] font-bold text-slate-400 whitespace-nowrap">
+                  <td className="px-3 py-2 text-micro font-bold text-slate-400 whitespace-nowrap">
                     {rowCurrency}
                     {/* Bought in dollars and kept in dirhams. Said on the row,
                         because their sheet and the receipt still say dollars. */}
@@ -2225,15 +2225,15 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                     )}
                   </td>
                   {companyOf && (
-                    <td className="px-3 py-2 text-[10px] font-bold text-blue-700 whitespace-nowrap">
+                    <td className="px-3 py-2 text-mini font-bold text-blue-700 whitespace-nowrap">
                       {companyOf(ticket) || <span className="text-slate-300 font-normal">—</span>}
                     </td>
                   )}
-                  <td className="px-3 py-2 font-mono text-[10px] text-slate-600 whitespace-nowrap"
+                  <td className="px-3 py-2 font-mono text-mini text-slate-600 whitespace-nowrap"
                       title={ticket.vendorReference || undefined}>
                     {vendorRef(ticket) || <span className="text-slate-300">—</span>}
                   </td>
-                  <td className={`px-3 py-2 font-bold text-[9px] ${!ticket.reqNum ? 'text-red-600' : 'text-emerald-600'}`}>
+                  <td className={`px-3 py-2 font-bold text-micro ${!ticket.reqNum ? 'text-red-600' : 'text-emerald-600'}`}>
                     {!ticket.reqNum ? 'NEED REQ' : 'MATCHED'}
                   </td>
                   <td className="px-3 py-2">
@@ -2241,7 +2241,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                       <button
                         onClick={() => onUpdateClosed(ticket.id, !ticket.closed)}
                         title={ticket.closed ? 'Click to reopen' : 'Click to close'}
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-bold flex items-center gap-1 transition-colors ${
+                        className={`px-1.5 py-0.5 rounded text-micro font-bold flex items-center gap-1 transition-colors ${
                           ticket.closed
                             ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
                             : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
@@ -2251,7 +2251,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                         {ticket.closed ? 'Closed' : 'Not Closed'}
                       </button>
                     ) : (
-                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                      <span className={`px-1.5 py-0.5 rounded text-micro font-bold ${ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
                         {ticket.closed ? 'Closed' : 'Not Closed'}
                       </span>
                     )}
@@ -2277,7 +2277,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-white border-t border-slate-200 text-[10px] font-mono text-slate-500">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-white border-t border-slate-200 text-mini font-mono text-slate-500">
           <span>Page {page + 1} of {totalPages} · showing {paged.length} of {shown.length}</span>
           <div className="flex items-center gap-1">
             <button onClick={() => setPage(0)} disabled={page === 0} className="px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 disabled:opacity-30">«</button>
