@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { walletReference } from '../core/config/appSettings';
 import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { LayoutDashboard } from 'lucide-react';
@@ -31,8 +32,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
   const duplicateCount = tickets.filter(t => t.isDuplicate).length;
 
   const lowBalanceVendors = vendorBalances.filter(v => {
-    if (v.initialBalance <= 0) return false;
-    return v.currentBalance < v.initialBalance * 0.2;
+    const ref = walletReference(v.vendorName, v.initialBalance);
+    return ref > 0 && v.currentBalance < ref * 0.2;
   });
 
   const sarNet = useMemo(() => tickets.filter(t => ticketCurrency(t) === 'SAR').reduce((s, t) => s + t.amount, 0), [tickets]);
@@ -157,7 +158,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
             </thead>
             <tbody className="text-xs font-mono">
               {vendorBalances.map(v => {
-                const pct = v.initialBalance > 0 ? (v.currentBalance / v.initialBalance) * 100 : 100;
+                const ref = walletReference(v.vendorName, v.initialBalance);
+                const pct = ref > 0 ? (v.currentBalance / ref) * 100 : 100;
                 const isLow = pct < 20;
                 const isNeg = v.currentBalance < 0;
                 return (

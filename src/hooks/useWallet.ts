@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { walletReference, LOW_SHARE } from '../core/config/appSettings';
 import { VendorBalance, BalanceTopUp, Ticket } from '../types';
 import { WalletService } from '../services/WalletService';
 
@@ -19,8 +20,11 @@ export function useWallet(userId: string, tickets: Ticket[]) {
     currentBalance: WalletService.calcBalance(v, tickets, topUps),
   }));
 
-  const LOW_PCT     = 0.2;
-  const lowVendors  = vendorsLive.filter(v => v.initialBalance > 0 && v.currentBalance < v.initialBalance * LOW_PCT);
+  // Low against the vendor's normal limit (Settings), else its opening balance.
+  const lowVendors  = vendorsLive.filter(v => {
+    const ref = walletReference(v.vendorName, v.initialBalance);
+    return ref > 0 && v.currentBalance < ref * LOW_SHARE;
+  });
   const overdrawn   = vendorsLive.filter(v => v.currentBalance < 0);
 
   const saveVendor   = (v: VendorBalance)   => svc.saveVendor({ ...v, userId });

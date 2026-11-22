@@ -98,6 +98,15 @@ export function applyAppSettings(rows: { key: string; value: unknown }[]): Loade
  *  (Ibtekar 20,000 SAR, the user, 22 Nov 2026), else its opening balance. */
 const DEFAULT_LIMITS: Record<string, number> = { ibtekar: 20000 };
 export function walletReference(name: string, initialBalance: number): number {
-  const set = vendors.find(v => v.name.toLowerCase() === (name || '').toLowerCase())?.limit;
-  return set && set > 0 ? set : DEFAULT_LIMITS[(name || '').toLowerCase()] ?? initialBalance;
+  const n = (name || '').trim().toLowerCase();
+  // A wallet and its vendor's setting are named alike, not always the same:
+  // the wallet "IATA" is the vendor "IATA BSP".
+  const set = vendors.find(v => { const m = v.name.trim().toLowerCase(); return !!n && !!m && (m === n || m.includes(n) || n.includes(m)); })?.limit;
+  return set && set > 0 ? set : DEFAULT_LIMITS[n] ?? initialBalance;
 }
+
+/** The limit a vendor runs on when Settings names none - shown there as the default. */
+export const defaultLimit = (name: string): number | undefined => DEFAULT_LIMITS[(name || '').trim().toLowerCase()];
+
+/** Below this share of its reference a wallet reads Low. */
+export const LOW_SHARE = 0.2;

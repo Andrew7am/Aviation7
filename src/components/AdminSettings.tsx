@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { defaultLimit } from '../core/config/appSettings';
 import { Store, Gauge, BellRing, Plus, Trash2, Save, Loader2, Signpost, Building2 } from 'lucide-react';
 import { AppSettingsService, type LoadedSettings, type RequestAlertSetting } from '../services/AppSettingsService';
 import { BUILTIN_SOURCES, knownSources } from '../core/config/sources';
@@ -98,7 +99,8 @@ const Vendors: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (v: Ven
   const initial = useMemo((): VendorSetting[] => [
     ...builtin.map(name => {
       const set = loaded.vendors.find(v => v.name.toLowerCase() === name.toLowerCase());
-      return { name, currency: set?.currency ?? builtinCurrency(name), onStatement: set?.onStatement ?? builtinOnStatement(name) };
+      return { name, currency: set?.currency ?? builtinCurrency(name), onStatement: set?.onStatement ?? builtinOnStatement(name),
+               ...(set?.limit ? { limit: set.limit } : {}) };
     }),
     ...loaded.vendors.filter(v => !isBuiltin(v.name)).map(v => ({ ...v, onStatement: !!v.onStatement })),
   ], [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -108,7 +110,7 @@ const Vendors: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (v: Ven
   useEffect(() => setRows(initial), [initial]);
 
   // Saved: the vendors added here, and a built-in one only where it was changed.
-  const toSave = rows.filter(r => !isBuiltin(r.name) || r.currency !== builtinCurrency(r.name) || !!r.onStatement !== builtinOnStatement(r.name));
+  const toSave = rows.filter(r => !isBuiltin(r.name) || r.currency !== builtinCurrency(r.name) || !!r.onStatement !== builtinOnStatement(r.name) || !!r.limit);
   const dirty = JSON.stringify(toSave) !== JSON.stringify(loaded.vendors);
   const add = () => {
     const n = name.trim();
@@ -118,10 +120,12 @@ const Vendors: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (v: Ven
   return (
     <Section icon={<Store className="w-3.5 h-3.5" />} title="Vendors and their currencies"
       note="A vendor added here appears in every vendor list. Each vendor's tickets are kept in its currency - a change applies to tickets recorded or edited from now on. A vendor that bills on a statement against a wallet is never keyed by hand: its tickets arrive with the statement."
-      action={<button disabled={!dirty || busy} onClick={() => onSave(toSave, toSave.map(v => `${v.name} ${v.currency}${v.onStatement ? ' (statement)' : ''}`).join(', ') || 'built-in rule only')}
+      action={<button disabled={!dirty || busy} onClick={() => onSave(toSave, toSave.map(v => `${v.name} ${v.currency}${v.onStatement ? ' (statement)' : ''}${v.limit ? ` limit ${v.limit}` : ''}`).join(', ') || 'built-in rule only')}
         className={`${btn} bg-blue-600 text-white hover:bg-blue-700`}>{busy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />} Save</button>}>
-      <table className="w-full text-xs">
-        <thead><tr className="text-micro uppercase text-slate-400 text-left"><th className="py-1">Vendor</th><th>Currency</th><th>Statement + wallet</th><th></th></tr></thead>
+      <div className="overflow-x-auto -mx-1 px-1">
+      <table className="w-full text-xs min-w-[460px]">
+        <thead><tr className="text-micro uppercase text-slate-400 text-left"><th className="py-1">Vendor</th><th>Currency</th><th>Statement + wallet</th>
+          <th title="The balance this vendor normally runs on. Its wallet reads Low below 20% of it. Empty: the wallet's opening balance is used.">Normal limit</th><th></th></tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={r.name} className="border-t border-slate-100">
@@ -131,12 +135,18 @@ const Vendors: React.FC<{ loaded: LoadedSettings; busy: boolean; onSave: (v: Ven
                 {CURRENCIES.map(c => <option key={c}>{c}</option>)}</select></td>
               <td><input type="checkbox" checked={!!r.onStatement} title="Bills on a statement against a credit wallet - never keyed by hand"
                 onChange={e => setRows(rows.map((x, j) => j === i ? { ...x, onStatement: e.target.checked } : x))} /></td>
+              <td><input type="number" inputMode="decimal" min={0} step="any" className={`${input} w-28 font-mono`}
+                value={r.limit ?? ''} placeholder={defaultLimit(r.name) ? `${defaultLimit(r.name)!.toLocaleString('en-US')} default` : 'opening'}
+                title="The balance this vendor normally runs on. Its wallet reads Low below 20% of it."
+                onChange={e => { const n = parseFloat(e.target.value);
+                  setRows(rows.map((x, j) => { if (j !== i) return x; const { limit: _, ...rest } = x; return n > 0 ? { ...rest, limit: n } : rest; })); }} /></td>
               <td className="text-right">{!isBuiltin(r.name) && (
                 <button title="Remove" onClick={() => setRows(rows.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-600 p-1"><Trash2 className="w-3.5 h-3.5" /></button>)}</td>
             </tr>
           ))}
         </tbody>
       </table>
+      </div>
       <div className="flex flex-wrap gap-2 mt-3 items-center">
         <input className={`${input} flex-1 min-w-0 basis-full sm:basis-auto`} placeholder="New vendor name, as it should read everywhere" value={name}
           onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && add()} />

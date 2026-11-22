@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { walletReference } from '../core/config/appSettings';
 import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
@@ -506,7 +507,8 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
   }, [tickets, selectedVendor, dateFrom, dateTo]);
 
   const overdraftVendors = vendorBalances.filter(v => v.currentBalance < 0);
-  const lowVendors = vendorBalances.filter(v => v.currentBalance >= 0 && v.initialBalance > 0 && (v.currentBalance / v.initialBalance) < 0.2);
+  const refOf = (v: VendorBalance) => walletReference(v.vendorName, v.initialBalance);
+  const lowVendors = vendorBalances.filter(v => v.currentBalance >= 0 && refOf(v) > 0 && (v.currentBalance / refOf(v)) < 0.2);
 
   const sources = useMemo(() =>
     ['ALL', ...Array.from(new Set(tickets.map(t => t.source).filter(Boolean)))],
@@ -976,7 +978,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                   const refunds = vTickets.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
                   const rem = v.currentBalance;
                   const isNeg = rem < 0;
-                  const isLow = !isNeg && v.initialBalance > 0 && (rem / v.initialBalance) < 0.2;
+                  const isLow = !isNeg && refOf(v) > 0 && (rem / refOf(v)) < 0.2;
                   return (
                     <tr key={v.id} className="hover:bg-slate-50">
                       <td className="px-4 py-2.5 font-sans font-bold text-slate-700 text-xs uppercase">{v.vendorName}</td>
@@ -1025,7 +1027,7 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                   <span className="text-mini font-bold uppercase text-amber-700">Low Balance (Below 20%) — {lowVendors.length} Vendors</span>
                 </div>
                 {lowVendors.map(v => {
-                  const pct = (v.currentBalance / v.initialBalance) * 100;
+                  const pct = (v.currentBalance / refOf(v)) * 100;
                   return (
                     <div key={v.id} className="flex justify-between items-center px-4 py-3 border-b border-amber-50">
                       <span className="font-bold text-sm uppercase text-slate-700">{v.vendorName}</span>
