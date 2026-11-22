@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { VendorBalance, BalanceTopUp, Ticket } from '../types';
 import {
@@ -200,10 +201,10 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
              isLow: pct < 20 && remaining >= 0 };
   };
   const statusBadge = (isNeg: boolean, isLow: boolean) => isNeg
-    ? <span className="bg-red-100 text-red-700 text-micro font-bold px-2 py-0.5 rounded-full">OVERDRAFT</span>
+    ? <StatusBadge tone="danger">Overdraft</StatusBadge>
     : isLow
-    ? <span className="bg-amber-100 text-amber-700 text-micro font-bold px-2 py-0.5 rounded-full">LOW ⚠</span>
-    : <span className="bg-emerald-50 text-emerald-600 text-micro font-bold px-2 py-0.5 rounded-full">OK</span>;
+    ? <StatusBadge tone="warning">Low</StatusBadge>
+    : <StatusBadge tone="success">OK</StatusBadge>;
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">

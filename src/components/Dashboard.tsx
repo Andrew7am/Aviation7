@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { LayoutDashboard } from 'lucide-react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
@@ -141,9 +142,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
           <div className="px-4 py-3 border-b border-slate-200 flex justify-between items-center shrink-0">
             <h3 className="text-sm font-semibold text-slate-800">Vendor credit status</h3>
             {lowBalanceVendors.length > 0 && (
-              <span className="bg-red-100 text-red-700 text-micro font-bold px-2 py-0.5 rounded-full">
-                {lowBalanceVendors.length} LOW
-              </span>
+              <StatusBadge tone="warning">{lowBalanceVendors.length} low</StatusBadge>
             )}
           </div>
           <div className="overflow-auto flex-1 min-h-0">
@@ -180,10 +179,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
                     </td>
                     <td className="px-4 py-2.5 text-center">
                       {isNeg
-                        ? <span className="bg-red-100 text-red-700 text-micro font-bold px-1.5 py-0.5 rounded">OVERDRAFT</span>
+                        ? <StatusBadge tone="danger">Overdraft</StatusBadge>
                         : isLow
-                        ? <span className="bg-amber-100 text-amber-700 text-micro font-bold px-1.5 py-0.5 rounded">LOW</span>
-                        : <span className="bg-emerald-50 text-emerald-600 text-micro font-bold px-1.5 py-0.5 rounded">OK</span>
+                        ? <StatusBadge tone="warning">Low</StatusBadge>
+                        : <StatusBadge tone="success">OK</StatusBadge>
                       }
                     </td>
                   </tr>

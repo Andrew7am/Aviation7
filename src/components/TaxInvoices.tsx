@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import {
   Receipt, Upload, Loader2, AlertTriangle, CheckCircle2, X, Search, Trash2,
@@ -64,10 +65,10 @@ const CREDIT_BADGE: Record<RefundCoverage, { label: string; cls: string }> = {
 };
 
 const BADGE: Record<Coverage, { label: string; cls: string }> = {
-  COVERED: { label: 'Tax invoice held', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  TOTAL_OFF: { label: 'Invoice total wrong', cls: 'bg-red-50 text-red-700 border-red-200' },
-  NOT_TAX: { label: 'Not a final tax invoice', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
-  NONE:    { label: 'No invoice',        cls: 'bg-red-50 text-red-700 border-red-200' },
+  COVERED: { label: 'Tax invoice held', cls: badgeClass('success') },
+  TOTAL_OFF: { label: 'Invoice total wrong', cls: badgeClass('danger') },
+  NOT_TAX: { label: 'Not a final tax invoice', cls: badgeClass('warning') },
+  NONE:    { label: 'No invoice',        cls: badgeClass('danger') },
 };
 
 const Tile: React.FC<{
@@ -118,29 +119,27 @@ const InvoiceRow: React.FC<{
         )}
         <span className="text-mini text-slate-400 font-mono w-24">{i.invoiceDate || '—'}</span>
         {i.kind === 'CREDIT_NOTE' && (
-          <span className="bg-purple-50 text-purple-700 text-micro font-bold px-1.5 py-0.5 rounded-full">
-            CREDIT NOTE{i.against ? ` against ${i.against}` : ''}
-          </span>
+          <StatusBadge tone="info">Credit note{i.against ? ` against ${i.against}` : ''}</StatusBadge>
         )}
         {i.isTaxInvoice ? (
-          <span className="bg-emerald-50 text-emerald-700 text-micro font-bold px-1.5 py-0.5 rounded-full"
+          <StatusBadge tone="success"
             title={i.qr ? `ZATCA QR: ${i.qr.seller} · VAT no. ${i.qr.vatNo} · ${i.qr.timestamp} · total ${i.qr.total} · VAT ${i.qr.vat}` : undefined}>
-            QR ✓ FINAL{i.qr?.signatureOk ? ' · SIGNED ✓' : ''}
-          </span>
+            Final · QR ✓{i.qr?.signatureOk ? ' · signed ✓' : ''}
+          </StatusBadge>
         ) : (
-          <span className="bg-red-50 text-red-700 border border-red-200 text-micro font-bold px-1.5 py-0.5 rounded-full"
+          <StatusBadge tone="danger"
             title="No ZATCA QR code on it. A printout headed TAX INVOICE is not a final tax invoice.">
-            NOT FINAL — NO QR
-          </span>
+            Not final · no QR
+          </StatusBadge>
         )}
         {!i.isTaxInvoice && c.finalFor.length > 0 && (
           <span className="text-mini text-emerald-700">final one held: {c.finalFor.join(', ')}</span>
         )}
         {i.layout === 'ZATCA' && i.kind !== 'CREDIT_NOTE' && (
-          <span className="bg-slate-100 text-slate-500 text-micro font-bold px-1.5 py-0.5 rounded-full"
+          <StatusBadge tone="neutral"
             title="This template prints no per-ticket amounts — only its total can be compared.">
-            TOTAL ONLY
-          </span>
+            Total only
+          </StatusBadge>
         )}
         <span className="text-mini text-slate-500 ml-auto">
           {i.serials.length} ticket(s)
@@ -564,7 +563,7 @@ export const TaxInvoices: React.FC<{
                     {fmt(r.ticket.amount ?? 0)}
                   </td>
                   <td className="px-3 py-1.5">
-                    <span className={`text-micro font-bold px-1.5 py-0.5 rounded-full border ${BADGE[r.coverage].cls}`}>
+                    <span className={BADGE[r.coverage].cls}>
                       {r.invoices.length ? r.invoices.join(', ') : BADGE[r.coverage].label}
                     </span>
                   </td>

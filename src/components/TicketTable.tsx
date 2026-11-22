@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket } from '../types';
 import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown, FolderOpen, Copy } from 'lucide-react';
@@ -35,6 +36,8 @@ interface TicketTableProps {
   title: string;
   /** The menu's icon for the screen this list is, beside its title. */
   icon?: React.ReactNode;
+  /** What the search box starts with - the ticket picked in the menu's search. */
+  initialSearch?: string;
   defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED' | 'VOIDS' | 'FREE_REISSUE' | 'SPLIT_REQ';
   /** Opens the table already narrowed to a closure state, so a view can be
    *  "the outstanding list" without the user having to find the dropdown. */
@@ -239,21 +242,6 @@ const SOURCE_COLORS: Record<string, string> = {
   'turkish': 'bg-red-100 text-red-700',
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  ISSUE:  'bg-emerald-100 text-emerald-700',
-  REFUND: 'bg-red-100 text-red-700',
-  FUND:   'bg-emerald-200 text-emerald-800',
-  VOID:   'bg-slate-200 text-slate-600',
-  HOLD:   'bg-amber-100 text-amber-800',
-  ADM:    'bg-blue-100 text-blue-700',
-  ACM:    'bg-purple-100 text-purple-700',
-  TKTT: 'bg-emerald-100 text-emerald-700',
-  RFND: 'bg-red-100 text-red-700',
-  CANN: 'bg-slate-100 text-slate-500',
-  CANX: 'bg-slate-200 text-slate-600',
-  RFNX: 'bg-slate-200 text-slate-600',
-  EMDS: 'bg-purple-100 text-purple-700',
-};
 
 function getSourceColor(source: string) {
   const s = source.toLowerCase();
@@ -438,9 +426,9 @@ const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean; withCompany?: bo
 };
 
 export const TicketTable: React.FC<TicketTableProps> = ({
-  tickets, title, icon, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, exchanges = [], companyOf, onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed, canClose,
+  tickets, title, icon, initialSearch = '', defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, exchanges = [], companyOf, onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed, canClose,
 }) => {
-  const [searchTerm, setSearchTerm]     = useState('');
+  const [searchTerm, setSearchTerm]     = useState(initialSearch);
   const chainIdx = useMemo(() => chainIndex(exchanges), [exchanges]);
   const [filterMode, setFilterMode] =
     useState<'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED' | 'VOIDS' | 'FREE_REISSUE' | 'SPLIT_REQ'>(defaultFilter);
@@ -1848,9 +1836,9 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
               voided ? 'border-slate-200 opacity-60' : !ticket.reqNum ? 'border-red-200' : 'border-slate-200'}`}>
               <div className="flex items-center gap-2">
                 <span className="font-mono font-bold text-[13px] text-slate-800">{ticket.airlineCode ? `${ticket.airlineCode}-` : ''}{ticket.ticketNo}</span>
-                <span className={`ml-auto px-1.5 py-0.5 rounded text-mini font-bold ${voided ? STATUS_COLORS.VOID : STATUS_COLORS[ticket.status] ?? 'bg-slate-100 text-slate-500'}`}>
-                  {voided ? 'VOID' : ticket.status}
-                </span>
+                <StatusBadge tone={ticketStatus(voided ? 'VOID' : ticket.status)[0]} className="ml-auto">
+                  {ticketStatus(voided ? 'VOID' : ticket.status)[1]}
+                </StatusBadge>
               </div>
               <div className="text-[12px] text-slate-700 mt-1 truncate">{ticket.passengerName || '—'}</div>
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-xs text-slate-500">
@@ -1879,15 +1867,14 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                 <div className="mt-2">
                   {onUpdateClosed && (!canClose || canClose(ticket)) ? (
                     <button onClick={() => onUpdateClosed(ticket.id, !ticket.closed)}
-                      className={`px-2 py-1 rounded text-xs font-bold flex items-center gap-1 ${
-                        ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
+                      className={`${badgeClass(ticket.closed ? 'success' : 'warning')} py-1`}>
                       {ticket.closed ? <CheckCircle2 className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
-                      {ticket.closed ? 'Closed' : 'Not Closed'}
+                      {ticket.closed ? 'Closed' : 'Not closed'}
                     </button>
                   ) : (
-                    <span className={`px-2 py-1 rounded text-xs font-bold ${ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
-                      {ticket.closed ? 'Closed' : 'Not Closed'}
-                    </span>
+                    <StatusBadge tone={ticket.closed ? 'success' : 'warning'}>
+                      {ticket.closed ? 'Closed' : 'Not closed'}
+                    </StatusBadge>
                   )}
                 </div>
               )}
@@ -2065,7 +2052,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   </td>
                   <td className="px-3 py-2">
                     {ticket.status
-                      ? <span className={`px-1.5 py-0.5 rounded text-micro font-bold ${STATUS_COLORS[ticket.status] ?? 'bg-slate-100 text-slate-500'}`}>{ticket.status}</span>
+                      ? <StatusBadge tone={ticketStatus(ticket.status)[0]}>{ticketStatus(ticket.status)[1]}</StatusBadge>
                       : <span className="text-slate-400">—</span>
                     }
                   </td>
@@ -2244,19 +2231,15 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                       <button
                         onClick={() => onUpdateClosed(ticket.id, !ticket.closed)}
                         title={ticket.closed ? 'Click to reopen' : 'Click to close'}
-                        className={`px-1.5 py-0.5 rounded text-micro font-bold flex items-center gap-1 transition-colors ${
-                          ticket.closed
-                            ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
-                            : 'bg-orange-100 text-orange-700 hover:bg-orange-200'
-                        }`}
+                        className={`${badgeClass(ticket.closed ? 'success' : 'warning')} transition-colors hover:brightness-95`}
                       >
                         {ticket.closed ? <CheckCircle2 className="w-2.5 h-2.5" /> : <Circle className="w-2.5 h-2.5" />}
-                        {ticket.closed ? 'Closed' : 'Not Closed'}
+                        {ticket.closed ? 'Closed' : 'Not closed'}
                       </button>
                     ) : (
-                      <span className={`px-1.5 py-0.5 rounded text-micro font-bold ${ticket.closed ? 'bg-emerald-100 text-emerald-700' : 'bg-orange-100 text-orange-700'}`}>
-                        {ticket.closed ? 'Closed' : 'Not Closed'}
-                      </span>
+                      <StatusBadge tone={ticket.closed ? 'success' : 'warning'}>
+                        {ticket.closed ? 'Closed' : 'Not closed'}
+                      </StatusBadge>
                     )}
                   </td>
                   {onDelete && (

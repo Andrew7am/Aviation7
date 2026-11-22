@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AuthGuard } from './components/AuthGuard';
 import { AlertBanner } from './components/AlertBanner';
 import { Shell } from './components/Shell';
+import { GlobalSearch } from './components/GlobalSearch';
 import { Dashboard } from './components/Dashboard';
 
 /**
@@ -38,6 +39,7 @@ const Adms            = React.lazy(() => import('./components/Adms').then(m => (
 const ImportHistory   = React.lazy(() => import('./components/ImportHistory').then(m => ({ default: m.ImportHistory })));
 const ActivityLog     = React.lazy(() => import('./components/ActivityLog').then(m => ({ default: m.ActivityLog })));
 const Settings        = React.lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const RequestProfile  = React.lazy(() => import('./components/RequestProfile').then(m => ({ default: m.RequestProfile })));
 const ManualEntry     = React.lazy(() => import('./components/ManualEntry').then(m => ({ default: m.ManualEntry })));
 
 /** Shown while a screen's code is on its way. Deliberately plain: a skeleton
@@ -720,6 +722,12 @@ function MainApp({ user }: { user: User }) {
     return r.uncovered.length + r.totalOff.length;
   }, [taxInvoices, tickets]);
 
+  /* The menu's search: a request opens its profile over whatever screen is
+     showing; a ticket opens All Tickets searched for it (the key remounts the
+     list so the search box takes the new term). */
+  const [searchReq, setSearchReq] = useState<string | null>(null);
+  const [ticketQuery, setTicketQuery] = useState({ q: '', n: 0 });
+
   type NavItem = { id: ViewState; group: string; label: string; icon: React.ReactNode; badge?: number; badgeColor?: 'red' | 'amber' | 'slate' };
   // Real memos only - an airline's ADM or ACM, or a supplier's. BSP's own fee is not counted.
   const admCount = React.useMemo(() => tickets.filter(t => { const k = admKind(t); return k && k !== 'BSP_FEE'; }).length, [tickets]);
@@ -762,11 +770,22 @@ function MainApp({ user }: { user: User }) {
       onAddManually={() => setShowManualEntry(true)}
       onImport={() => setView('import')}
       onLogout={logout}
+      navTop={close => (
+        <GlobalSearch tickets={tickets}
+          onOpenRequest={req => { close(); setSearchReq(req); }}
+          onOpenTicket={no => { close(); setTicketQuery(t => ({ q: no, n: t.n + 1 })); setView('tickets'); }} />
+      )}
       headerExtra={<><LimitChip cfg={EMIRATES_IATA} use={ekUse} /><AirtableBell notices={atNotices} sync={atSync} canEdit={isAdmin}
         onAccept={acceptNotices} onDismiss={dismissNotices} onSyncNow={syncAirtableNow} /></>}
       banner={<><RequestAlertBanner alerts={reqAlerts} /><LimitBanner cfg={EMIRATES_IATA} use={ekUse} /><AlertBanner alerts={alerts} onDismiss={dismissAlert} /></>}
     >
       <React.Suspense fallback={<Loading />}>
+      {searchReq && (
+        <RequestProfile reqNum={searchReq} tickets={tickets} onClose={() => setSearchReq(null)}
+          onUpdateClosed={isAdmin ? handleUpdateClosed
+            : closeOffices.length && canClose({ reqNum: searchReq })
+              ? (id: string, closed: boolean) => { void officeBulkClosed([id], closed); } : undefined} />
+      )}
       {showManualEntry && (
         <ManualEntry
           vendorNames={vendorBalancesLive.map(v => v.vendorName)}
@@ -777,7 +796,7 @@ function MainApp({ user }: { user: User }) {
       )}
 
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
-      {view === 'tickets'   && <TicketTable title="All tickets" icon={<List className="w-4 h-4" />} tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} companyOf={companyRows.length ? companyFn : undefined} {...(isAdmin ? writeHandlers : closeHandlers)} />}
+      {view === 'tickets'   && <TicketTable key={`tickets-${ticketQuery.n}`} initialSearch={ticketQuery.q} title="All tickets" icon={<List className="w-4 h-4" />} tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} companyOf={companyRows.length ? companyFn : undefined} {...(isAdmin ? writeHandlers : closeHandlers)} />}
       {view === 'companies' && <Companies tickets={tickets} rows={companyRows} loading={companiesLoading}
         assignments={companyAssignments} {...(isAdmin ? { onAssign: assignCompany, onUnassign: unassignCompany } : {})}
         tableProps={{ afterClose, exchanges, ...(isAdmin ? writeHandlers : closeHandlers) }} />}

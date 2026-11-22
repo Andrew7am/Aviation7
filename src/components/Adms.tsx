@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { FileWarning, Search, Download, AlertTriangle } from 'lucide-react';
 import type { Ticket } from '../types';
@@ -213,7 +214,7 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.ticket.reqNum || '—'}</td>
                   <td className="px-3 py-2 text-slate-400 text-mini whitespace-nowrap">{r.ticket.vendorReference || '—'}</td>
                   <td className="px-3 py-2 text-mini">
-                    {r.ticket.closed ? <span className="text-emerald-600 font-bold">Closed</span> : <span className="text-amber-600 font-bold">Not closed</span>}
+                    {r.ticket.closed ? <StatusBadge tone="success">Closed</StatusBadge> : <StatusBadge tone="warning">Not closed</StatusBadge>}
                   </td>
                 </tr>
               );

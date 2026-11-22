@@ -41,12 +41,15 @@ interface Props {
   /** Sits full width under the header, above the nav and the content, which is
    *  where an alert about the whole workspace belongs. */
   banner?: React.ReactNode;
+  /** Above the menu: the search for any ticket or request. Given a way to
+   *  close the drawer, so picking a result on a phone shows the result. */
+  navTop?: (closeNav: () => void) => React.ReactNode;
   children: React.ReactNode;
 }
 
 export const Shell: React.FC<Props> = ({
   navItems, view, onView, isAdmin, email, stats,
-  onAddManually, onImport, onLogout, banner, children, headerExtra,
+  onAddManually, onImport, onLogout, banner, children, headerExtra, navTop,
 }) => {
   const { theme, setTheme } = useTheme();
   // Closed by default so a phone opens on the ledger rather than on a menu.
@@ -156,6 +159,7 @@ export const Shell: React.FC<Props> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+          {navTop?.(() => setNavOpen(false))}
           <nav className="flex-1 px-2.5 pb-3 overflow-y-auto overscroll-contain">
             {navItems.map((item, i) => {
               const active  = view === item.id;

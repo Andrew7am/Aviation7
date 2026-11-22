@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket } from '../types';
 import {
@@ -56,10 +57,11 @@ export const TAB_LABEL: Record<'ALL' | State, string> = {
 
 const RANK: Record<State, number> = { PART: 0, OPEN: 1, DONE: 2 };
 
-const STATE_STYLE: Record<State, { chip: string; row: string; label: string }> = {
-  PART: { chip: 'bg-amber-100 text-amber-800', row: 'bg-amber-50/40', label: 'PART CLOSED' },
-  OPEN: { chip: 'bg-orange-100 text-orange-700', row: '', label: 'NOT CLOSED' },
-  DONE: { chip: 'bg-emerald-100 text-emerald-700', row: '', label: 'CLOSED' },
+// label is what the export writes and stays as it was; text is the badge.
+const STATE_STYLE: Record<State, { chip: string; row: string; label: string; text: string }> = {
+  PART: { chip: badgeClass('warning'), row: 'bg-amber-50/40', label: 'PART CLOSED', text: 'Part closed' },
+  OPEN: { chip: badgeClass('warning'), row: '', label: 'NOT CLOSED', text: 'Not closed' },
+  DONE: { chip: badgeClass('success'), row: '', label: 'CLOSED', text: 'Closed' },
 };
 
 interface Summary {
@@ -523,8 +525,8 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                 <div className="flex items-center gap-2">
                   <FolderOpen className="w-4 h-4 text-purple-400 shrink-0" />
                   <span className="font-mono font-bold text-[13px] text-purple-700">{r.reqNum}</span>
-                  <span className={`ml-auto px-1.5 py-0.5 rounded text-mini font-bold whitespace-nowrap ${STATE_STYLE[r.state].chip}`}>
-                    {STATE_STYLE[r.state].label}
+                  <span className={`ml-auto ${STATE_STYLE[r.state].chip}`}>
+                    {STATE_STYLE[r.state].text}
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1.5 text-xs text-slate-500">
@@ -578,12 +580,11 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                         </button>
                       </td>
                       <td className="px-3 py-2">
-                        <span className={`px-1.5 py-0.5 rounded text-micro font-sans font-bold
-                                          whitespace-nowrap ${STATE_STYLE[r.state].chip}`}>
-                          {r.state === 'PART' && <AlertTriangle className="w-2.5 h-2.5 inline mr-1" />}
-                          {r.state === 'DONE' && <CheckCircle2 className="w-2.5 h-2.5 inline mr-1" />}
-                          {r.state === 'OPEN' && <Circle className="w-2.5 h-2.5 inline mr-1" />}
-                          {STATE_STYLE[r.state].label}
+                        <span className={`font-sans ${STATE_STYLE[r.state].chip}`}>
+                          {r.state === 'PART' && <AlertTriangle className="w-2.5 h-2.5" />}
+                          {r.state === 'DONE' && <CheckCircle2 className="w-2.5 h-2.5" />}
+                          {r.state === 'OPEN' && <Circle className="w-2.5 h-2.5" />}
+                          {STATE_STYLE[r.state].text}
                         </span>
                       </td>
                       <td className="px-3 py-2 text-mini text-slate-500 whitespace-nowrap">

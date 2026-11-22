@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
@@ -988,10 +989,10 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
                       </td>
                       <td className="px-4 py-2.5 text-center">
                         {isNeg
-                          ? <span className="bg-red-100 text-red-700 text-micro font-bold px-2 py-0.5 rounded">OVERDRAFT</span>
+                          ? <StatusBadge tone="danger">Overdraft</StatusBadge>
                           : isLow
-                          ? <span className="bg-amber-100 text-amber-700 text-micro font-bold px-2 py-0.5 rounded">LOW</span>
-                          : <span className="bg-emerald-50 text-emerald-600 text-micro font-bold px-2 py-0.5 rounded">OK</span>
+                          ? <StatusBadge tone="warning">Low</StatusBadge>
+                          : <StatusBadge tone="success">OK</StatusBadge>
                         }
                       </td>
                     </tr>

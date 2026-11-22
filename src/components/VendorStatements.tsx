@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket, VendorStatement, VendorBalance, BalanceTopUp } from '../types';
 import {
@@ -245,15 +246,15 @@ function usePeriod(p: LedgerPeriod) {
 const PeriodBadges: React.FC<{ p: LedgerPeriod; foots: boolean; footingGap: number }> = ({ p, foots, footingGap }) => (
   <>
     {!p.statement && (
-      <span className="ml-2 bg-slate-100 text-slate-500 text-micro font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+      <span className={`ml-2 ${badgeClass('neutral')}`}
             title="The vendor has issued no statement covering these dates, so there is nothing of theirs to compare against.">
-        OURS ONLY
+        Ours only
       </span>
     )}
     {p.statement && !foots && (
-      <span className="ml-2 bg-amber-100 text-amber-700 text-micro font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap"
+      <span className={`ml-2 ${badgeClass('warning')}`}
             title={`Their statement's own figures do not foot — off by ${fmt(footingGap)}`}>
-        THEIRS OFF {fmt(footingGap)}
+        Theirs off by {fmt(footingGap)}
       </span>
     )}
   </>
