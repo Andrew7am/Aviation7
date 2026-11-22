@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { VendorBalance, BalanceTopUp, Ticket } from '../types';
 import {
   Plus, Trash2, Wallet, ChevronDown, ChevronRight,
@@ -205,22 +206,17 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
     : <span className="bg-emerald-50 text-emerald-600 text-micro font-bold px-2 py-0.5 rounded-full">OK</span>;
 
   return (
-    <div className="bg-white border border-slate-200 rounded-lg shadow-sm max-w-6xl mx-auto overflow-hidden">
-
-      {/* Header */}
-      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-4 border-b border-slate-100 bg-slate-50">
-        <div className="flex items-center space-x-3">
-          <Wallet className="text-purple-600 w-5 h-5" />
-          <h2 className="text-sm font-bold uppercase text-slate-700 tracking-wider">Vendor Credit Balances</h2>
-        </div>
-        {canEdit && <button
+    <div className="max-w-6xl mx-auto space-y-4">
+      <PageHeader icon={<Wallet />} title="Vendor credit"
+        subtitle="What each supplier's wallet holds: its opening, the top-ups paid in, what our tickets drew, and what is left."
+        actions={canEdit && <button
           onClick={() => setModalMode('add_existing')}
-          className="flex items-center space-x-2 bg-blue-700 hover:bg-blue-800 text-white px-3 py-1.5 rounded text-mini font-bold uppercase tracking-wider shadow-sm transition-colors"
+          className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white px-3 py-1.5 rounded-md text-xs font-semibold shadow-sm transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
-          <span>Add Vendor</span>
-        </button>}
-      </div>
+          <span>Add vendor</span>
+        </button>} />
+    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
 
       {/* Table.
           The wallet table is eight columns wide and cannot usefully be
@@ -344,7 +340,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
       </div>
 
       <div className="hidden md:block overflow-x-auto">
-      <table className="w-full text-left border-collapse min-w-[760px]">
+      <table className="data-table text-left min-w-[760px]">
         <thead>
           <tr className="border-b border-slate-200 text-micro font-bold text-slate-400 uppercase tracking-wider bg-slate-50">
             <th className="py-3 px-4 w-8"></th>
@@ -419,14 +415,14 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                           </button>
                           <button
                             onClick={() => { if (confirm(`Delete ${vendor.vendorName}?`)) onDeleteVendor(vendor.id); }}
-                            className="text-slate-300 hover:text-red-500 transition-colors"
+                            className="text-slate-400 hover:text-red-500 transition-colors"
                             title="Delete vendor"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </>
                       ) : (
-                        <span className="text-slate-300 text-micro">—</span>
+                        <span className="text-slate-400 text-micro">—</span>
                       )}
                     </div>
                   </td>
@@ -709,6 +705,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
             )}
         </Dialog>
       )}
+    </div>
     </div>
   );
 };

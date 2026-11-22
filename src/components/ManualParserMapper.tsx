@@ -200,7 +200,7 @@ export const ManualParserMapper: React.FC<Props> = ({ onDone }) => {
 
 const UploadStep: React.FC<{ onFile: (f: File) => void }> = ({ onFile }) => (
   <div className="border-2 border-dashed border-slate-200 rounded-lg py-16 text-center">
-    <FileUp className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+    <FileUp className="w-8 h-8 text-slate-400 mx-auto mb-3" />
     <p className="text-xs text-slate-500 mb-3">Upload one sample file of the new report format.</p>
     <label className="inline-block px-4 py-2 bg-blue-600 text-white rounded text-xs font-bold uppercase tracking-wider cursor-pointer hover:bg-blue-700">
       Choose a file
@@ -240,7 +240,7 @@ const HeaderPickStep: React.FC<{
                   <td className={`px-2 py-1.5 text-slate-400 w-10 text-center ${active ? 'text-blue-600 font-bold' : ''}`}>{i}</td>
                   {row.slice(0, 20).map((c, j) => (
                     <td key={j} className={`px-2 py-1.5 whitespace-nowrap ${active ? 'text-blue-800 font-bold' : 'text-slate-600'}`}>
-                      {c || <span className="text-slate-300">—</span>}
+                      {c || <span className="text-slate-400">—</span>}
                     </td>
                   ))}
                 </tr>
@@ -425,7 +425,7 @@ const PreviewSaveStep: React.FC<{
                       ? CABIN_LABEL[r.cabinClass as Exclude<Cabin, ''>] ?? r.cabinClass
                       : r.cabinRaw
                         ? <span className="text-amber-600" title={`"${r.cabinRaw}" names no cabin — kept as written`}>{r.cabinRaw}</span>
-                        : <span className="text-slate-300">—</span>}
+                        : <span className="text-slate-400">—</span>}
                   </td>
                   <td className="px-2 py-1 text-slate-500 truncate max-w-[220px]">{r.passengerName || '—'}</td>
                 </tr>
@@ -486,7 +486,7 @@ const Steps: React.FC<{ step: number }> = ({ step }) => {
             : 'bg-slate-200 text-slate-500'
           }`}>{i + 1}</span>
           <span className={step === i + 1 ? 'text-slate-800' : 'text-slate-400'}>{l}</span>
-          {i < labels.length - 1 && <ChevronRight className="w-3 h-3 text-slate-300" />}
+          {i < labels.length - 1 && <ChevronRight className="w-3 h-3 text-slate-400" />}
         </li>
       ))}
     </ol>

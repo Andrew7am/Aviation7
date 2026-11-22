@@ -25,7 +25,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   if (loading) {
     return (
-      <div className="keep-palette h-[100dvh] bg-[#111C2D] flex items-center justify-center" role="status" aria-label="Loading">
+      <div className="keep-palette h-[100dvh] bg-[#111C2D] dark:bg-[#252B33] flex items-center justify-center" role="status" aria-label="Loading">
         <div className="w-5 h-5 rounded-full border-2 border-[#304158] border-t-[#C6A15B] animate-spin" />
       </div>
     );
@@ -36,11 +36,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
       /* The sign-in page: the brand at its plainest - midnight navy, the plane
          in gold, the name. No blurred shapes behind it: a finance tool's
          front door should look like one. */
-      <div className="keep-palette min-h-[100dvh] bg-[#111C2D] flex items-center justify-center p-4 font-sans">
-        <div className="w-full max-w-sm bg-[#19263A] border border-[#304158] rounded-xl shadow-2xl overflow-hidden">
+      <div className="keep-palette min-h-[100dvh] bg-[#111C2D] dark:bg-[#252B33] flex items-center justify-center p-4 font-sans">
+        <div className="w-full max-w-sm bg-[#19263A] border border-[#304158] dark:bg-[#303944] dark:border-[#46515D] rounded-xl shadow-2xl overflow-hidden">
           <div className="h-1 bg-[#C6A15B]" aria-hidden="true" />
           <div className="px-8 pt-9 pb-8 flex flex-col items-center text-center">
-            <div className="w-14 h-14 rounded-xl bg-[#111C2D] ring-1 ring-[#C6A15B]/50 flex items-center justify-center mb-6">
+            <div className="w-14 h-14 rounded-xl bg-[#111C2D] dark:bg-[#252B33] ring-1 ring-[#C6A15B]/50 flex items-center justify-center mb-6">
               <Plane className="w-7 h-7 text-[#C6A15B]" />
             </div>
             <h1 className="text-lg font-extrabold tracking-[0.18em] uppercase text-[#E8EDF4]">Luxury Explorers</h1>
@@ -49,7 +49,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
             <button
               onClick={() => loginWithGoogle()}
-              className="mt-8 w-full h-11 bg-[#3A72BD] hover:bg-[#4A85D4] text-white font-semibold rounded-md
+              className="mt-8 w-full h-11 bg-[#3A72BD] hover:bg-[#4A85D4] dark:bg-[#7899BC] dark:hover:bg-[#8AA8C8] dark:text-[#1F252C] text-white font-semibold rounded-md
                          transition-colors text-sm flex items-center justify-center gap-2
                          focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#C6A15B]"
             >

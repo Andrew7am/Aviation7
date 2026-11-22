@@ -44,12 +44,18 @@
   --app-footer: #FFFFFF;
   --app-nav-active: #EEF3F9;
 }
+/* Deep Steel (22 Nov 2026): the header sits on the page's own steel, ruled
+   off from it; the sidebar a step darker; the active screen a raised steel. */
 html.dark {
-  --app-bg: #111C2D;
-  --app-header: #162238;
-  --app-sidebar: #19263A;
-  --app-footer: #162238;
-  --app-nav-active: #223249;
+  --app-bg: #252B33;
+  --app-header: #252B33;
+  --app-sidebar: #202832;
+  --app-footer: #202832;
+  --app-nav-active: #3B4652;
+  /* The charts draw in SVG with colours of their own; these are theirs in the dark. */
+  --chart-grid: #46515D;
+  --chart-axis: #6B7785;
+  --chart-muted: #5A6673;
 }
 @theme inline {
   --color-app: var(--app-bg);
@@ -188,3 +194,56 @@ thead th { font-weight: 600; letter-spacing: 0.04em; }
 /* Two faces render small caps-and-tracking labels differently: Inter needs a
    little less tracking than the widest Tailwind gives. */
 .tracking-widest { letter-spacing: 0.12em; }
+
+/*
+ * Data tables - the one standard.
+ *
+ * A list of records (requests, invoices, voids, memos, periods, vendors)
+ * carries class data-table and gets, whatever its screen:
+ *   - a header row 36px high: 10px semibold capitals in the secondary grey on
+ *     the raised surface, a rule under it, and STICKY - it stays in view while
+ *     the rows scroll under it inside the table's own scroller;
+ *   - rows 36px high at the body size, a hairline between them, figures
+ *     right-aligned by the column's own class, in tabular numerals;
+ *   - 12px of padding either side of every cell.
+ * Child selectors only: a table opened inside a row (a vendor's tickets
+ * under its line) keeps its own look. A cell that spans the row (an empty
+ * state, an expanded detail) keeps its own padding.
+ *
+ * The ledger (All Tickets) is not one of these: it has its own denser grid,
+ * sticky already, tuned for thousands of rows.
+ */
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.data-table > thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--color-slate-50);
+  color: var(--color-slate-500);
+  font-size: var(--text-micro);
+  line-height: 1rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--color-slate-200);
+  white-space: nowrap;
+}
+.data-table > tbody > tr > td:not([colspan]) {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--color-slate-100);
+  vertical-align: middle;
+}
+.data-table > tbody > tr:last-child > td { border-bottom: 0; }
+.data-table > tbody > tr:hover > td:not([colspan]) { background-color: color-mix(in oklab, var(--color-slate-50) 80%, transparent); }
+
+/* The box a long data table scrolls in, both ways, so its header can stay
+   put. On a phone the page scrolls instead: two scrollbars on a small
+   screen is one too many. */
+@media (min-width: 640px) {
+  .table-scroll { overflow: auto; max-height: calc(100dvh - 13rem); overscroll-behavior: contain; }
+}

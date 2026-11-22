@@ -57,23 +57,38 @@ LIGHT_GOLD = {'50': (.975, .020), '100': (.950, .035), '200': (.900, .060), '300
               '400': (.770, .095), '500': (.728, .099), '600': (.657, .097), '700': (.580, .090),
               '800': (.500, .075), '900': (.420, .060), '950': (.320, .045)}
 
-DARK_PAGE, DARK_CARD = .225, .282
-DARK_SLATE = {'50': (.225, .037), '100': (.314, .047), '200': (.371, .046), '300': (.470, .042),
-              '400': (.691, .034), '500': (.750, .031), '600': (.794, .028), '700': (.860, .020),
-              '800': (.900, .016), '900': (.930, .013), '950': (.944, .011)}
-DARK_BLUE = {'50': (.310, .035), '100': (.340, .045), '200': (.380, .060), '300': (.470, .080),
-             '400': (.580, .110), '500': (.614, .135), '600': (.660, .125), '700': (.720, .110),
-             '800': (.800, .080), '900': (.860, .060), '950': (.920, .030)}
-DARK_GOLD = {'50': (.310, .030), '100': (.340, .040), '200': (.380, .050), '300': (.470, .065),
-             '400': (.620, .085), '500': (.728, .099), '600': (.760, .090), '700': (.800, .080),
+# Dark: DEEP STEEL (the user, 22 Nov 2026 - replaces midnight navy). Steel
+# greys with the faintest blue in them: page #252B33, cards #303944, raised
+# #3B4652, borders #46515D; text #E8EDF2 / #B5C0CC, muted lifted from
+# #929FAC to clear 4.5:1 on a card. The accent is a muted steel blue, #7899BC.
+STEEL_H = 252.0
+DARK_PAGE, DARK_CARD = .287, .341
+DARK_SLATE = {'50': (.287, .017), '100': (.389, .025), '200': (.430, .024), '300': (.530, .024),
+              '400': (.740, .024), '500': (.775, .022), '600': (.810, .021), '700': (.860, .015),
+              '800': (.900, .012), '900': (.930, .010), '950': (.944, .009)}
+DARK_BLUE = {'50': (.370, .025), '100': (.400, .030), '200': (.440, .040), '300': (.520, .050),
+             '400': (.620, .060), '500': (.671, .064), '600': (.720, .064), '700': (.750, .060),
+             '800': (.800, .050), '900': (.860, .035), '950': (.920, .020)}
+DARK_GOLD = {'50': (.370, .030), '100': (.400, .040), '200': (.440, .050), '300': (.520, .065),
+             '400': (.640, .085), '500': (.728, .099), '600': (.760, .090), '700': (.800, .080),
              '800': (.850, .060), '900': (.900, .040), '950': (.930, .030)}
+# Purple, violet, indigo and fuchsia carry no status in this app - they were
+# decoration. In the dark they take the steel blue instead of glowing.
+STEEL_FAMILIES = {'purple', 'violet', 'indigo', 'fuchsia'}
 # Every other colour in the dark: (lightness, share of its own chroma).
 DARK_TINT = {'50': (DARK_CARD + .030, .20), '100': (DARK_CARD + .055, .24), '200': (DARK_CARD + .095, .28),
-             '300': (DARK_CARD + .190, .36), '400': (.600, .48), '500': (.660, .52), '600': (.740, .46),
+             '300': (DARK_CARD + .190, .36), '400': (.640, .48), '500': (.705, .50), '600': (.760, .46),
              '700': (.800, .40), '800': (.860, .32), '900': (.900, .22), '950': (.930, .14)}
 # In the light, how much of its strength a status colour keeps.
 LIGHT_SHARE = {'50': .90, '100': .90, '200': .88, '300': .85, '400': .82, '500': .82, '600': .82,
                '700': .84, '800': .86, '900': .88, '950': .90}
+# The 600 and 700 of every colour are what its text is set in. Tailwind's
+# yellows, ambers, oranges and greens are light at those steps - amber-600 on
+# white read at 3.2:1 - so in the light they are capped here, which brings
+# every one of them past 4.5:1 on a white card. Hue and chroma are kept.
+# (the user, 22 Nov 2026: put back after being held while the light theme
+# was frozen for the Deep Steel work.)
+LIGHT_TEXT_CAP = {'600': .530, '700': .470, '800': .410}
 
 
 def light_lines():
@@ -91,14 +106,15 @@ def light_lines():
                 out.append(f'  --color-{k}: {fmt(*LIGHT_BLUE[s], 253.0)};')
             else:
                 l, c, h = oklch(vals[k])
+                l = min(l, LIGHT_TEXT_CAP.get(s, l))
                 out.append(f'  --color-{k}: {fmt(l, c * LIGHT_SHARE[s], h)};')
     return out
 
 
 def dark_lines():
     out = ['  color-scheme: dark;',
-           f'  --color-white: {fmt(DARK_CARD, .042, NAVY_H)};',
-           f'  --color-black: {fmt(.944, .011, NAVY_H)};']
+           f'  --color-white: {fmt(DARK_CARD, .023, STEEL_H)};',
+           f'  --color-black: {fmt(.944, .009, STEEL_H)};']
     for s in STEPS:
         out.append(f'  --color-gold-{s}: {fmt(*DARK_GOLD[s], GOLD_H)};')
     for f in fams:
@@ -108,9 +124,9 @@ def dark_lines():
             if k not in vals:
                 continue
             if f in NEUTRAL:
-                out.append(f'  --color-{k}: {fmt(*DARK_SLATE[s], NAVY_H)};')
-            elif f == 'blue':
-                out.append(f'  --color-{k}: {fmt(*DARK_BLUE[s], 256.0)};')
+                out.append(f'  --color-{k}: {fmt(*DARK_SLATE[s], STEEL_H)};')
+            elif f == 'blue' or f in STEEL_FAMILIES:
+                out.append(f'  --color-{k}: {fmt(*DARK_BLUE[s], 250.0)};')
             else:
                 l, share = DARK_TINT[s]
                 out.append(f'  --color-{k}: {fmt(l, base[1] * share, base[2])};')
@@ -133,7 +149,7 @@ open('src/theme-light.css', 'w', encoding='utf-8').write(f"""/*
 """)
 
 open('src/theme-dark.css', 'w', encoding='utf-8').write(f"""/*
- * Dark mode: layered midnight navy. Generated by scripts/gen-theme.py - edit
+ * Dark mode: Deep Steel. Generated by scripts/gen-theme.py - edit
  * that script and rerun it, not this file.
  *
  * Inside an element marked keep-palette (the sign-in page, painted navy by
@@ -176,11 +192,16 @@ def contrast(a, b):
 
 W = (1.0, 0, 0)
 L = lambda s, t=LIGHT_SLATE: (*t[s], NAVY_H)
-card = (DARK_CARD, .042, NAVY_H)
-D = lambda s: (*DARK_SLATE[s], NAVY_H)
+card = (DARK_CARD, .023, STEEL_H)
+D = lambda s: (*DARK_SLATE[s], STEEL_H)
 print('light: slate-900 on white %.1f, 700 %.1f, 500 %.1f, 400 %.1f; 400 on slate-50 %.1f; white on blue-600 %.1f'
       % (contrast(L('900'), W), contrast(L('700'), W), contrast(L('500'), W), contrast(L('400'), W),
          contrast(L('400'), L('50')), contrast(W, (*LIGHT_BLUE['600'], 253.0))))
-print('dark: 950 on card %.1f, 600 %.1f, 500 %.1f, 400 %.1f; 400 on page %.1f; card on blue-600 %.1f; blue-600 on card %.1f'
+def fam(f, s):
+    l, c, h = oklch(vals[f'{f}-{s}'])
+    return (min(l, LIGHT_TEXT_CAP.get(s, l)), c * LIGHT_SHARE[s], h)
+print('light text on white: ' + ', '.join(f'{f}-600 %.1f' % contrast(fam(f, '600'), W)
+      for f in ('amber', 'orange', 'yellow', 'emerald', 'green', 'red', 'sky', 'teal')))
+print('dark: 950 on card %.1f, 600 %.1f, 500 %.1f, 400 %.1f; 400 on page %.1f; card on blue-700 %.1f; blue-600 on card %.1f'
       % (contrast(D('950'), card), contrast(D('600'), card), contrast(D('500'), card), contrast(D('400'), card),
-         contrast(D('400'), D('50')), contrast(card, (*DARK_BLUE['600'], 256.0)), contrast((*DARK_BLUE['600'], 256.0), card)))
+         contrast(D('400'), D('50')), contrast(card, (*DARK_BLUE['700'], 250.0)), contrast((*DARK_BLUE['600'], 250.0), card)))

@@ -1,4 +1,5 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import Papa from 'papaparse';
 import type { ExchangeEdge } from '../core/parsers/types';
 import { Ticket, FieldChange } from '../types';
@@ -202,8 +203,9 @@ export const ImportData: React.FC<ImportDataProps> = ({
     // box, the buttons and a 280px preview together are taller than a phone,
     // and a column pinned to exactly the viewport's height has nowhere to put
     // the overflow but off the bottom. Growing past it lets main scroll.
-    <div className="flex flex-col min-h-full lg:h-full bg-app p-4 space-y-4">
-      <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest shrink-0">Bulk Ticket Import</h2>
+    <div className="flex flex-col min-h-full lg:h-full bg-app p-4 sm:p-6 space-y-4">
+      <PageHeader icon={<Upload />} title="Import data" className="shrink-0"
+        subtitle="A supplier's report, statement or invoice - as a file or pasted - checked against the books before anything is recorded." />
 
       <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm shrink-0 flex flex-wrap items-end gap-4">
         <div>
@@ -339,8 +341,8 @@ export const ImportData: React.FC<ImportDataProps> = ({
                   const isDup = t.isDuplicate, isUpd = t._isUpdate, isFund = t.status === 'FUND';
                   return (
                     <tr key={t.id} className={`border-b border-slate-100 ${isDup ? 'bg-amber-50 opacity-60' : isUpd ? 'bg-blue-50' : isFund ? 'bg-emerald-50' : 'hover:bg-slate-50'}`}>
-                      <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{t.serial ?? <span className="text-slate-300">—</span>}</td>
-                      <td className="px-3 py-2 text-center">{t.airlineCode ? <span className="font-mono font-black text-xs text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{t.airlineCode}</span> : <span className="text-slate-300 text-micro">—</span>}</td>
+                      <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{t.serial ?? <span className="text-slate-400">—</span>}</td>
+                      <td className="px-3 py-2 text-center">{t.airlineCode ? <span className="font-mono font-black text-xs text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">{t.airlineCode}</span> : <span className="text-slate-400 text-micro">—</span>}</td>
                       <td className="px-3 py-2 font-bold select-all whitespace-nowrap">
                         {t.ticketNo}
                         {isDup && <span className="ml-1 bg-amber-400 text-black px-1 rounded text-micro font-bold">DUP</span>}
@@ -358,7 +360,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
                         )}
                       </td>
                       <td className="px-3 py-2"><span className="px-1.5 py-0.5 rounded text-micro font-sans font-bold uppercase bg-slate-100 text-slate-700">{t.source || '—'}</span></td>
-                      <td className="px-3 py-2">{t.status ? <span className={`px-1.5 py-0.5 rounded text-micro font-bold ${STATUS_COLORS[t.status] ?? 'bg-slate-100 text-slate-500'}`}>{t.status}</span> : <span className="text-slate-300">—</span>}</td>
+                      <td className="px-3 py-2">{t.status ? <span className={`px-1.5 py-0.5 rounded text-micro font-bold ${STATUS_COLORS[t.status] ?? 'bg-slate-100 text-slate-500'}`}>{t.status}</span> : <span className="text-slate-400">—</span>}</td>
                       <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{t.date}</td>
                       <td className="px-3 py-2 text-slate-400 text-mini max-w-[80px] truncate">{t.route || '—'}</td>
                       {/* Fare | Commission | Balance Payable, always all three.
@@ -389,7 +391,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
                             <span className="whitespace-nowrap">
                               {was.from
                                 ? <span className="text-slate-400 line-through font-normal">{was.from}</span>
-                                : <span className="text-slate-300 font-normal italic">none</span>}
+                                : <span className="text-slate-400 font-normal italic">none</span>}
                               <span className="text-slate-400 mx-1">→</span>
                               <span className="text-blue-600">{was.to}</span>
                             </span>
@@ -399,7 +401,7 @@ export const ImportData: React.FC<ImportDataProps> = ({
                       <td className="px-3 py-2">
                         {(() => {
                           const v = verdictFor(t.ticketNo, t.amount);
-                          if (!v) return <span className="text-slate-300 text-micro">—</span>;
+                          if (!v) return <span className="text-slate-400 text-micro">—</span>;
                           return (
                             <span
                               title={v.cls === 'COMMISSION_MISSING'

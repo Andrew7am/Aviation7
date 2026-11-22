@@ -76,7 +76,7 @@ export const Shell: React.FC<Props> = ({
             aria-label="Open the menu" aria-expanded={navOpen} aria-controls="app-nav">
             <Menu className="w-5 h-5" />
           </button>
-          <div className="w-8 h-8 rounded-md bg-[#111C2D] dark:bg-[#223249] ring-1 ring-gold-500/40 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-md bg-[#111C2D] dark:bg-[#303944] ring-1 ring-gold-500/40 flex items-center justify-center shrink-0">
             <Plane className="w-[18px] h-[18px] text-[#C6A15B]" />
           </div>
           {/* Below sm the plane alone is the brand: the name and the header's
@@ -180,8 +180,8 @@ export const Shell: React.FC<Props> = ({
                              : 'text-slate-600 font-medium hover:bg-slate-50 hover:text-slate-900'}`}>
                     {/* The active screen: a gold rule at the edge, and the row
                         a tint of the brand - found at a glance, never shouting. */}
-                    {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-gold-500" aria-hidden="true" />}
-                    <span className={`shrink-0 ${active ? 'text-gold-600' : 'text-slate-400 group-hover:text-slate-600'}`}>
+                    {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-gold-500 dark:bg-blue-500" aria-hidden="true" />}
+                    <span className={`shrink-0 ${active ? 'text-gold-600 dark:text-blue-700' : 'text-slate-400 group-hover:text-slate-600'}`}>
                       {item.icon}
                     </span>
                     <span className="flex-1 text-left truncate">{item.label}</span>

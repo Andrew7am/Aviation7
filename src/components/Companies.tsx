@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Building2, Search, ArrowLeft, Download, AlertTriangle } from 'lucide-react';
 import type { Ticket } from '../types';
 import {
@@ -69,15 +70,12 @@ export const Companies: React.FC<Props> = ({ tickets, rows, assignments, onAssig
   );
 
   return (
-    <div className="p-6 space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Building2 className="w-5 h-5 text-slate-500" />
-        <h2 className="text-lg font-bold text-slate-800">Companies</h2>
-        <span className="text-xs text-slate-500">
-          {loading ? 'Reading the team\'s Airtable…'
-            : `${list.length} companies · ${placed.toLocaleString()} of our tickets placed by the team's Airtable`}
-        </span>
-        <div className="ml-auto flex items-center gap-2">
+    <div className="p-4 sm:p-6 space-y-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+        <PageTitle icon={<Building2 />} title="Companies" className="flex-1 basis-64"
+          subtitle={loading ? 'Reading the team\'s Airtable…'
+            : `${list.length} companies · ${placed.toLocaleString()} of our tickets placed by the team's Airtable`} />
+        <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search a company"
@@ -90,8 +88,8 @@ export const Companies: React.FC<Props> = ({ tickets, rows, assignments, onAssig
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-        <table className="w-full text-sm min-w-[900px]">
+      <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto table-scroll">
+        <table className="data-table text-sm min-w-[900px]">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr className="text-mini font-bold uppercase tracking-wide text-slate-500">
               <th className="px-3 py-2 text-left">Company</th>
@@ -118,9 +116,9 @@ export const Companies: React.FC<Props> = ({ tickets, rows, assignments, onAssig
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{moneyLine(nets(s.money))}</td>
                   <td className="px-3 py-2 text-right font-mono text-emerald-700">{s.billed}</td>
-                  <td className={`px-3 py-2 text-right font-mono ${notBilled ? 'text-amber-700 font-bold' : 'text-slate-300'}`}>{notBilled || '—'}</td>
+                  <td className={`px-3 py-2 text-right font-mono ${notBilled ? 'text-amber-700 font-bold' : 'text-slate-400'}`}>{notBilled || '—'}</td>
                   <td className="px-3 py-2 text-right font-mono text-emerald-700">{s.closed}</td>
-                  <td className={`px-3 py-2 text-right font-mono ${s.open ? 'text-orange-600 font-bold' : 'text-slate-300'}`}>{s.open || '—'}</td>
+                  <td className={`px-3 py-2 text-right font-mono ${s.open ? 'text-orange-600 font-bold' : 'text-slate-400'}`}>{s.open || '—'}</td>
                   <td className="px-3 py-2 font-mono text-xs text-orange-700">{moneyLine(s.openMoney)}</td>
                 </tr>
               );
@@ -217,7 +215,7 @@ const CompanyDetail: React.FC<{
         <button onClick={onBack} className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-800">
           <ArrowLeft className="w-4 h-4" /> Companies
         </button>
-        <h2 className="text-lg font-bold text-slate-800">{s.company}</h2>
+        <h2 className="text-lg font-semibold text-slate-900 tracking-tight">{s.company}</h2>
         <span className="text-xs text-slate-500">{s.requests} requests · last ticket {s.lastDate || '—'}</span>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2">

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket, VendorStatement, VendorBalance, BalanceTopUp } from '../types';
 import {
   FileText, Plus, Trash2, ChevronDown, ChevronRight, Wallet,
@@ -207,7 +208,7 @@ const Stat: React.FC<{ label: string; children: React.ReactNode }> = ({ label, c
 );
 
 const GapCell: React.FC<{ n: number | null; currency: string }> = ({ n, currency }) => {
-  if (n === null) return <span className="text-slate-300 text-xs">—</span>;
+  if (n === null) return <span className="text-slate-400 text-xs">—</span>;
   const clear = Math.abs(n) < 0.011;
   return (
     <span className={`font-mono font-bold text-xs ${clear ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -487,7 +488,7 @@ const PeriodRow: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDele
           {drCr(p.closing)}
         </td>
         <td className="py-3 px-3 text-right font-mono text-xs text-slate-500">
-          {s ? drCr(s.closingBalance) : <span className="text-slate-300">—</span>}
+          {s ? drCr(s.closingBalance) : <span className="text-slate-400">—</span>}
         </td>
         <td className="py-3 px-3 text-right"><GapCell n={p.balanceGap} currency={currency} /></td>
         <td className="py-3 px-3 text-center" onClick={e => e.stopPropagation()}>
@@ -498,11 +499,11 @@ const PeriodRow: React.FC<PeriodProps> = ({ p, currency, canEdit, onEdit, onDele
               </button>
               <button
                 onClick={() => { if (confirm(`Delete the ${s.periodStart} → ${s.periodEnd} statement?`)) onDelete(); }}
-                className="text-slate-300 hover:text-red-500" title="Delete their statement">
+                className="text-slate-400 hover:text-red-500" title="Delete their statement">
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
-          ) : <span className="text-slate-300 text-micro">—</span>}
+          ) : <span className="text-slate-400 text-micro">—</span>}
         </td>
       </tr>
 
@@ -540,22 +541,16 @@ export const VendorStatements: React.FC<Props> = ({
   );
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wide flex items-center gap-2">
-            <FileText className="w-4 h-4 text-purple-600" />
-            Vendor statements
-          </h2>
-          <p className="text-xs text-slate-500 mt-1 max-w-3xl leading-relaxed">
+        <PageTitle icon={<FileText />} title="Vendor statements" className="flex-1 basis-64"
+          subtitle={<>
             Every figure below is <b>ours</b> — read off our own ledger, period by period, with the same
             arithmetic Vendor Credit uses, so the last closing balance on each table is the balance that
             screen shows to the piastre. Where {STATEMENT_VENDORS.join(' or ')} have issued a statement for
             the same dates, their closing figure sits in the next column and the difference beside it.
             Past their last statement the account keeps moving and only we have it, which is where today's
-            balance actually lives.
-          </p>
-        </div>
+            balance actually lives.</>} />
         {canEdit && (
           <button
             onClick={() => setEditing(blank('Ibtekar'))}
@@ -627,7 +622,7 @@ export const VendorStatements: React.FC<Props> = ({
               ))}
             </div>
             <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-left min-w-[880px]">
+            <table className="data-table text-left min-w-[880px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100 text-micro uppercase
                                tracking-wider text-slate-400">

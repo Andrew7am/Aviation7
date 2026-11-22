@@ -330,7 +330,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
                             {t.passengerName || '—'}
                           </td>
                           <td className="px-3 py-1.5 text-mini text-slate-500">
-                            {t.vendorReference || <span className="text-slate-300">—</span>}
+                            {t.vendorReference || <span className="text-slate-400">—</span>}
                           </td>
                           <td className={`px-3 py-1.5 text-right font-bold
                             ${(t.amount || 0) < 0 ? 'text-emerald-600' : 'text-slate-700'}`}>

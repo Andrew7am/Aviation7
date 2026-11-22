@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ban, Search, Download, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Ticket } from '../types';
 import type { VoidTicket } from '../services/VoidTicketService';
@@ -38,7 +39,7 @@ const Band: React.FC<{ rows: RatioRow[]; label: string }> = ({ rows, label }) =>
   <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
     <div className="px-4 py-2 border-b border-slate-100 text-mini font-bold uppercase
                     tracking-wide text-slate-500">{label}</div>
-    <table className="w-full text-left">
+    <table className="data-table text-left">
       <thead className="bg-slate-50 border-b border-slate-100">
         <tr className="text-micro uppercase tracking-wider text-slate-400">
           <th className="px-3 py-1.5">Period</th>
@@ -122,20 +123,13 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-4 sm:p-6">
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Ban className="w-4 h-4 text-slate-500" />
-            Voids
-          </h2>
-          <p className="text-xs text-slate-500 mt-1 max-w-3xl">
-            Documents that were cancelled. They are in no balance, no request and no
+        <PageTitle icon={<Ban />} title="Voids" className="flex-1"
+          subtitle={<>Documents that were cancelled. They are in no balance, no request and no
             report of money — a void moves none — so they carry no request number and
             nothing to close. They are here to be found and counted: IATA caps how much
-            of a year's issuance may be voided, and that is counted in documents.
-          </p>
-        </div>
+            of a year's issuance may be voided, and that is counted in documents.</>} />
         <button onClick={exportAll}
           className="flex items-center gap-1.5 bg-blue-700 text-white text-xs font-bold
                      px-3 py-1.5 rounded hover:bg-blue-800 shrink-0">
@@ -203,8 +197,8 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
       </div>
 
       <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
-        <div className="overflow-x-auto">
-        <table className="w-full text-left whitespace-nowrap">
+        <div className="overflow-x-auto table-scroll">
+        <table className="data-table text-left whitespace-nowrap">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr className="text-mini font-bold uppercase tracking-wide text-slate-500">
               <th className="px-3 py-2">Ticket</th>

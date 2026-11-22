@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket } from '../types';
 import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown, FolderOpen, Copy } from 'lucide-react';
 import { writeClipboard } from '../utils/clipboard';
@@ -32,6 +33,8 @@ import { endOfMonth, monthLabel, monthsIn, selectedMonth } from '../core/helpers
 interface TicketTableProps {
   tickets: Ticket[];
   title: string;
+  /** The menu's icon for the screen this list is, beside its title. */
+  icon?: React.ReactNode;
   defaultFilter?: 'ALL' | 'NEED_REQ' | 'DUPLICATE' | 'ADJUSTED' | 'NO_DATE' | 'CHANGED' | 'UNCONFIRMED' | 'VOIDS' | 'FREE_REISSUE' | 'SPLIT_REQ';
   /** Opens the table already narrowed to a closure state, so a view can be
    *  "the outstanding list" without the user having to find the dropdown. */
@@ -344,7 +347,7 @@ const cabinText = (t: Ticket): string =>
 /** Domestic / International, or an em-dash when there is no route to read. */
 const TravelBadge: React.FC<{ route?: string }> = ({ route }) => {
   const scope = classifyTravel(route);
-  if (!scope) return <span className="text-slate-300 text-micro">—</span>;
+  if (!scope) return <span className="text-slate-400 text-micro">—</span>;
   return (
     <span className={`px-1.5 py-0.5 rounded text-micro font-bold whitespace-nowrap ${
       scope === 'DOMESTIC' ? 'bg-teal-100 text-teal-700' : 'bg-blue-100 text-blue-700'
@@ -376,7 +379,7 @@ const CabinBadge: React.FC<{ cabin?: string; raw?: string }> = ({ cabin, raw }) 
     return raw
       ? <span className="px-1.5 py-0.5 rounded text-micro bg-amber-50 text-amber-700 whitespace-nowrap"
               title={`Not recognised as a cabin: ${raw}`}>{raw}</span>
-      : <span className="text-slate-300 text-micro">—</span>;
+      : <span className="text-slate-400 text-micro">—</span>;
   }
   const label = CABIN_LABEL[cabin as Exclude<Cabin, ''>] ?? cabin;
   return (
@@ -394,7 +397,7 @@ const CabinBadge: React.FC<{ cabin?: string; raw?: string }> = ({ cabin, raw }) 
  * has no closure state to flip.
  */
 const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean; withCompany?: boolean }> = ({ ticket, withDelete, withCompany }) => {
-  const dash = <span className="text-slate-300">—</span>;
+  const dash = <span className="text-slate-400">—</span>;
   return (
     <tr className="border-b border-slate-100 bg-slate-50/70 text-slate-400"
         title="Voided at the supplier - not in the ledger, no balance or total counts it. Kept on the Voids screen.">
@@ -435,7 +438,7 @@ const VoidLine: React.FC<{ ticket: Ticket; withDelete: boolean; withCompany?: bo
 };
 
 export const TicketTable: React.FC<TicketTableProps> = ({
-  tickets, title, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, exchanges = [], companyOf, onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed, canClose,
+  tickets, title, icon, defaultFilter = 'ALL', defaultClosed = 'ALL', voids = [], afterClose, exchanges = [], companyOf, onDelete, onUpdateReqNum, onUpdateTicket, onBulkUpdateReqNum, onUpdateClosed, onBulkUpdateClosed, canClose,
 }) => {
   const [searchTerm, setSearchTerm]     = useState('');
   const chainIdx = useMemo(() => chainIndex(exchanges), [exchanges]);
@@ -1332,8 +1335,8 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
         </div>
       )}
       {/* Header */}
-      <div className="p-4 flex flex-wrap justify-between items-center gap-2 shrink-0 bg-white border-b border-slate-200">
-        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">{title}</h2>
+      <div className="px-4 sm:px-6 py-4 flex flex-wrap justify-between items-center gap-x-4 gap-y-3 shrink-0 bg-white border-b border-slate-200">
+        <PageTitle icon={icon} title={title} />
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* General search */}
           <div className="relative flex-1 sm:flex-none min-w-0">
@@ -1791,10 +1794,10 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
             + {voidShown.length} void{voidShown.length === 1 ? '' : 's'}
           </span>
         )}
-        <span className="text-slate-300 hidden sm:inline">|</span>
+        <span className="text-slate-400 hidden sm:inline">|</span>
         {totalsByCurrency.map(([cur, t], i) => (
           <React.Fragment key={cur}>
-            {i > 0 && <span className="text-slate-300 hidden sm:inline">|</span>}
+            {i > 0 && <span className="text-slate-400 hidden sm:inline">|</span>}
             <span className="inline-flex flex-wrap sm:flex-nowrap items-center gap-x-1.5 sm:whitespace-nowrap">
               {/* The net only: issued, refunds and top-ups are for the reports
                   and the export (the user, 22 Oct 2026). */}
@@ -1803,12 +1806,12 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           </React.Fragment>
         ))}
         {vendorTotals.length > 1 && <>
-          <span className="text-slate-300 hidden sm:inline">|</span>
+          <span className="text-slate-400 hidden sm:inline">|</span>
           <span className="inline-flex flex-wrap items-center gap-x-1.5">
             <span className="text-slate-400">by vendor:</span>
             {vendorTotals.map((v, i) => (
               <React.Fragment key={`${v.vendor}|${v.currency}`}>
-                {i > 0 && <span className="text-slate-300">·</span>}
+                {i > 0 && <span className="text-slate-400">·</span>}
                 <span className="whitespace-nowrap">
                   <span className="font-bold text-slate-600">{v.vendor}</span>{' '}
                   <CopyableAmount label={`${v.currency} (${v.count})`} value={v.net} fmt={fmt} />
@@ -1817,9 +1820,9 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
             ))}
           </span>
         </>}
-        <span className="text-slate-300 hidden sm:inline">|</span>
+        <span className="text-slate-400 hidden sm:inline">|</span>
         <span className="text-red-500">{filtered.filter(t => !t.reqNum).length} missing req</span>
-        <span className="text-slate-300 hidden sm:inline">|</span>
+        <span className="text-slate-400 hidden sm:inline">|</span>
         {/* Top-ups are excluded from both: a balance payment is not a ticket
             that can be reconciled and closed, and counting it as outstanding
             overstated the work left. This is the same rule the Not Closed
@@ -1827,7 +1830,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
         <span className="text-emerald-600">{filtered.filter(t => t.closed && t.status !== 'FUND').length} closed</span>
         <span className="text-orange-600">· {filtered.filter(t => !t.closed && t.status !== 'FUND').length} not closed</span>
         {/* Nothing on screen would otherwise suggest a cell is clickable. */}
-        <span className="text-slate-300 hidden sm:inline">|</span>
+        <span className="text-slate-400 hidden sm:inline">|</span>
         <span className="text-slate-400 hidden sm:inline">
           click a cell to copy it · click the source for A/L, ticket, name and PNR{canEdit && ' · the editable ones open for editing'}
         </span>
@@ -1963,7 +1966,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   <td className="px-3 py-2 whitespace-nowrap">
                     {ticket.serial != null ? (
                       <span className="text-slate-500">{ticket.serial}</span>
-                    ) : <span className="text-slate-300">—</span>}
+                    ) : <span className="text-slate-400">—</span>}
                     {serialGapBefore.has(ticket.id) && (
                       <span className="ml-1.5 bg-red-100 text-red-700 px-1 py-0.5 rounded text-micro font-bold">
                         GAP −{serialGapBefore.get(ticket.id)}
@@ -1976,7 +1979,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                           title={airlineName(ticket.airlineCode) || `Airline code ${ticket.airlineCode}`}
                           className="font-mono font-black text-xs text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded"
                         >{ticket.airlineCode}</span>
-                      : <span className="text-slate-300 text-micro">—</span>
+                      : <span className="text-slate-400 text-micro">—</span>
                     }
                   </td>
                   <td className="px-3 py-2 font-bold select-all whitespace-nowrap">
@@ -2063,7 +2066,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   <td className="px-3 py-2">
                     {ticket.status
                       ? <span className={`px-1.5 py-0.5 rounded text-micro font-bold ${STATUS_COLORS[ticket.status] ?? 'bg-slate-100 text-slate-500'}`}>{ticket.status}</span>
-                      : <span className="text-slate-300">—</span>
+                      : <span className="text-slate-400">—</span>
                     }
                   </td>
                   {/* Only a missing date opens an editor. One already
@@ -2145,7 +2148,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                       <span
                         className={`${canEdit ? 'cursor-pointer px-1 py-0.5 rounded' : ''} ${
                           ticket.adjustment == null
-                            ? 'text-slate-300'
+                            ? 'text-slate-400'
                             : 'font-bold text-amber-700 bg-amber-50 hover:bg-amber-100'}`}
                         data-editable
                         onClick={() => startEdit(ticket, 'adjustment')}
@@ -2215,7 +2218,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                           <button
                             onClick={e => { e.stopPropagation(); setProfileReq(ticket.reqNum); }}
                             title={`Open everything booked under ${ticket.reqNum}`}
-                            className="shrink-0 p-0.5 rounded text-slate-300 hover:text-purple-600
+                            className="shrink-0 p-0.5 rounded text-slate-400 hover:text-purple-600
                                        hover:bg-purple-50 opacity-0 group-hover/req:opacity-100
                                        focus:opacity-100 transition">
                             <FolderOpen className="w-3.5 h-3.5" />
@@ -2226,12 +2229,12 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   </td>
                   {companyOf && (
                     <td className="px-3 py-2 text-mini font-bold text-blue-700 whitespace-nowrap">
-                      {companyOf(ticket) || <span className="text-slate-300 font-normal">—</span>}
+                      {companyOf(ticket) || <span className="text-slate-400 font-normal">—</span>}
                     </td>
                   )}
                   <td className="px-3 py-2 font-mono text-mini text-slate-600 whitespace-nowrap"
                       title={ticket.vendorReference || undefined}>
-                    {vendorRef(ticket) || <span className="text-slate-300">—</span>}
+                    {vendorRef(ticket) || <span className="text-slate-400">—</span>}
                   </td>
                   <td className={`px-3 py-2 font-bold text-micro ${!ticket.reqNum ? 'text-red-600' : 'text-emerald-600'}`}>
                     {!ticket.reqNum ? 'NEED REQ' : 'MATCHED'}
@@ -2258,7 +2261,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   </td>
                   {onDelete && (
                     <td className="px-3 py-2 text-right">
-                      <button onClick={() => onDelete(ticket.id)} className="text-slate-300 hover:text-red-500 font-bold text-xs transition-colors">✕</button>
+                      <button onClick={() => onDelete(ticket.id)} className="text-slate-400 hover:text-red-500 font-bold text-xs transition-colors">✕</button>
                     </td>
                   )}
                 </tr>

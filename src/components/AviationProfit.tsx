@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { TrendingUp } from 'lucide-react';
 import type { Ticket } from '../types';
 import { AirtableService } from '../services/AirtableService';
@@ -40,12 +41,10 @@ export const AviationProfit: React.FC<{ tickets: Ticket[]; voidedNos: string[] }
   const list = show === 'LOSS' ? losses : show ? mine.filter(l => l.state === show) : mine;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 p-4 sm:p-6">
       <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2"><TrendingUp className="w-5 h-5" /> Aviation Profit</h2>
-          <p className="text-xs text-slate-500 mt-0.5">The cost the aviation team quoted operations (Net Cost on their sheet) less what the supplier charged us. Our cost is after the supplier's commission, so the commission counts to the team. Counted from {PROFIT_FROM}; refunds not yet included.</p>
-        </div>
+        <PageTitle icon={<TrendingUp />} title="Aviation profit" className="flex-1 basis-64"
+          subtitle={<>The cost the aviation team quoted operations (Net Cost on their sheet) less what the supplier charged us. Our cost is after the supplier's commission, so the commission counts to the team. Counted from {PROFIT_FROM}; refunds not yet included.</>} />
         <div className="ml-auto flex flex-wrap items-end gap-2 text-xs">
           <label className="flex flex-col">From<input type="date" min={PROFIT_FROM} value={from} onChange={e => setFrom(e.target.value || PROFIT_FROM)} className="border rounded px-2 py-1" /></label>
           <label className="flex flex-col">To<input type="date" value={to} onChange={e => setTo(e.target.value)} className="border rounded px-2 py-1" /></label>
@@ -83,7 +82,7 @@ export const AviationProfit: React.FC<{ tickets: Ticket[]; voidedNos: string[] }
           {[['By team member', byMember, (k: string) => setMember(member === k ? '' : k)], ['By request', byReq, null] as const].map(([title, list2, onPick]) => (
             <div key={title as string} className="bg-white border border-slate-200 rounded-lg overflow-hidden">
               <div className="px-4 py-2 text-xs font-bold text-slate-600 border-b border-slate-100">{title as string}</div>
-              <table className="w-full text-xs">
+              <table className="data-table text-xs">
                 <thead><tr className="text-slate-400 text-mini uppercase"><th className="text-left px-4 py-1.5">Name</th><th className="text-right px-2">Tickets</th><th className="text-right px-2">Profit</th><th className="text-right px-4">In SAR</th></tr></thead>
                 <tbody>
                   {(list2 as ReturnType<typeof profitBy>).slice(0, 40).map(t => (
@@ -103,7 +102,7 @@ export const AviationProfit: React.FC<{ tickets: Ticket[]; voidedNos: string[] }
         </div>
 
         <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="data-table text-xs">
             <thead><tr className="text-slate-400 text-mini uppercase border-b border-slate-100">
               {['Issued', 'Request', 'Team member', 'Ticket', 'Quoted', 'Our cost', 'Profit', 'State'].map(h =>
                 <th key={h} className={`px-3 py-2 ${['Quoted', 'Our cost', 'Profit'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>)}

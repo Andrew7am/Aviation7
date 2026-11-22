@@ -19,7 +19,9 @@ export const PALETTE = [
   '#eab308', '#f97316', '#ef4444', '#ec4899', '#8b5cf6',
 ];
 export const paletteAt = (i: number) => PALETTE[i % PALETTE.length];
-const MUTED = '#cbd5e1';
+// Grey for the 'Others' slice. var() with the light value as its fallback:
+// the light theme draws exactly what it did; the dark one sets --chart-muted.
+const MUTED = 'var(--chart-muted, #cbd5e1)';
 
 const fmtInt = (n: number) => n.toLocaleString('en-US');
 const fmtMoney = (n: number) =>
@@ -85,7 +87,7 @@ export const Donut: React.FC<{
             const len = (s.value / total) * C;
             const el = (
               <circle
-                key={s.key} r={R} fill="none" stroke={s.color} strokeWidth={SW}
+                key={s.key} r={R} fill="none" style={{ stroke: s.color }} strokeWidth={SW}
                 strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-acc}
               >
                 <title>{`${s.label} — ${fmtInt(s.value)}${s.count !== undefined ? ` · ${fmtInt(s.count)} ticket${s.count === 1 ? '' : 's'}` : ''} (${((s.value / total) * 100).toFixed(1)}%)`}</title>
@@ -171,7 +173,7 @@ export const TrendBars: React.FC<{
       {ticks.map((t, i) => (
         <g key={i}>
           <line x1={PAD_L} x2={W - PAD_R} y1={y(t)} y2={y(t)}
-                stroke={t === 0 ? '#94a3b8' : '#e2e8f0'} strokeWidth={t === 0 ? 1 : 1} />
+                style={{ stroke: t === 0 ? 'var(--chart-axis, #94a3b8)' : 'var(--chart-grid, #e2e8f0)' }} strokeWidth={t === 0 ? 1 : 1} />
           <text x={PAD_L - 6} y={y(t) + 3} textAnchor="end" className="fill-slate-400"
                 style={{ fontSize: 9, fontFamily: 'ui-monospace, monospace' }}>
             {money ? short(t) : Math.round(t)}

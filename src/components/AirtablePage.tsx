@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { RefreshCw, Loader2, Search, Download, CheckCircle2, AlertTriangle, ArrowRight, Table2, Upload } from 'lucide-react';
 import Papa from 'papaparse';
 import type { Ticket } from '../types';
@@ -132,12 +133,9 @@ export const AirtablePage: React.FC<{
   };
 
   return (
-    <div className="p-4 space-y-3 h-full overflow-auto">
-      <div className="flex items-center gap-2 flex-wrap">
-        <Table2 className="w-4 h-4 text-purple-600" />
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">Airtable</h2>
-        <span className="text-xs text-slate-400">The aviation team's "Aviation Tickets", kept here two minutes old at most.</span>
-      </div>
+    <div className="p-4 sm:p-6 space-y-3 h-full overflow-auto">
+      <PageHeader icon={<Table2 />} title="Airtable"
+        subtitle={<>The aviation team's "Aviation Tickets", as of their last export uploaded here.</>} />
 
       <div className="flex flex-wrap gap-1 border-b border-slate-200">
         {tabs.map(([k, label, n]) => (

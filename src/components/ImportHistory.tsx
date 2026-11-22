@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { ImportRecord, ErrorEntry } from '../services/ImportService';
 import { History, AlertCircle, CheckCircle2, Clock, ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -19,10 +20,8 @@ export const ImportHistory: React.FC<ImportHistoryProps> = ({ records, getErrors
 
   return (
     <div className="flex flex-col h-full bg-app">
-      <div className="px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex items-center space-x-2">
-        <History className="w-4 h-4 text-slate-500" />
-        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">Import History</h2>
-      </div>
+      <PageHeader variant="band" icon={<History />} title="Import history"
+        subtitle="Every file and paste brought in, newest first, with what it recorded and what it refused." />
 
       <div className="flex-1 overflow-auto p-4 space-y-2">
         {records.length === 0 && (
@@ -72,7 +71,7 @@ export const ImportHistory: React.FC<ImportHistoryProps> = ({ records, getErrors
                   </div>
                   {errors.length > 0 ? (
                     <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs font-mono min-w-[520px]">
+                    <table className="data-table text-left text-xs font-mono min-w-[520px]">
                       <thead>
                         <tr className="text-micro uppercase text-slate-400 border-b border-slate-200">
                           <th className="py-1.5">Row</th><th className="py-1.5">Error</th><th className="py-1.5">Raw Data</th>

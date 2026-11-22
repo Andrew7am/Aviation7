@@ -80,7 +80,7 @@ const TicketList: React.FC<{
                 </td>
                 <td className="px-3 py-1.5 text-slate-600">{t.passengerName}</td>
                 <td className="px-3 py-1.5 font-mono text-mini text-slate-500">
-                  {t.vendorReference || <span className="text-slate-300">—</span>}
+                  {t.vendorReference || <span className="text-slate-400">—</span>}
                 </td>
                 <td className={`px-3 py-1.5 text-right font-mono
                   ${tone === 'in' ? 'text-emerald-600' : 'text-slate-700'}`}>
@@ -187,7 +187,7 @@ export const BalanceRange: React.FC<Props> = ({
         </select>
         <input type="date" value={from} onChange={e => setFrom(e.target.value)}
           className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs font-mono" />
-        <ArrowRight className="w-3 h-3 text-slate-300" />
+        <ArrowRight className="w-3 h-3 text-slate-400" />
         <input type="date" value={to} onChange={e => setTo(e.target.value)}
           className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs font-mono" />
         <button onClick={exportStatement} disabled={bad}
@@ -219,14 +219,14 @@ export const BalanceRange: React.FC<Props> = ({
               {([
                 ['Our balance on ' + from,
                  r.openingBalance === null ? '—' : drCr(r.openingBalance),
-                 r.openingBalance === null ? 'text-slate-300'
+                 r.openingBalance === null ? 'text-slate-400'
                    : r.openingBalance < 0 ? 'text-red-600' : 'text-emerald-700'],
                 ['Issued', `−${fmt(r.issued)}`, 'text-slate-700'],
                 ['Refunded', r.refunded ? `+${fmt(r.refunded)}` : '—', 'text-emerald-600'],
                 ['Paid to them', r.paid ? `+${fmt(r.paid)}` : '—', 'text-emerald-600'],
                 ['Our balance on ' + to,
                  r.closingBalance === null ? '—' : drCr(r.closingBalance),
-                 r.closingBalance === null ? 'text-slate-300'
+                 r.closingBalance === null ? 'text-slate-400'
                    : r.closingBalance < 0 ? 'text-red-600' : 'text-emerald-700'],
               ] as const).map(([label, value, cls]) => (
                 <div key={label} className="bg-slate-50 border border-slate-200 rounded px-2 py-2.5">

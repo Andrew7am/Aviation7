@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
+import { ShieldCheck } from 'lucide-react';
 import { AuditService, AuditRecord, AppUser, ROLES, ROLE_LABEL, type Role } from '../services/AuditService';
 import { Search, Download, Users, Activity, Undo2, Trash2 } from 'lucide-react';
 import { undoableAction, undoneAuditId } from '../core/helpers/undoableAction';
@@ -191,8 +193,8 @@ export const ActivityLog: React.FC<{
 
   return (
     <div className="flex flex-col h-full bg-app">
-      <div className="px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex items-center justify-between">
-        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">Activity &amp; Access — Admin Only</h2>
+      <div className="px-4 sm:px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <PageTitle icon={<ShieldCheck />} title="Activity & access" badge="Admin" />
         <div className="flex gap-1">
           <button onClick={() => setTab('activity')}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-mini font-bold uppercase rounded border transition-colors ${tab === 'activity' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-200'}`}>
@@ -352,7 +354,7 @@ export const ActivityLog: React.FC<{
                     <td className="px-4 py-2.5 font-mono text-red-600">{s.deletes || '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-slate-500">{s.other || '—'}</td>
                     <td className="px-4 py-2.5 font-mono text-slate-400 text-mini">
-                      {s.last ? fmtWhen(s.last) : <span className="text-slate-300">never — no changes made</span>}
+                      {s.last ? fmtWhen(s.last) : <span className="text-slate-400">never — no changes made</span>}
                     </td>
                     <td className="px-4 py-2.5 text-right">
                       <select value={u.role} onChange={e => changeRole(u, e.target.value as Role)}

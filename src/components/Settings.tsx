@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
+import { Settings as SettingsIcon } from 'lucide-react';
 import { LearnedProfile } from '../core/ai/learnedProfile';
 import { AIProfileService } from '../services/AIProfileService';
 import { ManualParserMapper } from './ManualParserMapper';
@@ -54,14 +56,9 @@ export const Settings: React.FC<{ onSettingsChanged?: () => void }> = ({ onSetti
   const manual = profiles.filter(p => p.origin === 'manual');
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
-      <div>
-        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">Settings — Admin Only</h2>
-        <p className="text-sm text-slate-600 mt-1">
-          Vendors and their currencies, the weekly limit on IATA, the request alerts, and the report
-          formats the app has been taught to read on top of its built-in vendors. Every change is in the Activity log.
-        </p>
-      </div>
+    <div className="p-4 sm:p-6 space-y-6 max-w-5xl">
+      <PageTitle icon={<SettingsIcon />} title="Settings" badge="Admin"
+        subtitle="Vendors and their currencies, the weekly limit on IATA, the request alerts, and the report formats the app has been taught to read on top of its built-in vendors. Every change is in the Activity log." />
       <AdminSettings onChanged={onSettingsChanged} />
 
       {error && (
@@ -130,10 +127,10 @@ const ProfileGroup: React.FC<{
             <td className="px-4 py-2 font-bold text-slate-700">{p.vendorName}</td>
             <td className="px-4 py-2 font-mono text-slate-500">
               {Object.entries(p.columns).filter(([, v]) => v).length}
-              <span className="text-slate-300"> / {p.headers.length}</span>
+              <span className="text-slate-400"> / {p.headers.length}</span>
             </td>
             <td className="px-4 py-2 font-mono text-slate-500">
-              {p.columns.ticket ? 'Ticket' : p.columns.pnr ? 'PNR' : <span className="text-slate-300">—</span>}
+              {p.columns.ticket ? 'Ticket' : p.columns.pnr ? 'PNR' : <span className="text-slate-400">—</span>}
             </td>
             <td className="px-4 py-2 font-mono text-slate-500">{p.rules.refund.replace(/_/g, ' ')}</td>
             <td className="px-4 py-2 text-right">

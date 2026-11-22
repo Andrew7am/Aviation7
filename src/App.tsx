@@ -777,7 +777,7 @@ function MainApp({ user }: { user: User }) {
       )}
 
       {view === 'dashboard' && <Dashboard tickets={tickets} vendorBalances={vendorBalancesLive} topUps={topUps} />}
-      {view === 'tickets'   && <TicketTable title="Reconciliation Master List" tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} companyOf={companyRows.length ? companyFn : undefined} {...(isAdmin ? writeHandlers : closeHandlers)} />}
+      {view === 'tickets'   && <TicketTable title="All tickets" icon={<List className="w-4 h-4" />} tickets={tickets} voids={voids} afterClose={afterClose} exchanges={exchanges} companyOf={companyRows.length ? companyFn : undefined} {...(isAdmin ? writeHandlers : closeHandlers)} />}
       {view === 'companies' && <Companies tickets={tickets} rows={companyRows} loading={companiesLoading}
         assignments={companyAssignments} {...(isAdmin ? { onAssign: assignCompany, onUnassign: unassignCompany } : {})}
         tableProps={{ afterClose, exchanges, ...(isAdmin ? writeHandlers : closeHandlers) }} />}
@@ -785,8 +785,8 @@ function MainApp({ user }: { user: User }) {
         {...(isAdmin ? { onUpdateClosed: handleUpdateClosed }
           : closeOffices.length ? { onUpdateClosed: (id: string, closed: boolean) => { void officeBulkClosed([id], closed); },
             canCloseReq: (req: string) => canClose({ reqNum: req }) } : {})} />}
-      {view === 'missing'   && <TicketTable title="Needs Action — Missing REQ Numbers" tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : closeHandlers)} />}
-      {view === 'notclosed' && <TicketTable title="Not Closed — Still To Reconcile" tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : closeHandlers)} />}
+      {view === 'missing'   && <TicketTable title="Action required · missing request numbers" icon={<AlertTriangle className="w-4 h-4" />} tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : closeHandlers)} />}
+      {view === 'notclosed' && <TicketTable title="Not closed · still to reconcile" icon={<Circle className="w-4 h-4" />} tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : closeHandlers)} />}
       {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)} />}
       {/* Read-only, so everybody gets it: the person closing a flight sheet
           is not always the person who can write to the ledger. */}
@@ -820,7 +820,7 @@ function MainApp({ user }: { user: User }) {
           own scrollbar never appeared. Letting it grow with its content is
           what gives the page something to scroll. */}
       {view === 'vendors'   && (
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <VendorBalances vendorBalances={vendorBalancesLive} topUps={topUps} tickets={tickets}
             canEdit={isAdmin}
             onSaveVendor={handleSaveVendor} onDeleteVendor={handleDeleteVendor}

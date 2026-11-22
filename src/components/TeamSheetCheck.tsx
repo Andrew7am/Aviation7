@@ -1,4 +1,6 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
+import { FileSearch } from 'lucide-react';
 import { Ticket, PendingTicket } from '../types';
 import {
   Upload, AlertTriangle, CheckCircle2, X, Loader2, FileSpreadsheet, Download,
@@ -518,11 +520,11 @@ const Group: React.FC<{
                           title="Copy the ticket number"
                           className="group flex items-center gap-1.5 font-bold text-slate-700
                                      rounded px-1 -mx-1 hover:bg-slate-100 transition-colors">
-                          <Copy className="w-3 h-3 text-slate-300 shrink-0
+                          <Copy className="w-3 h-3 text-slate-400 shrink-0
                                            group-hover:text-slate-500" />
                           {f.airlineCode ? `${f.airlineCode}-${f.serial}` : f.serial}
                         </button>
-                      ) : <span className="text-slate-300">— none —</span>}
+                      ) : <span className="text-slate-400">— none —</span>}
                     </td>
                     {/* The PNR travels as often as the number does: it is
                         what an airline's own site asks for, and what finds a
@@ -534,7 +536,7 @@ const Group: React.FC<{
                           title="Copy the PNR"
                           className="group flex items-center gap-1.5 text-slate-500
                                      rounded px-1 -mx-1 hover:bg-slate-100 transition-colors">
-                          <Copy className="w-3 h-3 text-slate-300 shrink-0
+                          <Copy className="w-3 h-3 text-slate-400 shrink-0
                                            group-hover:text-slate-500" />
                           {f.pnr}
                         </button>
@@ -555,7 +557,7 @@ const Group: React.FC<{
                           ? <span title="Their sheet states no date — this is ours"
                                   className="text-slate-400">{f.ours[0].date}<span
                                   className="font-sans text-micro"> · ours</span></span>
-                          : <span className="text-slate-300">—</span>}
+                          : <span className="text-slate-400">—</span>}
                     </td>
                     {/* Where it was bought. The first question anybody asks
                         about a ticket that is missing from our books is where
@@ -569,7 +571,7 @@ const Group: React.FC<{
                             <span className="text-micro font-sans text-amber-600"> · held</span>
                           )}
                         </span>
-                      ) : <span className="text-slate-300">—</span>}
+                      ) : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-3 py-1.5 whitespace-nowrap">
                       {f.verdict === 'REQ_DIFFERS' || f.verdict === 'REQ_RELATED' ? (
@@ -591,12 +593,12 @@ const Group: React.FC<{
                         <span className="text-slate-500">
                           {f.theirReq}<span className="text-slate-400"> (theirs)</span>
                         </span>
-                      ) : <span className="text-slate-300">—</span>}
+                      ) : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
                       {f.sheet
                         ? <>{f.sheet.rawStatus || '—'}
-                            <span className="text-slate-300"> · row {f.sheet.rowNo}</span>
+                            <span className="text-slate-400"> · row {f.sheet.rowNo}</span>
                             {/* Their cell, when the number above is not in
                                 it as text. A conjunction is written
                                 "176-5513261452-53" and the second document
@@ -609,13 +611,13 @@ const Group: React.FC<{
                                   : f.sheet.rawTicket}
                               </span>
                             )}</>
-                        : <span className="text-slate-300">not on it</span>}
+                        : <span className="text-slate-400">not on it</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right text-slate-600 whitespace-nowrap">
                       {refundRow ? (
                         f.sheet?.refund != null
                           ? `${money(f.sheet.refund)} ${f.sheet.currency}`.trim()
-                          : <span className="text-slate-300">none stated</span>
+                          : <span className="text-slate-400">none stated</span>
                       ) : f.sheet?.cost != null ? (
                         <>
                           {`${money(f.sheet.cost)} ${f.sheet.currency}`.trim()}
@@ -636,12 +638,12 @@ const Group: React.FC<{
                             );
                           })()}
                         </>
-                      ) : <span className="text-slate-300">—</span>}
+                      ) : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">
                       {f.ours.length
                         ? f.ours.map(t => `${t.source} ${t.status || 'ISSUE'}`).join(' · ')
-                        : <span className="text-slate-300">nothing</span>}
+                        : <span className="text-slate-400">nothing</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right whitespace-nowrap">
                       {f.ours.length ? (() => {
@@ -650,7 +652,7 @@ const Group: React.FC<{
                           ? refunds.reduce((s, t) => s + Math.abs(t.amount || 0), 0)
                           : f.ours.reduce((s, t) => s + (t.amount || 0), 0);
                         if (refundRow && !refunds.length)
-                          return <span className="text-slate-300">none</span>;
+                          return <span className="text-slate-400">none</span>;
                         return (
                           <span className={refundRow || refunds.length
                             ? 'text-emerald-600' : 'text-slate-600'}>
@@ -658,7 +660,7 @@ const Group: React.FC<{
                             <span className="text-slate-400">{f.ours[0].currency}</span>
                           </span>
                         );
-                      })() : <span className="text-slate-300">—</span>}
+                      })() : <span className="text-slate-400">—</span>}
                     </td>
                     <td className="px-3 py-1.5 text-slate-500 font-sans text-xs leading-snug min-w-[320px] max-w-[460px]">
                       {(() => {
@@ -1140,18 +1142,12 @@ export const TeamSheetCheck: React.FC<Props> = ({
         </div>
       )}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">
-            Team sheet check
-          </h2>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
-            Drop the aviation team's ticket export here and it is read against our books,
+        <PageTitle icon={<FileSearch />} title="Team sheet check" className="flex-1 basis-64"
+          subtitle={<>Drop the aviation team's ticket export here and it is read against our books,
             request by request: does each request hold the same tickets on both sides, is
             any ticket filed under a different request here than there, and what is on one
             list and not the other. Nothing is imported and nothing is changed — this only
-            reports.
-          </p>
-        </div>
+            reports.</>} />
         {report && (
           <div className="flex flex-wrap items-center gap-2">
             {onAddToLedger && ready.length > 0 && (
@@ -1301,7 +1297,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
           </span>
         ) : (
           <>
-            <Upload className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+            <Upload className="w-6 h-6 text-slate-400 mx-auto mb-2" />
             <p className="text-xs text-slate-500">
               Drop their CSV or Excel export here, or click to choose one
             </p>
@@ -1640,23 +1636,23 @@ export const TeamSheetCheck: React.FC<Props> = ({
                         <td className="px-3 py-1.5 text-right text-slate-600">{r.theirTickets}</td>
                         <td className="px-3 py-1.5 text-right text-slate-600">{r.ourTickets}</td>
                         <td className={`px-3 py-1.5 text-right font-bold
-                          ${r.onlyTheirs ? 'text-red-600' : 'text-slate-300'}`}>
+                          ${r.onlyTheirs ? 'text-red-600' : 'text-slate-400'}`}>
                           {r.onlyTheirs || '—'}
                         </td>
                         <td className={`px-3 py-1.5 text-right font-bold
-                          ${r.onlyOurs ? 'text-amber-600' : 'text-slate-300'}`}>
+                          ${r.onlyOurs ? 'text-amber-600' : 'text-slate-400'}`}>
                           {r.onlyOurs || '—'}
                         </td>
                         <td className={`px-3 py-1.5 text-right font-bold
-                          ${r.misfiled ? 'text-red-600' : 'text-slate-300'}`}>
+                          ${r.misfiled ? 'text-red-600' : 'text-slate-400'}`}>
                           {r.misfiled || '—'}
                         </td>
                         <td className={`px-3 py-1.5 text-right font-bold
-                          ${r.priceDiffers ? 'text-amber-600' : 'text-slate-300'}`}>
+                          ${r.priceDiffers ? 'text-amber-600' : 'text-slate-400'}`}>
                           {r.priceDiffers || '—'}
                         </td>
                         <td className={`px-3 py-1.5 text-right font-bold
-                          ${r.refundGaps ? 'text-red-600' : 'text-slate-300'}`}>
+                          ${r.refundGaps ? 'text-red-600' : 'text-slate-400'}`}>
                           {r.refundGaps || '—'}
                         </td>
                         <td className="px-3 py-1.5 text-right">

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import {
   Receipt, Upload, Loader2, AlertTriangle, CheckCircle2, X, Search, Trash2,
   FileWarning, ChevronDown, ChevronRight, Download,
@@ -152,7 +153,7 @@ const InvoiceRow: React.FC<{
         </span>
         {onDelete && (
           <button onClick={onDelete} title="Remove this invoice from the tracker"
-            className="text-slate-300 hover:text-red-500">
+            className="text-slate-400 hover:text-red-500">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         )}
@@ -291,13 +292,10 @@ export const TaxInvoices: React.FC<{
     .sort((a, b) => (a.ticket.date || '').localeCompare(b.ticket.date || ''));
 
   return (
-    <div className="space-y-4 p-3 sm:p-0">
+    <div className="space-y-4 p-4 sm:p-6">
       <div>
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <Receipt className="w-4 h-4 text-purple-600" />
-            Tax Invoices — {vendorName}
-          </h2>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+          <PageTitle icon={<Receipt />} title={<>Tax invoices <span className="text-slate-400 font-normal">· {vendorName}</span></>} />
           <div className="sm:ml-auto flex flex-wrap items-center gap-1.5">
             <select value={period} onChange={e => setPeriod(e.target.value)} title="Tickets issued in"
               className="text-xs border border-slate-200 rounded px-2 py-1.5 text-slate-600 bg-white">
@@ -386,7 +384,7 @@ export const TaxInvoices: React.FC<{
             <span className="text-mini font-bold uppercase tracking-wide text-slate-500">
               Last upload — {outcomes.length} file(s)
             </span>
-            <button onClick={() => setOutcomes(null)} className="text-slate-300 hover:text-slate-600">
+            <button onClick={() => setOutcomes(null)} className="text-slate-400 hover:text-slate-600">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -540,8 +538,8 @@ export const TaxInvoices: React.FC<{
       </div>
 
       {tab === 'tickets' ? (
-        <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-          <table className="w-full">
+        <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto table-scroll">
+          <table className="data-table">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr className="text-mini font-bold uppercase tracking-wide text-slate-500">
                 <th className="px-3 py-2 text-left">Date</th>
@@ -611,8 +609,8 @@ export const TaxInvoices: React.FC<{
               sub={`${fmt(credits.credited.reduce((n, r) => n + Math.abs(r.ticket.amount ?? 0), 0))} ${currency}`}
               active={creditFilter === 'CREDITED'} onClick={() => setCreditFilter('CREDITED')} />
           </div>
-          <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-            <table className="w-full">
+          <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto table-scroll">
+            <table className="data-table">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr className="text-mini font-bold uppercase tracking-wide text-slate-500">
                   <th className="px-3 py-2 text-left">Refund date</th>

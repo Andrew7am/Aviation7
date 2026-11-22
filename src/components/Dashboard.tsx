@@ -1,4 +1,6 @@
 import React, { useMemo } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
+import { LayoutDashboard } from 'lucide-react';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
 import { sourceToCurrency, ticketCurrency } from '../core/helpers/sourceCurrency';
@@ -43,10 +45,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
 
   return (
     <div className="flex flex-col min-h-full lg:h-full bg-app">
-      <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-white shrink-0">
-        <h2 className="text-base font-semibold text-slate-900">Dashboard</h2>
-        <p className="text-xs text-slate-500 mt-0.5">The ledger at a glance: what is recorded, matched and still owed a request.</p>
-      </div>
+      <PageHeader variant="band" icon={<LayoutDashboard />} title="Dashboard"
+        subtitle="The ledger at a glance: what is recorded, matched and still owed a request." />
 
       {/* KPI cards. The figure is the card: large, in ink, not in colour. The
           colour sits in the small icon chip and only says something when
@@ -103,7 +103,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
             <h3 className="text-sm font-semibold text-slate-800">Source breakdown</h3>
           </div>
           <div className="overflow-auto flex-1 min-h-0">
-          <table className="w-full text-left min-w-[440px]">
+          <table className="data-table text-left min-w-[440px]">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-micro uppercase text-slate-500 tracking-wider">
                 <th className="px-4 py-2">Source</th>
@@ -123,7 +123,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
                   <td className="px-4 py-2.5 text-right">
                     {s.missing > 0
                       ? <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-micro font-bold">{s.missing}</span>
-                      : <span className="text-slate-300 text-micro">—</span>
+                      : <span className="text-slate-400 text-micro">—</span>
                     }
                   </td>
                 </tr>
@@ -147,7 +147,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ tickets, vendorBalances, t
             )}
           </div>
           <div className="overflow-auto flex-1 min-h-0">
-          <table className="w-full text-left min-w-[440px]">
+          <table className="data-table text-left min-w-[440px]">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-200 text-micro uppercase text-slate-500 tracking-wider">
                 <th className="px-4 py-2">Vendor</th>

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { FileWarning, Search, Download, AlertTriangle } from 'lucide-react';
 import type { Ticket } from '../types';
 import { admRegister, admTotals, admByVendor, ADM_KIND_LABEL, type AdmKind, type AdmRow } from '../core/helpers/admRegister';
@@ -74,20 +75,15 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
     <button key={k} onClick={() => setKind(k)}
       className={`px-2.5 py-1 rounded text-mini font-bold uppercase tracking-wide border
         ${kind === k ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
-      {label} <span className="opacity-60">{n}</span>
+      {label} <span className="opacity-80 dark:opacity-100">{n}</span>
     </button>
   );
   const count = (k: AdmKind) => all.filter(r => r.kind === k).length;
 
   return (
-    <div className="p-4 space-y-3 h-full overflow-auto">
-      <div className="flex items-center gap-2">
-        <FileWarning className="w-4 h-4 text-red-500" />
-        <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500">ADMs</h2>
-        <span className="text-xs text-slate-400">
-          Debit and credit memos, and what they are about. They stay in All Tickets and the balances too.
-        </span>
-      </div>
+    <div className="p-4 sm:p-6 space-y-3 h-full overflow-auto">
+      <PageHeader icon={<FileWarning />} title="ADMs"
+        subtitle="Debit and credit memos, and what they are about. They stay in All Tickets and the balances too." />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {totals.map(t => (
@@ -136,7 +132,7 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
           <div className="px-3 py-2 border-b border-slate-100 text-mini font-bold uppercase tracking-wider text-slate-400">
             By vendor <span className="normal-case font-normal">— who billed it, and under it the airline that raised it</span>
           </div>
-          <table className="w-full text-left min-w-[480px]">
+          <table className="data-table text-left min-w-[480px]">
             <tbody className="text-xs">
               {byVendor.map(v => (
                 <React.Fragment key={`${v.vendor}|${v.currency}`}>
@@ -163,8 +159,8 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto">
-        <table className="w-full text-left min-w-[1000px]">
+      <div className="bg-white border border-slate-200 rounded-lg overflow-x-auto table-scroll">
+        <table className="data-table text-left min-w-[1000px]">
           <thead className="bg-slate-50 border-b border-slate-100">
             <tr className="text-micro uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">Kind</th>
@@ -201,7 +197,7 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
                   <td className={`px-3 py-2 text-right font-bold whitespace-nowrap ${(r.ticket.amount || 0) < 0 ? 'text-emerald-600' : 'text-slate-800'}`}>
                     {fmt(r.ticket.amount || 0)} <span className="text-micro text-slate-400">{r.ticket.currency}</span>
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">{r.onTicket || <span className="text-slate-300">—</span>}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{r.onTicket || <span className="text-slate-400">—</span>}</td>
                   <td className="px-3 py-2 font-sans text-xs">
                     {r.flag
                       ? <span className="text-amber-700 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{r.flag}</span>
@@ -212,7 +208,7 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
                             {(sale ?? r.onTicketRows[0]).passengerName ? ` · ${(sale ?? r.onTicketRows[0]).passengerName}` : ''}
                             {sale ? ` · sold ${fmt(sale.amount)} ${sale.currency}` : ''}
                           </span>
-                        : <span className="text-slate-300">—</span>}
+                        : <span className="text-slate-400">—</span>}
                   </td>
                   <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.ticket.reqNum || '—'}</td>
                   <td className="px-3 py-2 text-slate-400 text-mini whitespace-nowrap">{r.ticket.vendorReference || '—'}</td>

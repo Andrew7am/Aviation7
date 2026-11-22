@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket } from '../types';
 import {
   Search, FolderOpen, AlertTriangle, CheckCircle2, Circle, Download, Building2, Copy,
@@ -433,11 +434,10 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
         </div>
       )}
 
-      <div className="p-4 space-y-3 shrink-0 bg-white border-b border-slate-200">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">
-            Requests
-          </h2>
+      <div className="px-4 sm:px-6 py-4 space-y-3 shrink-0 bg-white border-b border-slate-200">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          <PageTitle icon={<FolderOpen />} title="Requests"
+            subtitle="Every request number, its tickets on every supplier, and how much of it is closed." />
           <div className="flex items-center gap-2">
             <button onClick={exportList}
               className="flex items-center gap-1.5 bg-white text-slate-600 text-xs font-bold
@@ -468,7 +468,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                 ${only === k
                   ? 'bg-slate-800 text-white'
                   : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
-              {label} <span className="opacity-60">{counts[k]}</span>
+              {label} <span className="opacity-80 dark:opacity-100">{counts[k]}</span>
             </button>
           ))}
         </div>
@@ -477,7 +477,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
             are two different questions and reading them as one row invites
             clicking one thinking it does the other. */}
         <div className="flex flex-wrap items-center gap-2">
-          <Building2 className="w-3.5 h-3.5 text-slate-300" />
+          <Building2 className="w-3.5 h-3.5 text-slate-400" />
           {OFFICE_TABS.filter(([k]) => k !== 'NONE' || hasUnfiled).map(([k, label]) => (
             <button key={k} onClick={() => setOffice(k)}
               title={k === 'NONE'
@@ -487,7 +487,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                 ${office === k
                   ? 'bg-blue-700 text-white border-blue-700'
                   : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
-              {label} <span className="opacity-60">{officeCounts[k]}</span>
+              {label} <span className="opacity-80 dark:opacity-100">{officeCounts[k]}</span>
             </button>
           ))}
         </div>
@@ -542,8 +542,8 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
             ))}
           </div>
           <div className="hidden sm:block bg-white border border-slate-200 rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[880px]">
+            <div className="overflow-x-auto table-scroll">
+              <table className="data-table text-left min-w-[880px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-micro uppercase
                                  tracking-wider text-slate-400">
@@ -589,18 +589,18 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
                       <td className="px-3 py-2 text-mini text-slate-500 whitespace-nowrap">
                         {r.office ? (
                           <span className="flex items-center gap-1">
-                            <Building2 className="w-3 h-3 text-slate-300" />
+                            <Building2 className="w-3 h-3 text-slate-400" />
                             {OFFICE_LABEL[r.office as Exclude<Office, ''>]}
                           </span>
-                        ) : <span className="text-slate-300">—</span>}
+                        ) : <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-3 py-2 text-right text-slate-600">{r.rows}</td>
                       <td className={`px-3 py-2 text-right font-bold
-                        ${r.open ? 'text-orange-600' : 'text-slate-300'}`}>
+                        ${r.open ? 'text-orange-600' : 'text-slate-400'}`}>
                         {r.open || '—'}
                       </td>
                       <td className="px-3 py-2 text-right text-mini text-slate-600 whitespace-nowrap">
-                        {r.open ? show(r.openValue) : <span className="text-slate-300">—</span>}
+                        {r.open ? show(r.openValue) : <span className="text-slate-400">—</span>}
                       </td>
                       <td className="px-3 py-2 text-right text-mini text-slate-700 whitespace-nowrap">
                         {show(r.net)}
@@ -627,11 +627,11 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
           {office !== 'ALL' && ` · ${office === 'NONE' ? 'no office'
             : OFFICE_LABEL[office as Exclude<Office, ''>]}`}
         </span>
-        <span className="text-slate-300">|</span>
+        <span className="text-slate-400">|</span>
         <span className="text-amber-700">{counts.PART} part closed</span>
         <span className="text-orange-600">· {counts.OPEN} not closed</span>
         <span className="text-emerald-600">· {counts.DONE} closed</span>
-        <span className="text-slate-300 hidden sm:inline">|</span>
+        <span className="text-slate-400 hidden sm:inline">|</span>
         <span className="text-slate-400 hidden sm:inline">
           click a row to open it · click the request number to copy it
         </span>

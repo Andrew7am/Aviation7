@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket, VendorBalance, BalanceTopUp } from '../types';
 import { useReports } from '../hooks/useReports';
 import { sourceToCurrency, ticketCurrency } from '../core/helpers/sourceCurrency';
@@ -60,7 +61,7 @@ const NetCell: React.FC<{
   net: number; issued: number; refunded: number; fmt: (n: number) => string;
 }> = ({ net, issued, refunded, fmt }) => {
   if (net === 0 && issued === 0 && refunded === 0) {
-    return <td className="px-3 py-2 text-right"><span className="text-slate-300 text-xs">—</span></td>;
+    return <td className="px-3 py-2 text-right"><span className="text-slate-400 text-xs">—</span></td>;
   }
   return (
     <td className="px-3 py-2 text-right">
@@ -97,7 +98,7 @@ const CabinCell: React.FC<{ cabins: ShareRow['cabins'] }> = ({ cabins }) => {
   if (!shown.length) {
     return (
       <td className="px-3 py-2 text-right">
-        <span className="text-slate-300 text-xs"
+        <span className="text-slate-400 text-xs"
               title={`${cabins.unknown} ticket(s), no cabin recorded`}>—</span>
       </td>
     );
@@ -187,7 +188,7 @@ const ShareTable: React.FC<{
       {rows.length === 0 ? (
         <p className="px-4 py-6 text-xs text-slate-400 italic">Nothing to show yet.</p>
       ) : (
-        <table className="w-full text-left">
+        <table className="data-table text-left">
           <thead>
             <tr className="border-b border-slate-100 text-micro uppercase tracking-wider text-slate-400">
               <th className="px-3 py-2">{keyHeader}</th>
@@ -228,7 +229,7 @@ const ShareTable: React.FC<{
                 <td className="px-3 py-2 text-right font-mono text-xs text-slate-600">{r.tickets}</td>
                 <td className="px-3 py-2 text-right font-mono text-xs">
                   {r.refunds + r.otherDocs === 0
-                    ? <span className="text-slate-300">—</span>
+                    ? <span className="text-slate-400">—</span>
                     : (
                       <span className="text-slate-500"
                             title={`${r.refunds} refund(s), ${r.otherDocs} memo/EMD`}>
@@ -688,8 +689,8 @@ export const Reports: React.FC<ReportsProps> = ({ tickets, vendorBalances, topUp
 
   return (
     <div className="flex flex-col h-full bg-app">
-      <div className="px-4 sm:px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex items-center justify-between gap-4">
-        <h2 className="text-mini font-bold uppercase text-slate-400 tracking-widest">Reports &amp; Exports</h2>
+      <div className="px-4 sm:px-6 py-4 bg-white border-b border-slate-200 shrink-0 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <PageTitle icon={<BarChart3 />} title="Reports & exports" />
         <button
           onClick={exportFullBackup}
           title="Download every ticket of every vendor — one sheet per vendor, plus balances and top-ups"
