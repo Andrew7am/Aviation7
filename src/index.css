@@ -44,19 +44,31 @@
   --app-footer: #FFFFFF;
   --app-nav-active: #EEF3F9;
 }
-/* Deep Steel (22 Nov 2026): the header sits on the page's own steel, ruled
-   off from it; the sidebar a step darker; the active screen a raised steel. */
+/* Charcoal (22 Nov 2026, replaces Deep Steel): the header on the page's own
+   near-black, ruled off from it; the sidebar a breath lighter; the chosen
+   screen a raised grey with white text, as in the reference the user chose. */
 html.dark {
-  --app-bg: #252B33;
-  --app-header: #252B33;
-  --app-sidebar: #202832;
-  --app-footer: #202832;
-  --app-nav-active: #3B4652;
+  --app-bg: #111111;
+  --app-header: #111111;
+  --app-sidebar: #141414;
+  --app-footer: #141414;
+  --app-nav-active: #262626;
+  --accent: #2563EB;
+  --accent-hover: #3B76F0;
   /* The charts draw in SVG with colours of their own; these are theirs in the dark. */
-  --chart-grid: #46515D;
-  --chart-axis: #6B7785;
-  --chart-muted: #5A6673;
+  --chart-grid: #2A2A2A;
+  --chart-axis: #5C5C5C;
+  --chart-muted: #3D3D3D;
 }
+
+/* The filled primary button in the dark: one strong blue with white text.
+   The dark blue scale rises in lightness for text and tints, so a button
+   drawn from it would be pale with dark letters; these take the accent
+   instead. Light mode never matches - every selector starts html.dark. */
+html.dark :is(.bg-blue-600, .bg-blue-700) { background-color: var(--accent); }
+html.dark :is(.bg-blue-600, .bg-blue-700).text-white { color: #fff; }
+html.dark :is(.hover\:bg-blue-700, .hover\:bg-blue-800):hover:not(:disabled) { background-color: var(--accent-hover); }
+html.dark :is(.bg-blue-600, .bg-blue-700):disabled { opacity: .45; }
 @theme inline {
   --color-app: var(--app-bg);
   --color-app-header: var(--app-header);
