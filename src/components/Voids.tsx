@@ -3,6 +3,7 @@ import { Ban, Search, Download, AlertTriangle, ChevronLeft, ChevronRight } from 
 import type { Ticket } from '../types';
 import type { VoidTicket } from '../services/VoidTicketService';
 import { voidReport, RatioRow } from '../core/helpers/voidRatio';
+import { matchesSearch } from '../core/helpers/ticketIdentity';
 
 const xlsx = () => import('xlsx');
 
@@ -82,11 +83,7 @@ export const Voids: React.FC<{ voids: VoidTicket[]; tickets: Ticket[] }> = ({ vo
     const q = search.trim().toLowerCase();
     return voids
       .filter(v => source === 'ALL' || v.source === source)
-      .filter(v => !q
-        || v.ticketNo.toLowerCase().includes(q)
-        || v.pnr.toLowerCase().includes(q)
-        || v.passengerName.toLowerCase().includes(q)
-        || (v.period ?? '').toLowerCase().includes(q))
+      .filter(v => matchesSearch(`${v.ticketNo} ${v.pnr} ${v.passengerName} ${v.period ?? ''}`, q))
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   }, [voids, search, source]);
 

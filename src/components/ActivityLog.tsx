@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AuditService, AuditRecord, AppUser, ROLES, ROLE_LABEL, type Role } from '../services/AuditService';
 import { Search, Download, Users, Activity, Undo2, Trash2 } from 'lucide-react';
 import { undoableAction, undoneAuditId } from '../core/helpers/undoableAction';
+import { matchesSearch } from '../core/helpers/ticketIdentity';
 import * as XLSX from 'xlsx';
 
 const ACTION_COLORS: Record<string, string> = {
@@ -121,7 +122,7 @@ export const ActivityLog: React.FC<{
     if (actionFilter !== 'ALL' && r.action !== actionFilter) return false;
     if (search) {
       const q = search.toLowerCase();
-      if (!`${r.entity} ${r.detail} ${r.actorEmail} ${r.action}`.toLowerCase().includes(q)) return false;
+      if (!matchesSearch(`${r.entity} ${r.detail} ${r.actorEmail} ${r.action}`, q)) return false;
     }
     return true;
   }), [rows, search, actorFilter, actionFilter]);

@@ -148,6 +148,29 @@ export function sameBookingTransaction(
  * A portal row and its BSP invoice line agree on the serial and that is the
  * only half both are guaranteed to print.
  */
+/**
+ * The ten-digit serial a search term names when it is a whole document
+ * number written with its airline code - "256-8654543453", "2568654543453",
+ * "256 8654543453" - and '' for anything else. Their sheet writes it every
+ * one of these ways and our books keep the serial alone, so a search typed
+ * the way it was read off their sheet found nothing.
+ */
+export function searchSerial(term: string): string {
+  const s = (term || '').trim();
+  if (!/^[\d\s\-–—/]+$/.test(s)) return '';
+  const k = ticketMatchKey(s);
+  return /^\d{10}$/.test(k) && k !== s ? k : '';
+}
+
+/** A search box's test: the text as typed, or the serial it names. */
+export function matchesSearch(haystack: string, term: string): boolean {
+  const q = (term || '').trim().toLowerCase();
+  if (!q) return true;
+  if (haystack.toLowerCase().includes(q)) return true;
+  const k = searchSerial(term);
+  return !!k && haystack.includes(k);
+}
+
 export function ticketMatchKey(ticketNo: string): string {
   const s = (ticketNo || '').replace(/\s+/g, '').toUpperCase();
   const joined = s.match(JOINED_FORM);

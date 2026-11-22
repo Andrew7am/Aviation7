@@ -8,6 +8,7 @@ import { coverageReport, coverageInPeriod, Coverage } from '../core/helpers/taxI
 import type { StoredInvoice } from '../services/TaxInvoiceService';
 import type { FileOutcome } from '../hooks/useTaxInvoices';
 import { invoiceRequestSheets } from '../core/helpers/taxInvoiceRequest';
+import { matchesSearch } from '../core/helpers/ticketIdentity';
 import { creditNoteReport, creditsInPeriod, type RefundCoverage } from '../core/helpers/creditNoteCoverage';
 
 const xlsx = () => import('xlsx');
@@ -253,11 +254,8 @@ export const TaxInvoices: React.FC<{
     const q = search.trim().toLowerCase();
     return report.tickets
       .filter(r => filter === 'ALL' || r.coverage === filter)
-      .filter(r => !q
-        || r.ticket.ticketNo.toLowerCase().includes(q)
-        || (r.ticket.passengerName || '').toLowerCase().includes(q)
-        || (r.ticket.reqNum || '').toLowerCase().includes(q)
-        || r.invoices.some(i => i.toLowerCase().includes(q)))
+      .filter(r => matchesSearch(
+        `${r.ticket.ticketNo} ${r.ticket.passengerName || ''} ${r.ticket.reqNum || ''} ${r.invoices.join(' ')}`, q))
       .sort((a, b) => (a.ticket.date || '').localeCompare(b.ticket.date || ''));
   }, [report, filter, search]);
 
@@ -288,12 +286,8 @@ export const TaxInvoices: React.FC<{
   const q = search.trim().toLowerCase();
   const refundRows = credits.refunds
     .filter(r => creditFilter === 'ALL' || (creditFilter === 'OWED' ? r.coverage !== 'CREDITED' : r.coverage === creditFilter))
-    .filter(r => !q
-      || r.ticket.ticketNo.toLowerCase().includes(q)
-      || (r.ticket.relatedTicket || '').toLowerCase().includes(q)
-      || (r.ticket.passengerName || '').toLowerCase().includes(q)
-      || (r.ticket.reqNum || '').toLowerCase().includes(q)
-      || r.saleInvoices.some(i => i.includes(q)) || r.creditNotes.some(i => i.includes(q)))
+    .filter(r => matchesSearch(`${r.ticket.ticketNo} ${r.ticket.relatedTicket || ''} ${r.ticket.passengerName || ''}`
+      + ` ${r.ticket.reqNum || ''} ${r.saleInvoices.join(' ')} ${r.creditNotes.join(' ')}`, q))
     .sort((a, b) => (a.ticket.date || '').localeCompare(b.ticket.date || ''));
 
   return (

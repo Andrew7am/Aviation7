@@ -8,6 +8,7 @@ import {
 import { writeClipboard } from '../utils/clipboard';
 import { voidIndex, voidFor, voidsInQueue, VoidedDoc } from '../core/helpers/pendingVoids';
 import { conjunctionFirst } from '../core/helpers/conjunction';
+import { matchesSearch } from '../core/helpers/ticketIdentity';
 import {
   CheckCircle2, X, Loader2, Copy, AlertTriangle, Lock, Undo2, Trash2, Inbox,
   ChevronLeft, ChevronRight, Scissors, Ban,
@@ -525,8 +526,7 @@ export const PendingReview: React.FC<Props> = ({
       if (p.state !== tab) return false;
       if (vendorFilter && (p.source || p.theirPortal || '(no vendor)') !== vendorFilter) return false;
       if (!q) return true;
-      return [p.ticketNo, p.pnr, p.reqNum, p.theirReq, p.passengerName, p.source]
-        .some(v => (v || '').toUpperCase().includes(q));
+      return matchesSearch([p.ticketNo, p.pnr, p.reqNum, p.theirReq, p.passengerName, p.source].map(v => v || '').join(' '), q);
     });
   }, [pending, tab, vendorFilter, search]);
 

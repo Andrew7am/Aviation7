@@ -18,7 +18,7 @@ import { RequestProfile } from './RequestProfile';
 const xlsx = () => import('xlsx');
 
 import { costMatches } from '../core/helpers/costMatch';
-import { ticketMatchKey } from '../core/helpers/ticketIdentity';
+import { ticketMatchKey, matchesSearch } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import { extractRoute } from '../core/helpers/extractRoute';
 import { missingDate, displayDate } from '../core/helpers/missingDate';
@@ -639,8 +639,8 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         // number: searching the original should turn up what paid it back.
         const haystack = `${t.ticketNo} ${t.reqNum} ${vendorRef(t)} ${t.pnr} ${t.source} ${t.passengerName}`
           + ` ${t.relatedTicket ?? ''}` + (companyOf ? ` ${companyOf(t)}` : '');
-        const hay = haystack.toLowerCase();
-        if (!hay.includes(q)) return false;
+        // "065-5513059068" and "0655513059068" find 5513059068 too.
+        if (!matchesSearch(haystack, q)) return false;
       }
       return true;
     });
@@ -678,8 +678,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       if (filterPNR && !(t.pnr || '').toLowerCase().includes(filterPNR.toLowerCase())) return false;
       if (filterCost && !costMatches(filterCost, [t.amount, t.totalDoc])) return false;
       if (searchTerm) {
-        const hay = `${t.ticketNo} ${t.pnr} ${t.source} ${t.passengerName} void`.toLowerCase();
-        if (!hay.includes(searchTerm.toLowerCase())) return false;
+        if (!matchesSearch(`${t.ticketNo} ${t.pnr} ${t.source} ${t.passengerName} void`, searchTerm)) return false;
       }
       return true;
     });
@@ -698,10 +697,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   const voidHits = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     if (q.length < 3) return [];
-    return voids.filter(v =>
-      v.ticketNo.toLowerCase().includes(q)
-      || (v.pnr || '').toLowerCase().includes(q)
-      || (v.passengerName || '').toLowerCase().includes(q));
+    return voids.filter(v => matchesSearch(`${v.ticketNo} ${v.pnr || ''} ${v.passengerName || ''}`, q));
   }, [voids, searchTerm]);
 
   useEffect(() => setPage(0), [searchTerm, filterMode, sourceSel, dateFrom, dateTo, closedFilter, travelFilter, cabinFilter, officeFilter, companyFilter, filterTicket, filterAL, filterPax, filterPNR, filterCost, sortKey, sortDir]);

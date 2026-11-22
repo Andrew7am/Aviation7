@@ -6,6 +6,7 @@ import { AirtableService, type AirtableNotice, type SyncState, type LiveRecord, 
 import { docKey } from '../core/integrations/airtableNotices';
 import { teamFixes, FIX_LABEL, NUMBERED_SOURCES, type FixKind } from '../core/integrations/airtableFixes';
 import { portalSource } from '../core/config/teamPortals';
+import { searchSerial } from '../core/helpers/ticketIdentity';
 import { AIRTABLE_API_ON } from '../core/integrations/airtable';
 
 /**
@@ -105,7 +106,10 @@ export const AirtablePage: React.FC<{
   const infoNotices = notices.filter(n => n.state === 'OPEN' && !APPROVAL.has(n.kind));
   const shownNotices = noticeState === 'OPEN' ? openNotices : noticeState === 'INFO' ? infoNotices : notices.filter(n => n.state !== 'OPEN');
   const needle = q.trim().toUpperCase().replace(/\s+/g, '');
-  const hit = (...xs: (string | null | undefined)[]) => !needle || xs.some(x => String(x || '').toUpperCase().replace(/\s+/g, '').includes(needle));
+  // "065-5513059068" finds their "0655513059068" and the other way round.
+  const serial = searchSerial(q);
+  const hit = (...xs: (string | null | undefined)[]) => !needle || xs.some(x => String(x || '').toUpperCase().replace(/\s+/g, '').includes(needle)
+    || (!!serial && String(x || '').replace(/\s+/g, '').includes(serial)));
 
   const tabs: [Tab, string, number | null][] = [
     ['overview', 'Overview', null], ['notices', 'Notifications', openNotices.length],

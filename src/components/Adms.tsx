@@ -3,6 +3,7 @@ import { FileWarning, Search, Download, AlertTriangle } from 'lucide-react';
 import type { Ticket } from '../types';
 import { admRegister, admTotals, admByVendor, ADM_KIND_LABEL, type AdmKind, type AdmRow } from '../core/helpers/admRegister';
 import { airlineName } from '../core/config/airlines';
+import { searchSerial } from '../core/helpers/ticketIdentity';
 
 /** The airline behind a memo: the name where we have one, the code always. */
 const carrier = (code?: string) => {
@@ -41,12 +42,14 @@ export const Adms: React.FC<{ tickets: Ticket[] }> = ({ tickets }) => {
 
   const shown = useMemo(() => {
     const needle = q.trim().toUpperCase().replace(/\s+/g, '');
+    const serial = searchSerial(q);
     return all.filter(r =>
       (kind === 'ALL' || (kind === 'REAL' ? r.kind !== 'BSP_FEE' : r.kind === kind))
       && (vendor === 'ALL' || ((r.ticket.source || '').trim() || 'No vendor') === vendor)
       && (!needle || [r.ticket.ticketNo, r.onTicket, r.ticket.reqNum, r.ticket.pnr,
           ...r.onTicketRows.map(t => `${t.reqNum} ${t.pnr} ${t.passengerName}`)]
-        .some(x => String(x || '').toUpperCase().replace(/\s+/g, '').includes(needle))));
+        .some(x => String(x || '').toUpperCase().replace(/\s+/g, '').includes(needle)
+          || (!!serial && String(x || '').includes(serial)))));
   }, [all, kind, q, vendor]);
   const byVendor = useMemo(() => admByVendor(shown), [shown]);
   const totals = useMemo(() => admTotals(all), [all]);
