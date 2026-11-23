@@ -33,6 +33,19 @@ export interface Chain {
   latest: string;
 }
 
+/**
+ * Whether an issue is a reissue: it replaced an earlier ticket, paid or not.
+ * Said by the transaction type, or by the reissue register for the ones
+ * imported before the type was kept. The ledger stores both as ISSUE.
+ */
+export function isReissue(
+  t: { ticketNo?: string; status?: string; transactionType?: string },
+  index: ReturnType<typeof chainIndex>,
+): boolean {
+  if (/^(FUND|REFUND|RFND|EMDS?|ADM|ACM|VOID|CANN|CANX|RFNX)$/i.test(t.status || '')) return false;
+  return (t.transactionType || '').toUpperCase() === 'REISSUE' || chainOf(t.ticketNo || '', index).position > 0;
+}
+
 /** Index a list of edges both ways, once, for repeated walks. */
 export function chainIndex(edges: Edge[]) {
   const back = new Map<string, string>();

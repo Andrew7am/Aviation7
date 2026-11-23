@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import type { Edge } from '../core/helpers/ticketChain';
 import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket } from '../types';
@@ -80,6 +81,8 @@ interface Summary {
 
 interface Props {
   tickets: Ticket[];
+  /** The reissue register, for the request profile. */
+  exchanges?: Edge[];
   /** Close or reopen one row, when the viewer is allowed to. */
   onUpdateClosed?: (id: string, closed: boolean) => void;
   /** Which requests the close/reopen controls are offered on. Absent: all. */
@@ -208,7 +211,7 @@ export function officeTabCounts(list: Facet[], only: 'ALL' | State, search: stri
   } as Record<OfficeSel, number>;
 }
 
-export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq }) => {
+export const Requests: React.FC<Props> = ({ tickets, exchanges, onUpdateClosed, canCloseReq }) => {
   const [search, setSearch] = useState('');
   const [only, setOnly] = useState<'ALL' | State>('ALL');
   const [office, setOffice] = useState<OfficeSel>('ALL');
@@ -421,7 +424,7 @@ export const Requests: React.FC<Props> = ({ tickets, onUpdateClosed, canCloseReq
   return (
     <div className="flex flex-col h-full bg-app">
       {openReq && (
-        <RequestProfile reqNum={openReq} tickets={tickets} onUpdateClosed={!canCloseReq || canCloseReq(openReq) ? onUpdateClosed : undefined}
+        <RequestProfile reqNum={openReq} tickets={tickets} exchanges={exchanges} onUpdateClosed={!canCloseReq || canCloseReq(openReq) ? onUpdateClosed : undefined}
           onClose={() => setOpenReq(null)} />
       )}
 

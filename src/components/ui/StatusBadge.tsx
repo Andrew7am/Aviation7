@@ -45,7 +45,7 @@ export const StatusBadge: React.FC<{
  *  badge's tone and words. BSP's own four-letter codes stay as BSP writes
  *  them; plain words are written as words. */
 const TICKET_STATUS: Record<string, [Tone, string]> = {
-  ISSUE: ['info', 'Issue'], REFUND: ['info', 'Refund'], FUND: ['success', 'Top-up'],
+  ISSUE: ['info', 'Issue'], REISSUE: ['info', 'Reissue'], REFUND: ['info', 'Refund'], FUND: ['success', 'Top-up'],
   VOID: ['neutral', 'Void'], HOLD: ['warning', 'Hold'], ADM: ['info', 'ADM'], ACM: ['info', 'ACM'],
   TKTT: ['info', 'TKTT'], RFND: ['info', 'RFND'], CANN: ['neutral', 'CANN'], CANX: ['neutral', 'CANX'],
   RFNX: ['neutral', 'RFNX'], EMDS: ['info', 'EMD'],

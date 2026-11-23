@@ -24,7 +24,7 @@ import { ticketMatchKey, matchesSearch } from '../core/helpers/ticketIdentity';
 import { classifyTravel, TRAVEL_LABEL, type TravelScope } from '../core/helpers/travelScope';
 import { extractRoute } from '../core/helpers/extractRoute';
 import { missingDate, displayDate } from '../core/helpers/missingDate';
-import { chainIndex, chainOf } from '../core/helpers/ticketChain';
+import { chainIndex, chainOf, isReissue } from '../core/helpers/ticketChain';
 import { CABIN_LABEL, type Cabin } from '../core/helpers/cabinClass';
 import { classifyOffice, OFFICE_LABEL, type Office } from '../core/helpers/reqOffice';
 import { Ban } from 'lucide-react';
@@ -547,9 +547,7 @@ export const TicketTable: React.FC<TicketTableProps> = ({
         || chainOf((t.ticketNo || '').replace(/\D/g, '').slice(-10), chainIdx).position > 0),
   [chainIdx]);
 
-  /** The kind of document a row is. A reissue is an issue that replaced an
-   *  earlier ticket - said by the transaction type, or by the reissue
-   *  register for the ones imported before the type was kept - paid or not. */
+  /** The kind of document a row is. */
   const kindOf = useCallback((t: Ticket): TicketKind => {
     if (t.id.startsWith('void:')) return 'VOID';
     const st = (t.status || '').toUpperCase();
@@ -558,10 +556,11 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     if (/^EMDS?$/.test(st)) return 'EMD';
     if (/^(ADM|ACM)$/.test(st)) return 'MEMO';
     if (/^(VOID|CANN|CANX|RFNX)$/.test(st)) return 'VOID';
-    if ((t.transactionType || '').toUpperCase() === 'REISSUE'
-        || chainOf((t.ticketNo || '').replace(/\D/g, '').slice(-10), chainIdx).position > 0) return 'REISSUE';
-    return 'ISSUE';
+    return isReissue(t, chainIdx) ? 'REISSUE' : 'ISSUE';
   }, [chainIdx]);
+
+  /** The status as it is read: a reissue says so, though it is stored ISSUE. */
+  const statusOf = useCallback((t: Ticket) => kindOf(t) === 'REISSUE' ? 'REISSUE' : t.status || '', [kindOf]);
 
   /** Every request number the ledger holds, as whole tokens. */
   const reqTokens = useMemo(() => new Set(tickets.flatMap(t => reqTokensOf(t.reqNum || ''))), [tickets]);
@@ -573,13 +572,14 @@ export const TicketTable: React.FC<TicketTableProps> = ({
       // Blanks always sink to the bottom regardless of direction — a row
       // with no date or no serial is missing data, not "the earliest", and
       // flipping the arrow shouldn't parade it to the top.
-      const av = sortValue(a, sortKey), bv = sortValue(b, sortKey);
+      const value = (t: Ticket) => sortKey === 'status' ? statusOf(t) || null : sortValue(t, sortKey);
+      const av = value(a), bv = value(b);
       if (av === null && bv === null) return 0;
       if (av === null) return 1;
       if (bv === null) return -1;
       return av < bv ? -dir : av > bv ? dir : 0;
     });
-  }, [sortKey, sortDir]);
+  }, [sortKey, sortDir, statusOf]);
 
   const filtered = useMemo(() => {
     const rows = tickets.filter(t => {
@@ -906,7 +906,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
       // (Source in the middle, Report Name at the end); the fix is dropping
       // the duplicate, not the column itself.
       { key: 'Source', get: (t: Ticket) => t.source || 'UNKNOWN', w: 15 },
-      { key: 'Status',      get: (t: Ticket) => t.status || '',          w: 9 },
+      { key: 'Status',      get: statusOf,          w: 9 },
       ...(has.route ? [{ key: 'Route',       get: (t: Ticket) => t.route || '',  w: 18 }] : []),
       ...(has.route ? [{ key: 'Travel',      get: (t: Ticket) => travelText(t.route), w: 13 }] : []),
       ...(has.cabin ? [{ key: 'Cabin',       get: (t: Ticket) => cabinText(t), w: 15 }] : []),
@@ -1000,7 +1000,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
     'Travel':     travelText(t.route),
     'Ticket No.': t.ticketNo,
     'Source':     t.source || '',
-    'Status':     t.status || '',
+    'Status':     statusOf(t),
     'Date':       t.date,
     'Balance Payable': t.amount,
     'Adjustment': t.adjustment ?? '',
@@ -1325,7 +1325,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
   return (
     <div className="flex flex-col h-full bg-app">
       {profileReq && (
-        <RequestProfile reqNum={profileReq} tickets={tickets} onUpdateClosed={!canClose || canClose({ reqNum: profileReq } as Ticket) ? onUpdateClosed : undefined}
+        <RequestProfile reqNum={profileReq} tickets={tickets} exchanges={exchanges} onUpdateClosed={!canClose || canClose({ reqNum: profileReq } as Ticket) ? onUpdateClosed : undefined}
           onClose={() => setProfileReq(null)} />
       )}
       {/* Says what landed on the clipboard, not just that something did — a
@@ -1884,8 +1884,8 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
               voided ? 'border-slate-200 opacity-60' : !ticket.reqNum ? 'border-red-200' : 'border-slate-200'}`}>
               <div className="flex items-center gap-2">
                 <span className="font-mono font-bold text-[13px] text-slate-800">{ticket.airlineCode ? `${ticket.airlineCode}-` : ''}{ticket.ticketNo}</span>
-                <StatusBadge tone={ticketStatus(voided ? 'VOID' : ticket.status)[0]} className="ml-auto">
-                  {ticketStatus(voided ? 'VOID' : ticket.status)[1]}
+                <StatusBadge tone={ticketStatus(voided ? 'VOID' : statusOf(ticket))[0]} className="ml-auto">
+                  {ticketStatus(voided ? 'VOID' : statusOf(ticket))[1]}
                 </StatusBadge>
               </div>
               <div className="text-[12px] text-slate-700 mt-1 truncate">{ticket.passengerName || '—'}</div>
@@ -2100,7 +2100,7 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                   </td>
                   <td className="px-3 py-2">
                     {ticket.status
-                      ? <StatusBadge tone={ticketStatus(ticket.status)[0]}>{ticketStatus(ticket.status)[1]}</StatusBadge>
+                      ? <StatusBadge tone={ticketStatus(statusOf(ticket))[0]}>{ticketStatus(statusOf(ticket))[1]}</StatusBadge>
                       : <span className="text-slate-400">—</span>
                     }
                   </td>

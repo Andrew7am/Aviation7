@@ -781,7 +781,7 @@ function MainApp({ user }: { user: User }) {
     >
       <React.Suspense fallback={<Loading />}>
       {searchReq && (
-        <RequestProfile reqNum={searchReq} tickets={tickets} onClose={() => setSearchReq(null)}
+        <RequestProfile reqNum={searchReq} tickets={tickets} exchanges={exchanges} onClose={() => setSearchReq(null)}
           onUpdateClosed={isAdmin ? handleUpdateClosed
             : closeOffices.length && canClose({ reqNum: searchReq })
               ? (id: string, closed: boolean) => { void officeBulkClosed([id], closed); } : undefined} />
@@ -800,11 +800,11 @@ function MainApp({ user }: { user: User }) {
       {view === 'companies' && <Companies tickets={tickets} rows={companyRows} loading={companiesLoading}
         assignments={companyAssignments} {...(isAdmin ? { onAssign: assignCompany, onUnassign: unassignCompany } : {})}
         tableProps={{ afterClose, exchanges, ...(isAdmin ? writeHandlers : closeHandlers) }} />}
-      {view === 'requests'  && <Requests tickets={tickets}
+      {view === 'requests'  && <Requests tickets={tickets} exchanges={exchanges}
         {...(isAdmin ? { onUpdateClosed: handleUpdateClosed }
           : closeOffices.length ? { onUpdateClosed: (id: string, closed: boolean) => { void officeBulkClosed([id], closed); },
             canCloseReq: (req: string) => canClose({ reqNum: req }) } : {})} />}
-      {view === 'missing'   && <TicketTable title="Action required · missing request numbers" icon={<AlertTriangle className="w-4 h-4" />} tickets={tickets} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : closeHandlers)} />}
+      {view === 'missing'   && <TicketTable title="Action required · missing request numbers" icon={<AlertTriangle className="w-4 h-4" />} tickets={tickets} exchanges={exchanges} defaultFilter="NEED_REQ" {...(isAdmin ? writeHandlers : closeHandlers)} />}
       {view === 'notclosed' && <TicketTable title="Not closed · still to reconcile" icon={<Circle className="w-4 h-4" />} tickets={tickets} defaultClosed="NOT_CLOSED" {...(isAdmin ? writeHandlers : closeHandlers)} />}
       {view === 'import'    && isAdmin && <ImportData userId={user.id} onImport={handleImport} vendorNames={vendorBalancesLive.map(v => v.vendorName)}
         wallets={vendorBalancesLive} ledger={tickets} walletTopUps={topUps} />}

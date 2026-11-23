@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { chainIndex, isReissue, type Edge } from '../core/helpers/ticketChain';
 import { Ticket } from '../types';
 import {
   AlertTriangle, CheckCircle2, Circle, TrendingDown, TrendingUp, Building2, Download, Copy,
@@ -48,6 +49,8 @@ interface Props {
   onUpdateClosed?: (id: string, closed: boolean) => void;
   /** The WHOLE ledger, never a filtered slice — see the note above. */
   tickets: Ticket[];
+  /** The reissue register, so a reissue is called one. */
+  exchanges?: Edge[];
   onClose: () => void;
 }
 
@@ -68,7 +71,9 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
   </div>
 );
 
-export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUpdateClosed }) => {
+export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, onClose, onUpdateClosed }) => {
+  const chains = useMemo(() => chainIndex(exchanges ?? []), [exchanges]);
+  const typeOf = (t: Ticket) => isReissue(t, chains) ? 'REISSUE' : t.status || 'ISSUE';
   const r = useMemo(() => {
     const key = reqNum.trim().toUpperCase();
     const rows = tickets.filter(t => (t.reqNum || '').trim().toUpperCase() === key
@@ -146,7 +151,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
       'A/L':         t.airlineCode || '',
       'Ticket No.':  t.ticketNo,
       'Source':      t.source || '',
-      'Type':        t.status || 'ISSUE',
+      'Type':        typeOf(t),
       'Passenger':   t.passengerName || '',
       'PNR':         t.pnr || '',
       'Req Num':     t.reqNum || '',
@@ -323,7 +328,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, onClose, onUp
                               ${(t.amount || 0) < 0
                                 ? 'bg-emerald-100 text-emerald-700'
                                 : 'bg-slate-100 text-slate-600'}`}>
-                              {t.status || 'ISSUE'}
+                              {typeOf(t)}
                             </span>
                           </td>
                           <td className="px-3 py-1.5 text-slate-600 max-w-[160px] truncate">
