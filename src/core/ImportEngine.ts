@@ -46,7 +46,7 @@ export function detectDuplicates(tickets: Ticket[]): Ticket[] {
  * The settlement vendor. A row from here is not a second sale — it is the
  * invoice for a document the portal already reported.
  */
-const isSettlementSource = (source: string) => /^iata/i.test((source || '').trim());
+export const isSettlementSource = (source: string) => /^iata/i.test((source || '').trim());
 
 /**
  * Document identity, independent of which vendor reported it.

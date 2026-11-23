@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { invoiceDifferences } from '../core/helpers/portalVsInvoice';
 import Papa from 'papaparse';
 import { Ticket } from '../types';
 import { runParser } from '../core/parsers';
@@ -271,6 +272,9 @@ export function useImport(userId: string) {
           `${d.ours.ticketNo}: we recorded ${d.ours.amount} ${d.ours.currency} from ${d.ours.reportName || 'their sheet'};`
           + ` this report says ${d.report.amount} ${d.report.currency}. Not changed - check which is right.`),
       ];
+      proofWarnings.push(...invoiceDifferences(realTkts, existingFromDB).map(d =>
+        `${d.ticketNo}: this report says ${d.reported.toFixed(2)} ${d.currency}; the IATA invoice charged ${d.invoiced.toFixed(2)}`
+        + ` (${d.apart > 0 ? '+' : '−'}${Math.abs(d.apart).toFixed(2)}). Our books keep the invoice - ask the airline.`));
       if (proof.confirm.length)
         proofWarnings.unshift(`${proof.confirm.length} row(s) recorded from their sheet or by hand are carried by this`
           + ' report at the same amount and will be marked confirmed.');

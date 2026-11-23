@@ -1,5 +1,5 @@
 import { VendorParser, ParserResult } from './types';
-import { num } from './shared';
+import { num, cleanTk, airlineCode as airlineCodeOf } from './shared';
 import { resolveReq } from '../helpers/resolveReq';
 import { parseDate } from '../helpers/parseDate';
 
@@ -26,7 +26,17 @@ const TXN_TYPES = new Set([
   'REFUND', 'REFUNDED', 'VOID', 'VOIDED', 'CANCELLED', 'CANCELED', 'EXCHANGE',
   // A hold let go before it was paid: no document, no money.
   'UNPAID_CANCEL',
+  // A ticket exchanged for another, a seat given back, a bag or other extra.
+  'REISSUE', 'DELETE_SEAT', 'PAID_ANCILLARY',
 ]);
+
+/** Words that are a coupon's status or a payment's as well as a transaction.
+ *  The 23 Aug 2026 report carries REFUND down its Coupon Status column more
+ *  often than any transaction, and that column was read as the transaction:
+ *  three "refunds" and no sales. They never decide which column it is. */
+const AMBIGUOUS = new Set(['REFUND', 'REFUNDED', 'VOID', 'VOIDED', 'CANCELLED', 'CANCELED', 'EXCHANGE']);
+/** A transaction we do not know, where the column is not in doubt. */
+const TXN_SHAPE = /^[A-Z]+(?:_[A-Z]+)+$/;
 
 /* The DSR as downloaded since Nov 2026 has a title row ("DSR Report") and a
    header row above the data; copied and pasted, both come along. Its header
@@ -84,7 +94,7 @@ function looksNumeric(rows: string[][], idx: number): boolean {
     const v = val(row, idx);
     if (!v) continue;
     filled++;
-    if (RE.money.test(v)) numeric++;
+    if (RE.money.test(v.replace(/,/g, ''))) numeric++;   // "20,660.00" too
   }
   return filled > 0 && numeric / filled >= 0.9;
 }
@@ -128,7 +138,9 @@ export const RiyadhAirParser: VendorParser = {
     const result = [];
 
     // ── Locate every column by the shape of its values ───────────────────
-    const cTxn      = findCol(rows, v => TXN_TYPES.has(v.toUpperCase()));
+    let cTxn = named('txntype');
+    if (cTxn === -1) cTxn = findCol(rows, v => TXN_TYPES.has(v.toUpperCase()) && !AMBIGUOUS.has(v.toUpperCase()));
+    if (cTxn === -1) cTxn = findCol(rows, v => TXN_TYPES.has(v.toUpperCase()));
     if (cTxn === -1) {
       errors.push('Riyadh Air: no booking-status column found (expected PAID_BOOKING / TICKETING / UNPAID_BOOKING).');
       return { rows: result, errors, warnings };
@@ -154,6 +166,18 @@ export const RiyadhAirParser: VendorParser = {
       errors.push('Riyadh Air: could not identify the grand-total column — amounts would be wrong, so nothing was imported.');
       return { rows: result, errors, warnings };
     }
+
+    // What was collected, two columns after the total: on a reissue the total
+    // is the whole new fare (8,600.00) and this is what was paid (1,810.00).
+    const beside = (name: string, offset: number) => {
+      const i = named(name) !== -1 ? named(name) : cTotal + offset;
+      return i < Math.max(...rows.map(r => r.length), 0) && looksNumeric(rows, i) ? i : -1;
+    };
+    const cPaid     = beside('paymentamount', 2);
+    // The day the document was issued, two columns after the transaction's.
+    const cIssued = headerRow
+      ? headerRow.findIndex(c => key(c).startsWith('dateofissue'))
+      : (cDate !== -1 ? cDate + 2 : -1);
 
     // Locate the user-added Req Number column STRUCTURALLY rather than by
     // guessing at value shapes. The vendor's own export is a fixed 80-column
@@ -212,30 +236,50 @@ export const RiyadhAirParser: VendorParser = {
 
     // ── Walk the rows ────────────────────────────────────────────────────
     let skippedFreeSeats = 0;
+    let refundLines = 0;
+    const unknown = new Map<string, string[]>();
     /** Holds the same report shows let go unpaid (UNPAID_CANCEL). */
     const cancelledHolds = new Set<string>();
 
     rows.forEach((row, idx) => {
       const txn = val(row, cTxn).toUpperCase();
       // Not a transaction row (blank filler, or a header row in some future
-      // export that does include one) — skip without noise.
-      if (!TXN_TYPES.has(txn)) return;
+      // export that does include one) — skip without noise. A transaction we
+      // do not know, on a document, is said: it may be money.
+      if (!TXN_TYPES.has(txn)) {
+        const doc = val(row, cTicket).replace(/\s/g, '');
+        if (TXN_SHAPE.test(txn) && RE.ticket.test(doc)) unknown.set(txn, [...(unknown.get(txn) ?? []), cleanTk(doc)]);
+        return;
+      }
 
       const payStatus = val(row, cPay).toUpperCase();
       const pnr       = val(row, cPnr).toUpperCase();
       const pax       = riyadhPax(val(row, cPax));
       const route     = val(row, cRoute);
       const rawTicket = val(row, cTicket).replace(/\s/g, '');
-      const total     = num(val(row, cTotal));
+      const fare      = num(val(row, cTotal));
+      const paidText  = cPaid !== -1 ? val(row, cPaid) : '';
+      const total     = txn === 'REISSUE' && paidText ? num(paidText) : fare;
       const cur       = val(row, cCurrency).toUpperCase();
 
       if (txn === 'FREE_SEAT') { skippedFreeSeats++; return; }
       if (txn === 'UNPAID_CANCEL') { cancelledHolds.add(`${pnr}|${pax}`); return; }
 
       const isHold   = txn === 'UNPAID_BOOKING' || payStatus === 'UNPAID';
-      const isRefund = txn === 'REFUND' || txn === 'REFUNDED';
+      const isRefund = txn === 'REFUND' || txn === 'REFUNDED' || txn === 'DELETE_SEAT';
       const isVoid   = txn === 'VOID' || txn === 'VOIDED' || txn === 'CANCELLED' || txn === 'CANCELED';
-      const isEMD    = txn === 'PAID_SEAT';
+      const isEMD    = txn === 'PAID_SEAT' || txn === 'PAID_ANCILLARY';
+
+      /* A seat given back: one line names the seat and what came back for it,
+         and the report then repeats the credit on lines that name nothing -
+         six of -420.00 for two refunds. Only the named line is the refund. */
+      if (txn === 'DELETE_SEAT') {
+        if (!rawTicket) { refundLines++; return; }
+        if (Math.abs(total) < 0.005) {
+          warnings.push(`${cleanTk(rawTicket)} (${pax}): seat given back, and the report refunds 0.00 for it. Not recorded - ask Riyadh Air why.`);
+          return;
+        }
+      }
 
       let status: string;
       let amount: number;
@@ -254,26 +298,35 @@ export const RiyadhAirParser: VendorParser = {
       }
 
       const req = cReq !== -1 ? resolveReq(val(row, cReq)) : '';
-      if (!req && !isHold && !isVoid) warnings.push(`Ticket ${ticketNo}: Missing Req Num`);
+      if (!req && !isHold && !isVoid) warnings.push(`Ticket ${cleanTk(ticketNo)}: Missing Req Num`);
       if (isHold) warnings.push(`${pnr} / ${pax}: on hold, not ticketed — excluded from balance`);
 
       result.push({
-        ticketNo,
+        // Ten digits, as every other report keeps it. Kept as printed,
+        // 1222100270410 went in beside 2100270410 from their sheet.
+        ticketNo: rawTicket ? cleanTk(rawTicket) : ticketNo,
         pnr,
         passengerName: pax,
-        airlineCode: rawTicket.slice(0, 3) || '',
+        airlineCode: rawTicket ? airlineCodeOf(rawTicket) : '',
         route,
-        date: parseDate(val(row, cDate)),
+        // A document is dated the day it was issued; a refund, the day it was made.
+        date: parseDate(!isRefund && RE.date.test(val(row, cIssued)) ? val(row, cIssued) : val(row, cDate)),
         amount,
         totalDoc: Math.abs(total),
         commission: 0,
         reqNum: req,
         vendorReference: pnr,
         status,
+        ...(isRefund && rawTicket ? { relatedTicket: cleanTk(rawTicket) } : {}),
+        ...(txn === 'REISSUE' && !amount ? { freeReissue: true } : {}),
         currency: (CURRENCIES.has(cur) ? cur : defaultCurrency) as typeof defaultCurrency,
       });
     });
 
+    if (refundLines > 0)
+      warnings.push(`${refundLines} refund line(s) that name no document skipped — they repeat the refunds of the seats named above.`);
+    for (const [txn, docs] of unknown)
+      warnings.push(`${docs.length} ${txn} row(s) not read — we do not know this transaction yet: ${docs.slice(0, 5).join(', ')}${docs.length > 5 ? '…' : ''}`);
     if (skippedFreeSeats > 0) {
       warnings.push(`${skippedFreeSeats} complimentary seat assignment row(s) skipped — no document, no charge.`);
     }
