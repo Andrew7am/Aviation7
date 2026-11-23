@@ -84,6 +84,17 @@ export function ticketsInPeriod(
  * `previous` is the statement immediately before this one for the same vendor,
  * when there is one; it is only used for the chain check.
  */
+/**
+ * What a statement bills, less the refunds on it: the figure our issues less
+ * our refunds answer to. Their billed column is the sales alone, and their
+ * refunds sit in the paid column beside the receipts - so set against our net
+ * it read 2,670.50 over on 15-21 Nov, which was three refunds both sides
+ * hold. Without the lines the refunds cannot be told from the receipts, and
+ * the figure stays as it is.
+ */
+export const netBilled = (s: VendorStatement): number =>
+  round2(s.billed - (s.lines ?? []).reduce((n, l) => n + (l.credit || 0), 0));
+
 export function checkStatement(
   s: VendorStatement, tickets: Ticket[], previous?: VendorStatement,
 ): StatementCheck {
@@ -100,7 +111,7 @@ export function checkStatement(
     foots: Math.abs(footingGap) < CENT,
     ledgerBilled,
     ledgerRows: inPeriod.length,
-    billedGap: round2(s.billed - ledgerBilled),
+    billedGap: round2(netBilled(s) - ledgerBilled),
     tickets: inPeriod,
     chainGap: previous ? round2(s.openingBalance - previous.closingBalance) : null,
   };
@@ -418,6 +429,8 @@ export interface LedgerPeriod {
   /** Their billed figure less ours, and their closing less ours. Null where
    *  they have stated nothing to compare against. */
   billedGap: number | null;
+  /** Our tickets in the statement's dates that a later statement billed. */
+  billedLater: Ticket[];
   balanceGap: number | null;
 }
 
@@ -552,7 +565,21 @@ export function ledgerAccount(
       statement,
       // Our figure for the comparison is the net the vendor bills on: issues
       // less refunds, the same thing their own billed column totals.
-      billedGap: statement ? round2(statement.billed - round2(issued - refunded)) : null,
+      // Over the statement's own dates: where it overlaps the one before, this
+      // row starts later than the statement does.
+      billedGap: statement ? round2(netBilled(statement) - round2(ours
+        .filter(t => { const d = (t.date || '').slice(0, 10); return d && d >= statement.periodStart && d <= statement.periodEnd; })
+        .reduce((n, t) => n + (t.amount || 0), 0))) : null,
+      // Ours in this statement's dates that it did not carry and a later one did.
+      billedLater: !statement?.lines?.length ? [] : (() => {
+        const on = new Set(statement.lines.map(l => l.ticketNo));
+        const later = new Set(stmts.filter(s => s.periodEnd > statement.periodEnd).flatMap(s => (s.lines ?? [])
+          .filter(l => l.date <= statement.periodEnd).map(l => l.ticketNo)));
+        return ours.filter(t => {
+          const d = (t.date || '').slice(0, 10), k = (t.ticketNo || '').replace(/\D/g, '').slice(-10);
+          return d && d >= statement.periodStart && d <= statement.periodEnd && !on.has(k) && later.has(k);
+        });
+      })(),
       balanceGap: statement && closing !== null ? round2(closing - statement.closingBalance) : null,
     };
   });

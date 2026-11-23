@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { shortDay } from '../core/helpers/statementReasons';
 import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { Ticket, VendorStatement, VendorBalance, BalanceTopUp } from '../types';
@@ -266,14 +267,17 @@ const PeriodDetail: React.FC<{
   p: LedgerPeriod; currency: string; foots: boolean; unmatched: ReturnType<typeof unmatchedInPeriod>;
 }> = ({ p, currency, foots, unmatched }) => {
   const s = p.statement;
+  // Ours less theirs; a ticket they bill later makes ours the lower by its price.
+  const later = Math.round(p.billedLater.reduce((n, x) => n + (x.amount || 0), 0) * 100) / 100;
+  const rest = Math.round(((p.balanceGap ?? 0) + later) * 100) / 100;
   return (
     <div className="pl-4 sm:pl-10 pr-4 py-3 space-y-3">
         {/* Our own arithmetic, spelled out, so the closing figure above
             can be checked by eye rather than taken on trust. */}
         <div className="bg-white border border-slate-200 rounded-lg px-4 py-2.5 text-xs
                         font-mono text-slate-600">
-          {drCr(p.opening)} + paid {fmt(p.paid)} + refunds {fmt(p.refunded)}
-          {' '}− issued {fmt(p.issued)} = <b className="text-slate-800">{drCr(p.closing)}</b>
+          Our books: {drCr(p.opening)} + paid {fmt(p.paid)} + refunds {fmt(p.refunded)}
+          {' '}− tickets {fmt(p.issued)} = <b className="text-slate-800">{drCr(p.closing)}</b>
         </div>
 
         {s && (
@@ -281,18 +285,29 @@ const PeriodDetail: React.FC<{
             ${Math.abs(p.balanceGap ?? 0) < 0.011
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-white border-slate-200 text-slate-600'}`}>
-            <b>{p.statement!.vendorName}'s own statement for these dates</b> opens at{' '}
-            {drCr(s.openingBalance)}, bills {fmt(s.billed)}, records {fmt(s.paid)} paid
-            {s.otherCharges ? ` and ${fmt(s.otherCharges)} of their own charges` : ''}, and closes
-            at {drCr(s.closingBalance)}.
-            {p.billedGap !== null && Math.abs(p.billedGap) >= 0.011 && (
-              <> They billed <b>{fmt(p.billedGap)} {currency}</b>{' '}
-                {p.billedGap > 0 ? 'more' : 'less'} than our rows come to.</>
+            <b>{s.vendorName}'s statement, {shortDay(s.periodStart)} to {shortDay(s.periodEnd)}:</b>{' '}
+            {drCr(s.openingBalance)} + payments and refunds {fmt(s.paid)} − tickets {fmt(s.billed)}
+            {s.otherCharges ? ` − other charges ${fmt(s.otherCharges)}` : ''} = <b>{drCr(s.closingBalance)}</b>.
+            {s.periodStart < p.from && (
+              <> It starts before this row because it overlaps the statement above.</>
             )}
             {!foots && (
-              <> Their figures do not foot: they come to {drCr(
-                Math.round((s.openingBalance + s.paid - s.billed - s.otherCharges) * 100) / 100)},
-                not the {drCr(s.closingBalance)} printed.</>
+              <> <b>Their own figures do not add up:</b> they come to {drCr(
+                Math.round((s.openingBalance + s.paid - s.billed - s.otherCharges) * 100) / 100)}.</>
+            )}
+            {Math.abs(p.balanceGap ?? 0) >= 0.011 && (
+              <ul className="mt-1.5 space-y-0.5">
+                <li><b>Difference: {fmt(p.balanceGap!)} {currency}</b> — we have {p.balanceGap! > 0 ? 'more' : 'less'} than they say.</li>
+                {p.billedLater.length > 0 && (
+                  <li>{fmt(later)} of it: {p.billedLater.length} ticket(s) they added on a later statement
+                    ({p.billedLater.map(t => t.ticketNo).join(', ')}). Nothing to do.</li>
+                )}
+                {p.billedLater.length > 0 && Math.abs(rest) < 0.05 && Math.abs(rest) >= 0.005 && <li>The last {fmt(rest)} is rounding.</li>}
+                {Math.abs(rest) >= 0.05 && (
+                  <li>{p.billedLater.length > 0 ? `Still to find: ${fmt(rest)}. ` : ''}Drop the statement PDF in "Read a document" above:
+                    it lists each reason and what to do.</li>
+                )}
+              </ul>
             )}
           </div>
         )}
@@ -388,10 +403,8 @@ const PeriodDetail: React.FC<{
                           flex items-start gap-2">
             <Link2Off className="w-3.5 h-3.5 text-red-400 mt-0.5 shrink-0" />
             <span>
-              <b>{unmatched.length}</b> of these {unmatched.length === 1 ? 'carries' : 'carry'} no
-              document number from the vendor, so nothing on their side has been matched to
-              {unmatched.length === 1 ? ' it' : ' them'}. {unmatched.length === 1 ? 'It is' : 'They are'} the
-              first place to look for the difference.
+              <b>{unmatched.length}</b> {unmatched.length === 1 ? 'row has' : 'rows have'} no invoice number from the
+              vendor yet. If there is a difference, look at {unmatched.length === 1 ? 'it' : 'them'} first.
             </span>
           </div>
         )}
@@ -546,12 +559,8 @@ export const VendorStatements: React.FC<Props> = ({
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <PageTitle icon={<FileText />} title="Vendor statements" className="flex-1 basis-64"
           subtitle={<>
-            Every figure below is <b>ours</b> — read off our own ledger, period by period, with the same
-            arithmetic Vendor Credit uses, so the last closing balance on each table is the balance that
-            screen shows to the piastre. Where {STATEMENT_VENDORS.join(' or ')} have issued a statement for
-            the same dates, their closing figure sits in the next column and the difference beside it.
-            Past their last statement the account keeps moving and only we have it, which is where today's
-            balance actually lives.</>} />
+            Our balance with {STATEMENT_VENDORS.join(' and ')}, period by period, beside the balance on their
+            statement. Open a period to see why the two differ.</>} />
         {canEdit && (
           <button
             onClick={() => setEditing(blank('Ibtekar'))}
@@ -653,10 +662,8 @@ export const VendorStatements: React.FC<Props> = ({
 
           {a.undated > 0 && (
             <p className="px-5 py-2.5 text-xs text-slate-500 border-t border-slate-100 bg-slate-50">
-              {a.undated} {a.vendorName} row(s) worth {fmt(a.undatedAmount)} {a.currency} carry no date,
-              so they cannot be placed in any period above. They are counted in every opening and closing
-              figure alike — the wallet counts them — so each period still foots and the closing balance
-              still agrees with Vendor Credit.
+              {a.undated} {a.vendorName} row(s), {fmt(a.undatedAmount)} {a.currency}, have no date, so they are in
+              the balances but not in any one period.
             </p>
           )}
         </div>

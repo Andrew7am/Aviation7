@@ -24,6 +24,7 @@
 import type { Ticket, BalanceTopUp, VendorStatement } from '../../types';
 import type { ParsedStatement, StatementLine } from '../parsers/ibtekarStatementPdf';
 import { vendorMatchesSource, drawsOnWallet } from './walletMath';
+import { explainGap, type Reason } from './statementReasons';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const ser = (t: string) => (t || '').replace(/\D/g, '').slice(-10);
@@ -37,6 +38,11 @@ export interface LineCheck {
   ours: Ticket[];
   /** What the statement bills for it, net of any credit on the same line. */
   theirs: number;
+  /** Its billed and credited sides on the statement. */
+  debit: number;
+  credit: number;
+  /** Tickets whose differences cancel this one's out. */
+  cancelsWith?: string[];
   /** What we hold for it, net. */
   held: number;
   /** The ticket's own fare, where we hold one sale for it. */
@@ -102,14 +108,15 @@ export interface StatementReview {
   /** Of those, the ones their last statement billed: voided since. */
   dropped: Dropped | null;
   receipts: ReceiptCheck[];
-  /** Receipts on this statement we recorded, but dated after it ends: in
-   *  their closing balance and not in ours. */
-  lateRecorded: ReceiptCheck[];
   fees: { count: number; total: number; min: number; max: number };
   /** Our books on the statement's last day: payments less tickets. */
   ourClosing: number;
   /** Their closing less ours. Zero is an account that agrees. */
   closingGap: number;
+  /** Why, in plain words; they add up to closingGap. */
+  reasons: Reason[];
+  /** What the reasons do not account for. Zero unless something is misread. */
+  unexplained: number;
   /** What the statement would close on once every REPRICE is applied. */
   gapAfterReprice: number;
   since: SinceLast | null;
@@ -311,7 +318,7 @@ export function reviewStatement(
         ? `We hold ${ours.length} rows for it (${ours.map(t => (t.amount || 0).toFixed(2)).join(', ')}), net ${held.toFixed(2)}; the statement bills ${theirs.toFixed(2)}.`
         : `The statement bills ${theirs.toFixed(2)}; we hold ${held.toFixed(2)}.`;
     }
-    lines.push({ line: l, ours, theirs, held, fare, fee, gap, verdict, why });
+    lines.push({ line: l, ours, theirs, debit: parts.get(k)!.debit, credit: parts.get(k)!.credit, held, fare, fee, gap, verdict, why });
   }
 
   // Differences that cancel each other out: the account agrees, and the
@@ -326,6 +333,7 @@ export function reviewStatement(
   for (const group of cancellingGroups(lines.filter(c => c.verdict === 'ASK' || c.verdict === 'REPRICE'))) {
     for (const c of group) {
       c.verdict = 'ASK';
+      c.cancelsWith = group.filter(o => o !== c).map(o => o.line.ticketNo);
       c.why += ` Together with ${group.filter(o => o !== c).map(o => o.line.ticketNo).join(', ')} it comes to the`
         + ' same money: the statement has moved part of one onto the other, most likely a refund netted against'
         + ' a different ticket. The total agrees, so nothing is changed.';
@@ -380,16 +388,18 @@ export function reviewStatement(
   const closingGap = r2(st.closingBalance - ourClosing);
   const repriceTotal = r2(reprice.reduce((n, x) => n + (x.amount - x.was), 0));
 
+  const dropped = droppedSince(st, vendor, saved, notBilled);
+  const { reasons, unexplained } = explainGap({ st, vendor, mine, pays, wallet: w, saved, lines, receipts, dropped, reprice, closingGap });
+
   const feeList = lines.map(c => c.fee).filter((f): f is number => f != null && f >= FEE_FLOOR);
   return {
     vendor, lines, reprice, ask, notInBooks: lines.filter(c => c.verdict === 'NOT_IN_BOOKS'),
-    notBilled, dropped: droppedSince(st, vendor, saved, notBilled), receipts,
-    lateRecorded: receipts.filter(x => x.recorded && day(x.recorded.date) > st.periodEnd),
+    notBilled, dropped, receipts,
     fees: {
       count: feeList.length, total: r2(feeList.reduce((n, f) => n + f, 0)),
       min: feeList.length ? Math.min(...feeList) : 0, max: feeList.length ? Math.max(...feeList) : 0,
     },
-    ourClosing, closingGap,
+    ourClosing, closingGap, reasons, unexplained,
     gapAfterReprice: r2(closingGap + repriceTotal),
     since: sinceLast(st, vendor, saved),
   };

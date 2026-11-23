@@ -249,7 +249,8 @@ console.log('\nP. The 15-21 Nov statement: sections, not dates');
   check('a refund both sides hold agrees', line(r, '4862343290').verdict, 'AGREES');
   check('a refund a halala apart names the two refunds',
         [line(r, '4862479143').gap, line(r, '4862479143').why], [-0.01, 'The statement refunds 448.51 (RFD260773); we hold the refund at 448.50.']);
-  check('the receipt we dated after the statement ends', r.lateRecorded.map(x => x.line.document), ['RV264500']);
+  const of = (x: typeof r) => x.reasons.map(y => [y.kind, y.amount]);
+  check('the reasons: a payment dated later, and a halala', of(r).filter(([k]) => k !== 'OPENING'), [['PAYMENT_DATE', 20000], ['ROUNDING', 0.01]]);
   const other = reviewStatement(mini, 'Ibtekar', ours, [], [{ ...prev, closingBalance: 23000 }]);
   check('a change those lines do not add up to is not explained away', other.since?.late.length, 0);
   const wrong = reviewStatement(mini, 'Ibtekar',
@@ -259,6 +260,44 @@ console.log('\nP. The 15-21 Nov statement: sections, not dates');
   const inPeriod = reviewStatement(mini, 'Ibtekar',
     ours.map(o => o.ticketNo === '4862343290' && o.amount > 0 ? { ...o, date: '2026-11-16' } : o), []);
   check('a sale of this period they never bill still shows', line(inPeriod, '4862343290').verdict, 'ASK');
+}
+
+console.log('\nQ. The reasons add up to the difference');
+{
+  const L = (section: string, date: string, document: string, ticketNo: string, debit: number, credit: number) =>
+    ({ section, date, document, airline: '065', ticketNo, debit, credit, balance: 0 });
+  const base = [
+    t({ ticketNo: '4860000001', date: '2026-11-16', amount: 100, totalDoc: 90 }),
+    t({ ticketNo: '4860000002', date: '2026-11-17', amount: 200, totalDoc: 190 }),
+  ];
+  const lines = [L('TICKET', '2026-11-16', 'INV1', '4860000001', 100, 0), L('TICKET', '2026-11-17', 'INV2', '4860000002', 200, 0)];
+  const make = (ls: typeof lines, opening = 1000) => ({ ...st, periodStart: '2026-11-15', periodEnd: '2026-11-21', openingBalance: opening, lines: ls,
+    closingBalance: Math.round((opening + ls.reduce((n, l) => n + l.credit - l.debit, 0)) * 100) / 100 } as typeof st);
+  const start = pay(1000, '2026-11-01');
+  const run = (ls: typeof lines, ours: Ticket[], pays: BalanceTopUp[] = [start], saved: VendorStatement[] = [], opening = 1000) =>
+    reviewStatement(make(ls, opening), 'Ibtekar', ours, pays, saved);
+  const says = (r: ReturnType<typeof run>) => r.reasons.map(x => `${x.kind} ${x.amount}`);
+  const cases: [string, ReturnType<typeof run>, string[]][] = [
+    ['nothing differs', run(lines, base), []],
+    ['a payment we did not enter', run([...lines, L('RECEIPT', '2026-11-18', 'RV1', '', 0, 500)], base), ['PAYMENT_MISSING 500']],
+    ['a payment entered late', run([...lines, L('RECEIPT', '2026-11-20', 'RV1', '', 0, 500)], base, [start, pay(500, '2026-11-22')]), ['PAYMENT_DATE 500']],
+    ['a payment they do not have', run(lines, base, [start, pay(500, '2026-11-18')]), ['PAYMENT_NOT_THEIRS -500']],
+    ['a payment of theirs on 14 Nov that we date 16 Nov', run(lines, base, [pay(500, '2026-11-01'), pay(500, '2026-11-16')]), []],
+    ['a ticket we do not hold', run([...lines, L('TICKET', '2026-11-18', 'INV3', '4860000003', 70, 0)], base), ['TICKET_NOT_OURS -70']],
+    ['a refund we do not hold', run([...lines, L('TICKET', '2026-11-18', 'RFD1', '4860000001', 0, 80)], base), ['REFUND_NOT_OURS 80']],
+    ['a ticket they did not bill', run(lines, [...base, t({ ticketNo: '4860000004', date: '2026-11-18', amount: 60 })]), ['TICKET_NOT_THEIRS 60']],
+    ['a refund they did not give', run(lines, [...base, t({ ticketNo: '4860000001', date: '2026-11-19', amount: -40, status: 'REFUND' })]), ['REFUND_AMOUNT -40']],
+    ['another price', run([lines[0], L('TICKET', '2026-11-17', 'INV2', '4860000002', 230, 0)], base), ['PRICE -30']],
+    ['a ticket we date after the statement', run(lines, [base[0], { ...base[1], date: '2026-11-22' }]), ['TICKET_DATE -200']],
+    ['a ticket we date before it', run(lines, [base[0], { ...base[1], date: '2026-11-14' }], [pay(1200, '2026-11-01')], [], 1200), []],
+    ['an opening already apart', run(lines, base, [pay(900, '2026-11-01')]), ['OPENING 100']],
+    ['a halala', run([lines[0], L('TICKET', '2026-11-17', 'INV2', '4860000002', 200.01, 0)], base), ['ROUNDING -0.01']],
+    ['a charge that is no ticket', run([...lines, L('OTHER', '2026-11-18', 'DN1', '', 25, 0)], base), ['OTHER_CHARGE -25']],
+  ];
+  for (const [name, r, want] of cases) {
+    check(name, says(r), want);
+    check(`   ...and they add up to ${r.closingGap}`, r.unexplained, 0);
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
