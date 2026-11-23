@@ -249,13 +249,13 @@ const PeriodBadges: React.FC<{ p: LedgerPeriod; foots: boolean; footingGap: numb
     {!p.statement && (
       <span className={`ml-2 ${badgeClass('neutral')}`}
             title="The vendor has issued no statement covering these dates, so there is nothing of theirs to compare against.">
-        Ours only
+        No statement
       </span>
     )}
     {p.statement && !foots && (
       <span className={`ml-2 ${badgeClass('warning')}`}
-            title={`Their statement's own figures do not foot — off by ${fmt(footingGap)}`}>
-        Theirs off by {fmt(footingGap)}
+            title={`The figures on their own statement do not add up, by ${fmt(footingGap)}`}>
+        Does not add up: {fmt(footingGap)}
       </span>
     )}
   </>
@@ -560,7 +560,7 @@ export const VendorStatements: React.FC<Props> = ({
         <PageTitle icon={<FileText />} title="Vendor statements" className="flex-1 basis-64"
           subtitle={<>
             Our balance with {STATEMENT_VENDORS.join(' and ')}, period by period, beside the balance on their
-            statement. Open a period to see why the two differ.</>} />
+            statement. Open a period to see why the two differ. Cr = our credit with them, Dr = we owe them.</>} />
         {canEdit && (
           <button
             onClick={() => setEditing(blank('Ibtekar'))}

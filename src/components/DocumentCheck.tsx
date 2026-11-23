@@ -227,10 +227,16 @@ const ReviewPanel: React.FC<{
           <span className="text-sm font-bold flex items-center gap-1.5">
             {agrees ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
             {agrees ? 'The balance matches'
-              : toDo.length || Math.abs(r.unexplained) >= 0.05 ? 'The balance does not match' : 'Different dates only — no money is missing'}
+              : toDo.length || Math.abs(r.unexplained) >= 0.05 ? 'The balance does not match' : 'Nothing is missing'}
           </span>
-          {!agrees && <span className="text-sm font-bold font-mono">{signed(r.closingGap)} {st.currency}</span>}
+          {!agrees && <span className="text-sm font-bold font-mono">{fmt(r.closingGap)} {st.currency}</span>}
         </div>
+        {!agrees && (
+          <p className="mt-1 text-xs">
+            {r.vendor}'s balance is <b className="font-mono">{fmt(r.closingGap)}</b> {r.closingGap > 0 ? 'higher' : 'lower'} than ours.
+            {!toDo.length && Math.abs(r.unexplained) < 0.05 && ' The reasons below explain all of it.'}
+          </p>
+        )}
         <div className="mt-1.5 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5 text-xs">
           <span>{r.vendor}, {shortDay(st.periodEnd)}: <b className="font-mono">{fmt(st.closingBalance)}</b> {balanceWords(st.closingBalance)}</span>
           <span>Our books, {shortDay(st.periodEnd)}: <b className="font-mono">{fmt(r.ourClosing)}</b> {balanceWords(r.ourClosing)}</span>
@@ -241,6 +247,7 @@ const ReviewPanel: React.FC<{
         <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
           <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-600">
             {agrees ? 'Small things to know' : 'Why'}
+            {r.reasons.length > 1 && <span className="ml-2 font-normal text-slate-500">+ makes their balance higher than ours, − makes it lower</span>}
           </div>
           <ol className="divide-y divide-slate-100">
             {r.reasons.map((x, i) => (
@@ -297,7 +304,7 @@ const ReviewPanel: React.FC<{
       {r.since && Math.abs(r.since.change) >= 0.005 && r.since.late.length === 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
           <b>{r.vendor} changed an old balance.</b> For {shortDay(r.since.on)} their last statement said{' '}
-          <b className="font-mono">{drCr(r.since.was)}</b>; this one says <b className="font-mono">{drCr(r.since.now)}</b>{' '}
+          <b className="font-mono">{fmt(r.since.was)}</b> {balanceWords(r.since.was)}; this one says <b className="font-mono">{fmt(r.since.now)}</b> {balanceWords(r.since.now)}{' '}
           (<b className="font-mono">{signed(r.since.change)}</b>, {r.since.change > 0 ? 'in our favour' : 'against us'}).{' '}
           {agrees ? 'Our books already match the new one.' : 'Ask them what they changed.'}
         </div>
@@ -406,10 +413,10 @@ const StatementPanel: React.FC<{
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
         {([
-          ['Opening balance', drCr(st.openingBalance), 'text-slate-600'],
+          [`Opening — ${balanceWords(st.openingBalance)}`, fmt(st.openingBalance), st.openingBalance < 0 ? 'text-red-600' : 'text-slate-600'],
           ['Payments and refunds', st.paid ? `+${fmt(st.paid)}` : '—', 'text-emerald-600'],
           ['Tickets', `−${fmt(st.billed)}`, 'text-slate-700'],
-          ['Closing balance', drCr(st.closingBalance), st.closingBalance < 0 ? 'text-red-600' : 'text-emerald-700'],
+          [`Closing — ${balanceWords(st.closingBalance)}`, fmt(st.closingBalance), st.closingBalance < 0 ? 'text-red-600' : 'text-emerald-700'],
         ] as const).map(([label, value, cls]) => (
           <div key={label} className="bg-white border border-slate-200 rounded px-2 py-2">
             <div className={`font-mono font-bold text-xs ${cls}`}>{value}</div>
@@ -424,7 +431,7 @@ const StatementPanel: React.FC<{
         <button onClick={() => setOpen(o => !o)}
           className="text-xs text-slate-500 hover:text-slate-700 flex items-center gap-1">
           {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          {st.lines.length} movement(s) on the statement
+          {open ? 'Hide' : 'Show'} the {st.lines.length} lines of the statement
         </button>
         {onSave && (
           <button onClick={onSave} disabled={saved}
@@ -446,10 +453,10 @@ const StatementPanel: React.FC<{
                 <th className="px-3 py-2">Date</th>
                 <th className="px-3 py-2">Document</th>
                 <th className="px-3 py-2">Ticket</th>
-                <th className="px-3 py-2 text-right">Debit</th>
-                <th className="px-3 py-2 text-right">Credit</th>
+                <th className="px-3 py-2 text-right">Billed</th>
+                <th className="px-3 py-2 text-right">Paid or refunded</th>
                 <th className="px-3 py-2 text-right">Balance</th>
-                <th className="px-3 py-2 text-right">Ours</th>
+                <th className="px-3 py-2 text-right">Our books</th>
                 <th className="px-3 py-2 text-right" title="The statement's figure less the ticket's own fare">Above fare</th>
               </tr>
             </thead>
@@ -701,13 +708,12 @@ export const DocumentCheck: React.FC<{
             {invoiceNos.filled.length > 0 && (
               <div>
                 <b>Invoice numbers filled on {invoiceNos.filled.length} ticket{invoiceNos.filled.length === 1 ? '' : 's'}</b> from
-                this statement ({[...new Set(invoiceNos.filled.map(f => f.doc))].length} document{[...new Set(invoiceNos.filled.map(f => f.doc))].length === 1 ? '' : 's'}),
-                so the Tax Invoices request quotes them.
+                this statement.
               </div>
             )}
             {invoiceNos.conflicts.length > 0 && (
               <div className="text-amber-800 mt-0.5">
-                {invoiceNos.conflicts.length} kept as they were - they already name another document:{' '}
+                {invoiceNos.conflicts.length} not changed, because our books already have another invoice number:{' '}
                 <span className="font-mono">{invoiceNos.conflicts.slice(0, 8).map(c => `${c.ticketNo} has ${c.has}, statement ${c.statement}`).join('; ')}
                 {invoiceNos.conflicts.length > 8 ? ` and ${invoiceNos.conflicts.length - 8} more` : ''}</span>
               </div>

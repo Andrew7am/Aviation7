@@ -189,7 +189,7 @@ console.log('\n10. The account between any two dates');
   // A range that opens the day after a statement closes takes its figure whole.
   const flush = balanceOverRange('Ibtekar', '2026-09-01', '2026-09-15', [statement], led, pays);
   check('no carry needed', flush.statedOpening, 8235.37);
-  check('and it says so',  flush.anchorLabel.includes('stated this balance'), true);
+  check('and it says so',  /^Starts from .*statement that ends on/.test(flush.anchorLabel), true);
 
   // The statement's own last day is inside its closing balance already.
   check('the statement period itself is not re-counted',

@@ -305,7 +305,7 @@ export function balanceOverRange(
   const covering = mineStatements.find(s => s.periodStart <= from && s.periodEnd >= from);
 
   let anchor: BalanceAnchor = 'none';
-  let anchorLabel = 'Nothing states a balance before these dates, so only the movement is shown.';
+  let anchorLabel = 'There is no balance before these dates, so only the tickets and payments are shown.';
   let opening: number | null = null;
 
   /** Walk a stated balance forward from the day it was true to `before`. */
@@ -321,8 +321,8 @@ export function balanceOverRange(
     anchor = 'statement';
     opening = carry(closedBefore.closingBalance, closedBefore.periodEnd);
     anchorLabel = closedBefore.periodEnd === before
-      ? `${vendorName} stated this balance as at ${closedBefore.periodEnd}.`
-      : `Carried from ${vendorName}'s statement to ${closedBefore.periodEnd}, using our own rows since.`;
+      ? `Starts from ${vendorName}'s statement that ends on ${closedBefore.periodEnd}.`
+      : `Starts from ${vendorName}'s statement that ends on ${closedBefore.periodEnd}, then our own tickets and payments.`;
   } else if (covering) {
     anchor = 'statement';
     // The opening balance is true at the start of its first day, so the carry
@@ -333,17 +333,16 @@ export function balanceOverRange(
              + paidBetween(vendorName, payments, covering.periodStart, before)
              - billedBetween(vendorName, tickets, covering.periodStart, before));
     anchorLabel = covering.periodStart === from
-      ? `${vendorName} stated this balance as at ${covering.periodStart}.`
-      : `Carried from the ${covering.periodStart} opening balance on ${vendorName}'s `
-      + `${covering.periodStart} to ${covering.periodEnd} statement, using our own rows since.`;
+      ? `Starts from the opening balance of ${vendorName}'s statement of ${covering.periodStart}.`
+      : `Starts from the opening balance of ${vendorName}'s ${covering.periodStart} to ${covering.periodEnd} statement, then our own tickets and payments.`;
   } else if (wallet) {
     anchor = 'wallet';
     const start = (wallet.openingDate || '').slice(0, 10);
     opening = round2(wallet.initialBalance
       + paidBetween(vendorName, payments, start || '0000-01-01', before)
       - billedBetween(vendorName, tickets, start || '0000-01-01', before));
-    anchorLabel = `No statement reaches back this far. Carried from the opening balance`
-      + `${start ? ` of ${start}` : ''}, using our own rows — our arithmetic, not theirs.`;
+    anchorLabel = `No statement covers these dates. Starts from the opening balance`
+      + `${start ? ` of ${start}` : ''} in Vendor Credit, then our own tickets and payments - our arithmetic, not theirs.`;
   }
 
   const issued = round2(issues.reduce((n, t) => n + (t.amount || 0), 0));

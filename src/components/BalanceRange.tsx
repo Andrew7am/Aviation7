@@ -242,7 +242,7 @@ export const BalanceRange: React.FC<Props> = ({
                   ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
                 <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
                   <span className="text-slate-600">
-                    What {vendor}'s own statement makes it on {to}:
+                    {vendor}'s balance on {to}, from their last statement and our tickets and payments since:
                   </span>
                   <span className={`font-mono font-bold text-sm
                     ${r.statedClosing < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
@@ -254,9 +254,8 @@ export const BalanceRange: React.FC<Props> = ({
                                   border-t border-slate-100">
                     <span className="text-slate-500 text-xs">
                       {Math.abs(r.balanceGap) < 0.011
-                        ? `Our books and theirs agree.`
-                        : `Our books and theirs disagree. Every period's difference is listed below; `
-                          + `this is all of them added up.`}
+                        ? `Our books match.`
+                        : `Our books do not match. Open the periods below to see why.`}
                     </span>
                     <span className={`font-mono font-bold text-xs
                       ${Math.abs(r.balanceGap) < 0.011 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -276,8 +275,7 @@ export const BalanceRange: React.FC<Props> = ({
 
             {r.undated > 0 && (
               <div className="bg-slate-50 border border-slate-200 rounded px-4 py-2 text-xs text-slate-500">
-                {r.undated} {vendor} row(s) carry no date at all, so they cannot be placed in these
-                dates or outside them. They are in no period on this screen.
+                {r.undated} {vendor} row(s) have no date, so they are not in any period on this screen.
               </div>
             )}
 

@@ -23,7 +23,7 @@ import { drawsOnWallet } from './walletMath';
 export type ReasonKind =
   | 'OPENING' | 'PAYMENT_DATE' | 'PAYMENT_MISSING' | 'PAYMENT_NOT_THEIRS' | 'PAYMENT_AMOUNT'
   | 'TICKET_NOT_OURS' | 'REFUND_NOT_OURS' | 'DROPPED' | 'TICKET_NOT_THEIRS' | 'REFUND_NOT_THEIRS'
-  | 'PRICE' | 'REFUND_AMOUNT' | 'MOVED' | 'TICKET_DATE' | 'OTHER_CHARGE' | 'ROUNDING' | 'FOOTING';
+  | 'PRICE' | 'REFUND_AMOUNT' | 'BILLED_LATER' | 'MOVED' | 'TICKET_DATE' | 'OTHER_CHARGE' | 'ROUNDING' | 'FOOTING';
 
 export interface Reason {
   kind: ReasonKind;
@@ -54,7 +54,7 @@ export const shortDay = (d?: string) => {
 
 /** The words for each kind. {v} is the vendor. */
 const WORDS: Record<ReasonKind, [title: string, todo: string, harmless?: boolean]> = {
-  FOOTING: ['Their statement does not add up', 'Opening + paid − billed is not the closing they print. Ask {v} for a corrected statement.'],
+  FOOTING: ['Their statement does not add up', 'Their own lines do not come to the closing balance they print. Ask {v} for a corrected statement.'],
   OPENING: ['Already different before this period', 'It comes from an earlier statement. Check the statement before this one first.'],
   PAYMENT_MISSING: ['Payment not entered in our books', 'Add it in Vendor Credit, with the date shown here.'],
   PAYMENT_DATE: ['Same payment, different date', 'No money is missing. {v} counts it inside this statement and we count it after.', true],
@@ -67,6 +67,7 @@ const WORDS: Record<ReasonKind, [title: string, todo: string, harmless?: boolean
   REFUND_NOT_THEIRS: ['Refund in our books, not on their statement', 'Ask {v} for the refund.'],
   PRICE: ['Different ticket price', 'They will be paid the price on the statement. Check it, then correct ours.'],
   REFUND_AMOUNT: ['Different refund amount', 'Ask {v} how the refund was calculated.'],
+  BILLED_LATER: ['Ticket they added on a later statement', 'No money is missing. This statement was printed before {v} added it.', true],
   MOVED: ['Amount moved between tickets', 'These cancel each other out: the total is right. Nothing to change.', true],
   TICKET_DATE: ['Same ticket, different date', 'No money is missing. {v} counts it inside this statement and we count it after.', true],
   OTHER_CHARGE: ['Other charge on their statement', 'Not a ticket and not a payment. Ask {v} what it is.'],
@@ -116,6 +117,10 @@ export function explainGap(a: {
       earlier.set(ser(l.ticketNo), r2(l.debit - l.credit));
   }
 
+  const later = new Set<string>();
+  for (const s of a.saved) if (s.vendorName === vendor && s.periodEnd > pe)
+    for (const l of s.lines ?? []) if (day(l.date) <= pe && l.debit > 0) later.add(ser(l.ticketNo));
+
   for (const k of new Set([...theirs.keys(), ...ours.keys()])) {
     const c = theirs.get(k);
     const all = ours.get(k) ?? [];
@@ -141,7 +146,8 @@ export function explainGap(a: {
     }
     if (!c) {
       const req = inside[0].reqNum ? `, ${inside[0].reqNum}` : '';
-      const kind: ReasonKind = inside.some(t => dropped.has(t.id)) ? 'DROPPED' : held > 0 ? 'TICKET_NOT_THEIRS' : 'REFUND_NOT_THEIRS';
+      const kind: ReasonKind = inside.some(t => dropped.has(t.id)) ? 'DROPPED'
+        : held > 0 && later.has(k) ? 'BILLED_LATER' : held > 0 ? 'TICKET_NOT_THEIRS' : 'REFUND_NOT_THEIRS';
       add(kind, no, `${shortDay(inside[0].date)}${req}`, eff); continue;
     }
     if (!all.length) {
