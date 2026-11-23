@@ -117,6 +117,14 @@ export class WalletService {
     if (error) throw new Error(error.message);
   }
 
+  /** A payment's date, and nothing else of it. A write the database refuses
+   *  comes back as no row rather than an error, so the row is asked for. */
+  async updateTopUpDate(id: string, date: string): Promise<void> {
+    const { data, error } = await supabase.from('balance_topups').update({ date }).eq('id', id).select('id');
+    if (error) throw new Error(error.message);
+    if (!data?.length) throw new Error('The date was not changed: only an admin can edit a payment.');
+  }
+
   /** Match vendor to tickets by source name using alias table.
    *  Implementation lives in core/helpers/walletMath so it can be tested
    *  without loading the Supabase client; behaviour is unchanged. */

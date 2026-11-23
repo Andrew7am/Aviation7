@@ -36,6 +36,14 @@ let vendors: VendorSetting[] = [];
 let portals: PortalSetting[] = [];
 let offices: OfficeSetting = {};
 
+let walletOrder: string[] = [];
+
+/** The wallets' ids, in the order Vendor Credit lists them; empty: as read. */
+export const configuredWalletOrder = (): string[] => walletOrder;
+export function setConfiguredWalletOrder(ids: unknown): void {
+  walletOrder = Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : [];
+}
+
 /** The vendors set by hand, as the Settings screen saved them. */
 export const configuredVendors = (): VendorSetting[] => vendors;
 export const configuredPortals = (): PortalSetting[] => portals;
@@ -88,6 +96,9 @@ export function applyAppSettings(rows: { key: string; value: unknown }[]): Loade
   setConfiguredVendors(s.vendors);
   setConfiguredPortals(s.portals);
   setConfiguredOffices(s.offices);
+  // Only when the rows carry it: a save on the Settings screen puts its own
+  // four back and must not forget the order.
+  if (rows.some(r => r.key === 'wallet_order')) setConfiguredWalletOrder(of('wallet_order'));
   // Emirates is the one limit the header shows; its figures come from here.
   const ek = s.airlineLimits.find(l => l.airlineCode === EMIRATES_IATA.airlineCode);
   if (ek) Object.assign(EMIRATES_IATA, ek);

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
+import { configuredWalletOrder } from './core/config/appSettings';
 import { ViewState, Ticket, VendorBalance, BalanceTopUp, VendorStatement, AppAlert, PendingTicket } from './types';
 import { logout } from './utils/supabase';
 import { v4 as uuidv4 } from 'uuid';
@@ -117,7 +118,7 @@ function MainApp({ user }: { user: User }) {
   React.useEffect(() => { AuditService.myCloseOffices().then(setCloseOffices).catch(() => setCloseOffices([])); }, [user.id]);
 
   const { tickets, missingReq, deleteTicket, updateReqNum, updateTicket, bulkUpdateReqNum, updateClosed, bulkUpdateClosed, setClosedByOffice, revertClosed, addManualTicket, applyImport } = useTickets(user.id);
-  const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, lowVendors } = useWallet(user.id, tickets);
+  const { vendors: vendorBalancesLive, topUps, saveVendor, deleteVendor, addTopUp, updateTopUpDate, lowVendors } = useWallet(user.id, tickets);
   const { statements, saveStatement, deleteStatement } = useStatements(user.id);
   const {
     pending, raisePending, patchPending, patchManyPending, confirmPending,
@@ -325,6 +326,15 @@ function MainApp({ user }: { user: User }) {
 
   const handleSaveVendor   = (v: VendorBalance) => { saveVendor(v); importSvc.audit('ADD_VENDOR', v.vendorName, `Initial balance: ${v.initialBalance}`); };
   const handleDeleteVendor = (id: string) => { if (confirm('Delete vendor?')) { deleteVendor(id); importSvc.audit('DELETE_VENDOR', id, 'Vendor deleted'); } };
+  const handleTopUpDate    = async (tu: BalanceTopUp, date: string) => {
+    await updateTopUpDate(tu.id, date);
+    importSvc.audit('EDIT_TOPUP', tu.vendorName, `+${tu.amount}${tu.note ? ` (${tu.note})` : ''}: date ${tu.date || '-'} -> ${date}`)
+      .catch(e => console.error('top-up date not in the log', e));
+  };
+  const handleWalletOrder  = async (ids: string[]) => {
+    await new AppSettingsService().saveWalletOrder(ids, ids.map(id => vendorBalancesLive.find(v => v.id === id)?.vendorName ?? id));
+    setSettingsRev(r => r + 1);
+  };
   const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount} on ${tu.date}`); };
   /* ── the team's Airtable, live ─────────────────────────────────────────
      The server syncs it every two minutes; this reads the notices it left
@@ -844,7 +854,8 @@ function MainApp({ user }: { user: User }) {
           <VendorBalances vendorBalances={vendorBalancesLive} topUps={topUps} tickets={tickets}
             canEdit={isAdmin}
             onSaveVendor={handleSaveVendor} onDeleteVendor={handleDeleteVendor}
-            onTopUp={handleTopUp} />
+            onTopUp={handleTopUp} onTopUpDate={handleTopUpDate}
+            order={configuredWalletOrder()} onReorder={handleWalletOrder} />
         </div>
       )}
       {view === 'statements' && (

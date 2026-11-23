@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
+import { orderWallets, localToday, isPaymentDay } from '../core/helpers/walletOrder';
+import { TopUpDate } from './TopUpDate';
+import { WalletReorder } from './WalletReorder';
 import { walletReference } from '../core/config/appSettings';
 import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
 import { PageHeader, PageTitle } from './ui/PageHeader';
 import { VendorBalance, BalanceTopUp, Ticket } from '../types';
 import {
   Plus, Trash2, Wallet, ChevronDown, ChevronRight,
-  TrendingUp, TrendingDown, PlusCircle, Edit3
+  TrendingUp, TrendingDown, PlusCircle, Edit3, ArrowUpDown
 } from 'lucide-react';
 import { Dialog, DialogClose } from './ui/Dialog';
 import { sourceToCurrency } from '../core/helpers/sourceCurrency';
@@ -17,6 +20,10 @@ interface VendorBalancesProps {
   onSaveVendor: (v: VendorBalance) => void;
   onDeleteVendor: (id: string) => void;
   onTopUp: (topUp: BalanceTopUp) => void;
+  onTopUpDate?: (topUp: BalanceTopUp, date: string) => Promise<void>;
+  /** The wallets' ids in the order they are listed here. */
+  order?: string[];
+  onReorder?: (ids: string[]) => Promise<void>;
   /** False for a viewer: the wallets stay readable, the actions that change
    *  them are withheld. The database refuses those writes regardless. */
   canEdit?: boolean;
@@ -48,12 +55,6 @@ const PRESET_VENDORS = [
   'IATA', 'Flynas', 'FlyAdeal KSA', 'FlyAdeal DXB',
   'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal', 'NSA', 'Riyadh Air', 'Turkish Airlines', 'Emirates',
 ];
-
-/** Today where the user is, not in UTC: before 3 in the morning the two differ. */
-const localToday = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
 
 type ModalMode = null | 'add_existing' | 'add_new' | 'topup';
 
@@ -91,8 +92,10 @@ const OpeningDateField: React.FC<{ value: string; onChange: (v: string) => void 
 );
 
 export const VendorBalances: React.FC<VendorBalancesProps> = ({
-  vendorBalances, topUps, tickets, onSaveVendor, onDeleteVendor, onTopUp, canEdit = true,
+  vendorBalances: wallets, topUps, tickets, onSaveVendor, onDeleteVendor, onTopUp, onTopUpDate, order = [], onReorder, canEdit = true,
 }) => {
+  const vendorBalances = orderWallets(wallets, order);
+  const [reordering, setReordering] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [modalMode, setModalMode] = useState<ModalMode>(null);
   const [topUpVendorId, setTopUpVendorId] = useState<string | null>(null);
@@ -128,7 +131,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
     tickets.filter(t => vendorTicketMatcher(vendor.vendorName, t.source));
 
   const getVendorTopUps = (vendorId: string) =>
-    topUps.filter(tu => tu.vendorId === vendorId);
+    topUps.filter(tu => tu.vendorId === vendorId).sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.id.localeCompare(a.id));
 
   const existingVendorNames = vendorBalances.map(v => v.vendorName.toLowerCase());
   const availablePresets = PRESET_VENDORS.filter(
@@ -173,7 +176,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
   };
 
   /** A real day, and not one that has not come yet. */
-  const topUpDateOk = /^\d{4}-\d{2}-\d{2}$/.test(topUpDate) && topUpDate <= localToday();
+  const topUpDateOk = isPaymentDay(topUpDate);
   const handleTopUpSubmit = () => {
     const vendor = vendorBalances.find(v => v.id === topUpVendorId);
     const amt = parseFloat(topUpAmount);
@@ -222,14 +225,23 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
     <div className="max-w-6xl mx-auto space-y-4">
       <PageHeader icon={<Wallet />} title="Vendor credit"
         subtitle="What each supplier's wallet holds: its opening, the top-ups paid in, what our tickets drew, and what is left."
-        actions={canEdit && <button
+        actions={canEdit && !reordering && <>{onReorder && vendorBalances.length > 1 && <button
+          type="button" onClick={() => setReordering(true)}
+          className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:border-slate-300 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors"
+        >
+          <ArrowUpDown className="w-3.5 h-3.5" />
+          <span>Reorder</span>
+        </button>}<button
           onClick={() => setModalMode('add_existing')}
           className="flex items-center gap-1.5 bg-blue-700 hover:bg-blue-800 text-white px-3 py-1.5 rounded-md text-xs font-semibold shadow-sm transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>Add vendor</span>
-        </button>} />
-    <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+        </button></>} />
+    {reordering && onReorder && (
+      <WalletReorder wallets={vendorBalances} onSave={onReorder} onCancel={() => setReordering(false)} />
+    )}
+    <div hidden={reordering} className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
 
       {/* Table.
           The wallet table is eight columns wide and cannot usefully be
@@ -306,7 +318,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                         {f.vTopUps.map(tu => (
                           <li key={tu.id} className="px-3 py-2 flex items-start justify-between gap-3 text-xs">
                             <span className="min-w-0">
-                              <span className="block font-mono text-mini text-slate-400">{tu.date}</span>
+                              <TopUpDate topUp={tu} onSave={canEdit ? onTopUpDate : undefined} />
                               <span className="block text-slate-600 break-words">{tu.note}</span>
                             </span>
                             <span className="font-mono font-bold text-emerald-600 whitespace-nowrap">+{fmt(tu.amount)} {cur}</span>
@@ -457,7 +469,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                               <tbody>
                                 {vTopUps.map(tu => (
                                   <tr key={tu.id} className="border-b border-slate-50 text-xs hover:bg-slate-50">
-                                    <td className="px-4 py-2 text-slate-500 font-mono text-mini">{tu.date}</td>
+                                    <td className="px-4 py-2"><TopUpDate topUp={tu} onSave={canEdit ? onTopUpDate : undefined} /></td>
                                     <td className="px-4 py-2 text-slate-600">{tu.note}</td>
                                     <td className="px-4 py-2 text-right font-mono font-bold text-emerald-600">+{fmt(tu.amount)} {sourceToCurrency(vendor.vendorName)}</td>
                                   </tr>

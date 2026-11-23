@@ -1,5 +1,5 @@
 import { supabase } from '../utils/supabase';
-import { applyAppSettings, type LoadedSettings, type VendorSetting, type PortalSetting, type OfficeSetting } from '../core/config/appSettings';
+import { applyAppSettings, setConfiguredWalletOrder, type LoadedSettings, type VendorSetting, type PortalSetting, type OfficeSetting } from '../core/config/appSettings';
 import type { AirlineLimit } from '../core/helpers/airlineLimit';
 export type { LoadedSettings };
 
@@ -63,6 +63,13 @@ export class AppSettingsService {
   async saveOffices(offices: OfficeSetting, all: LoadedSettings): Promise<void> {
     await this.save('offices', offices);
     apply({ ...all, offices });
+  }
+
+  /** The order Vendor Credit lists its wallets in, for everybody. */
+  async saveWalletOrder(ids: string[], names: string[]): Promise<void> {
+    await this.save('wallet_order', ids);
+    setConfiguredWalletOrder(ids);
+    await this.audit('Vendor credit order', names.join(', '));
   }
 
   async requestAlerts(): Promise<RequestAlertSetting[]> {

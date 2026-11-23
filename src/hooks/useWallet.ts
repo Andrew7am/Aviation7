@@ -30,6 +30,10 @@ export function useWallet(userId: string, tickets: Ticket[]) {
   const saveVendor   = (v: VendorBalance)   => svc.saveVendor({ ...v, userId });
   const deleteVendor = (id: string)         => svc.deleteVendor(id);
   const addTopUp     = (tu: BalanceTopUp)   => svc.addTopUp({ ...tu, userId });
+  const updateTopUpDate = async (id: string, date: string) => {
+    await svc.updateTopUpDate(id, date);
+    setTopUps(list => list.map(t => t.id === id ? { ...t, date } : t));
+  };
 
-  return { vendors: vendorsLive, topUps, loading, lowVendors, overdrawn, saveVendor, deleteVendor, addTopUp };
+  return { vendors: vendorsLive, topUps, loading, lowVendors, overdrawn, saveVendor, deleteVendor, addTopUp, updateTopUpDate };
 }
