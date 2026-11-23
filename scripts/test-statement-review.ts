@@ -301,6 +301,20 @@ console.log('\nQ. The reasons add up to the difference');
     check(name, says(r), want);
     check(`   ...and they add up to ${r.closingGap}`, r.unexplained, 0);
   }
+
+  // 9256147472: issued on their report, voided, never on their 22 Nov statement.
+  const voidable = (o: Ticket[], saved: VendorStatement[] = []) =>
+    run(lines, [...base, ...o], [start], saved).reasons.flatMap(x => x.items).map(i => i.voidable?.ticketNo ?? null);
+  const extra = t({ ticketNo: '4860000004', date: '2026-11-18', amount: 60 });
+  check('a ticket they never billed may be moved to Voids', voidable([extra]), ['4860000004']);
+  check('...not once its file is closed', voidable([{ ...extra, closed: true }]), [null]);
+  check('...nor with a refund against it',
+        voidable([extra, t({ ticketNo: '4860000004', date: '2026-11-19', amount: -20, status: 'REFUND' })]), [null]);
+  check('...nor when a later statement bills it', voidable([extra],
+    [{ id: 'n', vendorName: 'Ibtekar', periodStart: '2026-11-18', periodEnd: '2026-11-25', currency: 'SAR', openingBalance: 0, closingBalance: 0, billed: 0, paid: 0, otherCharges: 0, userId: '',
+      lines: [{ ticketNo: '4860000004', date: '2026-11-18', document: 'INV9', debit: 60, credit: 0 }] } as unknown as VendorStatement]), [null]);
+  const gone = run(lines, base);
+  check('...and once it is in Voids the statement agrees', [gone.closingGap, gone.reasons.length], [0, 0]);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

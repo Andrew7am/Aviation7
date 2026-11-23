@@ -16,7 +16,7 @@ import { reviewStatement, Reprice, StatementReview } from '../core/helpers/state
 import { shortDay } from '../core/helpers/statementReasons';
 
 /** Tickets a statement stopped billing, and why, to the Voids register. */
-export type VoidDropped = (tickets: Ticket[], why: string) => Promise<void>;
+export type VoidDropped = (tickets: Ticket[], why: string, from?: string) => Promise<void>;
 /**
  * Check a document the vendor sent against the ledger, without importing it.
  *
@@ -213,6 +213,21 @@ const ReviewPanel: React.FC<{
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<number | null>(null);
   const [voided, setVoided] = useState<number | null>(null);
+  const [voidError, setVoidError] = useState('');
+  // A ticket of ours they never billed, once it is known to be void.
+  const moveToVoids = async (t: Ticket) => {
+    if (!onVoidDropped) return;
+    const name = t.passengerName ? `, ${t.passengerName}` : '';
+    if (!confirm(`Move ${t.ticketNo} (${fmt(t.amount)} ${st.currency}${name}) to Voids?\n\n`
+      + `Do this only if you know it was voided: it may still be on ${r.vendor}'s next statement. Its sale leaves the ledger.`)) return;
+    setBusy(true); setVoidError('');
+    try {
+      await onVoidDropped([t], `Voided with ${r.vendor}: not on their ${st.periodStart} to ${st.periodEnd} statement.`
+        + ' Moved to Voids; its sale left the ledger.', 'Not on statement');
+    } catch (e) {
+      setVoidError(e instanceof Error ? e.message : 'The ticket could not be moved.');
+    } finally { setBusy(false); }
+  };
   const agrees = Math.abs(r.closingGap) < 0.05;
   const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(n)}`;
   const toDo = r.reasons.filter(x => !x.harmless);
@@ -261,13 +276,24 @@ const ReviewPanel: React.FC<{
                   {x.items.map((it, j) => (
                     <li key={j} className="flex items-baseline justify-between gap-3 text-slate-600">
                       <span className="min-w-0"><span className="font-mono text-slate-800">{it.ref}</span> — {it.text}</span>
-                      {x.items.length > 1 && <span className="font-mono whitespace-nowrap text-slate-500">{signed(it.amount)}</span>}
+                      <span className="flex items-baseline gap-3 shrink-0">
+                        {x.items.length > 1 && <span className="font-mono whitespace-nowrap text-slate-500">{signed(it.amount)}</span>}
+                        {it.voidable && onVoidDropped && (
+                          <button type="button" disabled={busy} onClick={() => void moveToVoids(it.voidable!)}
+                            aria-label={`Move ${it.ref} to Voids`}
+                            className="px-2 py-1 rounded border border-red-200 text-red-700 font-bold whitespace-nowrap hover:bg-red-50 disabled:opacity-40">
+                            Move to Voids</button>
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ul>
                 <div className={`mt-1.5 ${x.harmless ? 'text-slate-500' : 'text-blue-700'}`}>
                   {x.harmless ? '' : 'What to do: '}{x.todo}
                 </div>
+                {voidError && x.kind === 'TICKET_NOT_THEIRS' && (
+                  <div role="alert" className="mt-1 text-red-600">{voidError}</div>
+                )}
               </li>
             ))}
             {Math.abs(r.unexplained) >= 0.05 && (

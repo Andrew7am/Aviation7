@@ -25,6 +25,15 @@ export type ReasonKind =
   | 'TICKET_NOT_OURS' | 'REFUND_NOT_OURS' | 'DROPPED' | 'TICKET_NOT_THEIRS' | 'REFUND_NOT_THEIRS'
   | 'PRICE' | 'REFUND_AMOUNT' | 'BILLED_LATER' | 'MOVED' | 'TICKET_DATE' | 'OTHER_CHARGE' | 'ROUNDING' | 'FOOTING';
 
+export interface ReasonItem {
+  ref: string;
+  text: string;
+  amount: number;
+  /** A sale of ours they never billed, and may be moved to Voids if it was
+   *  voided: one open row, with no refund against it. */
+  voidable?: Ticket;
+}
+
 export interface Reason {
   kind: ReasonKind;
   title: string;
@@ -34,7 +43,7 @@ export interface Reason {
   harmless: boolean;
   /** Its share of their closing less ours. */
   amount: number;
-  items: { ref: string; text: string; amount: number }[];
+  items: ReasonItem[];
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -63,7 +72,7 @@ const WORDS: Record<ReasonKind, [title: string, todo: string, harmless?: boolean
   TICKET_NOT_OURS: ['Ticket they billed, not in our books', 'Import {v}\'s sales report. If it is not there, ask {v} what the ticket is.'],
   REFUND_NOT_OURS: ['Refund they gave, not in our books', 'Add the refund to our books.'],
   DROPPED: ['Ticket they cancelled', 'It was on their last statement and is gone from this one. Move it to Voids below.'],
-  TICKET_NOT_THEIRS: ['Ticket in our books, not on their statement', 'It is usually on their next statement. If not, ask {v} whether it was voided.'],
+  TICKET_NOT_THEIRS: ['Ticket in our books, not on their statement', 'It is usually on their next statement. If not, ask {v} whether it was voided; if it was, move it to Voids.'],
   REFUND_NOT_THEIRS: ['Refund in our books, not on their statement', 'Ask {v} for the refund.'],
   PRICE: ['Different ticket price', 'They will be paid the price on the statement. Check it, then correct ours.'],
   REFUND_AMOUNT: ['Different refund amount', 'Ask {v} how the refund was calculated.'],
@@ -91,9 +100,9 @@ export function explainGap(a: {
   const { st, vendor, pays, wallet: w } = a;
   const ps = st.periodStart, pe = st.periodEnd;
   const bucket = new Map<ReasonKind, Reason['items']>();
-  const add = (kind: ReasonKind, ref: string, text: string, amount: number) => {
+  const add = (kind: ReasonKind, ref: string, text: string, amount: number, voidable?: Ticket) => {
     if (Math.abs(amount) < 0.005) return;
-    bucket.set(kind, [...(bucket.get(kind) ?? []), { ref, text, amount: r2(amount) }]);
+    bucket.set(kind, [...(bucket.get(kind) ?? []), { ref, text, amount: r2(amount), ...(voidable ? { voidable } : {}) }]);
   };
 
   const rows = a.mine.filter(t => (t.status || '').toUpperCase() !== 'FUND' && day(t.date) && drawsOnWallet(w, t.date));
@@ -148,7 +157,8 @@ export function explainGap(a: {
       const req = inside[0].reqNum ? `, ${inside[0].reqNum}` : '';
       const kind: ReasonKind = inside.some(t => dropped.has(t.id)) ? 'DROPPED'
         : held > 0 && later.has(k) ? 'BILLED_LATER' : held > 0 ? 'TICKET_NOT_THEIRS' : 'REFUND_NOT_THEIRS';
-      add(kind, no, `${shortDay(inside[0].date)}${req}`, eff); continue;
+      const one = kind === 'TICKET_NOT_THEIRS' && all.length === 1 && ser(no).length === 10 && !all[0].closed ? all[0] : undefined;
+      add(kind, no, `${shortDay(inside[0].date)}${req}`, eff, one); continue;
     }
     if (!all.length) {
       add(billed > 0 ? 'TICKET_NOT_OURS' : 'REFUND_NOT_OURS', no, `${shortDay(c.line.date)}${c.line.document ? `, ${c.line.document}` : ''}`, eff);

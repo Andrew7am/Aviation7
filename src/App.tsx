@@ -488,11 +488,11 @@ function MainApp({ user }: { user: User }) {
   /* A ticket a vendor's statement billed and their next one dropped: voided
      on their side (4862765248, 9 Nov 2026). Into the register first, then
      out of the ledger, so the balance never loses it without a trace. */
-  const handleVoidDropped = useCallback(async (list: Ticket[], why: string) => {
+  const handleVoidDropped = useCallback(async (list: Ticket[], why: string, from = 'Dropped from statement') => {
     await new VoidTicketService(user.id).record(list.map(t => ({
       ticketNo: t.ticketNo, airlineCode: t.airlineCode || '', pnr: t.pnr || '', passengerName: t.passengerName || '',
       date: (t.date || '').slice(0, 10), source: t.source, period: (t.date || '').slice(0, 7), currency: t.currency,
-      faceValue: t.amount, rawStatus: 'VOID', reportName: 'Dropped from statement', note: why,
+      faceValue: t.amount, rawStatus: 'VOID', reportName: from, note: why,
     })));
     await refreshVoids();
     for (const t of list) {
