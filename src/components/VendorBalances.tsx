@@ -49,6 +49,12 @@ const PRESET_VENDORS = [
   'FlyDubai', 'AirArabia', 'RTS', 'Ibtekar', 'Gold Medal', 'NSA', 'Riyadh Air', 'Turkish Airlines', 'Emirates',
 ];
 
+/** Today where the user is, not in UTC: before 3 in the morning the two differ. */
+const localToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 type ModalMode = null | 'add_existing' | 'add_new' | 'topup';
 
 /**
@@ -112,6 +118,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
   // Top-up modal state
   const [topUpAmount, setTopUpAmount] = useState('');
   const [topUpNote, setTopUpNote] = useState('');
+  const [topUpDate, setTopUpDate] = useState(localToday);
 
   const fmt = (n: number) =>
     n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -138,6 +145,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
     setTopUpVendorId(null);
     setTopUpAmount('');
     setTopUpNote('');
+    setTopUpDate(localToday());
   };
 
   const handleAddPreset = () => {
@@ -164,16 +172,18 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
     closeModal();
   };
 
+  /** A real day, and not one that has not come yet. */
+  const topUpDateOk = /^\d{4}-\d{2}-\d{2}$/.test(topUpDate) && topUpDate <= localToday();
   const handleTopUpSubmit = () => {
     const vendor = vendorBalances.find(v => v.id === topUpVendorId);
     const amt = parseFloat(topUpAmount);
-    if (!vendor || !amt || amt <= 0) return;
+    if (!vendor || !amt || amt <= 0 || !topUpDateOk) return;
     const id = `topup_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     onTopUp({
       id, vendorId: vendor.id, vendorName: vendor.vendorName,
       amount: amt,
       note: topUpNote.trim() || 'Balance Top-up',
-      date: new Date().toISOString().split('T')[0],
+      date: topUpDate,
       userId: 'temp',
     });
     closeModal();
@@ -676,6 +686,29 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                     />
                   </div>
                   <div>
+                    <label htmlFor="topup-date" className="text-mini font-bold uppercase text-slate-500 block mb-1.5">
+                      Payment date
+                    </label>
+                    <input
+                      id="topup-date"
+                      type="date"
+                      value={topUpDate}
+                      max={localToday()}
+                      onChange={e => setTopUpDate(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                    />
+                    <p className={`text-micro mt-1 leading-tight ${topUpDateOk ? 'text-slate-400' : 'text-red-600'}`}>
+                      {topUpDateOk
+                        ? 'The day the money reached the vendor, as on their statement.'
+                        : 'Choose a date, today or earlier.'}
+                    </p>
+                    {topUpDateOk && topUpVendor.openingDate && topUpDate < topUpVendor.openingDate && (
+                      <p className="text-micro mt-1 leading-tight text-amber-700">
+                        This is before the balance starts ({topUpVendor.openingDate}). Check it is not already in the opening balance.
+                      </p>
+                    )}
+                  </div>
+                  <div>
                     <label className="text-mini font-bold uppercase text-slate-500 block mb-1.5">
                       Note (optional)
                     </label>
@@ -698,7 +731,7 @@ export const VendorBalances: React.FC<VendorBalancesProps> = ({
                   )}
                   <button
                     onClick={handleTopUpSubmit}
-                    disabled={!topUpAmount || parseFloat(topUpAmount) <= 0}
+                    disabled={!topUpAmount || parseFloat(topUpAmount) <= 0 || !topUpDateOk}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded py-2 text-mini font-bold uppercase tracking-wider transition-colors"
                   >
                     Confirm Top-up

@@ -325,7 +325,7 @@ function MainApp({ user }: { user: User }) {
 
   const handleSaveVendor   = (v: VendorBalance) => { saveVendor(v); importSvc.audit('ADD_VENDOR', v.vendorName, `Initial balance: ${v.initialBalance}`); };
   const handleDeleteVendor = (id: string) => { if (confirm('Delete vendor?')) { deleteVendor(id); importSvc.audit('DELETE_VENDOR', id, 'Vendor deleted'); } };
-  const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount}`); };
+  const handleTopUp        = (tu: BalanceTopUp) => { addTopUp(tu); importSvc.audit('TOPUP', tu.vendorName, `+${tu.amount} on ${tu.date}`); };
   /* ── the team's Airtable, live ─────────────────────────────────────────
      The server syncs it every two minutes; this reads the notices it left
      and the sync's health, and carries out what a person accepts. */
