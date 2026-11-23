@@ -210,5 +210,56 @@ console.log('\nO. A refund whose sale was on an earlier statement');
   check('a refund above the sale we hold is still questioned', /larger than the sale/.test(by('4862343399').why), true);
 }
 
+console.log('\nP. The 15-21 Nov statement: sections, not dates');
+{
+  const L = (section: string, date: string, document: string, ticketNo: string, debit: number, credit: number) =>
+    ({ section, date, document, airline: '065', ticketNo, debit, credit, balance: 0 });
+  const mini = {
+    ...st, periodStart: '2026-11-15', periodEnd: '2026-11-21', openingBalance: 13607.13, closingBalance: 41490.64,
+    lines: [
+      L('TICKET', '2026-11-17', 'INV265080', '4863059843', 1704, 0),
+      L('TICKET', '2026-11-18', 'INV265091', '4863059888', 1048, 0),
+      L('TICKET', '2026-11-20', 'INV265104', '4863059892', 828, 0),
+      L('TICKET', '2026-11-16', 'RFD260773', '4862479143', 0, 448.51),
+      L('TICKET', '2026-11-16', 'RFD260774', '4862343290', 0, 1015),
+      L('RECEIPT', '2026-11-16', 'RV264477', 'RV264477', 0, 10000),
+      L('RECEIPT', '2026-11-20', 'RV264500', 'RV264500', 0, 20000),
+    ],
+  } as typeof st;
+  const ours = [
+    t({ ticketNo: '4863059843', date: '2026-11-17', amount: 1704, totalDoc: 1693.95 }),
+    t({ ticketNo: '4863059888', date: '2026-11-18', amount: 1048, totalDoc: 1037.3 }),
+    t({ ticketNo: '4863059892', date: '2026-11-19', amount: 828, totalDoc: 817.65 }),
+    t({ ticketNo: '4862479143', date: '2026-10-10', amount: 0 }),
+    t({ ticketNo: '4862479143', date: '2026-11-16', amount: -448.5, status: 'REFUND' }),
+    t({ ticketNo: '4862343290', date: '2026-10-06', amount: 1015, totalDoc: 1005.1 }),
+    t({ ticketNo: '4862343290', date: '2026-11-18', amount: -1015, status: 'REFUND' }),
+  ];
+  const prev = { id: 'x', vendorName: 'Ibtekar', periodStart: '2026-11-01', periodEnd: '2026-11-18', currency: 'SAR',
+    openingBalance: 0, closingBalance: 23366.64, billed: 0, paid: 0, otherCharges: 0, userId: '',
+    lines: [{ ticketNo: '4863059843', date: '2026-11-17', document: 'INV265080', debit: 1704, credit: 0 },
+            { ticketNo: '4862479143', date: '2026-11-16', document: 'RFD260773', debit: 0, credit: 448.51 },
+            { ticketNo: '4862343290', date: '2026-11-16', document: 'RFD260774', debit: 0, credit: 1015 }] } as unknown as VendorStatement;
+  const r = reviewStatement(mini, 'Ibtekar', ours, [pay(10000, '2026-11-16'), pay(20000, '2026-11-22')], [prev]);
+  const line = (x: typeof r, k: string) => x.lines.find(c => c.line.ticketNo === k)!;
+  // 13,607.13 - 1,704 - 1,048 + 448.51 + 1,015 + 10,000
+  check('the receipts count on the day they are dated', r.since?.now, 22318.64);
+  check('the 18 Nov ticket printed too late is the whole change',
+        [r.since?.change, r.since?.late.map(l => l.ticketNo)], [-1048, ['4863059888']]);
+  check('a refund both sides hold agrees', line(r, '4862343290').verdict, 'AGREES');
+  check('a refund a halala apart names the two refunds',
+        [line(r, '4862479143').gap, line(r, '4862479143').why], [-0.01, 'The statement refunds 448.51 (RFD260773); we hold the refund at 448.50.']);
+  check('the receipt we dated after the statement ends', r.lateRecorded.map(x => x.line.document), ['RV264500']);
+  const other = reviewStatement(mini, 'Ibtekar', ours, [], [{ ...prev, closingBalance: 23000 }]);
+  check('a change those lines do not add up to is not explained away', other.since?.late.length, 0);
+  const wrong = reviewStatement(mini, 'Ibtekar',
+    ours.map(o => o.ticketNo === '4862343290' && o.amount < 0 ? { ...o, amount: -900 } : o), []);
+  check('a refund at another figure is still asked',
+        [line(wrong, '4862343290').verdict, line(wrong, '4862343290').gap], ['ASK', -115]);
+  const inPeriod = reviewStatement(mini, 'Ibtekar',
+    ours.map(o => o.ticketNo === '4862343290' && o.amount > 0 ? { ...o, date: '2026-11-16' } : o), []);
+  check('a sale of this period they never bill still shows', line(inPeriod, '4862343290').verdict, 'ASK');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

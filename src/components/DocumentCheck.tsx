@@ -217,6 +217,7 @@ const ReviewPanel: React.FC<{
   const missingReceipts = r.receipts.filter(x => !x.recorded);
   const issues = r.reprice.length + r.ask.length + r.notInBooks.length + r.notBilled.length + missingReceipts.length;
   const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${fmt(n)}`;
+  const gapWithoutLate = Math.round((r.closingGap - r.lateRecorded.reduce((n, x) => n + x.recorded!.amount, 0)) * 100) / 100;
 
   return (
     <div className="space-y-2">
@@ -233,6 +234,18 @@ const ReviewPanel: React.FC<{
               : <><AlertTriangle className="w-3.5 h-3.5" /> {signed(r.closingGap)} {st.currency}</>}
           </span>
         </div>
+        {!agrees && r.lateRecorded.map(x => (
+          <div key={x.line.document} className="mt-1 text-xs">
+            Receipt <b className="font-mono">{x.line.document}</b> is dated <b className="font-mono">{x.line.date}</b> on the
+            statement and <b className="font-mono">{x.recorded!.date}</b> in our top-ups, after the statement ends:{' '}
+            <b className="font-mono">{signed(x.recorded!.amount)}</b> of the difference is only that date.
+          </div>
+        ))}
+        {!agrees && r.lateRecorded.length > 0 && (
+          <div className="mt-1 text-xs">
+            Without it the difference is <b className="font-mono">{signed(gapWithoutLate)}</b>.
+          </div>
+        )}
         {!agrees && r.reprice.length > 0 && (
           <div className="mt-1 text-xs">
             Once the {r.reprice.length} ticket(s) below take the statement's figure, the difference is{' '}
@@ -241,7 +254,14 @@ const ReviewPanel: React.FC<{
         )}
       </div>
 
-      {r.since && Math.abs(r.since.change) >= 0.005 && (
+      {r.since && r.since.late.length > 0 && (
+        <div className="text-xs text-slate-500 px-1">
+          Their statement for {r.since.previous.periodStart} → {r.since.previous.periodEnd} did not carry{' '}
+          {r.since.late.length} line(s) dated up to its last day — {r.since.late.map(l => l.ticketNo).join(', ')},{' '}
+          <span className="font-mono">{signed(r.since.change)}</span>. This one does; nothing else changed.
+        </div>
+      )}
+      {r.since && Math.abs(r.since.change) >= 0.005 && r.since.late.length === 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900">
           <b>Changed on their side since their last statement.</b>{' '}
           Their statement for {r.since.previous.periodStart} → {r.since.previous.periodEnd} put the account on{' '}

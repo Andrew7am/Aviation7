@@ -71,6 +71,9 @@ export interface SinceLast {
   was: number;
   now: number;
   change: number;
+  /** Lines dated up to `on` that their last statement did not carry, when
+   *  they account for the whole change: printed before the day was over. */
+  late: StatementLine[];
 }
 
 /**
@@ -99,6 +102,9 @@ export interface StatementReview {
   /** Of those, the ones their last statement billed: voided since. */
   dropped: Dropped | null;
   receipts: ReceiptCheck[];
+  /** Receipts on this statement we recorded, but dated after it ends: in
+   *  their closing balance and not in ours. */
+  lateRecorded: ReceiptCheck[];
   fees: { count: number; total: number; min: number; max: number };
   /** Our books on the statement's last day: payments less tickets. */
   ourClosing: number;
@@ -109,14 +115,17 @@ export interface StatementReview {
   since: SinceLast | null;
 }
 
-/** The balance the statement prints on a day: its last line on or before it. */
+/**
+ * The balance the statement puts on a day: the opening and every line dated
+ * on or before it. Not the lines down to the first later one: they come
+ * grouped - tickets, refunds, receipts - not in date order, and stopping at
+ * the first later ticket left out every receipt. The 15-21 Nov statement
+ * read 24,480.92 Dr on 18 Nov that way; it is 13,189.59 Cr.
+ */
 function balanceOn(st: ParsedStatement, on: string): number | null {
   if (on < st.periodStart) return null;
   let bal = st.openingBalance;
-  for (const l of st.lines) {
-    if (l.date > on) break;
-    bal = r2(bal + l.credit - l.debit);
-  }
+  for (const l of st.lines) if (l.date <= on) bal = r2(bal + l.credit - l.debit);
   return bal;
 }
 
@@ -139,11 +148,17 @@ function sinceLast(st: ParsedStatement, vendor: string, saved: VendorStatement[]
   // before the period shows. Otherwise compare the balance on their last day.
   if (previous.periodStart === st.periodStart)
     return { previous, on: st.periodStart, was: previous.openingBalance, now: st.openingBalance,
-             change: r2(st.openingBalance - previous.openingBalance) };
+             change: r2(st.openingBalance - previous.openingBalance), late: [] };
   const now = balanceOn(st, previous.periodEnd);
   if (now == null) return null;
-  return { previous, on: previous.periodEnd, was: previous.closingBalance, now,
-           change: r2(now - previous.closingBalance) };
+  const change = r2(now - previous.closingBalance);
+  const had = new Set((previous.lines ?? []).map(l => `${ser(l.ticketNo)}|${l.document ?? ''}`));
+  const late = previous.lines?.length && Math.abs(change) >= 0.005
+    ? st.lines.filter(l => l.section !== 'RECEIPT' && l.ticketNo && l.date <= previous.periodEnd
+        && l.date >= previous.periodStart && !had.has(`${ser(l.ticketNo)}|${l.document ?? ''}`))
+    : [];
+  const explained = Math.abs(r2(late.reduce((n, l) => n + l.credit - l.debit, 0)) - change) < 0.005;
+  return { previous, on: previous.periodEnd, was: previous.closingBalance, now, change, late: explained ? late : [] };
 }
 
 /**
@@ -245,8 +260,15 @@ export function reviewStatement(
     const k = ser(l.ticketNo);
     if (seen.has(k)) continue;
     seen.add(k);
-    const ours = bySer.get(k) ?? [];
+    const rows = bySer.get(k) ?? [];
     const theirs = billed.get(k)!;
+    /* Only a refund here, of a sale an earlier statement billed: it is laid
+       against the refund we hold, not against sale and refund netted to 0 -
+       4862343290, refunded 1,015.00 by both, read as 1,015.00 apart. */
+    const refundOnly = parts.get(k)!.debit === 0 && parts.get(k)!.credit > 0
+      && rows.some(t => (t.amount || 0) < 0)
+      && rows.every(t => (t.amount || 0) <= 0 || (!!day(t.date) && day(t.date) < st.periodStart));
+    const ours = refundOnly ? rows.filter(t => (t.amount || 0) < 0) : rows;
     const held = r2(ours.reduce((n, t) => n + (t.amount || 0), 0));
     const sales = ours.filter(t => (t.amount || 0) > 0);
     const fare = sales.length === 1 && ours.length === 1 ? (sales[0].totalDoc ?? null) : null;
@@ -269,6 +291,11 @@ export function reviewStatement(
         + (p.credit > sale + FEE_FLOOR
           ? ' The refund is larger than the sale it is written against - ask them which ticket it belongs to before recording it.'
           : ' Record the refund.');
+    } else if (refundOnly) {
+      const p = parts.get(k)!;
+      verdict = 'ASK';
+      why = `The statement refunds ${p.credit.toFixed(2)}${p.refundDocs.length ? ` (${p.refundDocs.join(', ')})` : ''};`
+        + ` we hold the refund at ${Math.abs(held).toFixed(2)}.`;
     } else if ((parts.get(k)?.debit ?? 0) > 0 && !ours.some(t => (t.amount || 0) > 0)) {
       const p = parts.get(k)!;
       verdict = 'ASK';
@@ -357,6 +384,7 @@ export function reviewStatement(
   return {
     vendor, lines, reprice, ask, notInBooks: lines.filter(c => c.verdict === 'NOT_IN_BOOKS'),
     notBilled, dropped: droppedSince(st, vendor, saved, notBilled), receipts,
+    lateRecorded: receipts.filter(x => x.recorded && day(x.recorded.date) > st.periodEnd),
     fees: {
       count: feeList.length, total: r2(feeList.reduce((n, f) => n + f, 0)),
       min: feeList.length ? Math.min(...feeList) : 0, max: feeList.length ? Math.max(...feeList) : 0,
