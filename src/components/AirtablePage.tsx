@@ -80,6 +80,21 @@ export const AirtablePage: React.FC<{
     await load();
   });
 
+  /* The file can be dropped anywhere on the page, whichever tab is open; a
+     miss would otherwise make the browser leave the app and open the CSV. */
+  const [dragging, setDragging] = useState(false);
+  const fileDrag = (e: React.DragEvent) => canEdit && e.dataTransfer.types.includes('Files');
+  const onDropFile = (e: React.DragEvent) => {
+    if (!fileDrag(e)) return;
+    e.preventDefault(); setDragging(false);
+    if (busy) { setErr('Wait for the current work to finish, then drop the file again.'); return; }
+    const files = [...e.dataTransfer.files];
+    if (files.length !== 1) { setErr('Drop one file: the Aviation Tickets export.'); return; }
+    if (!/\.csv$/i.test(files[0].name)) { setErr(`${files[0].name} is not a CSV. Export the Aviation Tickets table from Airtable as CSV.`); return; }
+    setTab('overview');
+    void uploadExport(files[0]);
+  };
+
   const load = async () => {
     try {
       const [r, c] = await Promise.all([svc.liveRecords(), svc.changes()]);
@@ -133,7 +148,10 @@ export const AirtablePage: React.FC<{
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-3 h-full overflow-auto">
+    <div className="p-4 sm:p-6 space-y-3 h-full overflow-auto"
+      onDragOver={e => { if (fileDrag(e)) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
+      onDrop={onDropFile}>
       <PageHeader icon={<Table2 />} title="Airtable"
         subtitle={<>The aviation team's "Aviation Tickets", as of their last export uploaded here.</>} />
 
@@ -145,6 +163,9 @@ export const AirtablePage: React.FC<{
           </button>
         ))}
       </div>
+      {dragging && tab !== 'overview' && (
+        <div className="rounded-lg border-2 border-dashed border-blue-600 bg-blue-50 px-4 py-3 text-center text-xs font-bold text-blue-800">Drop the team sheet anywhere on this page</div>
+      )}
       {err && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2 flex gap-2"><AlertTriangle className="w-3.5 h-3.5" />{err}</div>}
 
       {tab === 'overview' && (
@@ -172,9 +193,18 @@ export const AirtablePage: React.FC<{
               </label>
             )}
           </div>
+          {canEdit && (
+            <label className={`block rounded-lg border-2 border-dashed px-4 py-6 text-center text-xs cursor-pointer transition-colors
+              ${dragging ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-300 bg-white text-slate-500 hover:border-blue-400 hover:bg-slate-50'}`}>
+              {busy === 'csv' ? <Loader2 className="w-5 h-5 mx-auto mb-1.5 animate-spin" /> : <Upload className="w-5 h-5 mx-auto mb-1.5" />}
+              <b>{busy === 'csv' ? 'Reading the team sheet…' : dragging ? 'Drop the team sheet' : 'Drop the team sheet here (CSV), or click to choose it'}</b>
+              <input type="file" accept=".csv,text/csv" className="hidden" disabled={!!busy}
+                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void uploadExport(f); }} />
+            </label>
+          )}
           {(!AIRTABLE_API_ON || (sync?.lastError && /401|authenticat/i.test(sync.lastError))) && (
             <div className="rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-xs text-purple-900">
-              Their Airtable is not read live. Export the Aviation Tickets table from Airtable as CSV and upload it here:
+              Their Airtable is not read live. Export the Aviation Tickets table from Airtable as CSV and drop or upload it here:
               everything the live connection does - the bell, requests filled, the Emirates limit - runs on the file instead.
               The whole table is best; part of it updates only the rows it carries.
             </div>
