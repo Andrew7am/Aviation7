@@ -62,12 +62,20 @@ export const Shell: React.FC<Props> = ({
     return () => document.removeEventListener('keydown', onKey);
   }, [navOpen]);
 
-  /* One section of the menu open at a time, under its heading (the user,
-     26 Nov 2026): clicking a heading opens it and closes the others. The
-     section of the screen showing opens by itself, however it was reached. */
+  /* The menu's sections fold under their headings (the user, 26 Nov 2026).
+     A section opened stays open until it is closed again - opening another,
+     or picking a screen, closes nothing. The section of the screen showing
+     opens by itself, however it was reached. Remembered in this browser. */
   const groupOf = (id: string) => navItems.find(i => i.id === id)?.group ?? '';
-  const [openGroup, setOpenGroup] = useState<string>(() => groupOf(view));
-  useEffect(() => { const g = groupOf(view); if (g) setOpenGroup(g); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [openGroups, setOpenGroups] = useState<string[]>(() => {
+    let kept: string[] = [];
+    try { kept = JSON.parse(localStorage.getItem('navOpenGroups') || '[]'); } catch { /* none kept */ }
+    const g = groupOf(view);
+    return Array.isArray(kept) ? [...new Set([...kept, ...(g ? [g] : [])])] : g ? [g] : [];
+  });
+  useEffect(() => { const g = groupOf(view); if (g) setOpenGroups(o => (o.includes(g) ? o : [...o, g])); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { try { localStorage.setItem('navOpenGroups', JSON.stringify(openGroups)); } catch { /* this session only */ } }, [openGroups]);
+  const toggleGroup = (g: string) => setOpenGroups(o => (o.includes(g) ? o.filter(x => x !== g) : [...o, g]));
   const sections = navItems.reduce<{ group: string; items: ShellNavItem[] }[]>((out, item) => {
     const last = out[out.length - 1];
     if (last && last.group === (item.group ?? '')) last.items.push(item); else out.push({ group: item.group ?? '', items: [item] });
@@ -178,7 +186,7 @@ export const Shell: React.FC<Props> = ({
           {navTop?.(() => setNavOpen(false))}
           <nav className="flex-1 px-2.5 pb-3 overflow-y-auto overscroll-contain">
             {sections.map(sec => {
-              const open = !sec.group || openGroup === sec.group;
+              const open = !sec.group || openGroups.includes(sec.group);
               /* A closed section still says when something in it needs doing. */
               const urgent = sec.items.some(i => i.badgeColor === 'red' && (i.badge ?? 0) > 0) ? 'red'
                 : sec.items.some(i => i.badgeColor === 'amber' && (i.badge ?? 0) > 0) ? 'amber' : '';
@@ -186,7 +194,7 @@ export const Shell: React.FC<Props> = ({
               return (
                 <div key={sec.group || '_'}>
                   {sec.group && (
-                    <button type="button" onClick={() => setOpenGroup(open ? '' : sec.group)} aria-expanded={open}
+                    <button type="button" onClick={() => toggleGroup(sec.group)} aria-expanded={open}
                       className={`w-full flex items-center gap-1.5 px-2.5 pt-4 pb-1 text-micro font-semibold uppercase tracking-widest hover:text-slate-600 ${
                         holdsActive && !open ? 'text-blue-700' : 'text-slate-400'}`}>
                       {open ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
