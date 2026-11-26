@@ -1,5 +1,5 @@
 import type { Ticket } from '../../types';
-import { aviationProfit, toCurrency, riyadhDay, PROFIT_FROM, type ProfitSheetRow } from './aviationProfit';
+import { aviationProfit, toCurrency, riyadhDay, ourPart, PROFIT_FROM, type ProfitSheetRow, type OurPart } from './aviationProfit';
 import { ticketMatchKey, isBookingRef } from './ticketIdentity';
 import { reqTokensOf } from './reqTokens';
 import { isHiddenProfit, withoutAvMark } from './aviationMark';
@@ -23,13 +23,14 @@ export const PRICE_TOLERANCE = 1;
 
 export type PriceResult =
   | 'MARKUP' | 'COMMISSION_ONLY' | 'PART_COMMISSION' | 'EXACTLY_NET' | 'BELOW_NET'
-  | 'REFUND_SAME' | 'REFUND_KEPT' | 'REFUND_ABOVE' | 'AV_PROFIT' | 'NOT_COMPARED';
+  | 'REFUND_SAME' | 'REFUND_KEPT' | 'REFUND_ABOVE' | 'AV_PROFIT' | 'CURRENCY_WRONG' | 'NOT_COMPARED';
 
 export const RESULT_LABEL: Record<PriceResult, string> = {
   MARKUP: 'Markup', COMMISSION_ONLY: 'Commission only', PART_COMMISSION: 'Part of commission',
   EXACTLY_NET: 'Exactly net', BELOW_NET: 'Below net',
   REFUND_SAME: 'Refund as ours', REFUND_KEPT: 'Refund: we kept some', REFUND_ABOVE: 'Refund above ours',
   AV_PROFIT: 'Aviation profit (AV)',
+  CURRENCY_WRONG: 'Currency written wrong',
   NOT_COMPARED: 'Not compared',
 };
 export const RESULT_MEANS: Record<PriceResult, string> = {
@@ -42,6 +43,7 @@ export const RESULT_MEANS: Record<PriceResult, string> = {
   REFUND_KEPT: 'Operations got back less than the supplier refunded: the rest stays with the aviation team.',
   REFUND_ABOVE: 'Operations got back more than the supplier refunded: a loss.',
   AV_PROFIT: 'Refunded to us and marked AV: not given back to operations, so the aviation team\u2019s profit. Not on their sheet.',
+  CURRENCY_WRONG: 'Their sheet has our own figure in another currency: a currency written wrong, so compared in ours.',
   NOT_COMPARED: '',
 };
 /** Results somebody should explain. */
@@ -52,8 +54,11 @@ export const BLOCKS_CLOSING = new Set<PriceResult>(['BELOW_NET', 'REFUND_ABOVE']
 /* Before 9 Nov their Net Cost was the cost, so a ticket then at or below
    ours is how they wrote it, not a decision: shown and added up, never asked
    about, never holding a file. */
-export const needsReason = (l: Pick<PriceLine, 'result' | 'early'>) => NEEDS_REASON.has(l.result) && !l.early;
-export const blocksClosing = (l: Pick<PriceLine, 'result' | 'early'>) => BLOCKS_CLOSING.has(l.result) && !l.early;
+/* A currency written wrong is judged by what it is in our currency: a real
+   loss there still holds the file. */
+const judged = (l: Pick<PriceLine, 'result' | 'asOurs'>) => (l.result === 'CURRENCY_WRONG' ? l.asOurs ?? l.result : l.result);
+export const needsReason = (l: Pick<PriceLine, 'result' | 'early' | 'asOurs'>) => NEEDS_REASON.has(judged(l)) && !l.early;
+export const blocksClosing = (l: Pick<PriceLine, 'result' | 'early' | 'asOurs'>) => BLOCKS_CLOSING.has(judged(l)) && !l.early;
 
 export interface PriceLine {
   /** Stable across runs: the reason written for it is kept against this. */
@@ -77,8 +82,37 @@ export interface PriceLine {
   /** Why it was not compared. */
   why?: string;
   converted: boolean;
+  /** CURRENCY_WRONG: the currency their sheet wrote, and the result in ours. */
+  writtenAs?: string;
+  asOurs?: PriceResult;
+  /** Their figure was in dollars or euros: what they wrote, and the rate it was
+   *  turned into our currency at (the user, 26 Nov 2026: those go to dirhams). */
+  theirs?: { currency: string; amount: number; rate: number; ownRate: boolean };
+  /** Our tickets behind it, as our books have them. */
+  ours?: OurPart[];
   /** The figures the reason was written against: change them and it is asked again. */
   fingerprint: string;
+}
+
+/** Their figure is one of ours (net or fare) in our own currency: written in the wrong one. */
+const sameFigure = (theirs: number, ...ours: number[]) => ours.some(v => Math.abs(theirs - v) <= Math.max(0.5, Math.abs(v) * 0.005));
+/** The one currency all of these are in, or ''. */
+const oneCurrency = (ps: OurPart[]) => { const c = [...new Set(ps.map(p => p.currency))]; return c.length === 1 ? c[0] : ''; };
+/** The currencies the file is kept in. Dollars and euros are turned into them. */
+const HOME = new Set(['SAR', 'AED']);
+/**
+ * The rate their dollar or euro figure becomes ours at: the one the purchase
+ * itself was booked at in our books (808.40 USD booked as 2,969.74 AED), else
+ * the peg. Null when there is neither (euros with no booked rate).
+ */
+function rateInto(ps: OurPart[], from: string, into: string): { rate: number; ownRate: boolean } | null {
+  const booked = ps.length > 0 && ps.every(p => p.origCurrency === from && (p.origAmount ?? 0) !== 0);
+  if (booked) {
+    const orig = ps.reduce((n, p) => n + Math.abs(p.origAmount!), 0), amt = ps.reduce((n, p) => n + Math.abs(p.amount), 0);
+    if (orig > 0) return { rate: amt / orig, ownRate: true };
+  }
+  const peg = toCurrency(1, from, into);
+  return peg === null ? null : { rate: peg, ownRate: false };
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -129,7 +163,38 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
   for (const l of aviationProfit(rows, ledger, from, to, voided)) {
     if (!inScope(l.req, l.docs)) continue;
     const base = { key: `PRICE|${l.key}`, kind: 'SALE' as const, req: l.req, member: l.member, issued: l.issued,
-      docs: l.docs, currency: l.currency, toOps: l.quoted, converted: l.converted };
+      docs: l.docs, currency: l.currency, toOps: l.quoted, converted: l.converted, ours: l.ours };
+    /* Ours in one currency, theirs in another: a euro figure cannot be
+       converted at a peg, but can at the rate the purchase was booked at. */
+    const oc = l.ours?.length && (l.state === 'COUNTED' || (l.state === 'TWO_CURRENCIES' && !l.mixedSheet))
+      ? oneCurrency(l.ours) : '';
+    /* Their 3,960 SAR on our 3,960 AED is our figure in the wrong currency,
+       not a loss of 84 riyals (KSAML2771, 26 Nov 2026): compared in ours. */
+    if (oc && oc !== l.currency) {
+      const cost = r2(l.ours!.reduce((n, p) => n + p.amount, 0)), comm = r2(l.ours!.reduce((n, p) => n + p.commission, 0));
+      if (sameFigure(l.quoted, cost, cost + comm)) {
+        const price = r2(cost + comm);
+        out.push({ ...base, currency: oc, converted: false, writtenAs: l.currency, early: l.issued < PROFIT_FROM,
+          price, commission: comm, net: cost, markup: r2(l.quoted - price), profit: r2(l.quoted - cost),
+          result: 'CURRENCY_WRONG', asOurs: classify(l.quoted, cost, comm), fingerprint: `${l.quoted}|${cost}|${comm}|${l.currency}` });
+        continue;
+      }
+    }
+    /* Their figure in dollars or euros, ours in dirhams or riyals: theirs is
+       turned into ours, at the rate the purchase was booked at, so the file
+       stays in its own currencies (the user, 26 Nov 2026). */
+    if (oc && HOME.has(oc) && !HOME.has(l.currency)) {
+      const fx = rateInto(l.ours!, l.currency, oc);
+      if (fx) {
+        const cost = r2(l.ours!.reduce((n, p) => n + p.amount, 0)), comm = r2(l.ours!.reduce((n, p) => n + p.commission, 0));
+        const toOps = r2(l.quoted * fx.rate), price = r2(cost + comm);
+        out.push({ ...base, currency: oc, toOps, converted: false, early: l.issued < PROFIT_FROM,
+          theirs: { currency: l.currency, amount: l.quoted, rate: fx.rate, ownRate: fx.ownRate },
+          price, commission: comm, net: cost, markup: r2(toOps - price), profit: r2(toOps - cost),
+          result: classify(toOps, cost, comm), fingerprint: `${l.quoted}|${l.currency}|${cost}|${comm}` });
+        continue;
+      }
+    }
     if (l.state !== 'COUNTED' || l.cost === null) {
       out.push({ ...base, price: null, commission: null, net: null, markup: null, profit: null, result: 'NOT_COMPARED',
         why: NOT_COMPARED_WHY[l.state] ?? l.state, fingerprint: `${l.quoted}` });
@@ -158,6 +223,7 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
     const currency = (first.currency || '').toUpperCase();
     const given = g.some(r => r.refund_amount != null) ? r2(g.reduce((n, r) => n + (r.refund_amount ?? 0), 0)) : null;
     const ours = docs.flatMap(d => byDoc.get(d) ?? []).filter(t => (t.amount || 0) < 0 && !isHiddenProfit(t));
+    const parts = ours.map(t => ourPart(t, currency));
     let back = 0, recalled = 0, converted = false, ok = true;
     for (const t of ours) {
       const cur = (t.currency || currency).toUpperCase();
@@ -171,7 +237,33 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
     const base = { key: `REFUND|${g.map(r => r.record_id).join('+')}`, kind: 'REFUND' as const, req: first.req_num,
       early: riyadhDay(first.issued_at) < PROFIT_FROM,
       member: (first.team_member || '').trim() || '(no name)', issued: riyadhDay(first.issued_at), docs, currency,
-      toOps: given ?? 0, price: null, commission: null, converted };
+      toOps: given ?? 0, price: null, commission: null, converted, ours: parts };
+    /* Their Refund Amount in the wrong currency, the same as for a sale. */
+    const oc = given !== null && parts.length ? oneCurrency(parts) : '';
+    if (oc && oc !== currency) {
+      const b = r2(parts.reduce((n, p) => n + Math.abs(p.amount), 0)), rc = r2(parts.reduce((n, p) => n + Math.abs(p.commission), 0));
+      if (sameFigure(given!, b, b + rc)) {
+        const g = r2(b + rc), t2 = r2(g - given!);
+        out.push({ ...base, currency: oc, converted: false, writtenAs: currency, price: g, commission: r2(-rc) || 0, net: b,
+          markup: t2, profit: r2(b - given!), result: 'CURRENCY_WRONG',
+          asOurs: t2 < -PRICE_TOLERANCE ? 'REFUND_ABOVE' : t2 > PRICE_TOLERANCE ? 'REFUND_KEPT' : 'REFUND_SAME',
+          fingerprint: `${given}|${b}|${rc}|${currency}` });
+        continue;
+      }
+    }
+    if (oc && HOME.has(oc) && !HOME.has(currency)) {
+      const fx = rateInto(parts, currency, oc);
+      if (fx) {
+        const b = r2(parts.reduce((n, p) => n + Math.abs(p.amount), 0)), rc = r2(parts.reduce((n, p) => n + Math.abs(p.commission), 0));
+        const g = r2(b + rc), mine = r2(given! * fx.rate), t2 = r2(g - mine);
+        out.push({ ...base, currency: oc, toOps: mine, converted: false,
+          theirs: { currency, amount: given!, rate: fx.rate, ownRate: fx.ownRate },
+          price: g, commission: r2(-rc) || 0, net: b, markup: t2, profit: r2(b - mine),
+          result: t2 < -PRICE_TOLERANCE ? 'REFUND_ABOVE' : t2 > PRICE_TOLERANCE ? 'REFUND_KEPT' : 'REFUND_SAME',
+          fingerprint: `${given}|${currency}|${b}|${rc}` });
+        continue;
+      }
+    }
     const why = given === null ? 'No Refund Amount on their sheet' : !ours.length ? 'Refund not in our books yet'
       : !ok ? 'Priced in currencies that cannot be compared' : '';
     if (why) { out.push({ ...base, net: null, markup: null, profit: null, result: 'NOT_COMPARED', why, fingerprint: `${given}` }); continue; }
@@ -197,7 +289,7 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
     out.push({ key: `AV|${t.id}`, kind: 'REFUND', req, member: 'Marked AV', issued: day,
       docs: [t.ticketNo || t.pnr || ''], currency: (t.currency || '').toUpperCase(), toOps: 0,
       price: r2(back + recalled), commission: r2(-recalled) || 0, net: back, markup: r2(back + recalled), profit: back,
-      result: 'AV_PROFIT', converted: false, fingerprint: `${back}|${recalled}` });
+      result: 'AV_PROFIT', converted: false, ours: [ourPart(t)], fingerprint: `${back}|${recalled}` });
   }
   return out.sort((a, b) => a.req.localeCompare(b.req) || a.issued.localeCompare(b.issued) || a.kind.localeCompare(b.kind));
 }
@@ -256,4 +348,61 @@ export function priceTotals(lines: PriceLine[], byRequest = true): PriceTotal[] 
     aviation: r2(t.aviation), price: r2(t.price), toOps: r2(t.toOps), markup: r2(t.markup), belowPrice: r2(t.belowPrice),
     refunds: r2(t.refunds), profit: r2(t.commission + t.aviation) }))
     .sort((a, b) => a.req.localeCompare(b.req) || a.currency.localeCompare(b.currency));
+}
+
+/**
+ * The review beside the file's own ticket list (the user, 26 Nov 2026: the
+ * search showed AED 2,095,008.99 + SAR 7,495 for KSAML2771 and the review
+ * 2,175,158.78 in riyals). The review is read from their sheet, so a ticket
+ * they put in this file that we keep under another request, one they never
+ * gave a refund amount for, or one in another currency moves it. Every such
+ * ticket is named, and what is left is equal by construction.
+ */
+export interface BooksGap {
+  docs: string[]; why: string;
+  /** In the ticket list, by currency (refunds negative). */
+  ours: Record<string, number>;
+  /** In the review's net, by currency (refunds negative). */
+  review: Record<string, number>;
+}
+export interface BooksVsReview {
+  ours: Record<string, number>;
+  review: Record<string, number>;
+  gaps: BooksGap[];
+}
+
+const addTo = (m: Record<string, number>, c: string, v: number) => { if (Math.abs(v) >= 0.005) m[c] = r2((m[c] ?? 0) + v); };
+const sameMoney = (a: Record<string, number>, b: Record<string, number>) =>
+  [...new Set([...Object.keys(a), ...Object.keys(b)])].every(c => Math.abs((a[c] ?? 0) - (b[c] ?? 0)) < 0.01);
+
+/** `books`: the file's tickets in our ledger, as its ticket list shows them (Net = amount). */
+export function booksVsReview(lines: PriceLine[], books: Ticket[]): BooksVsReview {
+  const inBooks = new Map(books.filter(t => (t.status || '').toUpperCase() !== 'FUND').map(t => [t.id, t]));
+  const ours: Record<string, number> = {}, review: Record<string, number> = {};
+  for (const t of inBooks.values()) addTo(ours, (t.currency || '').toUpperCase(), Number(t.amount) || 0);
+  const used = new Set<string>();
+  const gaps: BooksGap[] = [];
+  for (const l of lines) {
+    const sign = l.kind === 'SALE' ? 1 : -1;
+    const r: Record<string, number> = {}, o: Record<string, number> = {};
+    if (l.result !== 'NOT_COMPARED' && l.net != null) { addTo(r, l.currency, sign * l.net); addTo(review, l.currency, sign * l.net); }
+    const parts = (l.ours ?? []).filter(p => !used.has(p.id));
+    parts.forEach(p => used.add(p.id));
+    const mine = parts.filter(p => inBooks.has(p.id)), away = parts.filter(p => !inBooks.has(p.id));
+    for (const p of mine) addTo(o, p.currency, p.amount);
+    if (sameMoney(o, r)) continue;
+    const curs = [...new Set(mine.map(p => p.currency))].join(', ');
+    const why = l.result === 'NOT_COMPARED' ? `Left out of the review: ${l.why || 'not compared'}`
+      : away.length ? `On their sheet for ${l.req}; in ours under ${[...new Set(away.map(p => p.req || '(no request)'))].join(', ')}`
+      : !mine.length ? `On their sheet for ${l.req}; not in this file's ticket list`
+      : curs && curs !== l.currency ? `Their sheet in ${l.currency}, ours in ${curs} (converted at the peg)`
+      : 'Their figure differs from ours';
+    gaps.push({ docs: l.docs, why, ours: o, review: r });
+  }
+  for (const t of inBooks.values()) {
+    if (used.has(t.id) || Math.abs(Number(t.amount) || 0) < 0.005) continue;
+    gaps.push({ docs: [t.ticketNo || t.pnr || ''], why: 'In this file in ours; not on their sheet for it',
+      ours: { [(t.currency || '').toUpperCase()]: r2(Number(t.amount) || 0) }, review: {} });
+  }
+  return { ours, review, gaps };
 }

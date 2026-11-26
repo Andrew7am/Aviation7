@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/test-price-review.ts
  */
-import { classify, priceReview, priceTotals, BLOCKS_CLOSING, needsReason, blocksClosing } from '../src/core/helpers/priceReview';
+import { classify, priceReview, priceTotals, booksVsReview, BLOCKS_CLOSING, needsReason, blocksClosing } from '../src/core/helpers/priceReview';
 import type { ProfitSheetRow } from '../src/core/helpers/aviationProfit';
 import type { Ticket } from '../src/types';
 import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
@@ -169,6 +169,52 @@ console.log('\n9. A whole file: what operations was charged is their sheet, what
   check('before 9 Nov: never asked about, never holding the file', ls.map(l => [needsReason(l), blocksClosing(l)]), [[false, false], [false, false]]);
   const now = priceReview([row({ net_cost: 850 })], [tk({})], { wholeFile: true });
   check('...while from 9 Nov the same is asked about and holds it', now.map(l => [needsReason(l), blocksClosing(l)]), [[true, true]]);
+}
+
+console.log('\n10. KSAML2771: their currency, our books (26 Nov 2026)');
+{
+  // Their 3,960 SAR on our 3,960 AED: our figure in the wrong currency, not 84 riyals below net.
+  const wrong = priceReview([row({ net_cost: 3960, currency: 'SAR' })], [tk({ amount: 3960, commission: 0, totalDoc: 3960 })]);
+  check('the same figure in SAR is a currency written wrong, compared in AED', wrong.map(l => [l.result, l.asOurs, l.currency, l.writtenAs, l.toOps, l.net]),
+    [['CURRENCY_WRONG', 'EXACTLY_NET', 'AED', 'SAR', 3960, 3960]]);
+  check('...and it is not a loss to explain', wrong.map(l => [needsReason(l), blocksClosing(l)]), [[true, false]]);
+  const loss = priceReview([row({ net_cost: 900, currency: 'SAR' })], [tk({ amount: 1000, commission: 0, totalDoc: 1000 })]);
+  check('a real difference in SAR is still converted, and still below net', loss.map(l => [l.result, l.currency]), [['BELOW_NET', 'SAR']]);
+  const fare = priceReview([row({ net_cost: 1000, currency: 'SAR' })], [tk({})]);
+  check('their figure equal to our fare (net + commission) is the same mistake', fare.map(l => [l.result, l.asOurs]), [['CURRENCY_WRONG', 'COMMISSION_ONLY']]);
+
+  // Their 808.40 USD, booked in ours as 2,969.74 AED: into dirhams at the rate it was booked at.
+  const usd = priceReview([row({ net_cost: 808.4, currency: 'USD' })],
+    [tk({ amount: 2969.74, commission: 0, totalDoc: 2969.74, originalCurrency: 'USD', originalAmount: 808.4 } as Partial<Ticket>)]);
+  check('dollars on their sheet become our dirhams, at our booked rate', usd.map(l => [l.result, l.currency, l.toOps, l.net, l.theirs?.currency, l.theirs?.amount, l.theirs?.ownRate]),
+    [['EXACTLY_NET', 'AED', 2969.74, 2969.74, 'USD', 808.4, true]]);
+  const usdPeg = priceReview([row({ net_cost: 1000, currency: 'USD' })], [tk({ amount: 3600, commission: 0, totalDoc: 3600 })]);
+  check('...at the peg when it was not booked from dollars', usdPeg.map(l => [l.currency, l.toOps, l.result, l.theirs?.ownRate]), [['AED', 3672.5, 'MARKUP', false]]);
+  const eur = priceReview([row({ net_cost: 400, currency: 'EUR' })],
+    [tk({ amount: 1700, commission: 0, totalDoc: 1700, originalCurrency: 'EUR', originalAmount: 400 } as Partial<Ticket>)]);
+  check('euros booked in dirhams too: no peg, the booked rate', eur.map(l => [l.result, l.currency, l.toOps]), [['EXACTLY_NET', 'AED', 1700]]);
+  const eurNo = priceReview([row({ net_cost: 400, currency: 'EUR' })], [tk({ amount: 1700, commission: 0, totalDoc: 1700 })]);
+  check('...and with no booked rate, euros are not compared', eurNo.map(l => l.result), ['NOT_COMPARED']);
+  const refundUsd = priceReview([row({ status: 'Cancelled', net_cost: null, refund_amount: 808.4, currency: 'USD' })],
+    [tk({ amount: -2969.74, commission: 0, status: 'REFUND', originalCurrency: 'USD', originalAmount: -808.4 } as Partial<Ticket>)]);
+  check('a refund in dollars, into dirhams the same way', refundUsd.map(l => [l.result, l.currency, l.toOps, l.net]), [['REFUND_SAME', 'AED', 2969.74, 2969.74]]);
+
+  // A dollar total that is left goes into riyals as dirhams first.
+  check('Total in SAR: a dollar is 3.6725 dirhams, then 1.02', inSar({ USD: 100 }).sar, 374.6);
+
+  // Their sheet beside our ticket list.
+  const t1 = tk({ id: 'a' }), t2 = tk({ id: 'b', ticketNo: '5513727401', reqNum: 'KSAFM2864' }),
+    t3 = tk({ id: 'c', ticketNo: '5513727402', amount: -3120, commission: 0, status: 'REFUND' });
+  const rows = [row({}), row({ record_id: 'r2', serials: ['5513727401'], net_cost: 26870 }),
+    row({ record_id: 'r3', serials: ['5513727402'], status: 'Cancelled', net_cost: null, refund_amount: null })];
+  const ls = priceReview(rows, [t1, t2, t3], { requests: ['KSAML2900'], wholeFile: true });
+  const v = booksVsReview(ls, [t1, t3]);
+  check('the ticket list is ours; the review is theirs', [v.ours, v.review], [{ AED: -2220 }, { AED: 1800 }]);
+  check('what moves one from the other is named', v.gaps.map(g => [g.docs.join('/'), g.why.split(';')[0].split(':')[0], g.ours, g.review]).sort((x, y) => String(x[0]).localeCompare(String(y[0]))), [
+    ['5513727401', 'On their sheet for KSAML2900', {}, { AED: 900 }],
+    ['5513727402', 'Left out of the review', { AED: -3120 }, {}],
+  ]);
+  check('...and adds up: list + gaps = review', Math.round((v.ours.AED + v.gaps.reduce((n, g) => n + (g.review.AED ?? 0) - (g.ours.AED ?? 0), 0)) * 100) / 100, v.review.AED);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

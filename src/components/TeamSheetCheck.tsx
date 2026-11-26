@@ -24,6 +24,8 @@ import { priceReview, type PriceLine } from '../core/helpers/priceReview';
 import type { ProfitSheetRow } from '../core/helpers/aviationProfit';
 import { PROFIT_FROM } from '../core/config/profit';
 import { PriceReview, priceBlockers } from './PriceReview';
+import { reqTokensOf } from '../core/helpers/reqTokens';
+import { withoutAvMark } from '../core/helpers/aviationMark';
 
 const xlsx = () => import('xlsx');
 
@@ -899,6 +901,12 @@ export const TeamSheetCheck: React.FC<Props> = ({
     : null), [report, profitRows, tickets, fromDate, toDate, voids, mode, reviewing, declared]);
   const explainedByKey = useMemo(() => new Map(explanations.map(e => [e.findingKey, e])), [explanations]);
   /** A ticket given below our net, or a refund above ours, with no reason: the file waits. */
+  /* One request: its ticket list in ours, to lay the review beside. */
+  const priceBooks = useMemo(() => {
+    if (mode !== 'request' || !reviewing.length) return null;
+    const want = new Set(reviewing.flatMap(reqTokensOf));
+    return tickets.filter(t => reqTokensOf(withoutAvMark(t.reqNum || '')).some(k => want.has(k)));
+  }, [mode, reviewing, tickets]);
   const priceHold = useMemo(() => priceBlockers(priceLines ?? [], explainedByKey), [priceLines, explainedByKey]);
   const priceReason = async (l: PriceLine, note: string) => {
     if (!memory) return;
@@ -1564,7 +1572,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
           )}
 
           {/* Then the prices: commission, the team's markup, and why a ticket went at or below cost. */}
-          <PriceReview lines={priceLines} explanations={explanations} error={priceErr}
+          <PriceReview lines={priceLines} explanations={explanations} error={priceErr} books={priceBooks}
             scope={(mode === 'request' ? reviewing : declared).join(', ') || 'Whole sheet'}
             {...(memory && onAddToLedger ? { onReason: priceReason, onClearReason: priceUnreason } : {})} />
 

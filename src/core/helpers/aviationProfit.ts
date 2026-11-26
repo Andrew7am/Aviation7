@@ -32,6 +32,15 @@ export interface ProfitSheetRow {
 
 export type ProfitState = 'COUNTED' | 'AWAITING_SUPPLIER' | 'NOT_IN_BOOKS' | 'TWO_CURRENCIES';
 
+/** One of our tickets behind a line, as our books have it: its own currency
+ *  and request, so a line can be laid beside the file's ticket list. */
+export interface OurPart { id: string; ticketNo: string; req: string; currency: string; amount: number; commission: number;
+  /** A purchase in dollars or euros, kept in our books in dirhams: what it was before. */
+  origCurrency?: string; origAmount?: number }
+export const ourPart = (t: Ticket, fallback = ''): OurPart => ({ id: t.id, ticketNo: t.ticketNo || t.pnr || '', req: t.reqNum || '',
+  currency: (t.currency || fallback).toUpperCase(), amount: Number(t.amount) || 0, commission: Number(t.commission) || 0,
+  ...(t.originalCurrency && t.originalAmount ? { origCurrency: t.originalCurrency.toUpperCase(), origAmount: Number(t.originalAmount) } : {}) });
+
 export interface ProfitLine {
   key: string; req: string; member: string; issued: string; cell: string; pnr: string;
   docs: string[]; quoted: number; currency: string;
@@ -46,6 +55,10 @@ export interface ProfitLine {
   converted: boolean;
   /** Their one row priced each of its tickets, not the whole cell. */
   perTicket?: boolean;
+  /** Our tickets behind it, where they were found. */
+  ours?: OurPart[];
+  /** TWO_CURRENCIES because their own rows are in two currencies. */
+  mixedSheet?: boolean;
 }
 
 /** SAR, AED and USD are pegged: 1 USD = 3.75 SAR = 3.6725 AED. */
@@ -126,9 +139,10 @@ export function aviationProfit(rows: ProfitSheetRow[], ledger: Ticket[], from = 
       cell: g.map(r => (r.ticket_cell || '').replace(/\s+/g, ' ').trim()).join(' + ').slice(0, 80), pnr: first.pnr || '',
       docs: docs.length ? docs : ours.map(t => t.ticketNo), quoted, currency,
     };
-    if (currencies.length > 1) { out.push({ ...base, cost: null, profit: null, state: 'TWO_CURRENCIES', converted: false }); continue; }
+    const parts = ours.map(t => ourPart(t, currency));
+    if (currencies.length > 1) { out.push({ ...base, cost: null, profit: null, state: 'TWO_CURRENCIES', converted: false, mixedSheet: true }); continue; }
     if (!ours.length) { out.push({ ...base, cost: null, profit: null, state: 'NOT_IN_BOOKS', converted: false }); continue; }
-    if (ours.some(awaitsSupplier)) { out.push({ ...base, cost: null, profit: null, state: 'AWAITING_SUPPLIER', converted: false }); continue; }
+    if (ours.some(awaitsSupplier)) { out.push({ ...base, cost: null, profit: null, state: 'AWAITING_SUPPLIER', converted: false, ours: parts }); continue; }
     let converted = false, cost = 0, comm = 0, ok = true;
     /** One of ours in the quoted currency; null where it cannot be converted. */
     const inQuoted = (t: Ticket, v: number) => {
@@ -141,7 +155,7 @@ export function aviationProfit(rows: ProfitSheetRow[], ledger: Ticket[], from = 
       cost += v; comm += inQuoted(t, t.commission || 0) ?? 0;
       if ((t.currency || currency).toUpperCase() !== currency) converted = true;
     }
-    if (!ok) { out.push({ ...base, cost: null, profit: null, state: 'TWO_CURRENCIES', converted: false }); continue; }
+    if (!ok) { out.push({ ...base, cost: null, profit: null, state: 'TWO_CURRENCIES', converted: false, ours: parts }); continue; }
     /* One row, several tickets: its cost is sometimes the whole cell and
        sometimes each ticket's (UAEVP771: 860.00 on a row of four tickets at
        860.00 each). The reading nearer what the supplier charged is taken. */
@@ -166,7 +180,7 @@ export function aviationProfit(rows: ProfitSheetRow[], ledger: Ticket[], from = 
       }
       quoted = r2(q);
     }
-    out.push({ ...base, quoted, cost: r2(cost), commission: r2(comm), profit: r2(quoted - cost), state: 'COUNTED', converted, perTicket });
+    out.push({ ...base, quoted, cost: r2(cost), commission: r2(comm), profit: r2(quoted - cost), state: 'COUNTED', converted, perTicket, ours: parts });
   }
   return out.sort((a, b) => b.issued.localeCompare(a.issued) || a.req.localeCompare(b.req));
 }

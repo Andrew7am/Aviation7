@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { Download, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import {
-  priceTotals, RESULT_LABEL, RESULT_MEANS, needsReason, blocksClosing,
+  priceTotals, booksVsReview, RESULT_LABEL, RESULT_MEANS, needsReason, blocksClosing,
   type PriceLine, type PriceResult, type PriceTotal,
 } from '../core/helpers/priceReview';
+import type { Ticket } from '../types';
 import { PROFIT_FROM } from '../core/config/profit';
 import type { Explanation } from '../core/helpers/sheetMemory';
-import { totalInSar, useSarTotal, AED_TO_SAR } from '../core/helpers/sarTotal';
+import { totalInSar, useSarTotal, inSar, sarRule, AED_TO_SAR, USD_TO_AED } from '../core/helpers/sarTotal';
 
 /**
  * The file's prices, under its counts: what operations was given against
@@ -17,6 +18,16 @@ const xlsx = () => import('xlsx');
 const fmt = (n: number | null | undefined) => n == null ? '—'
   : n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const signed = (n: number | null | undefined) => n == null ? '—' : `${n > 0.005 ? '+' : ''}${fmt(n)}`;
+const CUR_ORDER = ['SAR', 'AED', 'USD'];
+const curs = (m: Record<string, number>) => Object.keys(m).filter(c => Math.abs(m[c]) >= 0.005)
+  .sort((a, b) => (CUR_ORDER.indexOf(a) + 1 || 9) - (CUR_ORDER.indexOf(b) + 1 || 9) || a.localeCompare(b));
+/** "AED 26,870.00 · SAR 7,495.00", or a dash. */
+const money = (m: Record<string, number>, sign = false) => curs(m).map(c => `${c} ${sign ? signed(m[c]) : fmt(m[c])}`).join(' · ') || '—';
+const minus = (a: Record<string, number>, b: Record<string, number>) => {
+  const m: Record<string, number> = {};
+  for (const c of new Set([...Object.keys(a), ...Object.keys(b)])) m[c] = Math.round(((a[c] ?? 0) - (b[c] ?? 0)) * 100) / 100;
+  return m;
+};
 
 const TONE: Record<PriceResult, string> = {
   MARKUP: 'bg-emerald-50 text-emerald-800 border-emerald-200',
@@ -28,9 +39,10 @@ const TONE: Record<PriceResult, string> = {
   REFUND_KEPT: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   REFUND_ABOVE: 'bg-red-50 text-red-700 border-red-200',
   AV_PROFIT: 'bg-violet-50 text-violet-800 border-violet-200',
+  CURRENCY_WRONG: 'bg-orange-50 text-orange-800 border-orange-200',
   NOT_COMPARED: 'bg-slate-50 text-slate-500 border-slate-200',
 };
-const ORDER: PriceResult[] = ['BELOW_NET', 'REFUND_ABOVE', 'EXACTLY_NET', 'PART_COMMISSION', 'COMMISSION_ONLY', 'MARKUP',
+const ORDER: PriceResult[] = ['BELOW_NET', 'REFUND_ABOVE', 'CURRENCY_WRONG', 'EXACTLY_NET', 'PART_COMMISSION', 'COMMISSION_ONLY', 'MARKUP',
   'AV_PROFIT', 'REFUND_KEPT', 'REFUND_SAME', 'NOT_COMPARED'];
 
 /** The reason written for a line, if it was written at these figures. */
@@ -55,7 +67,9 @@ export const PriceReview: React.FC<{
   error?: string;
   /** "Also in riyals", when the page around it holds the switch. */
   sar?: [boolean, (on: boolean) => void];
-}> = ({ lines, explanations, onReason, onClearReason, scope, error, sar }) => {
+  /** One file: its tickets in our ledger, to lay the review beside its ticket list. */
+  books?: Ticket[] | null;
+}> = ({ lines, explanations, onReason, onClearReason, scope, error, sar, books }) => {
   const byKey = useMemo(() => new Map(explanations.map(e => [e.findingKey, e])), [explanations]);
   const own = useSarTotal();
   const [sarOn, setSarOn] = sar ?? own;
@@ -70,7 +84,10 @@ export const PriceReview: React.FC<{
   const totals = useMemo(() => priceTotals(all, false), [all]);
   /* Riyals and dirhams as one riyal figure (AED x 1.02), beside each
      currency's own - only when there are dirhams to convert. */
-  const sarTotal = useMemo(() => totals.some(t => t.currency === 'AED') ? totalInSar(totals) : null, [totals]);
+  const sarTotal = useMemo(() => totals.some(t => t.currency !== 'SAR') ? totalInSar(totals) : null, [totals]);
+  const rule = sarRule(totals.map(t => t.currency));
+  /* The review beside the file's ticket list: what moves one from the other, named. */
+  const vsBooks = useMemo(() => (books && lines ? booksVsReview(lines, books) : null), [books, lines]);
   const perReq = useMemo(() => priceTotals(all, true), [all]);
   const counts = useMemo(() => {
     const m = new Map<PriceResult, number>();
@@ -108,9 +125,11 @@ export const PriceReview: React.FC<{
       'Our net': l.kind === 'SALE' ? (l.net ?? '') : '', 'Given to operations': l.kind === 'SALE' ? l.toOps : '',
       'Refunded to us': l.kind === 'REFUND' ? (l.net ?? '') : '', 'Refunded to operations': l.kind === 'REFUND' ? l.toOps : '',
       'Aviation profit': l.markup ?? '', 'Our profit (commission + aviation)': l.profit ?? '',
-      'Result': RESULT_LABEL[l.result], 'Before 9 Nov': l.early ? 'yes' : '', 'What it means': l.why || RESULT_MEANS[l.result],
+      'Result': RESULT_LABEL[l.result] + (l.asOurs ? ` (in ${l.currency}: ${RESULT_LABEL[l.asOurs]})` : ''), 'Before 9 Nov': l.early ? 'yes' : '', 'What it means': l.why || RESULT_MEANS[l.result],
       'Reason': reasonFor(l, byKey)?.note ?? '', 'Reason by': reasonFor(l, byKey)?.createdBy ?? '',
       ...(l.converted ? { 'Note': 'Our cost was in another currency, converted at the peg' } : {}),
+      ...(l.theirs ? { 'Their figure': `${l.theirs.currency} ${l.theirs.amount}`, 'Rate': Number(l.theirs.rate.toFixed(4)) } : {}),
+      ...(l.writtenAs ? { 'Note': `Their sheet wrote it in ${l.writtenAs}: our own figure, so compared in ${l.currency}` } : {}),
     });
     const total = (t: PriceTotal) => ({
       'Request': t.req, 'Currency': t.currency, 'Tickets compared': t.tickets,
@@ -123,8 +142,8 @@ export const PriceReview: React.FC<{
     const inSarRow = totalInSar(priceTotals(all, false));
     const summary = XLSX.utils.json_to_sheet([...priceTotals(all, false).map(t => ({ ...total(t), Request: 'ALL' })),
       // Both: each currency's own, and riyals and dirhams as riyals.
-      ...(inSarRow && priceTotals(all, false).some(t => t.currency === 'AED')
-        ? [{ ...total(inSarRow), Request: 'ALL', Currency: `SAR (SAR + AED x ${AED_TO_SAR})` }] : []),
+      ...(inSarRow && sarTotal
+        ? [{ ...total(inSarRow), Request: 'ALL', Currency: `SAR (${sarRule(totals.map(t => t.currency), 'x')})` }] : []),
       ...perReq.map(total)]);
     XLSX.utils.sheet_add_aoa(summary, [[],
       ['Scope', scope], ['Before 9 Nov', `Before ${PROFIT_FROM} their Net Cost was the cost: those tickets are added up but never asked about and never hold a file`],
@@ -140,6 +159,15 @@ export const PriceReview: React.FC<{
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(toExplain.length ? toExplain.map(line) : [{ Request: 'None' }]), 'To explain');
     const skipped = all.filter(l => l.result === 'NOT_COMPARED');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(skipped.length ? skipped.map(line) : [{ Request: 'None' }]), 'Not compared');
+    if (vsBooks) {
+      const bk = XLSX.utils.json_to_sheet([
+        { 'Ticket(s)': 'Ticket list of this file', 'Why': '', 'Ticket list': money(vsBooks.ours), 'Review': '', 'Review - ticket list': '', 'In SAR': inSar(vsBooks.ours).sar },
+        ...vsBooks.gaps.map(g => ({ 'Ticket(s)': g.docs.join(' / '), 'Why': g.why, 'Ticket list': money(g.ours), 'Review': money(g.review),
+          'Review - ticket list': money(minus(g.review, g.ours), true), 'In SAR': Math.round((inSar(g.review).sar - inSar(g.ours).sar) * 100) / 100 })),
+        { 'Ticket(s)': 'Our net in this review', 'Why': '', 'Ticket list': '', 'Review': money(vsBooks.review), 'Review - ticket list': money(minus(vsBooks.review, vsBooks.ours), true), 'In SAR': inSar(vsBooks.review).sar },
+      ]);
+      XLSX.utils.book_append_sheet(wb, bk, 'Books vs review');
+    }
     XLSX.writeFile(wb, `Prices_${scope.replace(/[^A-Za-z0-9_-]+/g, '_')}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
@@ -163,7 +191,7 @@ export const PriceReview: React.FC<{
             : toExplain.length ? `${toExplain.length} to explain, none holding the file` : 'nothing to explain'}
         </span>
         <label className="ml-auto flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer"
-          title="Riyals and dirhams added up in riyals, at 1.02 a dirham, beside each currency's own figures">
+          title={`Riyals and dirhams added up in riyals, at ${AED_TO_SAR} a dirham (a dollar as dirhams first: ${USD_TO_AED}), beside each currency's own figures`}>
           <input type="checkbox" checked={sarOn} onChange={e => setSarOn(e.target.checked)} /> Total in SAR (AED × {AED_TO_SAR})
         </label>
         <button type="button" onClick={() => void exportReport()} disabled={!all.length}
@@ -184,7 +212,7 @@ export const PriceReview: React.FC<{
             <div key={combined ? 'SAR-ALL' : t.currency} className={combined ? 'border-t border-dashed border-slate-300 pt-3' : ''}>
               <div className="text-mini font-bold uppercase text-slate-400 mb-1">
                 {combined
-                  ? <>Total in SAR: SAR + AED × {AED_TO_SAR}{sarTotal?.left.length ? ` · ${sarTotal.left.join(', ')} not included` : ''}</>
+                  ? <>Total in SAR: {rule}{sarTotal?.left.length ? ` · ${sarTotal.left.join(', ')} not included` : ''}</>
                   : <>{t.currency} · {t.tickets} ticket{t.tickets === 1 ? '' : 's'} compared
                     {t.counts.AV_PROFIT ? ` · ${t.counts.AV_PROFIT} refund${t.counts.AV_PROFIT === 1 ? '' : 's'} marked AV` : ''}
                     {t.counts.NOT_COMPARED ? ` · ${t.counts.NOT_COMPARED} not compared (left out, see Not compared)` : ''}</>}
@@ -215,6 +243,46 @@ export const PriceReview: React.FC<{
               </div>
             </div>
           ))}
+
+          {vsBooks && all.length > 0 && (
+            <div className="border border-slate-200 rounded">
+              <div className="px-3 py-2 text-xs text-slate-600 space-y-0.5">
+                <div className="text-mini font-bold uppercase text-slate-400">Our books vs this review</div>
+                <div>This file's ticket list: <b className="font-mono text-slate-800">{money(vsBooks.ours)}</b>
+                  {sarOn && <span className="text-slate-500"> · in SAR <b className="font-mono">{fmt(inSar(vsBooks.ours).sar)}</b></span>}</div>
+                <div>Our net in this review: <b className="font-mono text-slate-800">{money(vsBooks.review)}</b>
+                  {sarOn && <span className="text-slate-500"> · in SAR <b className="font-mono">{fmt(inSar(vsBooks.review).sar)}</b></span>}</div>
+                <div className={vsBooks.gaps.length ? 'text-amber-700' : 'text-emerald-700'}>
+                  {vsBooks.gaps.length
+                    ? `${vsBooks.gaps.length} line${vsBooks.gaps.length === 1 ? '' : 's'} make the difference. The review is read from their sheet; the ticket list from ours.`
+                    : 'The same, currency by currency.'}
+                </div>
+              </div>
+              {vsBooks.gaps.length > 0 && (
+                <div className="overflow-auto max-h-[40vh] border-t border-slate-100">
+                  <table className="w-full text-xs min-w-[760px]">
+                    <thead className="sticky top-0 bg-white"><tr className="text-micro uppercase text-slate-400 border-b border-slate-100">
+                      <th className="px-2 py-1.5 text-left">Ticket</th><th className="px-2 py-1.5 text-left">Why</th>
+                      <th className="px-2 py-1.5 text-right">Ticket list</th><th className="px-2 py-1.5 text-right">Review</th>
+                      <th className="px-2 py-1.5 text-right">Difference</th>{sarOn && <th className="px-2 py-1.5 text-right">In SAR</th>}
+                    </tr></thead>
+                    <tbody>
+                      {vsBooks.gaps.map((g, i) => (
+                        <tr key={i} className="border-b border-slate-50 align-top">
+                          <td className="px-2 py-1 font-mono font-bold text-slate-700">{g.docs.length > 2 ? `${g.docs[0]} +${g.docs.length - 1}` : g.docs.join(' + ')}</td>
+                          <td className="px-2 py-1 text-slate-600">{g.why}</td>
+                          <td className="px-2 py-1 text-right font-mono">{money(g.ours)}</td>
+                          <td className="px-2 py-1 text-right font-mono">{money(g.review)}</td>
+                          <td className="px-2 py-1 text-right font-mono font-bold">{money(minus(g.review, g.ours), true)}</td>
+                          {sarOn && <td className="px-2 py-1 text-right font-mono">{signed(Math.round((inSar(g.review).sar - inSar(g.ours).sar) * 100) / 100)}</td>}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
 
           {perReq.length > 1 && (
             <div className="border border-slate-200 rounded">
@@ -275,7 +343,8 @@ export const PriceReview: React.FC<{
                         <td className="px-2 py-1.5">
                           <div className="font-mono font-bold text-slate-700">{l.kind === 'REFUND' && <span className="font-sans text-mini text-slate-500 mr-1">Refund</span>}
                             {l.docs.length > 2 ? `${l.docs[0]} +${l.docs.length - 1}` : l.docs.join(' + ') || '—'}</div>
-                          <div className="text-mini text-slate-400">{l.member} · {l.issued} · {l.currency}{l.converted ? ' · converted at the peg' : ''}</div>
+                          <div className="text-mini text-slate-400">{l.member} · {l.issued} · {l.currency}{l.converted ? ' · converted at the peg' : ''}{l.writtenAs ? ` · their sheet: ${l.writtenAs}` : ''}{l.theirs
+                            ? ` · their sheet: ${l.theirs.currency} ${fmt(l.theirs.amount)} at ${l.theirs.rate.toFixed(4)}${l.theirs.ownRate ? ' (as booked)' : ' (peg)'}` : ''}</div>
                         </td>
                         <td className="px-2 py-1.5 font-mono text-purple-700">{l.req || '—'}</td>
                         <td className="px-2 py-1.5 text-right font-mono">{fmt(l.price)}</td>
@@ -288,7 +357,11 @@ export const PriceReview: React.FC<{
                           <span className={`inline-block px-1.5 py-0.5 rounded border text-mini font-bold ${TONE[l.result]}`}>{RESULT_LABEL[l.result]}</span>
                           {l.early && l.result !== 'AV_PROFIT' && (
                             <span className="ml-1.5 text-mini text-slate-400" title={`Before ${PROFIT_FROM} their Net Cost was the cost: not asked about`}>before 9 Nov</span>)}
-                          <span className="text-mini text-slate-500 ml-1.5">{l.why || (needs ? RESULT_MEANS[l.result] : '')}</span>
+                          {l.asOurs && <span className={`ml-1.5 inline-block px-1.5 py-0.5 rounded border text-mini font-bold ${TONE[l.asOurs]}`}
+                            title={`Compared in ${l.currency}, the currency of our own figure`}>in {l.currency}: {RESULT_LABEL[l.asOurs]}</span>}
+                          <span className="text-mini text-slate-500 ml-1.5">{l.why || (l.writtenAs
+                            ? `Their sheet wrote our ${l.currency} figure in ${l.writtenAs}: correct the currency there.`
+                            : needs ? RESULT_MEANS[l.result] : '')}</span>
                           {reason && (
                             <div className="mt-1 text-mini text-slate-700">
                               <b>Why:</b> {reason.note}

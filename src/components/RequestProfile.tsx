@@ -163,6 +163,11 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
   /* Read off the price review: charged is their sheet's, aviation is
      charged less our price, in the currency their sheet charged in. */
   const fileTotals = useMemo(() => priceTotals(priceLines ?? [], false), [priceLines]);
+  /* The file's ticket list, as the search shows it: laid beside the review. */
+  const books = useMemo(() => {
+    const key = withoutAvMark(reqNum.trim().toUpperCase());
+    return tickets.filter(t => withoutAvMark(t.reqNum).toUpperCase() === key);
+  }, [tickets, reqNum]);
   const aviation = useMemo(() => {
     const m: Money = {};
     for (const t of fileTotals) add(m, t.currency, t.aviation);
@@ -365,7 +370,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
               </p>
 
               {recent && (
-                <PriceReview lines={priceLines} explanations={reasons} scope={reqNum} error={priceErr} sar={sarSwitch} />
+                <PriceReview lines={priceLines} explanations={reasons} scope={reqNum} error={priceErr} sar={sarSwitch} books={books} />
               )}
 
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
