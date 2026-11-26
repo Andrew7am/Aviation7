@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plane, Upload, LogOut, PlusCircle, Eye, Menu, Moon, Sun, X } from 'lucide-react';
+import { Plane, Upload, LogOut, PlusCircle, Eye, Menu, Moon, Sun, X, ChevronDown, ChevronRight } from 'lucide-react';
 import { useTheme } from '../utils/theme';
 
 /**
@@ -61,6 +61,22 @@ export const Shell: React.FC<Props> = ({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [navOpen]);
+
+  /* One section of the menu open at a time, under its heading (the user,
+     26 Nov 2026): clicking a heading opens it and closes the others. The
+     section of the screen showing opens by itself, however it was reached. */
+  const groupOf = (id: string) => navItems.find(i => i.id === id)?.group ?? '';
+  const [openGroup, setOpenGroup] = useState<string>(() => groupOf(view));
+  useEffect(() => { const g = groupOf(view); if (g) setOpenGroup(g); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
+  const sections = navItems.reduce<{ group: string; items: ShellNavItem[] }[]>((out, item) => {
+    const last = out[out.length - 1];
+    if (last && last.group === (item.group ?? '')) last.items.push(item); else out.push({ group: item.group ?? '', items: [item] });
+    return out;
+  }, []);
+  /* The badge carries the colour, not the item: a red count says something
+     needs doing; the whole row red said it louder than the count could be read. */
+  const badgeTone = (c?: ShellNavItem['badgeColor']) => c === 'red' ? 'bg-red-50 text-red-700 ring-red-200'
+    : c === 'amber' ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-slate-100 text-slate-600 ring-slate-200';
 
   return (
     /* 100dvh rather than 100vh: on a phone, 100vh is the height the viewport
@@ -161,41 +177,50 @@ export const Shell: React.FC<Props> = ({
           </div>
           {navTop?.(() => setNavOpen(false))}
           <nav className="flex-1 px-2.5 pb-3 overflow-y-auto overscroll-contain">
-            {navItems.map((item, i) => {
-              const active  = view === item.id;
-              const heading = item.group && item.group !== navItems[i - 1]?.group ? item.group : '';
-              /* The badge carries the colour, not the item: a red count says
-                 something needs doing; the whole row red said it louder than
-                 the count could be read. */
-              const badge = item.badgeColor === 'red' ? 'bg-red-50 text-red-700 ring-red-200'
-                : item.badgeColor === 'amber' ? 'bg-amber-50 text-amber-800 ring-amber-200'
-                : 'bg-slate-100 text-slate-600 ring-slate-200';
+            {sections.map(sec => {
+              const open = !sec.group || openGroup === sec.group;
+              /* A closed section still says when something in it needs doing. */
+              const urgent = sec.items.some(i => i.badgeColor === 'red' && (i.badge ?? 0) > 0) ? 'red'
+                : sec.items.some(i => i.badgeColor === 'amber' && (i.badge ?? 0) > 0) ? 'amber' : '';
+              const holdsActive = sec.items.some(i => i.id === view);
               return (
-                <React.Fragment key={item.id}>
-                  {heading && (
-                    <div className="px-2.5 pt-4 pb-1 text-micro font-semibold uppercase tracking-widest text-slate-400">
-                      {heading}
-                    </div>
+                <div key={sec.group || '_'}>
+                  {sec.group && (
+                    <button type="button" onClick={() => setOpenGroup(open ? '' : sec.group)} aria-expanded={open}
+                      className={`w-full flex items-center gap-1.5 px-2.5 pt-4 pb-1 text-micro font-semibold uppercase tracking-widest hover:text-slate-600 ${
+                        holdsActive && !open ? 'text-blue-700' : 'text-slate-400'}`}>
+                      {open ? <ChevronDown className="w-3 h-3 shrink-0" /> : <ChevronRight className="w-3 h-3 shrink-0" />}
+                      <span className="flex-1 text-left truncate">{sec.group}</span>
+                      {!open && urgent && (
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${urgent === 'red' ? 'bg-red-500' : 'bg-amber-500'}`}
+                          title="Something in here needs doing" />
+                      )}
+                    </button>
                   )}
-                  <button onClick={() => { onView(item.id); setNavOpen(false); }}
-                    aria-current={active ? 'page' : undefined}
-                    className={`group relative w-full flex items-center gap-2.5 px-2.5 h-10 lg:h-8 rounded-md text-sm lg:text-[13px] transition-colors ${
-                      active ? 'bg-app-nav-active text-blue-800 dark:text-slate-950 font-semibold'
-                             : 'text-slate-600 font-medium hover:bg-slate-50 hover:text-slate-900'}`}>
-                    {/* The active screen: a gold rule at the edge, and the row
-                        a tint of the brand - found at a glance, never shouting. */}
-                    {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-gold-500 dark:hidden" aria-hidden="true" />}
-                    <span className={`shrink-0 ${active ? 'text-gold-600 dark:text-slate-950' : 'text-slate-400 group-hover:text-slate-600'}`}>
-                      {item.icon}
-                    </span>
-                    <span className="flex-1 text-left truncate">{item.label}</span>
-                    {item.badge !== undefined && item.badge > 0 && (
-                      <span className={`text-micro font-semibold px-1.5 min-w-[1.25rem] text-center rounded-full ring-1 ring-inset ${badge}`}>
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                </React.Fragment>
+                  {open && sec.items.map(item => {
+                    const active = view === item.id;
+                    return (
+                      <button key={item.id} onClick={() => { onView(item.id); setNavOpen(false); }}
+                        aria-current={active ? 'page' : undefined}
+                        className={`group relative w-full flex items-center gap-2.5 px-2.5 h-10 lg:h-8 rounded-md text-sm lg:text-[13px] transition-colors ${
+                          active ? 'bg-app-nav-active text-blue-800 dark:text-slate-950 font-semibold'
+                                 : 'text-slate-600 font-medium hover:bg-slate-50 hover:text-slate-900'}`}>
+                        {/* The active screen: a gold rule at the edge, and the row
+                            a tint of the brand - found at a glance, never shouting. */}
+                        {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-r bg-gold-500 dark:hidden" aria-hidden="true" />}
+                        <span className={`shrink-0 ${active ? 'text-gold-600 dark:text-slate-950' : 'text-slate-400 group-hover:text-slate-600'}`}>
+                          {item.icon}
+                        </span>
+                        <span className="flex-1 text-left truncate">{item.label}</span>
+                        {item.badge !== undefined && item.badge > 0 && (
+                          <span className={`text-micro font-semibold px-1.5 min-w-[1.25rem] text-center rounded-full ring-1 ring-inset ${badgeTone(item.badgeColor)}`}>
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
           </nav>
