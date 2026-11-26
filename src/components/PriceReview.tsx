@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Download, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import {
-  priceTotals, RESULT_LABEL, RESULT_MEANS, NEEDS_REASON, BLOCKS_CLOSING,
+  priceTotals, RESULT_LABEL, RESULT_MEANS, needsReason, blocksClosing,
   type PriceLine, type PriceResult, type PriceTotal,
 } from '../core/helpers/priceReview';
 import { PROFIT_FROM } from '../core/config/profit';
@@ -40,7 +40,7 @@ export const reasonFor = (l: PriceLine, byKey: Map<string, Explanation>) => {
 };
 /** Lines that keep the file from closing: a loss with no reason. */
 export const priceBlockers = (lines: PriceLine[], byKey: Map<string, Explanation>) =>
-  lines.filter(l => BLOCKS_CLOSING.has(l.result) && !reasonFor(l, byKey));
+  lines.filter(l => blocksClosing(l) && !reasonFor(l, byKey));
 
 type Filter = 'EXPLAIN' | 'ALL' | PriceResult;
 
@@ -77,7 +77,7 @@ export const PriceReview: React.FC<{
     all.forEach(l => m.set(l.result, (m.get(l.result) ?? 0) + 1));
     return m;
   }, [all]);
-  const toExplain = all.filter(l => NEEDS_REASON.has(l.result));
+  const toExplain = all.filter(needsReason);
   // What needs a reason first, while anything does; otherwise everything.
   const filter: Filter = picked ?? (toExplain.length ? 'EXPLAIN' : 'ALL');
   const blockers = priceBlockers(all, byKey);
@@ -108,7 +108,7 @@ export const PriceReview: React.FC<{
       'Our net': l.kind === 'SALE' ? (l.net ?? '') : '', 'Given to operations': l.kind === 'SALE' ? l.toOps : '',
       'Refunded to us': l.kind === 'REFUND' ? (l.net ?? '') : '', 'Refunded to operations': l.kind === 'REFUND' ? l.toOps : '',
       'Aviation profit': l.markup ?? '', 'Our profit (commission + aviation)': l.profit ?? '',
-      'Result': RESULT_LABEL[l.result], 'What it means': l.why || RESULT_MEANS[l.result],
+      'Result': RESULT_LABEL[l.result], 'Before 9 Nov': l.early ? 'yes' : '', 'What it means': l.why || RESULT_MEANS[l.result],
       'Reason': reasonFor(l, byKey)?.note ?? '', 'Reason by': reasonFor(l, byKey)?.createdBy ?? '',
       ...(l.converted ? { 'Note': 'Our cost was in another currency, converted at the peg' } : {}),
     });
@@ -127,7 +127,7 @@ export const PriceReview: React.FC<{
         ? [{ ...total(inSarRow), Request: 'ALL', Currency: `SAR (SAR + AED x ${AED_TO_SAR})` }] : []),
       ...perReq.map(total)]);
     XLSX.utils.sheet_add_aoa(summary, [[],
-      ['Scope', scope], ['Prices from', `${PROFIT_FROM}: before that their Net Cost was the real cost, so those tickets are counted only`],
+      ['Scope', scope], ['Before 9 Nov', `Before ${PROFIT_FROM} their Net Cost was the cost: those tickets are added up but never asked about and never hold a file`],
       ['Their figures', 'Net Cost (given to operations) and Refund Amount, from their sheet as last uploaded'],
       ['Charged to operations', 'Our net + commission + aviation profit, after refunds'],
       ['Aviation profit', 'Markup above the ticket price, less anything given below it, plus what refunds left with the team'],
@@ -178,7 +178,7 @@ export const PriceReview: React.FC<{
             <div className="flex items-center gap-2 text-xs text-slate-500"><Loader2 className="w-4 h-4 animate-spin" /> Reading their prices…</div>
           )}
           {lines !== null && !all.length && (
-            <p className="text-xs text-slate-500">No ticket of theirs issued from {PROFIT_FROM} here, so there is no price to compare. Tickets before {PROFIT_FROM} are counted only.</p>
+            <p className="text-xs text-slate-500">No ticket of theirs to compare here.</p>
           )}
           {[...totals.map(t => ({ t, sar: false })), ...(sarOn && sarTotal ? [{ t: sarTotal, sar: true }] : [])].map(({ t, sar: combined }) => (
             <div key={combined ? 'SAR-ALL' : t.currency} className={combined ? 'border-t border-dashed border-slate-300 pt-3' : ''}>
@@ -186,7 +186,8 @@ export const PriceReview: React.FC<{
                 {combined
                   ? <>Total in SAR: SAR + AED × {AED_TO_SAR}{sarTotal?.left.length ? ` · ${sarTotal.left.join(', ')} not included` : ''}</>
                   : <>{t.currency} · {t.tickets} ticket{t.tickets === 1 ? '' : 's'} compared
-                    {t.counts.AV_PROFIT ? ` · ${t.counts.AV_PROFIT} refund${t.counts.AV_PROFIT === 1 ? '' : 's'} marked AV` : ''}</>}
+                    {t.counts.AV_PROFIT ? ` · ${t.counts.AV_PROFIT} refund${t.counts.AV_PROFIT === 1 ? '' : 's'} marked AV` : ''}
+                    {t.counts.NOT_COMPARED ? ` · ${t.counts.NOT_COMPARED} not compared (left out, see Not compared)` : ''}</>}
               </div>
               {/* The file the way it is talked about: charged = net + commission + aviation. */}
               <div className="flex flex-wrap items-stretch gap-2">
@@ -268,7 +269,7 @@ export const PriceReview: React.FC<{
                 <tbody>
                   {shown.map(l => {
                     const reason = reasonFor(l, byKey), old = byKey.get(l.key);
-                    const needs = NEEDS_REASON.has(l.result), blocks = BLOCKS_CLOSING.has(l.result) && !reason;
+                    const needs = needsReason(l), blocks = blocksClosing(l) && !reason;
                     return (
                       <tr key={l.key} className={`border-b border-slate-50 align-top ${blocks ? 'bg-red-50/40' : ''}`}>
                         <td className="px-2 py-1.5">
@@ -285,6 +286,8 @@ export const PriceReview: React.FC<{
                         <td className={`px-2 py-1.5 text-right font-mono font-bold ${(l.profit ?? 0) < -0.005 ? 'text-red-600' : ''}`}>{signed(l.profit)}</td>
                         <td className="px-2 py-1.5 min-w-[260px]">
                           <span className={`inline-block px-1.5 py-0.5 rounded border text-mini font-bold ${TONE[l.result]}`}>{RESULT_LABEL[l.result]}</span>
+                          {l.early && l.result !== 'AV_PROFIT' && (
+                            <span className="ml-1.5 text-mini text-slate-400" title={`Before ${PROFIT_FROM} their Net Cost was the cost: not asked about`}>before 9 Nov</span>)}
                           <span className="text-mini text-slate-500 ml-1.5">{l.why || (needs ? RESULT_MEANS[l.result] : '')}</span>
                           {reason && (
                             <div className="mt-1 text-mini text-slate-700">
@@ -319,7 +322,8 @@ export const PriceReview: React.FC<{
             <p className="text-mini text-slate-400">
               Price = our net + the supplier's commission. Aviation profit = given to operations − price; profit = commission + aviation profit.
               A refund compares their Refund Amount with what the supplier gave us back. A difference of 1.00 or less is rounding.
-              Their figures come from their sheet as last uploaded on the Airtable page. From {PROFIT_FROM}; earlier tickets are counted only.
+              Their figures come from their sheet as last uploaded on the Airtable page. Before {PROFIT_FROM} their Net Cost was the cost: those
+              tickets are added up but never asked about and never hold a file.
             </p>
           </>)}
         </div>

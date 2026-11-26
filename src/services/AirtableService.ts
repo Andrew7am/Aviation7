@@ -97,6 +97,19 @@ export class AirtableService {
       team_member: r.team_member ?? '', portal: r.portal ?? '', airline: r.airline ?? '', ticket_cell: r.ticket_cell ?? '', emd: r.emd ?? '' }));
   }
 
+  /** Their rows for these requests, whatever their date: a file's whole sheet. */
+  async profitRowsFor(requests: string[]): Promise<ProfitSheetRow[]> {
+    const keys = [...new Set(requests.map(r => (r || '').toUpperCase().replace(/[^A-Z0-9]/g, '')).filter(Boolean))];
+    if (!keys.length) return [];
+    const rows = await fetchAllRows<any>((f, t) =>
+      supabase.from('airtable_tickets').select('record_id, serials, pnr, status, req_num, net_cost, refund_amount, currency, issued_at, team_member, portal, airline, ticket_cell, emd:sheet_row->>"EMD Number"')
+        .eq('deleted', false).or(keys.map(k => `req_num.ilike.%${k}%`).join(',')).range(f, t));
+    return rows.map(r => ({ record_id: r.record_id, serials: r.serials ?? [], pnr: r.pnr ?? '', status: r.status ?? '', req_num: r.req_num ?? '',
+      net_cost: r.net_cost == null ? null : Number(r.net_cost), refund_amount: r.refund_amount == null ? null : Number(r.refund_amount),
+      currency: r.currency ?? '', issued_at: r.issued_at ?? null, team_member: r.team_member ?? '', portal: r.portal ?? '',
+      airline: r.airline ?? '', ticket_cell: r.ticket_cell ?? '', emd: r.emd ?? '' }));
+  }
+
   async reqSources(): Promise<{ serials: string[]; emd: string; pnr: string; req_num: string; status: string; portal: string; airline: string; issued: string | null }[]> {
     const rows = await fetchAllRows<any>((from, to) =>
       // The EMD cell alone, not the whole sheet: 2.5 MB of a 2.8 MB read, every import.

@@ -144,37 +144,37 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
 
   const copyRows = useMemo(() => copyableTickets(r.sorted), [r.sorted]);
 
-  /* Its prices from 9 Nov: what operations was charged, our net, the
-     commission and the aviation team's profit, ticket by ticket. Read only
-     when the request has something from that day on. */
-  const recent = r.rows.some(t => (t.date || '') >= PROFIT_FROM || isAviationMarked(t.reqNum));
+  /* The whole file: what operations was charged is their sheet's (Net Cost,
+     less Refund Amount); ours is the price, net + commission; the rest is
+     the aviation team's, ticket by ticket (the user, 26 Nov 2026). */
+  const recent = r.rows.length > 0;
   const [sheetRows, setSheetRows] = useState<ProfitSheetRow[] | null>(null);
   const [reasons, setReasons] = useState<Explanation[]>([]);
   const [priceErr, setPriceErr] = useState('');
   useEffect(() => {
     if (!recent) return;
-    new AirtableService().profitRows(PROFIT_FROM).then(setSheetRows)
+    new AirtableService().profitRowsFor([withoutAvMark(reqNum)]).then(setSheetRows)
       .catch(e => setPriceErr(`Their prices could not be read: ${e instanceof Error ? e.message : String(e)}`));
     new TeamSheetMemoryService('').explanations().then(setReasons).catch(() => setReasons([]));
-  }, [recent]);
+  }, [recent, reqNum]);
   const priceLines = useMemo(() => sheetRows
-    ? priceReview(sheetRows, tickets, { voided: voidedNos ?? [], requests: [reqNum] }) : null,
+    ? priceReview(sheetRows, tickets, { voided: voidedNos ?? [], requests: [withoutAvMark(reqNum)], wholeFile: true }) : null,
     [sheetRows, tickets, voidedNos, reqNum]);
-  /* The whole file the user's way: charged to operations = our net +
-     commission + aviation profit. Net and commission are every row's; the
-     aviation profit is what the price review found, from 9 Nov and AV. */
+  /* Read off the price review: charged is their sheet's, aviation is
+     charged less our price, in the currency their sheet charged in. */
+  const fileTotals = useMemo(() => priceTotals(priceLines ?? [], false), [priceLines]);
   const aviation = useMemo(() => {
     const m: Money = {};
-    for (const t of priceTotals(priceLines ?? [], false)) add(m, t.currency, t.aviation);
+    for (const t of fileTotals) add(m, t.currency, t.aviation);
     return m;
-  }, [priceLines]);
+  }, [fileTotals]);
   const sarSwitch = useSarTotal();
   const [sarOn, setSarOn] = sarSwitch;
   const charged = useMemo(() => {
     const m: Money = {};
-    for (const src of [r.net, r.commission, aviation]) for (const [c, v] of Object.entries(src)) add(m, c, v);
+    for (const t of fileTotals) add(m, t.currency, t.charged);
     return m;
-  }, [r.net, r.commission, aviation]);
+  }, [fileTotals]);
 
   const copyAll = async () => {
     if (copyRows.length === 0) return;
@@ -335,7 +335,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
                 <Tile label="Net" value={show(r.net)} tone="text-slate-900" />
                 <Tile label="Commission" value={show(r.commission)} tone="text-sky-700" />
                 <Tile label="Aviation profit" value={recent && !priceLines && !priceErr ? '…' : show(aviation)} tone="text-emerald-700" />
-                <Tile label="Charged to operations" value={recent && !priceLines && !priceErr ? '…' : show(charged)} tone="text-slate-900" />
+                <Tile label="Charged to operations (their sheet)" value={recent && !priceLines && !priceErr ? '…' : show(charged)} tone="text-slate-900" />
               </div>
               {/* Riyals and dirhams as one riyal figure, beside the above - when asked. */}
               <div className="-mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
@@ -359,8 +359,9 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
                 })()}
               </div>
               <p className="text-mini text-slate-400 -mt-2">
-                Charged to operations = net + commission + aviation profit. Aviation profit is counted from {PROFIT_FROM} (their Net Cost
-                against ours) and from refunds marked AV; before {PROFIT_FROM} their price was the cost.
+                Net and commission are every row of ours. Charged to operations is their sheet: Net Cost less Refund Amount, for the
+                tickets matched to ours. Aviation profit is charged less our price (net + commission), ticket by ticket below,
+                plus refunds marked AV. Before {PROFIT_FROM} their Net Cost was the cost, so a difference then is how they wrote it.
               </p>
 
               {recent && (

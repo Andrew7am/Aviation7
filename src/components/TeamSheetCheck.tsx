@@ -883,15 +883,19 @@ export const TeamSheetCheck: React.FC<Props> = ({
      Airtable page - each time a sheet is checked; it is a few hundred rows. */
   const [profitRows, setProfitRows] = useState<ProfitSheetRow[] | null>(null);
   const [priceErr, setPriceErr] = useState('');
+  /* One request is a whole file: every ticket of it, whatever its date. The
+     whole sheet stays from 9 Nov - before that, their Net Cost was the cost. */
+  const reviewKey = mode === 'request' ? reviewing.join(',') : '';
   useEffect(() => {
     if (!rows) return;
-    setPriceErr('');
-    new AirtableService().profitRows(PROFIT_FROM).then(setProfitRows)
+    setPriceErr(''); setProfitRows(null);
+    const svc = new AirtableService();
+    (reviewKey ? svc.profitRowsFor(reviewKey.split(',')) : svc.profitRows(PROFIT_FROM)).then(setProfitRows)
       .catch(e => setPriceErr(`Their prices could not be read: ${e instanceof Error ? e.message : String(e)}`));
-  }, [rows]);
+  }, [rows, reviewKey]);
   const priceLines = useMemo<PriceLine[] | null>(() => (report && profitRows
     ? priceReview(profitRows, tickets, { from: fromDate, to: toDate, voided: voids.map(v => v.ticketNo),
-        requests: mode === 'request' ? reviewing : declared })
+        requests: mode === 'request' ? reviewing : declared, wholeFile: mode === 'request' })
     : null), [report, profitRows, tickets, fromDate, toDate, voids, mode, reviewing, declared]);
   const explainedByKey = useMemo(() => new Map(explanations.map(e => [e.findingKey, e])), [explanations]);
   /** A ticket given below our net, or a refund above ours, with no reason: the file waits. */

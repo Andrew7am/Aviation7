@@ -49,11 +49,19 @@ export const NEEDS_REASON = new Set<PriceResult>(['PART_COMMISSION', 'EXACTLY_NE
 /** Results that keep a file from closing until a reason is written. */
 export const BLOCKS_CLOSING = new Set<PriceResult>(['BELOW_NET', 'REFUND_ABOVE']);
 
+/* Before 9 Nov their Net Cost was the cost, so a ticket then at or below
+   ours is how they wrote it, not a decision: shown and added up, never asked
+   about, never holding a file. */
+export const needsReason = (l: Pick<PriceLine, 'result' | 'early'>) => NEEDS_REASON.has(l.result) && !l.early;
+export const blocksClosing = (l: Pick<PriceLine, 'result' | 'early'>) => BLOCKS_CLOSING.has(l.result) && !l.early;
+
 export interface PriceLine {
   /** Stable across runs: the reason written for it is kept against this. */
   key: string;
   kind: 'SALE' | 'REFUND';
   req: string; member: string; issued: string; docs: string[]; currency: string;
+  /** Issued before 9 Nov, when their Net Cost was the cost. */
+  early?: boolean;
   /** The fare: our net + the commission. A refund has none. */
   price: number | null;
   commission: number | null;
@@ -96,10 +104,14 @@ export interface PriceOptions {
   voided?: Iterable<string>;
   /** Only these requests - their request or ours. Empty: every request. */
   requests?: string[];
+  /** A whole file: every ticket of it, whatever its date (the user, 26 Nov
+   *  2026: what operations was charged is their sheet, for all of it).
+   *  Without it, from 9 Nov. */
+  wholeFile?: boolean;
 }
 
 export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: PriceOptions = {}): PriceLine[] {
-  const from = !opts.from || opts.from < PROFIT_FROM ? PROFIT_FROM : opts.from, to = opts.to || '';
+  const from = opts.wholeFile ? (opts.from || '') : !opts.from || opts.from < PROFIT_FROM ? PROFIT_FROM : opts.from, to = opts.to || '';
   const voided = [...(opts.voided ?? [])];
   const gone = new Set(voided.map(ticketMatchKey).filter(Boolean));
   const byDoc = new Map<string, Ticket[]>();
@@ -124,7 +136,7 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
       continue;
     }
     const commission = l.commission ?? 0, price = r2(l.cost + commission);
-    out.push({ ...base, price, commission, net: l.cost, markup: r2(l.quoted - price), profit: r2(l.quoted - l.cost),
+    out.push({ ...base, early: l.issued < PROFIT_FROM, price, commission, net: l.cost, markup: r2(l.quoted - price), profit: r2(l.quoted - l.cost),
       result: classify(l.quoted, l.cost, commission), fingerprint: `${l.quoted}|${l.cost}|${commission}` });
   }
 
@@ -157,6 +169,7 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
       back += v; if (cur !== currency) converted = true;
     }
     const base = { key: `REFUND|${g.map(r => r.record_id).join('+')}`, kind: 'REFUND' as const, req: first.req_num,
+      early: riyadhDay(first.issued_at) < PROFIT_FROM,
       member: (first.team_member || '').trim() || '(no name)', issued: riyadhDay(first.issued_at), docs, currency,
       toOps: given ?? 0, price: null, commission: null, converted };
     const why = given === null ? 'No Refund Amount on their sheet' : !ours.length ? 'Refund not in our books yet'

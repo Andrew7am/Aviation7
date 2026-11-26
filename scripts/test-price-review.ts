@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/test-price-review.ts
  */
-import { classify, priceReview, priceTotals, BLOCKS_CLOSING } from '../src/core/helpers/priceReview';
+import { classify, priceReview, priceTotals, BLOCKS_CLOSING, needsReason, blocksClosing } from '../src/core/helpers/priceReview';
 import type { ProfitSheetRow } from '../src/core/helpers/aviationProfit';
 import type { Ticket } from '../src/types';
 import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
@@ -153,6 +153,22 @@ check('another currency is left out and named', inSar({ SAR: 100, EUR: 403 }), {
   const t = totalInSar(priceTotals(ls, false))!;
   check('the price totals as one riyal figure', [t.currency, t.charged, t.net, t.commission, t.aviation], ['SAR', 1622, 1368, 102, 152]);
   check('...and it still adds up', Math.round((t.net + t.commission + t.aviation) * 100) / 100, t.charged);
+}
+
+console.log('\n9. A whole file: what operations was charged is their sheet, whatever the date');
+{
+  const old = { issued_at: '2026-10-20T08:00:00Z' };
+  const rows = [row({ ...old, net_cost: 1200 }), row({ ...old, record_id: 'r2', serials: ['5513727401'], net_cost: 850 })];
+  const ledger = [tk({ date: '2026-10-20' }), tk({ ticketNo: '5513727401', date: '2026-10-20' })];
+  check('without it, a file before 9 Nov has no prices', priceReview(rows, ledger, { requests: ['KSAML2900'] }).length, 0);
+  const ls = priceReview(rows, ledger, { requests: ['KSAML2900'], wholeFile: true });
+  check('with it: their 1,200 on our 1,000 fare is 200 to the team', ls.map(l => [l.result, l.toOps, l.price, l.markup, l.early]),
+    [['MARKUP', 1200, 1000, 200, true], ['BELOW_NET', 850, 1000, -150, true]]);
+  const [t] = priceTotals(ls, false);
+  check('charged is their sheet: 1,200 + 850', [t.charged, t.net, t.commission, t.aviation], [2050, 1800, 200, 50]);
+  check('before 9 Nov: never asked about, never holding the file', ls.map(l => [needsReason(l), blocksClosing(l)]), [[false, false], [false, false]]);
+  const now = priceReview([row({ net_cost: 850 })], [tk({})], { wholeFile: true });
+  check('...while from 9 Nov the same is asked about and holds it', now.map(l => [needsReason(l), blocksClosing(l)]), [[true, true]]);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
