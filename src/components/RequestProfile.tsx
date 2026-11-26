@@ -370,7 +370,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
               </p>
 
               {recent && (
-                <PriceReview lines={priceLines} explanations={reasons} scope={reqNum} error={priceErr} sar={sarSwitch} books={books} />
+                <PriceReview lines={priceLines} explanations={reasons} scope={reqNum} error={priceErr} sar={sarSwitch} books={books} sheet={sheetRows} />
               )}
 
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">

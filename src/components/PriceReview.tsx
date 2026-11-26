@@ -5,6 +5,7 @@ import {
   type PriceLine, type PriceResult, type PriceTotal,
 } from '../core/helpers/priceReview';
 import type { Ticket } from '../types';
+import type { ProfitSheetRow } from '../core/helpers/aviationProfit';
 import { PROFIT_FROM } from '../core/config/profit';
 import type { Explanation } from '../core/helpers/sheetMemory';
 import { totalInSar, useSarTotal, inSar, sarRule, AED_TO_SAR, USD_TO_AED } from '../core/helpers/sarTotal';
@@ -69,7 +70,9 @@ export const PriceReview: React.FC<{
   sar?: [boolean, (on: boolean) => void];
   /** One file: its tickets in our ledger, to lay the review beside its ticket list. */
   books?: Ticket[] | null;
-}> = ({ lines, explanations, onReason, onClearReason, scope, error, sar, books }) => {
+  /** Their rows behind the review, to say what became of ours it has no line for. */
+  sheet?: ProfitSheetRow[] | null;
+}> = ({ lines, explanations, onReason, onClearReason, scope, error, sar, books, sheet }) => {
   const byKey = useMemo(() => new Map(explanations.map(e => [e.findingKey, e])), [explanations]);
   const own = useSarTotal();
   const [sarOn, setSarOn] = sar ?? own;
@@ -87,7 +90,7 @@ export const PriceReview: React.FC<{
   const sarTotal = useMemo(() => totals.some(t => t.currency !== 'SAR') ? totalInSar(totals) : null, [totals]);
   const rule = sarRule(totals.map(t => t.currency));
   /* The review beside the file's ticket list: what moves one from the other, named. */
-  const vsBooks = useMemo(() => (books && lines ? booksVsReview(lines, books) : null), [books, lines]);
+  const vsBooks = useMemo(() => (books && lines ? booksVsReview(lines, books, sheet ?? []) : null), [books, lines, sheet]);
   const perReq = useMemo(() => priceTotals(all, true), [all]);
   const counts = useMemo(() => {
     const m = new Map<PriceResult, number>();

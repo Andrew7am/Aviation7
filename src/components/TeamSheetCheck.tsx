@@ -1572,7 +1572,7 @@ export const TeamSheetCheck: React.FC<Props> = ({
           )}
 
           {/* Then the prices: commission, the team's markup, and why a ticket went at or below cost. */}
-          <PriceReview lines={priceLines} explanations={explanations} error={priceErr} books={priceBooks}
+          <PriceReview lines={priceLines} explanations={explanations} error={priceErr} books={priceBooks} sheet={profitRows}
             scope={(mode === 'request' ? reviewing : declared).join(', ') || 'Whole sheet'}
             {...(memory && onAddToLedger ? { onReason: priceReason, onClearReason: priceUnreason } : {})} />
 

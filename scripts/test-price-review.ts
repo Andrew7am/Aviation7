@@ -73,7 +73,7 @@ check('not refunded to us yet', ref(800, null).map(x => [x[0], x[4]]), [['NOT_CO
 console.log('\n5. Totals add up');
 const lines = priceReview([
   row({}), row({ record_id: 'r2', serials: ['5513727402'], net_cost: 850 }),
-  row({ record_id: 'r3', serials: ['5513727403'], status: 'Cancelled/Refunded', refund_amount: 750 }),
+  row({ record_id: 'r3', serials: ['5513727403'], status: 'Cancelled/Refunded', net_cost: null, refund_amount: 750 }),
 ], [tk({}), tk({ ticketNo: '5513727402' }), tk({ ticketNo: '5513727403', amount: -800, commission: 0 })]);
 const [t] = priceTotals(lines);
 check('commission, markup, below price, refunds', [t.commission, t.markup, t.belowPrice, t.refunds], [200, 100, -150, 50]);
@@ -215,6 +215,20 @@ console.log('\n10. KSAML2771: their currency, our books (26 Nov 2026)');
     ['5513727402', 'Left out of the review', { AED: -3120 }, {}],
   ]);
   check('...and adds up: list + gaps = review', Math.round((v.ours.AED + v.gaps.reduce((n, g) => n + (g.review.AED ?? 0) - (g.ours.AED ?? 0), 0)) * 100) / 100, v.review.AED);
+}
+
+console.log('\n11. A sale later refunded: their row turned Cancelled/Refunded (KSAML1145)');
+{
+  // Their one row: charged 2,140, then 2,000 given back. Ours: the sale and the refund.
+  const ledger = [tk({ amount: 2140, commission: 0, totalDoc: 2140 }), tk({ amount: -2100, commission: 0, status: 'REFUND' })];
+  const ls = priceReview([row({ status: 'Cancelled/Refunded', net_cost: 2140, refund_amount: 2000 })], ledger, { wholeFile: true });
+  check('the sale is counted, then the refund', ls.map(l => [l.kind, l.result, l.toOps, l.net]), [['REFUND', 'REFUND_KEPT', 2000, 2100], ['SALE', 'EXACTLY_NET', 2140, 2140]]);
+  const [t] = priceTotals(ls, false);
+  check('charged = 2,140 - 2,000; our net = 2,140 - 2,100', [t.charged, t.net, t.aviation], [140, 40, 100]);
+  check('...and the ticket list agrees with the review', booksVsReview(ls, ledger).gaps.length, 0);
+  // A refund on a row of its own beside the Issued row is only the refund.
+  const two = priceReview([row({ net_cost: 2140 }), row({ record_id: 'r2', status: 'Cancelled/Refunded', net_cost: 2140, refund_amount: 2000 })], ledger, { wholeFile: true });
+  check('...never the sale twice', two.filter(l => l.kind === 'SALE').length, 1);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

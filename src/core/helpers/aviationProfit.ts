@@ -80,13 +80,22 @@ const nearDay = (a: string, b: string) => {
 
 export function aviationProfit(rows: ProfitSheetRow[], ledger: Ticket[], from = PROFIT_FROM, to = '',
   /** Documents the supplier voided: never billed, so no cost and no profit. */
-  voided: Iterable<string> = []): ProfitLine[] {
+  voided: Iterable<string> = [],
+  /** Sales later refunded count too: their row turned "Cancelled/Refunded",
+   *  its Net Cost still what operations was charged (KSAML1145, 26 Nov 2026).
+   *  For a file's money, where the refund is taken off after it. */
+  opts: { refunded?: boolean } = {}): ProfitLine[] {
   const gone = new Set([...voided].map(ticketMatchKey).filter(Boolean));
-  const priced = rows.filter(r => /^(issued|reissue)$/i.test((r.status || '').trim()) && (r.net_cost ?? 0) > 0)
-    .filter(r => { const d = riyadhDay(r.issued_at); return d >= from && (!to || d <= to); });
-
   const docsOf = (r: ProfitSheetRow) => [...new Set([...r.serials, ...teamSerials(r.emd || '').map(x => x.serial)]
     .map(ticketMatchKey).filter(k => k && !isBookingRef(k)))];
+  const isSale = (r: ProfitSheetRow) => /^(issued|reissue)$/i.test((r.status || '').trim());
+  /* A refund on a row of its own beside the Issued row is only the refund;
+     the row itself turned to a refund is the sale as well. */
+  const onSaleRows = new Set(rows.filter(isSale).flatMap(docsOf));
+  const refundedSale = (r: ProfitSheetRow) => !!opts.refunded && /cancel|refund/i.test(r.status || '')
+    && docsOf(r).length > 0 && !docsOf(r).some(d => onSaleRows.has(d));
+  const priced = rows.filter(r => (isSale(r) || refundedSale(r)) && (r.net_cost ?? 0) > 0)
+    .filter(r => { const d = riyadhDay(r.issued_at); return d >= from && (!to || d <= to); });
 
   /* One ticket can sit on two of their rows - an Issued row at the fare and a
      Reissue row at the change fee - so rows naming the same document are one

@@ -160,7 +160,7 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
     || docs.some(d => (byDoc.get(ticketMatchKey(d)) ?? []).some(t => reqTokensOf(t.reqNum || '').some(r => want.has(r))));
 
   const out: PriceLine[] = [];
-  for (const l of aviationProfit(rows, ledger, from, to, voided)) {
+  for (const l of aviationProfit(rows, ledger, from, to, voided, { refunded: true })) {
     if (!inScope(l.req, l.docs)) continue;
     const base = { key: `PRICE|${l.key}`, kind: 'SALE' as const, req: l.req, member: l.member, issued: l.issued,
       docs: l.docs, currency: l.currency, toOps: l.quoted, converted: l.converted, ours: l.ours };
@@ -375,8 +375,27 @@ const addTo = (m: Record<string, number>, c: string, v: number) => { if (Math.ab
 const sameMoney = (a: Record<string, number>, b: Record<string, number>) =>
   [...new Set([...Object.keys(a), ...Object.keys(b)])].every(c => Math.abs((a[c] ?? 0) - (b[c] ?? 0)) < 0.01);
 
-/** `books`: the file's tickets in our ledger, as its ticket list shows them (Net = amount). */
-export function booksVsReview(lines: PriceLine[], books: Ticket[]): BooksVsReview {
+/** `books`: the file's tickets in our ledger, as its ticket list shows them (Net = amount).
+ *  `sheet`: their rows, to say what became of a ticket of ours the review has no line for. */
+export function booksVsReview(lines: PriceLine[], books: Ticket[], sheet: ProfitSheetRow[] = []): BooksVsReview {
+  const theirs = new Map<string, ProfitSheetRow[]>();
+  for (const r of sheet) for (const d of [...r.serials, ...String(r.emd || '').split(/[^0-9A-Z]+/i)]) {
+    const k = ticketMatchKey(d || '');
+    if (k && !isBookingRef(k)) theirs.set(k, [...(theirs.get(k) ?? []), r]);
+  }
+  /** Why the review has no line for one of ours. */
+  const whyNoLine = (t: Ticket) => {
+    const rs = theirs.get(ticketMatchKey(t.ticketNo || '')) ?? [];
+    if (!rs.length) return 'In this file in ours; not on their sheet';
+    const mine = reqTokensOf(withoutAvMark(t.reqNum || ''));
+    const here = rs.filter(r => reqTokensOf(r.req_num).some(x => mine.includes(x)));
+    if (!here.length) return `In this file in ours; on their sheet under ${[...new Set(rs.map(r => r.req_num || '(no request)'))].join(', ')}`;
+    const states = [...new Set(here.map(r => (r.status || '').trim() || '(no status)'))].join(', ');
+    if ((Number(t.amount) || 0) < 0 && !here.some(r => /cancel|refund/i.test(r.status || '')))
+      return `Refunded in ours; their sheet still shows it ${states}`;
+    if ((Number(t.amount) || 0) > 0 && !here.some(r => (r.net_cost ?? 0) > 0)) return `On their sheet with no Net Cost (${states})`;
+    return `On their sheet (${states}); not compared`;
+  };
   const inBooks = new Map(books.filter(t => (t.status || '').toUpperCase() !== 'FUND').map(t => [t.id, t]));
   const ours: Record<string, number> = {}, review: Record<string, number> = {};
   for (const t of inBooks.values()) addTo(ours, (t.currency || '').toUpperCase(), Number(t.amount) || 0);
@@ -401,7 +420,7 @@ export function booksVsReview(lines: PriceLine[], books: Ticket[]): BooksVsRevie
   }
   for (const t of inBooks.values()) {
     if (used.has(t.id) || Math.abs(Number(t.amount) || 0) < 0.005) continue;
-    gaps.push({ docs: [t.ticketNo || t.pnr || ''], why: 'In this file in ours; not on their sheet for it',
+    gaps.push({ docs: [t.ticketNo || t.pnr || ''], why: whyNoLine(t),
       ours: { [(t.currency || '').toUpperCase()]: r2(Number(t.amount) || 0) }, review: {} });
   }
   return { ours, review, gaps };
