@@ -763,12 +763,19 @@ export const TicketTable: React.FC<TicketTableProps> = ({
   /** Bulk-close operates on the entire filtered result set — so the natural
    *  workflow is: search by req num (or any filter), then click Close All /
    *  Reopen All to flip every currently-visible ticket at once. */
+  /* Only what would change: rows already closed are not offered for closing
+     again, so "Close (378)" over 378 closed rows never reads as work left
+     (the user, 26 Nov 2026). Top-ups are not tickets to close. */
+  const closable = (t: Ticket) => t.status !== 'FUND' && (!canClose || canClose(t));
+  const toClose = useMemo(() => filtered.filter(t => !t.closed && t.status !== 'FUND'), [filtered]);
+  const toReopen = useMemo(() => filtered.filter(t => t.closed), [filtered]);
   const applyBulkClosed = async (closed: boolean) => {
     if (!onBulkUpdateClosed) return;
-    const targets = filtered.filter(t => !canClose || canClose(t)).map(t => t.id);
+    const pool = closed ? toClose : toReopen;
+    const targets = pool.filter(closable).map(t => t.id);
     if (targets.length === 0) return;
     const label = closed ? 'Close' : 'Reopen';
-    const left = filtered.length - targets.length;
+    const left = pool.length - targets.length;
     // Name the count and say it follows the filter — this flips every visible
     // row, so the user needs to know the filter is the selection.
     if (!confirm(`${label} all ${targets.length} ticket${targets.length !== 1 ? 's' : ''} in the current filter?`
@@ -1654,24 +1661,35 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
           {/* Bulk close / reopen — operates on entire filtered set */}
           {onBulkUpdateClosed && filtered.length > 0 && (searchTerm || closedFilter !== 'ALL' || travelFilter !== 'ALL' || filterTicket || filterAL || filterPax || filterPNR || filterCost || sourceSel.length > 0 || dateFrom || dateTo) && (
             <>
-              <button
-                onClick={() => applyBulkClosed(true)}
-                disabled={bulkClosedBusy}
-                title={`Mark all ${filtered.length} filtered tickets as Closed`}
-                className="px-2 py-1.5 bg-emerald-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-40 flex items-center gap-1"
-              >
-                <CheckCircle2 className="w-3 h-3" />
-                Close ({filtered.length})
-              </button>
-              <button
-                onClick={() => applyBulkClosed(false)}
-                disabled={bulkClosedBusy}
-                title={`Mark all ${filtered.length} filtered tickets as Not Closed`}
-                className="px-2 py-1.5 bg-orange-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1"
-              >
-                <Circle className="w-3 h-3" />
-                Reopen
-              </button>
+              {toClose.length > 0 ? (
+                <button
+                  onClick={() => applyBulkClosed(true)}
+                  disabled={bulkClosedBusy}
+                  title={`Close the ${toClose.length} not closed of the ${filtered.length} filtered tickets`}
+                  className="px-2 py-1.5 bg-emerald-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-emerald-700 disabled:opacity-40 flex items-center gap-1"
+                >
+                  <CheckCircle2 className="w-3 h-3" />
+                  Close ({toClose.length})
+                </button>
+              ) : (
+                /* Nothing left to close: said, not offered. */
+                <span title={`Every one of the ${filtered.length} filtered tickets is closed`}
+                  className="px-2 py-1.5 border border-emerald-300 bg-emerald-50 text-emerald-700 rounded text-mini font-bold uppercase tracking-widest flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  All closed ({toReopen.length})
+                </span>
+              )}
+              {toReopen.length > 0 && (
+                <button
+                  onClick={() => applyBulkClosed(false)}
+                  disabled={bulkClosedBusy}
+                  title={`Reopen the ${toReopen.length} closed of the ${filtered.length} filtered tickets`}
+                  className="px-2 py-1.5 bg-orange-600 text-white rounded text-mini font-bold uppercase tracking-widest hover:bg-orange-700 disabled:opacity-40 flex items-center gap-1"
+                >
+                  <Circle className="w-3 h-3" />
+                  Reopen ({toReopen.length})
+                </button>
+              )}
             </>
           )}
 
