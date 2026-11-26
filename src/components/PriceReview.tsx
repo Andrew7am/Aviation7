@@ -6,6 +6,7 @@ import {
 } from '../core/helpers/priceReview';
 import { PROFIT_FROM } from '../core/config/profit';
 import type { Explanation } from '../core/helpers/sheetMemory';
+import { totalInSar, useSarTotal, AED_TO_SAR } from '../core/helpers/sarTotal';
 
 /**
  * The file's prices, under its counts: what operations was given against
@@ -52,8 +53,12 @@ export const PriceReview: React.FC<{
   /** "KSAML2533", or "whole sheet" - for the heading and the file name. */
   scope: string;
   error?: string;
-}> = ({ lines, explanations, onReason, onClearReason, scope, error }) => {
+  /** "Also in riyals", when the page around it holds the switch. */
+  sar?: [boolean, (on: boolean) => void];
+}> = ({ lines, explanations, onReason, onClearReason, scope, error, sar }) => {
   const byKey = useMemo(() => new Map(explanations.map(e => [e.findingKey, e])), [explanations]);
+  const own = useSarTotal();
+  const [sarOn, setSarOn] = sar ?? own;
   const [picked, setFilter] = useState<Filter | null>(null);
   const [open, setOpen] = useState(true);
   const [reqOpen, setReqOpen] = useState(false);
@@ -63,6 +68,9 @@ export const PriceReview: React.FC<{
 
   const all = lines ?? [];
   const totals = useMemo(() => priceTotals(all, false), [all]);
+  /* Riyals and dirhams as one riyal figure (AED x 1.02), beside each
+     currency's own - only when there are dirhams to convert. */
+  const sarTotal = useMemo(() => totals.some(t => t.currency === 'AED') ? totalInSar(totals) : null, [totals]);
   const perReq = useMemo(() => priceTotals(all, true), [all]);
   const counts = useMemo(() => {
     const m = new Map<PriceResult, number>();
@@ -112,7 +120,12 @@ export const PriceReview: React.FC<{
       ...Object.fromEntries(ORDER.map(r => [RESULT_LABEL[r], t.counts[r] ?? 0])),
     });
     const wb = XLSX.utils.book_new();
-    const summary = XLSX.utils.json_to_sheet([...priceTotals(all, false).map(t => ({ ...total(t), Request: 'ALL' })), ...perReq.map(total)]);
+    const inSarRow = totalInSar(priceTotals(all, false));
+    const summary = XLSX.utils.json_to_sheet([...priceTotals(all, false).map(t => ({ ...total(t), Request: 'ALL' })),
+      // Both: each currency's own, and riyals and dirhams as riyals.
+      ...(inSarRow && priceTotals(all, false).some(t => t.currency === 'AED')
+        ? [{ ...total(inSarRow), Request: 'ALL', Currency: `SAR (SAR + AED x ${AED_TO_SAR})` }] : []),
+      ...perReq.map(total)]);
     XLSX.utils.sheet_add_aoa(summary, [[],
       ['Scope', scope], ['Prices from', `${PROFIT_FROM}: before that their Net Cost was the real cost, so those tickets are counted only`],
       ['Their figures', 'Net Cost (given to operations) and Refund Amount, from their sheet as last uploaded'],
@@ -149,8 +162,12 @@ export const PriceReview: React.FC<{
             ? `${blockers.length} below our net with no reason`
             : toExplain.length ? `${toExplain.length} to explain, none holding the file` : 'nothing to explain'}
         </span>
+        <label className="ml-auto flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer"
+          title="Riyals and dirhams added up in riyals, at 1.02 a dirham, beside each currency's own figures">
+          <input type="checkbox" checked={sarOn} onChange={e => setSarOn(e.target.checked)} /> Total in SAR (AED × {AED_TO_SAR})
+        </label>
         <button type="button" onClick={() => void exportReport()} disabled={!all.length}
-          className="ml-auto flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded hover:bg-slate-50 disabled:opacity-40">
+          className="flex items-center gap-1.5 bg-white border border-slate-200 text-slate-700 text-xs font-bold px-3 py-1.5 rounded hover:bg-slate-50 disabled:opacity-40">
           <Download className="w-3.5 h-3.5" /> Price report (Excel)
         </button>
       </div>
@@ -163,10 +180,14 @@ export const PriceReview: React.FC<{
           {lines !== null && !all.length && (
             <p className="text-xs text-slate-500">No ticket of theirs issued from {PROFIT_FROM} here, so there is no price to compare. Tickets before {PROFIT_FROM} are counted only.</p>
           )}
-          {totals.map(t => (
-            <div key={t.currency}>
-              <div className="text-mini font-bold uppercase text-slate-400 mb-1">{t.currency} · {t.tickets} ticket{t.tickets === 1 ? '' : 's'} compared
-                {t.counts.AV_PROFIT ? ` · ${t.counts.AV_PROFIT} refund${t.counts.AV_PROFIT === 1 ? '' : 's'} marked AV` : ''}</div>
+          {[...totals.map(t => ({ t, sar: false })), ...(sarOn && sarTotal ? [{ t: sarTotal, sar: true }] : [])].map(({ t, sar: combined }) => (
+            <div key={combined ? 'SAR-ALL' : t.currency} className={combined ? 'border-t border-dashed border-slate-300 pt-3' : ''}>
+              <div className="text-mini font-bold uppercase text-slate-400 mb-1">
+                {combined
+                  ? <>Total in SAR: SAR + AED × {AED_TO_SAR}{sarTotal?.left.length ? ` · ${sarTotal.left.join(', ')} not included` : ''}</>
+                  : <>{t.currency} · {t.tickets} ticket{t.tickets === 1 ? '' : 's'} compared
+                    {t.counts.AV_PROFIT ? ` · ${t.counts.AV_PROFIT} refund${t.counts.AV_PROFIT === 1 ? '' : 's'} marked AV` : ''}</>}
+              </div>
               {/* The file the way it is talked about: charged = net + commission + aviation. */}
               <div className="flex flex-wrap items-stretch gap-2">
                 {([

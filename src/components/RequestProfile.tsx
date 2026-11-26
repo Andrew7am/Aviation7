@@ -17,6 +17,7 @@ import { PROFIT_FROM } from '../core/config/profit';
 import { PriceReview } from './PriceReview';
 import { isAviationMarked, withoutAvMark } from '../core/helpers/aviationMark';
 import { priceTotals } from '../core/helpers/priceReview';
+import { inSar, useSarTotal, AED_TO_SAR } from '../core/helpers/sarTotal';
 
 /**
  * The spreadsheet writer, fetched the first time something is exported.
@@ -167,6 +168,8 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
     for (const t of priceTotals(priceLines ?? [], false)) add(m, t.currency, t.aviation);
     return m;
   }, [priceLines]);
+  const sarSwitch = useSarTotal();
+  const [sarOn, setSarOn] = sarSwitch;
   const charged = useMemo(() => {
     const m: Money = {};
     for (const src of [r.net, r.commission, aviation]) for (const [c, v] of Object.entries(src)) add(m, c, v);
@@ -334,13 +337,34 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
                 <Tile label="Aviation profit" value={recent && !priceLines && !priceErr ? '…' : show(aviation)} tone="text-emerald-700" />
                 <Tile label="Charged to operations" value={recent && !priceLines && !priceErr ? '…' : show(charged)} tone="text-slate-900" />
               </div>
+              {/* Riyals and dirhams as one riyal figure, beside the above - when asked. */}
+              <div className="-mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+                <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={sarOn} onChange={e => setSarOn(e.target.checked)} />
+                  Total in SAR (AED × {AED_TO_SAR})
+                </label>
+                {sarOn && (() => {
+                  const parts = [['Net', inSar(r.net)], ['Commission', inSar(r.commission)], ['Aviation profit', inSar(aviation)],
+                    ['Charged to operations', inSar(charged)]] as const;
+                  const left = [...new Set(parts.flatMap(([, v]) => v.left))];
+                  return (<>
+                    {parts.map(([label, v]) => (
+                      <span key={label} className="text-slate-500">{label}{' '}
+                        <b className={`font-mono ${label === 'Charged to operations' ? 'text-slate-900' : 'text-slate-700'}`}>
+                          {v.sar.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SAR</b>
+                      </span>
+                    ))}
+                    {left.length > 0 && <span className="text-amber-700">{left.join(', ')} not included</span>}
+                  </>);
+                })()}
+              </div>
               <p className="text-mini text-slate-400 -mt-2">
                 Charged to operations = net + commission + aviation profit. Aviation profit is counted from {PROFIT_FROM} (their Net Cost
                 against ours) and from refunds marked AV; before {PROFIT_FROM} their price was the cost.
               </p>
 
               {recent && (
-                <PriceReview lines={priceLines} explanations={reasons} scope={reqNum} error={priceErr} />
+                <PriceReview lines={priceLines} explanations={reasons} scope={reqNum} error={priceErr} sar={sarSwitch} />
               )}
 
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">

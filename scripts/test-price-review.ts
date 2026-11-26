@@ -10,6 +10,7 @@ import type { Ticket } from '../src/types';
 import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
 import { isAviationMarked, withoutAvMark } from '../src/core/helpers/aviationMark';
+import { inSar, totalInSar } from '../src/core/helpers/sarTotal';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -141,6 +142,17 @@ check('the request under it', ['KSAML2747-AV', 'KSAML2425 - KSAFM2786 - AV', 'KS
   const unmarked = { ...av, reqNum: 'KSAML2747' };
   check('...while the same refund unmarked is still one their sheet lacks',
     compareTeamSheet(parseTeamSheet(csv).rows, [sale, unmarked], ['KSAML2747']).findings.map(f => f.verdict).filter(v => v !== 'OK'), ['REFUND_NOT_ON_SHEET']);
+}
+
+console.log('\n8. The file in riyals too: AED x 1.02 (the user, 26 Nov)');
+check('KSAML2747 charged: 40,560 AED + 4,692.14 SAR', inSar({ AED: 40560, SAR: 4692.14 }), { sar: 46063.34, left: [] });
+check('another currency is left out and named', inSar({ SAR: 100, EUR: 403 }), { sar: 100, left: ['EUR'] });
+{
+  const ls = priceReview([row({ net_cost: 1100 }), row({ record_id: 'r2', serials: ['5513727401'], currency: 'SAR', net_cost: 500 })],
+    [tk({}), tk({ ticketNo: '5513727401', currency: 'SAR', amount: 450, commission: 0 })]);
+  const t = totalInSar(priceTotals(ls, false))!;
+  check('the price totals as one riyal figure', [t.currency, t.charged, t.net, t.commission, t.aviation], ['SAR', 1622, 1368, 102, 152]);
+  check('...and it still adds up', Math.round((t.net + t.commission + t.aviation) * 100) / 100, t.charged);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);
