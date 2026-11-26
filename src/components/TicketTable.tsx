@@ -5,7 +5,7 @@ import { Ticket } from '../types';
 import { Search, Download, Filter, Replace, CheckCircle2, Circle, Calendar, X, ChevronDown, FolderOpen, Copy } from 'lucide-react';
 import { writeClipboard } from '../utils/clipboard';
 import { ticketLine, ticketLines, copyableTickets } from '../core/helpers/ticketClipboard';
-import { ticketCurrency, byCurrencyOrder } from '../core/helpers/sourceCurrency';
+import { ticketCurrency, byCurrencyOrder, vendorCurrency } from '../core/helpers/sourceCurrency';
 import { totalsByVendor } from '../core/helpers/vendorTotals';
 import { unconfirmed } from '../core/helpers/supplierProof';
 import { RequestProfile } from './RequestProfile';
@@ -485,6 +485,18 @@ export const TicketTable: React.FC<TicketTableProps> = ({
     () => Array.from(new Set(tickets.map(t => t.source).filter(Boolean))).sort(),
     [tickets]
   );
+  /* The vendor list in two halves, riyals and dirhams (the user, 26 Nov
+     2026): each vendor bills in one currency. A purchase on an airline's own
+     site is in whatever the site charged, so it sits apart. */
+  const sourceGroups = useMemo(() => {
+    const by = new Map<string, string[]>();
+    for (const s of sources) {
+      const c = vendorCurrency(s) ?? 'OWN';
+      by.set(c, [...(by.get(c) ?? []), s]);
+    }
+    return [...by].sort((a, b) => (a[0] === 'OWN' ? 1 : b[0] === 'OWN' ? -1 : byCurrencyOrder(a[0], b[0])))
+      .map(([cur, list]) => ({ cur, label: cur === 'OWN' ? 'Own currency' : cur, list }));
+  }, [sources]);
 
   /** Months present in the data, newest first — the quick-pick for "show me
    *  April". */
@@ -1417,23 +1429,38 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
                     </button>
                   )}
                 </div>
-                {sources.map(s => {
-                  const on = sourceSel.includes(s);
+                {sourceGroups.map(g => {
+                  const all = g.list.every(s => sourceSel.includes(s));
                   return (
-                    <label
-                      key={s}
-                      className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 cursor-pointer"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => toggleSource(s)}
-                        className="w-3 h-3 accent-blue-600"
-                      />
-                      <span className={`px-1.5 py-0.5 rounded text-micro font-bold uppercase ${getSourceColor(s)}`}>
-                        {s}
-                      </span>
-                    </label>
+                    <div key={g.cur} className="pb-1">
+                      {/* The half's heading picks all of it, or lets all of it go. */}
+                      <button type="button"
+                        onClick={() => setSourceSel(sel => all ? sel.filter(s => !g.list.includes(s)) : [...new Set([...sel, ...g.list])])}
+                        title={all ? `Clear the ${g.label} vendors` : `Select every ${g.label} vendor`}
+                        className="w-full flex items-center justify-between px-2 py-1 mt-1 bg-slate-50 border-y border-slate-100 text-micro font-bold uppercase tracking-widest text-slate-500 hover:text-blue-700">
+                        <span>{g.label} <span className="font-normal text-slate-400">({g.list.length})</span></span>
+                        <span className="text-blue-600">{all ? 'Clear' : 'All'}</span>
+                      </button>
+                      {g.list.map(s => {
+                        const on = sourceSel.includes(s);
+                        return (
+                          <label
+                            key={s}
+                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={on}
+                              onChange={() => toggleSource(s)}
+                              className="w-3 h-3 accent-blue-600"
+                            />
+                            <span className={`px-1.5 py-0.5 rounded text-micro font-bold uppercase ${getSourceColor(s)}`}>
+                              {s}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   );
                 })}
               </div>
