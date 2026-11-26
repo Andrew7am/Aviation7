@@ -90,10 +90,10 @@ export class AirtableService {
     // Riyadh midnight of `from`, in UTC.
     const since = new Date(Date.parse(`${from}T00:00:00Z`) - 3 * 3600_000).toISOString();
     const rows = await fetchAllRows<any>((f, t) =>
-      supabase.from('airtable_tickets').select('record_id, serials, pnr, status, req_num, net_cost, currency, issued_at, team_member, portal, airline, ticket_cell, emd:sheet_row->>"EMD Number"')
+      supabase.from('airtable_tickets').select('record_id, serials, pnr, status, req_num, net_cost, refund_amount, currency, issued_at, team_member, portal, airline, ticket_cell, emd:sheet_row->>"EMD Number"')
         .eq('deleted', false).gte('issued_at', since).range(f, t));
     return rows.map(r => ({ record_id: r.record_id, serials: r.serials ?? [], pnr: r.pnr ?? '', status: r.status ?? '', req_num: r.req_num ?? '',
-      net_cost: r.net_cost == null ? null : Number(r.net_cost), currency: r.currency ?? '', issued_at: r.issued_at ?? null,
+      net_cost: r.net_cost == null ? null : Number(r.net_cost), refund_amount: r.refund_amount == null ? null : Number(r.refund_amount), currency: r.currency ?? '', issued_at: r.issued_at ?? null,
       team_member: r.team_member ?? '', portal: r.portal ?? '', airline: r.airline ?? '', ticket_cell: r.ticket_cell ?? '', emd: r.emd ?? '' }));
   }
 

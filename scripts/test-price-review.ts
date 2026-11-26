@@ -1,0 +1,108 @@
+/**
+ * A file's prices: commission and the aviation team's markup, ticket by
+ * ticket, and what keeps a file from closing.
+ *
+ *   npx tsx scripts/test-price-review.ts
+ */
+import { classify, priceReview, priceTotals, BLOCKS_CLOSING } from '../src/core/helpers/priceReview';
+import type { ProfitSheetRow } from '../src/core/helpers/aviationProfit';
+import type { Ticket } from '../src/types';
+import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
+import { parseTeamSheet } from '../src/core/parsers/teamSheet';
+
+let passed = 0, failed = 0;
+const check = (label: string, got: unknown, want: unknown) => {
+  const p = JSON.stringify(got) === JSON.stringify(want);
+  p ? passed++ : failed++;
+  console.log(`  ${p ? 'PASS' : 'FAIL'}  ${label}`);
+  if (!p) console.log(`        got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
+};
+const row = (o: Partial<ProfitSheetRow>): ProfitSheetRow => ({ record_id: 'r1', serials: ['5513727400'], pnr: 'ABC123', status: 'Issued',
+  req_num: 'KSAML2900', net_cost: 1100, currency: 'AED', issued_at: '2026-11-20T08:00:00Z', team_member: 'Kerolos Rrad',
+  portal: 'IATA Portal (UAE)', airline: 'Emirates', ticket_cell: '176-5513727400', emd: '', ...o });
+// The user's ticket: 1,000 fare, 100 commission, 900 to us.
+const tk = (o: Partial<Ticket>): Ticket => ({ id: Math.random().toString(36).slice(2), ticketNo: '5513727400', source: 'IATA BSP', status: 'ISSUE',
+  amount: 900, commission: 100, totalDoc: 1000, currency: 'AED', date: '2026-11-20', pnr: 'ABC123', reportName: 'IATA BSP', reqNum: 'KSAML2900', ...o } as Ticket);
+const one = (netCost: number, ledger = [tk({})]) => {
+  const l = priceReview([row({ net_cost: netCost })], ledger)[0];
+  return [l.result, l.price, l.commission, l.net, l.markup, l.profit];
+};
+
+console.log('\n1. The user\'s example: 1,000 with 100 commission');
+check('given at 1,100: 100 commission + 100 markup = 200', one(1100), ['MARKUP', 1000, 100, 900, 100, 200]);
+check('given at 1,000: commission only', one(1000), ['COMMISSION_ONLY', 1000, 100, 900, 0, 100]);
+check('given at 950: half the commission given away', one(950), ['PART_COMMISSION', 1000, 100, 900, -50, 50]);
+check('given at 900: exactly net', one(900), ['EXACTLY_NET', 1000, 100, 900, -100, 0]);
+check('given at 850: below net, a loss', one(850), ['BELOW_NET', 1000, 100, 900, -150, -50]);
+check('a riyal either way is rounding: 900.80 is exactly net', one(900.8)[0], 'EXACTLY_NET');
+check('...and 1,000.90 is commission only', one(1000.9)[0], 'COMMISSION_ONLY');
+check('...but 898.50 is below net', one(898.5)[0], 'BELOW_NET');
+check('no commission: given at the fare is exactly net', one(1000, [tk({ amount: 1000, commission: 0 })])[0], 'EXACTLY_NET');
+check('Ibtekar: their 10-riyal fee is in our net (1,704), so 1,693.95 is below it',
+  one(1693.95, [tk({ amount: 1704, commission: 0, totalDoc: 1693.95, source: 'Ibtekar', currency: 'AED' })]).slice(0, 2), ['BELOW_NET', 1704]);
+check('classify on its own', [classify(1100, 900, 100), classify(1000, 900, 0)], ['MARKUP', 'MARKUP']);
+check('only Below net and a refund above ours block closing', [...BLOCKS_CLOSING].sort(), ['BELOW_NET', 'REFUND_ABOVE']);
+
+console.log('\n2. What is not compared');
+check('before 9 Nov: counts only', priceReview([row({ issued_at: '2026-11-08T20:00:00Z' })], [tk({})]).length, 0);
+check('not in our books', priceReview([row({})], []).map(l => [l.result, l.why]), [['NOT_COMPARED', 'Not in our books yet']]);
+check('voided: never profit or loss', priceReview([row({})], [tk({})], { voided: ['5513727400'] }).length, 0);
+check('our AED ticket priced in SAR is compared at the peg',
+  priceReview([row({ currency: 'SAR', net_cost: 1100 * 3.75 / 3.6725 })], [tk({})]).map(l => [l.result, l.converted]), [['MARKUP', true]]);
+
+console.log('\n3. One request');
+const ledger = [tk({}), tk({ ticketNo: '5513727401', reqNum: 'UAEVP771' })];
+const rows = [row({}), row({ record_id: 'r2', serials: ['5513727401'], req_num: 'UAEVP771' })];
+check('only that request', priceReview(rows, ledger, { requests: ['UAEVP771'] }).map(l => l.docs[0]), ['5513727401']);
+check('found by our request when theirs is blank',
+  priceReview([row({ req_num: '' })], [tk({})], { requests: ['KSAML2900'] }).length, 1);
+
+console.log('\n4. Refunds: their Refund Amount against what the supplier gave us');
+const ref = (given: number | null, back: number | null) => priceReview(
+  [row({ record_id: 'x', status: 'Cancelled/Refunded', net_cost: 200, refund_amount: given })],
+  back === null ? [] : [tk({ amount: -back, commission: 0, status: 'REFUND' })])
+  .filter(l => l.kind === 'REFUND').map(l => [l.result, l.net, l.toOps, l.profit, l.why ?? '']);
+check('gave back what we got', ref(800, 800), [['REFUND_SAME', 800, 800, 0, '']]);
+check('gave back less: the rest is ours', ref(750, 800), [['REFUND_KEPT', 800, 750, 50, '']]);
+check('gave back more: a loss', ref(850, 800), [['REFUND_ABOVE', 800, 850, -50, '']]);
+check('no Refund Amount on their sheet', ref(null, 800).map(x => [x[0], x[4]]), [['NOT_COMPARED', 'No Refund Amount on their sheet']]);
+check('not refunded to us yet', ref(800, null).map(x => [x[0], x[4]]), [['NOT_COMPARED', 'Refund not in our books yet']]);
+
+console.log('\n5. Totals add up');
+const lines = priceReview([
+  row({}), row({ record_id: 'r2', serials: ['5513727402'], net_cost: 850 }),
+  row({ record_id: 'r3', serials: ['5513727403'], status: 'Cancelled/Refunded', refund_amount: 750 }),
+], [tk({}), tk({ ticketNo: '5513727402' }), tk({ ticketNo: '5513727403', amount: -800, commission: 0 })]);
+const [t] = priceTotals(lines);
+check('commission, markup, below price, refunds', [t.commission, t.markup, t.belowPrice, t.refunds], [200, 100, -150, 50]);
+check('profit = commission + markup + below price + refunds', t.profit, 200);
+check('...and the same as to operations less our net, plus refunds', t.profit, (1100 + 850) - (900 + 900) + 50);
+check('counted per result', Object.entries(t.counts).sort(), [['BELOW_NET', 1], ['MARKUP', 1], ['REFUND_KEPT', 1]]);
+check('two currencies are never summed', priceTotals(priceReview([row({}), row({ record_id: 'r2', serials: ['5513727401'], currency: 'EUR' })],
+  [tk({}), tk({ ticketNo: '5513727401', currency: 'EUR' })]), false).map(x => x.currency), ['AED', 'EUR']);
+
+console.log('\n5b. A row priced per ticket, with EMD rows beside it (UAEVP771/858)');
+{
+  const ls = priceReview([
+    row({ serials: ['5513853657', '5513853658', '5513853659'], net_cost: 17920 }),
+    ...['5513853657', '5513853658', '5513853659'].map((t, i) => row({ record_id: 'e' + i, serials: [t], net_cost: 2870, emd: `065-194993339${3 + i}` })),
+  ], [...['5513853657', '5513853658', '5513853659'].map(t => tk({ ticketNo: t, amount: 17920, commission: 0 })),
+      ...[3, 4, 5].map(i => tk({ ticketNo: `194993339${i}`, amount: 2870, commission: 0 }))]);
+  check('17,920 is each ticket\'s: 3 x 17,920 + 3 x 2,870 = ours, exactly net', ls.map(l => [l.result, l.toOps, l.net]), [['EXACTLY_NET', 62370, 62370]]);
+}
+
+console.log('\n6. The count review leaves prices from 9 Nov to this');
+const verdicts = (issued: string, cost: string, refund = '') => compareTeamSheet(parseTeamSheet(
+  ['Ticket Number,PNR,Status,Req Num,Net Cost,Refund Amount,Issued Date & Time,Total Cost with Currency',
+   `176-5513727400,ABC123,Issued,KSAML2900,${cost},,${issued},${cost} AED`,
+   ...(refund ? [`176-5513727400,ABC123,Cancelled/Refunded,KSAML2900,100,${refund},${issued},100 AED`] : [])].join('\n')).rows,
+  [tk({ date: issued.split('/').reverse().join('-') }),
+   ...(refund ? [tk({ amount: -800, commission: 0, status: 'REFUND', transactionType: 'REFUND', totalDoc: 800 } as Partial<Ticket>)] : [])],
+  ['KSAML2900']).findings.map(f => f.verdict).filter(v => v !== 'OK');
+check('below our net on 20 Nov: not a Price differs, the price review asks why', verdicts('20/11/2026', '700'), []);
+check('...but on 1 Nov it is still one', verdicts('01/11/2026', '700'), ['PRICE_DIFFERS']);
+check('a refund above ours on 20 Nov: the price review, not Refund differs', verdicts('20/11/2026', '1000', '850'), []);
+check('...and on 1 Nov still Refund differs', verdicts('01/11/2026', '1000', '850'), ['REFUND_DIFFERS']);
+
+console.log(`\n${passed} passed, ${failed} failed`);
+if (failed) process.exit(1);

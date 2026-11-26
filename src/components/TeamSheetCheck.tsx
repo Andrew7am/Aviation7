@@ -20,6 +20,10 @@ import { addabilityByKey, findingKey, proposalsByKey, neverByHand } from '../cor
 import { whyNotConfirmable } from '../core/helpers/pendingFromFindings';
 import { TeamSheetMemoryService } from '../services/TeamSheetMemoryService';
 import { explanationKey, fingerprint, snapRows, sheetDiff, type Explanation, type SheetDiff } from '../core/helpers/sheetMemory';
+import { priceReview, type PriceLine } from '../core/helpers/priceReview';
+import type { ProfitSheetRow } from '../core/helpers/aviationProfit';
+import { PROFIT_FROM } from '../core/config/profit';
+import { PriceReview, priceBlockers } from './PriceReview';
 
 const xlsx = () => import('xlsx');
 
@@ -874,6 +878,35 @@ export const TeamSheetCheck: React.FC<Props> = ({
       : null),
     [rows, tickets, declared, reviewing, fromDate, toDate, voids, exchanges, explanations, mode]);
 
+  /* Prices, from 9 Nov: their Net Cost against what each ticket cost us.
+     Read from our copy of their sheet - the export last uploaded on the
+     Airtable page - each time a sheet is checked; it is a few hundred rows. */
+  const [profitRows, setProfitRows] = useState<ProfitSheetRow[] | null>(null);
+  const [priceErr, setPriceErr] = useState('');
+  useEffect(() => {
+    if (!rows) return;
+    setPriceErr('');
+    new AirtableService().profitRows(PROFIT_FROM).then(setProfitRows)
+      .catch(e => setPriceErr(`Their prices could not be read: ${e instanceof Error ? e.message : String(e)}`));
+  }, [rows]);
+  const priceLines = useMemo<PriceLine[] | null>(() => (report && profitRows
+    ? priceReview(profitRows, tickets, { from: fromDate, to: toDate, voided: voids.map(v => v.ticketNo),
+        requests: mode === 'request' ? reviewing : declared })
+    : null), [report, profitRows, tickets, fromDate, toDate, voids, mode, reviewing, declared]);
+  const explainedByKey = useMemo(() => new Map(explanations.map(e => [e.findingKey, e])), [explanations]);
+  /** A ticket given below our net, or a refund above ours, with no reason: the file waits. */
+  const priceHold = useMemo(() => priceBlockers(priceLines ?? [], explainedByKey), [priceLines, explainedByKey]);
+  const priceReason = async (l: PriceLine, note: string) => {
+    if (!memory) return;
+    await memory.explain(l.key, l.fingerprint, note, userEmail ?? '');
+    loadExplanations();
+  };
+  const priceUnreason = async (l: PriceLine) => {
+    if (!memory) return;
+    await memory.unexplain(l.key);
+    loadExplanations();
+  };
+
   const explain = async (f: Finding) => {
     if (!memory) return;
     // Ignored until its figures change: a reason is kept if one is given.
@@ -1128,6 +1161,10 @@ export const TeamSheetCheck: React.FC<Props> = ({
           .toLocaleString('en-US', { minimumFractionDigits: 2 })} ${cur}`.trim()).join(' + ')})
       {' '}- applied, waiting for the supplier's billing. The sheet is closed once they arrive.
     </>
+  );
+  const priceNote = priceHold.length > 0 && (
+    <>{' '}<b>{priceHold.length} {priceHold.length === 1 ? 'price is' : 'prices are'} below our net with no reason</b>
+      {' '}- write why under Prices below.</>
   );
   const conjunctions = report?.docTypes.tickets.conjunctions?.length ?? 0;
 
@@ -1402,6 +1439,18 @@ export const TeamSheetCheck: React.FC<Props> = ({
                 {report.unconfirmedOurs.length === 1 ? 'it' : 'them'}.
               </span>
             </div>
+          ) : report.clean && !report.unaccounted.length && (priceHold.length > 0 || priceLines === null) ? (
+            /* The counts agree; the prices hold it - or are still being read. */
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3
+                            flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+              <span className="text-xs text-amber-900">
+                <b>The counts agree.</b>{' '}
+                {priceLines === null
+                  ? (priceErr ? <>{priceErr} The prices have to be checked before this sheet is closed.</> : <>Checking the prices…</>)
+                  : <>Not ready to close:{priceNote}</>}
+              </span>
+            </div>
           ) : report.clean && !report.unaccounted.length ? (
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3
                             flex items-start gap-2.5">
@@ -1409,7 +1458,8 @@ export const TeamSheetCheck: React.FC<Props> = ({
               <span className="text-xs text-emerald-900">
                 <b>Both lists agree.</b> Every ticket on their sheet is in our books with the
                 same refunds, and our books hold nothing under these requests that their
-                sheet does not show. This sheet can be closed.
+                sheet does not show, and no ticket went below our net without a reason.
+                This sheet can be closed.
               </span>
             </div>
           ) : (
@@ -1418,12 +1468,12 @@ export const TeamSheetCheck: React.FC<Props> = ({
               <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
               <span className="text-xs text-amber-900">
                 {needsWork === 0 && (awaiting.length > 0 || countGaps.length > 0) && !report.unaccounted.length ? (
-                  <><b>Not ready to close.</b>{countNote}{awaitingNote}</>
+                  <><b>Not ready to close.</b>{countNote}{awaitingNote}{priceNote}</>
                 ) : (<>
                   <b>{needsWork} {needsWork === 1 ? 'thing needs' : 'things need'} settling
                   before this sheet is closed.</b>{' '}
                   They are listed worst first below. Anything marked in grey is a state of the
-                  world rather than a disagreement.{countNote}{awaitingNote}
+                  world rather than a disagreement.{countNote}{awaitingNote}{priceNote}
                 </>)}
               </span>
             </div>
@@ -1493,6 +1543,11 @@ export const TeamSheetCheck: React.FC<Props> = ({
               that EMD on theirs - and whatever is not, named. */}
           <DocTypeTable docTypes={report.docTypes} />
 
+          {/* Then the prices: commission, the team's markup, and why a ticket went at or below cost. */}
+          <PriceReview lines={priceLines} explanations={explanations} error={priceErr}
+            scope={(mode === 'request' ? reviewing : declared).join(', ') || 'Whole sheet'}
+            {...(memory && onAddToLedger ? { onReason: priceReason, onClearReason: priceUnreason } : {})} />
+
           {/* Their sheet has a beginning, and our ledger is older than it.
               Said out loud, because the count is also the honest measure
               of how much of our books this check can speak to. */}
@@ -1553,7 +1608,8 @@ export const TeamSheetCheck: React.FC<Props> = ({
               ticket wherever both sides price it in the same currency, and a gap is listed as
               Price differs. Their net agreeing with our fare is agreement: we often pay less than
               the fare after commission. A refunded ticket, and tickets priced in different
-              currencies, are not compared.
+              currencies, are not compared. From {PROFIT_FROM} their figure is the price given to
+              operations, so those tickets are read under Prices above instead.
             </span>
           </div>
 

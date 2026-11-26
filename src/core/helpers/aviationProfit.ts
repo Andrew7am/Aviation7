@@ -26,6 +26,8 @@ export interface ProfitSheetRow {
   record_id: string; serials: string[]; pnr: string; status: string; req_num: string;
   net_cost: number | null; currency: string; issued_at: string | null; team_member: string;
   portal?: string; airline?: string; ticket_cell?: string; emd?: string;
+  /** Their Refund Amount: what operations was given back. */
+  refund_amount?: number | null;
 }
 
 export type ProfitState = 'COUNTED' | 'AWAITING_SUPPLIER' | 'NOT_IN_BOOKS' | 'TWO_CURRENCIES';
@@ -36,6 +38,9 @@ export interface ProfitLine {
   /** What the supplier charged us, in the quoted currency. */
   cost: number | null;
   profit: number | null;
+  /** The supplier's commission on our tickets, in the quoted currency: the
+   *  fare was cost + commission. Null where nothing was compared. */
+  commission?: number | null;
   state: ProfitState;
   /** Our cost was in another currency and converted at the peg. */
   converted: boolean;
@@ -124,13 +129,17 @@ export function aviationProfit(rows: ProfitSheetRow[], ledger: Ticket[], from = 
     if (currencies.length > 1) { out.push({ ...base, cost: null, profit: null, state: 'TWO_CURRENCIES', converted: false }); continue; }
     if (!ours.length) { out.push({ ...base, cost: null, profit: null, state: 'NOT_IN_BOOKS', converted: false }); continue; }
     if (ours.some(awaitsSupplier)) { out.push({ ...base, cost: null, profit: null, state: 'AWAITING_SUPPLIER', converted: false }); continue; }
-    let converted = false, cost = 0, ok = true;
-    for (const t of ours) {
+    let converted = false, cost = 0, comm = 0, ok = true;
+    /** One of ours in the quoted currency; null where it cannot be converted. */
+    const inQuoted = (t: Ticket, v: number) => {
       const cur = (t.currency || currency).toUpperCase();
-      if (cur === currency) { cost += t.amount || 0; continue; }
-      const v = toCurrency(t.amount || 0, cur, currency);
+      return cur === currency ? v : toCurrency(v, cur, currency);
+    };
+    for (const t of ours) {
+      const v = inQuoted(t, t.amount || 0);
       if (v === null) { ok = false; break; }
-      cost += v; converted = true;
+      cost += v; comm += inQuoted(t, t.commission || 0) ?? 0;
+      if ((t.currency || currency).toUpperCase() !== currency) converted = true;
     }
     if (!ok) { out.push({ ...base, cost: null, profit: null, state: 'TWO_CURRENCIES', converted: false }); continue; }
     /* One row, several tickets: its cost is sometimes the whole cell and
@@ -140,8 +149,24 @@ export function aviationProfit(rows: ProfitSheetRow[], ledger: Ticket[], from = 
     if (g.length === 1 && docs.length > 1) {
       const each = r2(quoted * docs.length);
       if (Math.abs(each - cost) < Math.abs(quoted - cost)) { quoted = each; perTicket = true; }
+    } else if (g.length > 1) {
+      /* The same, row by row, when the booking has other rows too: UAEVP771's
+         17,920.00 on a row of three tickets is each ticket's, and the EMD rows
+         added after it for each passenger joined the three into one booking. */
+      let q = 0;
+      for (const r of g) {
+        const own = [...new Set(r.serials.map(ticketMatchKey).filter(k => k && !isBookingRef(k) && !gone.has(k)))];
+        const v = r.net_cost ?? 0;
+        if (own.length > 1) {
+          const mine = ours.filter(t => own.includes(ticketMatchKey(t.ticketNo || '')));
+          const c = mine.reduce((n, t) => n + (inQuoted(t, t.amount || 0) ?? 0), 0);
+          if (mine.length && Math.abs(v * own.length - c) < Math.abs(v - c)) { q += v * own.length; perTicket = true; continue; }
+        }
+        q += v;
+      }
+      quoted = r2(q);
     }
-    out.push({ ...base, quoted, cost: r2(cost), profit: r2(quoted - cost), state: 'COUNTED', converted, perTicket });
+    out.push({ ...base, quoted, cost: r2(cost), commission: r2(comm), profit: r2(quoted - cost), state: 'COUNTED', converted, perTicket });
   }
   return out.sort((a, b) => b.issued.localeCompare(a.issued) || a.req.localeCompare(b.req));
 }

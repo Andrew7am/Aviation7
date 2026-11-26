@@ -794,10 +794,13 @@ export const convertPeg = (v: number, from: string, to: string): number | null =
 /** A low-cost carrier's booking with no usable ticket number is matched on its PNR from this day. */
 export const LCC_BY_PNR_FROM = '2026-11-01';
 /* From 9 Nov 2026 their Net Cost is the cost they quote operations, not the
-   supplier's: a figure above ours is the aviation team's margin (Aviation
-   Profit), not a difference. One below ours is still said - operations were
-   quoted less than the ticket cost. */
-const quotedAbove = (r: { issued?: string }, gap: number) => gap > 0 && (r.issued || '') >= PROFIT_FROM;
+   supplier's, and their Refund Amount what operations got back. Either way
+   it is a price, read by the price review (priceReview.ts) under the counts:
+   commission, markup, and a reason for anything at or below our net (the
+   user, 26 Nov 2026). Said here as well, it would hold a file open after
+   the reason was written. Before that day their figure was the cost, and a
+   gap is still a difference. */
+const priceReviewed = (r: { issued?: string }) => (r.issued || '') >= PROFIT_FROM;
 
 /**
  * Why two requests differ, when it can be told from the two names alone.
@@ -1571,7 +1574,7 @@ export function compareTeamSheet(
       const gap = Math.abs(theirs - ourNet) <= Math.abs(theirs - ourGross)
         ? theirs - ourNet : theirs - ourGross;
       // Only when they actually stated a figure; a blank is not a zero.
-      if (!shared && rows.some(r => r.refund != null) && Math.abs(gap) >= REFUND_FLOOR) {
+      if (!shared && rows.some(r => r.refund != null) && Math.abs(gap) >= REFUND_FLOOR && !rows.every(priceReviewed)) {
         const cur = ourRefunds[0].currency || '';
         const both = Math.abs(ourGross - ourNet) >= 0.01
           ? `${money(ourNet)} after commission, ${money(ourGross)} before`
@@ -1632,7 +1635,7 @@ export function compareTeamSheet(
           const emds = [...folded.values()].reduce((n, t) => n + asBought(t, t.amount || 0), 0);
           const gap = [payable, fare, adjusted, payable + emds]
             .map(v => theirs - v).sort((a, b) => Math.abs(a) - Math.abs(b))[0];
-          if (Math.abs(gap) >= PRICE_FLOOR && !quotedAbove(priced[0], gap)) {
+          if (Math.abs(gap) >= PRICE_FLOOR && !priceReviewed(priced[0])) {
             findings.push({ ...base, sheet: priced[0], verdict: 'PRICE_DIFFERS',
               note: `Their sheet prices it at ${money(theirs)} ${cur}; we hold ${money(payable)}`
                   + (Math.abs(fare - payable) >= 0.01 ? ` (fare ${money(fare)})` : '')
@@ -1658,7 +1661,7 @@ export function compareTeamSheet(
             const fare = issuedOurs.reduce((n, t) => n + Math.abs(t.totalDoc || t.amount || 0), 0);
             const sameNumber = [payable, fare].some(v => Math.abs(theirs - v) <= Math.max(0.5, v * 0.005));
             const gap = [payable, fare].map(v => inOurs - v).sort((a, b) => Math.abs(a) - Math.abs(b))[0];
-            if (sameNumber || (Math.abs(gap) >= Math.max(PRICE_FLOOR, payable * 0.03) && !quotedAbove(priced[0], gap))) {
+            if (sameNumber || (Math.abs(gap) >= Math.max(PRICE_FLOOR, payable * 0.03) && !priceReviewed(priced[0]))) {
               findings.push({ ...base, sheet: priced[0], verdict: 'PRICE_DIFFERS',
                 note: `Their sheet prices it at ${money(theirs)} ${cur} (${money(inOurs)} ${ourCur} at the fixed rate); we hold ${money(payable)}`
                     + (Math.abs(fare - payable) >= 0.01 ? ` (fare ${money(fare)})` : '') + ` ${ourCur}`
@@ -2068,7 +2071,7 @@ export function compareTeamSheet(
       const raw = Math.abs(r.cost ?? 0);
       const sameNumber = across && [payable, fare].some(v => Math.abs(raw - v) <= Math.max(0.5, v * 0.005));
       if (!sameNumber && Math.abs(gap) < Math.max(PRICE_FLOOR, each * 0.05)) continue;
-      if (!sameNumber && quotedAbove(r, gap)) continue;
+      if (!sameNumber && priceReviewed(r)) continue;
       if (findings.some(f => f.verdict === 'PRICE_DIFFERS' && docs.includes(f.serial))) continue;
       const missingDocs = docs.filter(d => !ourBySerial.has(d));
       /* A big group with documents we do not hold is usually a cell of
