@@ -8,6 +8,13 @@ import { Dialog, DialogClose } from './ui/Dialog';
 import { classifyOffice, OFFICE_LABEL, Office } from '../core/helpers/reqOffice';
 import { ticketLines, copyableTickets } from '../core/helpers/ticketClipboard';
 import { writeClipboard } from '../utils/clipboard';
+import { AirtableService } from '../services/AirtableService';
+import { TeamSheetMemoryService } from '../services/TeamSheetMemoryService';
+import { priceReview } from '../core/helpers/priceReview';
+import type { ProfitSheetRow } from '../core/helpers/aviationProfit';
+import type { Explanation } from '../core/helpers/sheetMemory';
+import { PROFIT_FROM } from '../core/config/profit';
+import { PriceReview } from './PriceReview';
 
 /**
  * The spreadsheet writer, fetched the first time something is exported.
@@ -51,6 +58,8 @@ interface Props {
   tickets: Ticket[];
   /** The reissue register, so a reissue is called one. */
   exchanges?: Edge[];
+  /** Voided documents: never a price, a profit or a loss. */
+  voidedNos?: string[];
   onClose: () => void;
 }
 
@@ -71,7 +80,7 @@ const Tile: React.FC<{ label: string; value: React.ReactNode; tone?: string }> =
   </div>
 );
 
-export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, onClose, onUpdateClosed }) => {
+export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, voidedNos, onClose, onUpdateClosed }) => {
   const chains = useMemo(() => chainIndex(exchanges ?? []), [exchanges]);
   const typeOf = (t: Ticket) => isReissue(t, chains) ? 'REISSUE' : t.status || 'ISSUE';
   const r = useMemo(() => {
@@ -84,17 +93,19 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, on
     const closed = rows.filter(t => t.closed);
     const open = rows.filter(t => !t.closed);
 
-    const issued: Money = {}, refunded: Money = {}, net: Money = {}, openValue: Money = {};
+    const issued: Money = {}, refunded: Money = {}, net: Money = {}, openValue: Money = {}, commission: Money = {};
     for (const t of rows) {
       const cur = t.currency || 'SAR';
       add(net, cur, t.amount || 0);
+      // Less what refunds took back, which is kept negative on them.
+      add(commission, cur, Number(t.commission) || 0);
       if ((t.amount || 0) >= 0) add(issued, cur, t.amount || 0);
       else add(refunded, cur, Math.abs(t.amount || 0));
       if (!t.closed) add(openValue, cur, t.amount || 0);
     }
 
     return {
-      rows, issues, refunds, closed, open, issued, refunded, net, openValue,
+      rows, issues, refunds, closed, open, issued, refunded, net, openValue, commission,
       sources: [...new Set(rows.map(t => t.source).filter(Boolean))],
       office: classifyOffice(reqNum),
       // The state worth shouting about: part finished, part not.
@@ -128,6 +139,23 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, on
   }, [copied]);
 
   const copyRows = useMemo(() => copyableTickets(r.sorted), [r.sorted]);
+
+  /* Its prices from 9 Nov: what operations was charged, our net, the
+     commission and the aviation team's profit, ticket by ticket. Read only
+     when the request has something from that day on. */
+  const recent = r.rows.some(t => (t.date || '') >= PROFIT_FROM);
+  const [sheetRows, setSheetRows] = useState<ProfitSheetRow[] | null>(null);
+  const [reasons, setReasons] = useState<Explanation[]>([]);
+  const [priceErr, setPriceErr] = useState('');
+  useEffect(() => {
+    if (!recent) return;
+    new AirtableService().profitRows(PROFIT_FROM).then(setSheetRows)
+      .catch(e => setPriceErr(`Their prices could not be read: ${e instanceof Error ? e.message : String(e)}`));
+    new TeamSheetMemoryService('').explanations().then(setReasons).catch(() => setReasons([]));
+  }, [recent]);
+  const priceLines = useMemo(() => sheetRows
+    ? priceReview(sheetRows, tickets, { voided: voidedNos ?? [], requests: [reqNum] }) : null,
+    [sheetRows, tickets, voidedNos, reqNum]);
 
   const copyAll = async () => {
     if (copyRows.length === 0) return;
@@ -177,6 +205,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, on
       ['Issued', money(r.issued)],
       ['Refunded', money(r.refunded)],
       ['Net', money(r.net)],
+      ['Commission', money(r.commission)],
       ...(r.mixed
         ? [['STATUS', `PART CLOSED — ${r.open.length} of ${r.rows.length} still open,`
             + ` ${money(r.openValue)} outstanding`]]
@@ -277,7 +306,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, on
                 </div>
               )}
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-center">
                 <Tile label="Tickets" value={r.issues.length} />
                 <Tile label="Refunds" value={r.refunds.length}
                       tone={r.refunds.length ? 'text-emerald-600' : undefined} />
@@ -285,7 +314,12 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, on
                 <Tile label="Refunded" value={show(r.refunded)}
                       tone={r.refunds.length ? 'text-emerald-600' : undefined} />
                 <Tile label="Net" value={show(r.net)} tone="text-slate-900" />
+                <Tile label="Commission" value={show(r.commission)} tone="text-sky-700" />
               </div>
+
+              {recent && (
+                <PriceReview lines={priceLines} explanations={reasons} scope={reqNum} error={priceErr} />
+              )}
 
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                 <div className="px-4 py-2 bg-slate-50 border-b border-slate-100 flex items-center

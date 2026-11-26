@@ -96,16 +96,16 @@ export const PriceReview: React.FC<{
       'Ticket price': l.price ?? '', 'Commission': l.commission ?? '',
       'Our net': l.kind === 'SALE' ? (l.net ?? '') : '', 'Given to operations': l.kind === 'SALE' ? l.toOps : '',
       'Refunded to us': l.kind === 'REFUND' ? (l.net ?? '') : '', 'Refunded to operations': l.kind === 'REFUND' ? l.toOps : '',
-      'Team markup': l.markup ?? '', 'Our profit': l.profit ?? '',
+      'Aviation profit': l.markup ?? '', 'Our profit (commission + aviation)': l.profit ?? '',
       'Result': RESULT_LABEL[l.result], 'What it means': l.why || RESULT_MEANS[l.result],
       'Reason': reasonFor(l, byKey)?.note ?? '', 'Reason by': reasonFor(l, byKey)?.createdBy ?? '',
       ...(l.converted ? { 'Note': 'Our cost was in another currency, converted at the peg' } : {}),
     });
     const total = (t: PriceTotal) => ({
       'Request': t.req, 'Currency': t.currency, 'Tickets compared': t.tickets,
-      'Our net': t.net, 'Commission': t.commission, 'Ticket price': t.price, 'Given to operations': t.toOps,
-      'Team markup': t.markup, 'Given below the price': t.belowPrice, 'Refunds kept (+) / lost (-)': t.refunds,
-      'Our profit': t.profit,
+      'Charged to operations': t.charged, 'Our net': t.net, 'Commission': t.commission, 'Aviation profit': t.aviation,
+      'Our profit (commission + aviation)': t.profit,
+      'Aviation: markup': t.markup, 'Aviation: given below the price': t.belowPrice, 'Aviation: refunds kept (+) / given over (-)': t.refunds,
       ...Object.fromEntries(ORDER.map(r => [RESULT_LABEL[r], t.counts[r] ?? 0])),
     });
     const wb = XLSX.utils.book_new();
@@ -113,7 +113,9 @@ export const PriceReview: React.FC<{
     XLSX.utils.sheet_add_aoa(summary, [[],
       ['Scope', scope], ['Prices from', `${PROFIT_FROM}: before that their Net Cost was the real cost, so those tickets are counted only`],
       ['Their figures', 'Net Cost (given to operations) and Refund Amount, from their sheet as last uploaded'],
-      ['Our profit', 'Commission + team markup + given below the price + refunds (= given to operations - our net, plus refunds kept)'],
+      ['Charged to operations', 'Our net + commission + aviation profit, after refunds'],
+      ['Aviation profit', 'Markup above the ticket price, less anything given below it, plus what refunds left with the team'],
+      ['Our profit', 'Commission + aviation profit = charged to operations - our net'],
       ['Rounding', 'A difference of 1.00 or less is taken as none'],
       ['Exported', new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })]], { origin: -1 });
     XLSX.utils.book_append_sheet(wb, summary, 'Summary');
@@ -137,7 +139,7 @@ export const PriceReview: React.FC<{
         <button type="button" onClick={() => setOpen(!open)}
           className="flex items-center gap-1.5 text-micro font-bold uppercase text-slate-500 hover:text-slate-700">
           {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-          Prices: commission and team markup
+          Prices: net, commission and aviation profit
         </button>
         <span className={`text-xs font-bold ${blockers.length ? 'text-red-600' : 'text-emerald-600'}`}>
           {lines === null ? '' : blockers.length
@@ -161,21 +163,29 @@ export const PriceReview: React.FC<{
           {totals.map(t => (
             <div key={t.currency}>
               <div className="text-mini font-bold uppercase text-slate-400 mb-1">{t.currency} · {t.tickets} ticket{t.tickets === 1 ? '' : 's'} compared</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
+              {/* The file the way it is talked about: charged = net + commission + aviation. */}
+              <div className="flex flex-wrap items-stretch gap-2">
                 {([
-                  ['Our net cost', fmt(t.net), ''],
-                  ['Given to operations', fmt(t.toOps), ''],
-                  ['Commission', fmt(t.commission), ''],
-                  ['Team markup', signed(t.markup), t.markup > 0 ? 'text-emerald-700' : ''],
-                  ['Below the price', signed(t.belowPrice), t.belowPrice < 0 ? 'text-red-600' : ''],
-                  ['Refunds', signed(t.refunds), t.refunds < 0 ? 'text-red-600' : ''],
-                  ['Our profit', signed(t.profit), t.profit < 0 ? 'text-red-600' : 'text-slate-800'],
-                ] as const).map(([label, v, tone]) => (
-                  <div key={label} className="bg-slate-50 rounded px-3 py-2">
-                    <div className="text-mini text-slate-500">{label}</div>
-                    <div className={`font-mono font-bold text-sm ${tone || 'text-slate-700'}`}>{v}</div>
-                  </div>
+                  ['Charged to operations', fmt(t.charged), 'text-slate-900', '='],
+                  ['Our net', fmt(t.net), '', '+'],
+                  ['Commission', fmt(t.commission), t.commission < 0 ? 'text-red-600' : 'text-sky-700', '+'],
+                  ['Aviation profit', signed(t.aviation), t.aviation < 0 ? 'text-red-600' : 'text-emerald-700', ''],
+                ] as const).map(([label, v, tone, op]) => (
+                  <React.Fragment key={label}>
+                    <div className="bg-slate-50 rounded px-3 py-2 min-w-[140px] flex-1">
+                      <div className="text-mini text-slate-500">{label}</div>
+                      <div className={`font-mono font-bold text-sm ${tone || 'text-slate-700'}`}>{v}</div>
+                    </div>
+                    {op && <span className="self-center font-mono font-bold text-slate-400">{op}</span>}
+                  </React.Fragment>
                 ))}
+              </div>
+              <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-mini text-slate-500">
+                <span>Aviation profit: markup <b className="font-mono text-slate-700">{signed(t.markup)}</b></span>
+                <span>below the price <b className={`font-mono ${t.belowPrice < 0 ? 'text-red-600' : 'text-slate-700'}`}>{signed(t.belowPrice)}</b></span>
+                <span>refunds <b className={`font-mono ${t.refunds < 0 ? 'text-red-600' : 'text-slate-700'}`}>{signed(t.refunds)}</b></span>
+                <span className="text-slate-300">|</span>
+                <span>Our profit (commission + aviation) <b className={`font-mono ${t.profit < 0 ? 'text-red-600' : 'text-slate-800'}`}>{signed(t.profit)}</b></span>
               </div>
             </div>
           ))}
@@ -190,15 +200,16 @@ export const PriceReview: React.FC<{
                 <div className="overflow-auto max-h-[40vh]">
                   <table className="w-full text-xs min-w-[720px]">
                     <thead className="sticky top-0 bg-white"><tr className="text-micro uppercase text-slate-400 border-b border-slate-100">
-                      {['Request', 'Cur', 'Tickets', 'Our net', 'To operations', 'Commission', 'Markup', 'Below price', 'Refunds', 'Profit', 'Below net'].map(h =>
+                      {['Request', 'Cur', 'Tickets', 'Charged', 'Our net', 'Commission', 'Aviation', 'Markup', 'Below price', 'Refunds', 'Profit', 'Below net'].map(h =>
                         <th key={h} className={`px-2 py-1.5 ${h === 'Request' || h === 'Cur' ? 'text-left' : 'text-right'}`}>{h}</th>)}
                     </tr></thead>
                     <tbody className="font-mono">
                       {perReq.map(t => (
                         <tr key={t.req + t.currency} className="border-b border-slate-50">
                           <td className="px-2 py-1 font-bold text-purple-700">{t.req}</td><td className="px-2 py-1">{t.currency}</td>
-                          <td className="px-2 py-1 text-right">{t.tickets}</td><td className="px-2 py-1 text-right">{fmt(t.net)}</td>
-                          <td className="px-2 py-1 text-right">{fmt(t.toOps)}</td><td className="px-2 py-1 text-right">{fmt(t.commission)}</td>
+                          <td className="px-2 py-1 text-right">{t.tickets}</td><td className="px-2 py-1 text-right">{fmt(t.charged)}</td>
+                          <td className="px-2 py-1 text-right">{fmt(t.net)}</td><td className="px-2 py-1 text-right">{fmt(t.commission)}</td>
+                          <td className={`px-2 py-1 text-right font-bold ${t.aviation < 0 ? 'text-red-600' : ''}`}>{signed(t.aviation)}</td>
                           <td className="px-2 py-1 text-right">{signed(t.markup)}</td>
                           <td className={`px-2 py-1 text-right ${t.belowPrice < 0 ? 'text-red-600' : ''}`}>{signed(t.belowPrice)}</td>
                           <td className="px-2 py-1 text-right">{signed(t.refunds)}</td>
@@ -226,7 +237,7 @@ export const PriceReview: React.FC<{
                   <th className="px-2 py-1.5 text-left">Ticket</th><th className="px-2 py-1.5 text-left">Request</th>
                   <th className="px-2 py-1.5 text-right">Price</th><th className="px-2 py-1.5 text-right">Commission</th>
                   <th className="px-2 py-1.5 text-right">Our net</th><th className="px-2 py-1.5 text-right">To operations</th>
-                  <th className="px-2 py-1.5 text-right">Markup</th><th className="px-2 py-1.5 text-right">Profit</th>
+                  <th className="px-2 py-1.5 text-right" title="Aviation profit: given to operations less the ticket price">Aviation</th><th className="px-2 py-1.5 text-right" title="Commission + aviation">Profit</th>
                   <th className="px-2 py-1.5 text-left">Result and reason</th>
                 </tr></thead>
                 <tbody>
@@ -281,7 +292,7 @@ export const PriceReview: React.FC<{
               </table>
             </div>
             <p className="text-mini text-slate-400">
-              Price = our net + the supplier's commission. Markup = given to operations − price; profit = given to operations − our net.
+              Price = our net + the supplier's commission. Aviation profit = given to operations − price; profit = commission + aviation profit.
               A refund compares their Refund Amount with what the supplier gave us back. A difference of 1.00 or less is rounding.
               Their figures come from their sheet as last uploaded on the Airtable page. From {PROFIT_FROM}; earlier tickets are counted only.
             </p>

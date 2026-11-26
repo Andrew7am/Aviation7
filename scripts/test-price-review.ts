@@ -81,6 +81,22 @@ check('counted per result', Object.entries(t.counts).sort(), [['BELOW_NET', 1], 
 check('two currencies are never summed', priceTotals(priceReview([row({}), row({ record_id: 'r2', serials: ['5513727401'], currency: 'EUR' })],
   [tk({}), tk({ ticketNo: '5513727401', currency: 'EUR' })]), false).map(x => x.currency), ['AED', 'EUR']);
 
+check('charged = our net + commission + aviation profit', [t.charged, t.net, t.commission, t.aviation], [1200, 1000, 200, 0]);
+{
+  // The user's file: 100,000 charged = 80,000 net + 10,000 commission + 10,000 aviation.
+  const [f] = priceTotals(priceReview([row({ net_cost: 100000 })], [tk({ amount: 80000, commission: 10000, totalDoc: 90000 })]), false);
+  check("the user's 100k file", [f.charged, f.net, f.commission, f.aviation, f.profit], [100000, 80000, 10000, 10000, 20000]);
+}
+{
+  // A refund of a 1,000 fare: the supplier keeps back its 100 commission and pays 900.
+  const r = (given: number) => priceReview([row({ record_id: 'x', status: 'Cancelled/Refunded', refund_amount: given })],
+    [tk({ amount: -900, commission: -100, totalDoc: 1000, status: 'REFUND' })]).filter(l => l.kind === 'REFUND')
+    .map(l => [l.result, l.price, l.commission, l.net, l.markup, l.profit]);
+  check('full fare back to operations: commission goes, the team loses nothing', r(1000), [['REFUND_SAME', 1000, -100, 900, 0, -100]]);
+  check('900 back to operations: the team kept the 100', r(900), [['REFUND_KEPT', 1000, -100, 900, 100, 0]]);
+  check('1,100 back: above the refund, a loss to explain', r(1100), [['REFUND_ABOVE', 1000, -100, 900, -100, -200]]);
+}
+
 console.log('\n5b. A row priced per ticket, with EMD rows beside it (UAEVP771/858)');
 {
   const ls = priceReview([

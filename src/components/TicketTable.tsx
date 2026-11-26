@@ -812,11 +812,13 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
   // The net of each currency. What went into it - sales, refunds, top-ups -
   // is in the export and the reports, not on this strip.
   const totalsByCurrency = useMemo(() => {
-    const m = new Map<string, { net: number }>();
+    const m = new Map<string, { net: number; commission: number }>();
     for (const t of filtered) {
       const c = ticketCurrency(t);
-      const e = m.get(c) ?? { net: 0 };
+      const e = m.get(c) ?? { net: 0, commission: 0 };
       e.net += t.amount || 0;
+      // The supplier's commission, less what refunds took back (kept negative on them).
+      if (t.status !== 'FUND') e.commission += Number(t.commission) || 0;
       m.set(c, e);
     }
     return [...m].sort((a, b) => byCurrencyOrder(a[0], b[0]));
@@ -1838,6 +1840,8 @@ ${left} of another office ${left === 1 ? 'is' : 'are'} left as ${left === 1 ? 'i
               {/* The net only: issued, refunds and top-ups are for the reports
                   and the export (the user, 22 Oct 2026). */}
               <b><CopyableAmount label={`Net ${cur}`} value={t.net} fmt={fmt} /></b>
+              {/* And the commission in it: net + commission is the fare (the user, 26 Nov 2026). */}
+              <span className="text-sky-700"><CopyableAmount label={`Commission ${cur}`} value={t.commission} fmt={fmt} /></span>
             </span>
           </React.Fragment>
         ))}

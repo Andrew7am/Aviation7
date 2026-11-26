@@ -36,9 +36,9 @@ export const RESULT_MEANS: Record<PriceResult, string> = {
   PART_COMMISSION: 'Given below the ticket price: part of the commission was given away.',
   EXACTLY_NET: 'Given at exactly our net cost: no profit at all.',
   BELOW_NET: 'Given below what the ticket cost us: a loss.',
-  REFUND_SAME: 'Operations got back what the supplier refunded us.',
-  REFUND_KEPT: 'Operations got back less than the supplier refunded us: the rest is ours.',
-  REFUND_ABOVE: 'Operations got back more than the supplier refunded us: a loss.',
+  REFUND_SAME: 'Operations got back what the supplier refunded.',
+  REFUND_KEPT: 'Operations got back less than the supplier refunded: the rest stays with the aviation team.',
+  REFUND_ABOVE: 'Operations got back more than the supplier refunded: a loss.',
   NOT_COMPARED: '',
 };
 /** Results somebody should explain. */
@@ -143,11 +143,14 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
     const currency = (first.currency || '').toUpperCase();
     const given = g.some(r => r.refund_amount != null) ? r2(g.reduce((n, r) => n + (r.refund_amount ?? 0), 0)) : null;
     const ours = docs.flatMap(d => byDoc.get(d) ?? []).filter(t => (t.amount || 0) < 0);
-    let back = 0, converted = false, ok = true;
+    let back = 0, recalled = 0, converted = false, ok = true;
     for (const t of ours) {
       const cur = (t.currency || currency).toUpperCase();
       const v = cur === currency ? Math.abs(t.amount) : toCurrency(Math.abs(t.amount), cur, currency);
       if (v === null) { ok = false; break; }
+      /* The commission the supplier takes back with a refund, kept on the row
+         as a negative figure: our commission goes down by it. */
+      recalled += Math.abs((cur === currency ? t.commission : toCurrency(t.commission || 0, cur, currency)) || 0);
       back += v; if (cur !== currency) converted = true;
     }
     const base = { key: `REFUND|${g.map(r => r.record_id).join('+')}`, kind: 'REFUND' as const, req: first.req_num,
@@ -156,24 +159,43 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
     const why = given === null ? 'No Refund Amount on their sheet' : !ours.length ? 'Refund not in our books yet'
       : !ok ? 'Priced in currencies that cannot be compared' : '';
     if (why) { out.push({ ...base, net: null, markup: null, profit: null, result: 'NOT_COMPARED', why, fingerprint: `${given}` }); continue; }
-    const kept = r2(back - given!);
-    out.push({ ...base, net: r2(back), markup: null, profit: kept,
-      result: kept < -PRICE_TOLERANCE ? 'REFUND_ABOVE' : kept > PRICE_TOLERANCE ? 'REFUND_KEPT' : 'REFUND_SAME',
-      fingerprint: `${given}|${r2(back)}` });
+    /* The refund before its commission came back off is what the ticket
+       refunded; the team's part is that less what operations got back. The
+       commission the supplier took back is commission's, not the team's: a
+       full fare returned to operations is no loss of theirs. */
+    const gross = r2(back + recalled), team = r2(gross - given!);
+    out.push({ ...base, price: gross, commission: r2(-recalled), net: r2(back), markup: team, profit: r2(back - given!),
+      result: team < -PRICE_TOLERANCE ? 'REFUND_ABOVE' : team > PRICE_TOLERANCE ? 'REFUND_KEPT' : 'REFUND_SAME',
+      fingerprint: `${given}|${r2(back)}|${r2(recalled)}` });
   }
   return out.sort((a, b) => a.req.localeCompare(b.req) || a.issued.localeCompare(b.issued) || a.kind.localeCompare(b.kind));
 }
 
+/**
+ * A file's money, the user's way (26 Nov 2026): charged to operations 100,000
+ * = our net 80,000 + commission 10,000 + aviation profit 10,000. After
+ * refunds: a refund takes what operations got back off the charge, what the
+ * supplier gave back off our net, and the commission it took back off ours.
+ */
 export interface PriceTotal {
   req: string; currency: string; tickets: number;
-  net: number; commission: number; price: number; toOps: number;
+  /** What operations paid: their Net Cost, less their Refund Amount. */
+  charged: number;
+  /** What it cost us: sales less refunds, after commission. */
+  net: number;
+  /** The supplier's commission, less what refunds took back. */
+  commission: number;
+  /** The team's part: markup + below price + refunds. charged = net + commission + aviation. */
+  aviation: number;
+  /** Sales alone: the fares, and what operations was given for them. */
+  price: number; toOps: number;
   /** Above the fare, added up: the team's markup. */
   markup: number;
   /** Below the fare, added up (negative): commission given away, and any loss. */
   belowPrice: number;
-  /** What refunds left us (+) or cost us (-). */
+  /** The team's part of refunds: kept (+) or given back over (-). */
   refunds: number;
-  /** Commission + markup + below price + refunds: everything we made. */
+  /** Everything we made: commission + aviation = charged - net. */
   profit: number;
   counts: Partial<Record<PriceResult, number>>;
 }
@@ -184,20 +206,23 @@ export function priceTotals(lines: PriceLine[], byRequest = true): PriceTotal[] 
   for (const l of lines) {
     const req = byRequest ? (l.req || '(no request)') : 'ALL';
     const k = `${req}|${l.currency}`;
-    const t = m.get(k) ?? { req, currency: l.currency, tickets: 0, net: 0, commission: 0, price: 0, toOps: 0,
-      markup: 0, belowPrice: 0, refunds: 0, profit: 0, counts: {} };
+    const t = m.get(k) ?? { req, currency: l.currency, tickets: 0, charged: 0, net: 0, commission: 0, aviation: 0,
+      price: 0, toOps: 0, markup: 0, belowPrice: 0, refunds: 0, profit: 0, counts: {} };
     t.counts[l.result] = (t.counts[l.result] ?? 0) + 1;
     if (l.result !== 'NOT_COMPARED') {
       if (l.kind === 'SALE') {
         t.tickets += Math.max(1, l.docs.length);
-        t.net += l.net!; t.commission += l.commission!; t.price += l.price!; t.toOps += l.toOps;
+        t.charged += l.toOps; t.net += l.net!; t.price += l.price!; t.toOps += l.toOps;
         if (l.markup! > 0) t.markup += l.markup!; else t.belowPrice += l.markup!;
-      } else t.refunds += l.profit!;
-      t.profit += l.profit!;
+      } else {
+        t.charged -= l.toOps; t.net -= l.net!; t.refunds += l.markup!;
+      }
+      t.commission += l.commission!; t.aviation += l.markup!;
     }
     m.set(k, t);
   }
-  return [...m.values()].map(t => ({ ...t, net: r2(t.net), commission: r2(t.commission), price: r2(t.price), toOps: r2(t.toOps),
-    markup: r2(t.markup), belowPrice: r2(t.belowPrice), refunds: r2(t.refunds), profit: r2(t.profit) }))
+  return [...m.values()].map(t => ({ ...t, charged: r2(t.charged), net: r2(t.net), commission: r2(t.commission),
+    aviation: r2(t.aviation), price: r2(t.price), toOps: r2(t.toOps), markup: r2(t.markup), belowPrice: r2(t.belowPrice),
+    refunds: r2(t.refunds), profit: r2(t.commission + t.aviation) }))
     .sort((a, b) => a.req.localeCompare(b.req) || a.currency.localeCompare(b.currency));
 }

@@ -791,7 +791,7 @@ function MainApp({ user }: { user: User }) {
     >
       <React.Suspense fallback={<Loading />}>
       {searchReq && (
-        <RequestProfile reqNum={searchReq} tickets={tickets} exchanges={exchanges} onClose={() => setSearchReq(null)}
+        <RequestProfile reqNum={searchReq} tickets={tickets} exchanges={exchanges} voidedNos={voidNos} onClose={() => setSearchReq(null)}
           onUpdateClosed={isAdmin ? handleUpdateClosed
             : closeOffices.length && canClose({ reqNum: searchReq })
               ? (id: string, closed: boolean) => { void officeBulkClosed([id], closed); } : undefined} />
