@@ -26,10 +26,11 @@ const TONE: Record<PriceResult, string> = {
   REFUND_SAME: 'bg-slate-50 text-slate-600 border-slate-200',
   REFUND_KEPT: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   REFUND_ABOVE: 'bg-red-50 text-red-700 border-red-200',
+  AV_PROFIT: 'bg-violet-50 text-violet-800 border-violet-200',
   NOT_COMPARED: 'bg-slate-50 text-slate-500 border-slate-200',
 };
 const ORDER: PriceResult[] = ['BELOW_NET', 'REFUND_ABOVE', 'EXACTLY_NET', 'PART_COMMISSION', 'COMMISSION_ONLY', 'MARKUP',
-  'REFUND_KEPT', 'REFUND_SAME', 'NOT_COMPARED'];
+  'AV_PROFIT', 'REFUND_KEPT', 'REFUND_SAME', 'NOT_COMPARED'];
 
 /** The reason written for a line, if it was written at these figures. */
 export const reasonFor = (l: PriceLine, byKey: Map<string, Explanation>) => {
@@ -53,7 +54,7 @@ export const PriceReview: React.FC<{
   error?: string;
 }> = ({ lines, explanations, onReason, onClearReason, scope, error }) => {
   const byKey = useMemo(() => new Map(explanations.map(e => [e.findingKey, e])), [explanations]);
-  const [filter, setFilter] = useState<Filter>('EXPLAIN');
+  const [picked, setFilter] = useState<Filter | null>(null);
   const [open, setOpen] = useState(true);
   const [reqOpen, setReqOpen] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -69,6 +70,8 @@ export const PriceReview: React.FC<{
     return m;
   }, [all]);
   const toExplain = all.filter(l => NEEDS_REASON.has(l.result));
+  // What needs a reason first, while anything does; otherwise everything.
+  const filter: Filter = picked ?? (toExplain.length ? 'EXPLAIN' : 'ALL');
   const blockers = priceBlockers(all, byKey);
   const shown = (filter === 'ALL' ? all : filter === 'EXPLAIN' ? toExplain : all.filter(l => l.result === filter))
     .slice().sort((a, b) => ORDER.indexOf(a.result) - ORDER.indexOf(b.result) || a.req.localeCompare(b.req) || a.issued.localeCompare(b.issued));
@@ -162,7 +165,8 @@ export const PriceReview: React.FC<{
           )}
           {totals.map(t => (
             <div key={t.currency}>
-              <div className="text-mini font-bold uppercase text-slate-400 mb-1">{t.currency} · {t.tickets} ticket{t.tickets === 1 ? '' : 's'} compared</div>
+              <div className="text-mini font-bold uppercase text-slate-400 mb-1">{t.currency} · {t.tickets} ticket{t.tickets === 1 ? '' : 's'} compared
+                {t.counts.AV_PROFIT ? ` · ${t.counts.AV_PROFIT} refund${t.counts.AV_PROFIT === 1 ? '' : 's'} marked AV` : ''}</div>
               {/* The file the way it is talked about: charged = net + commission + aviation. */}
               <div className="flex flex-wrap items-stretch gap-2">
                 {([

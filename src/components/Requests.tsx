@@ -1,3 +1,4 @@
+import { isAviationMarked, withoutAvMark } from '../core/helpers/aviationMark';
 import React, { useMemo, useState, useEffect } from 'react';
 import type { Edge } from '../core/helpers/ticketChain';
 import { StatusBadge, badgeClass, ticketStatus } from './ui/StatusBadge';
@@ -251,7 +252,8 @@ export const Requests: React.FC<Props> = ({ tickets, exchanges, onUpdateClosed, 
   const byRequest = useMemo(() => {
     const by = new Map<string, Ticket[]>();
     for (const t of tickets) {
-      const k = (t.reqNum || '').trim();
+      // "KSAML2747-AV" is KSAML2747's: a refund the aviation team kept.
+      const k = withoutAvMark(t.reqNum);
       if (!k || (t.status || '').toUpperCase() === 'FUND') continue;
       // Case is not identity: the ledger holds Ksaml1452 beside KSAML1452 and
       // they are one request. The first spelling seen is the one displayed.
@@ -276,7 +278,7 @@ export const Requests: React.FC<Props> = ({ tickets, exchanges, onUpdateClosed, 
       }
       const state: State = closed > 0 && open > 0 ? 'PART' : open > 0 ? 'OPEN' : 'DONE';
       return {
-        reqNum: (rows[0].reqNum || key).trim(),
+        reqNum: withoutAvMark(rows.find(t => !isAviationMarked(t.reqNum))?.reqNum || rows[0].reqNum || key),
         rows: rows.length, closed, open,
         refunds: rows.filter(t => (t.amount || 0) < 0).length,
         net, openValue,

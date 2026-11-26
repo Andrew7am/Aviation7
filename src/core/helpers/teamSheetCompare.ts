@@ -6,6 +6,7 @@ import { chainIndex, chainOf, type Edge } from './ticketChain';
 import { unconfirmed } from './supplierProof';
 import { explanationFor, type Explanation } from './sheetMemory';
 import { PROFIT_FROM } from '../config/profit';
+import { isHiddenProfit, withoutAvMark } from './aviationMark';
 
 /**
  * Their sheet against our ledger, before a flight sheet is signed off.
@@ -728,6 +729,9 @@ export interface TeamSheetReport {
   ourDocs: { documents: number; tickets: number; emds: number; refunds: number };
   /** Ours under these requests that no supplier report has vouched for yet. */
   unconfirmedOurs: Ticket[];
+  /** Refunds of ours marked AV under these requests: the aviation team's
+   *  profit, on no sheet of theirs, so left out of every count. */
+  aviationMarked: Ticket[];
   /**
    * Each kind of document counted on both sides, and what each side lacks.
    * The question the team sheet answers: we hold 30 tickets, a refund and an
@@ -932,6 +936,13 @@ export function compareTeamSheet(
      *  May "before their sheet existed", and out of the comparison. */
     sheetStart?: string } = {},
 ): TeamSheetReport {
+  /* A refund marked AV ("KSAML2747-AV") is money the airline gave back that
+     operations never got: the aviation team's hidden profit, deliberately on
+     no sheet of theirs (the user, 26 Nov 2026). It is not a refund their
+     sheet is missing, so it takes no part in the comparison; the price
+     review adds it to their profit. */
+  const markedAv = ledger.filter(isHiddenProfit);
+  if (markedAv.length) ledger = ledger.filter(t => !isHiddenProfit(t));
   const chains = chainIndex(opts.chains ?? []);
   const voidedSet = new Set([...(opts.voided ?? [])].map(v => ticketMatchKey(v || '')).filter(Boolean));
   /* What somebody typed before dropping the file. Cleaned the same way a
@@ -2485,6 +2496,8 @@ export function compareTeamSheet(
     ourRows,
     ourDocs,
     unconfirmedOurs,
+    aviationMarked: markedAv.filter(t => reqParts(withoutAvMark(t.reqNum)).some(p => requests.has(p) || declaredKeys.has(p))
+      || [...requests].some(r => reqKey(r) === reqKey(withoutAvMark(t.reqNum)))),
     docTypes,
     matched,
     // A void and a row still on hold are states of the world, not

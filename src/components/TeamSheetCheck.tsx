@@ -1543,6 +1543,22 @@ export const TeamSheetCheck: React.FC<Props> = ({
               that EMD on theirs - and whatever is not, named. */}
           <DocTypeTable docTypes={report.docTypes} />
 
+          {/* Refunds marked AV: the aviation team's, on no sheet of theirs. Out
+              of the counts above, into the aviation profit below. */}
+          {report.aviationMarked.length > 0 && (
+            <div className="flex items-start gap-2 text-xs text-violet-900 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-violet-500" />
+              <span>
+                <b>{report.aviationMarked.length} refund{report.aviationMarked.length === 1 ? '' : 's'} marked AV</b>{' '}
+                ({[...new Set(report.aviationMarked.map(t => t.currency || ''))].map(c =>
+                  `${Math.abs(report.aviationMarked.filter(t => (t.currency || '') === c).reduce((n, t) => n + (t.amount || 0), 0))
+                    .toLocaleString('en-US', { minimumFractionDigits: 2 })} ${c}`).join(' + ')}):{' '}
+                {report.aviationMarked.map(t => t.ticketNo).join(', ')}. Refunded to us and not given back to operations,
+                so the aviation team's hidden profit. Not on their sheet, so left out of the counts and added to the aviation profit below.
+              </span>
+            </div>
+          )}
+
           {/* Then the prices: commission, the team's markup, and why a ticket went at or below cost. */}
           <PriceReview lines={priceLines} explanations={explanations} error={priceErr}
             scope={(mode === 'request' ? reviewing : declared).join(', ') || 'Whole sheet'}

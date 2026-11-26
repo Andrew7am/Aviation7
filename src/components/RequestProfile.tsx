@@ -15,6 +15,8 @@ import type { ProfitSheetRow } from '../core/helpers/aviationProfit';
 import type { Explanation } from '../core/helpers/sheetMemory';
 import { PROFIT_FROM } from '../core/config/profit';
 import { PriceReview } from './PriceReview';
+import { isAviationMarked, withoutAvMark } from '../core/helpers/aviationMark';
+import { priceTotals } from '../core/helpers/priceReview';
 
 /**
  * The spreadsheet writer, fetched the first time something is exported.
@@ -85,7 +87,8 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
   const typeOf = (t: Ticket) => isReissue(t, chains) ? 'REISSUE' : t.status || 'ISSUE';
   const r = useMemo(() => {
     const key = reqNum.trim().toUpperCase();
-    const rows = tickets.filter(t => (t.reqNum || '').trim().toUpperCase() === key
+    // "KSAML2747-AV" is KSAML2747's: a refund the aviation team kept.
+    const rows = tickets.filter(t => withoutAvMark(t.reqNum).toUpperCase() === withoutAvMark(key)
       && (t.status || '').toUpperCase() !== 'FUND');
 
     const issues = rows.filter(t => (t.amount || 0) >= 0);
@@ -143,7 +146,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
   /* Its prices from 9 Nov: what operations was charged, our net, the
      commission and the aviation team's profit, ticket by ticket. Read only
      when the request has something from that day on. */
-  const recent = r.rows.some(t => (t.date || '') >= PROFIT_FROM);
+  const recent = r.rows.some(t => (t.date || '') >= PROFIT_FROM || isAviationMarked(t.reqNum));
   const [sheetRows, setSheetRows] = useState<ProfitSheetRow[] | null>(null);
   const [reasons, setReasons] = useState<Explanation[]>([]);
   const [priceErr, setPriceErr] = useState('');
@@ -156,6 +159,19 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
   const priceLines = useMemo(() => sheetRows
     ? priceReview(sheetRows, tickets, { voided: voidedNos ?? [], requests: [reqNum] }) : null,
     [sheetRows, tickets, voidedNos, reqNum]);
+  /* The whole file the user's way: charged to operations = our net +
+     commission + aviation profit. Net and commission are every row's; the
+     aviation profit is what the price review found, from 9 Nov and AV. */
+  const aviation = useMemo(() => {
+    const m: Money = {};
+    for (const t of priceTotals(priceLines ?? [], false)) add(m, t.currency, t.aviation);
+    return m;
+  }, [priceLines]);
+  const charged = useMemo(() => {
+    const m: Money = {};
+    for (const src of [r.net, r.commission, aviation]) for (const [c, v] of Object.entries(src)) add(m, c, v);
+    return m;
+  }, [r.net, r.commission, aviation]);
 
   const copyAll = async () => {
     if (copyRows.length === 0) return;
@@ -306,7 +322,7 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
                 </div>
               )}
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                 <Tile label="Tickets" value={r.issues.length} />
                 <Tile label="Refunds" value={r.refunds.length}
                       tone={r.refunds.length ? 'text-emerald-600' : undefined} />
@@ -315,7 +331,13 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
                       tone={r.refunds.length ? 'text-emerald-600' : undefined} />
                 <Tile label="Net" value={show(r.net)} tone="text-slate-900" />
                 <Tile label="Commission" value={show(r.commission)} tone="text-sky-700" />
+                <Tile label="Aviation profit" value={recent && !priceLines && !priceErr ? '…' : show(aviation)} tone="text-emerald-700" />
+                <Tile label="Charged to operations" value={recent && !priceLines && !priceErr ? '…' : show(charged)} tone="text-slate-900" />
               </div>
+              <p className="text-mini text-slate-400 -mt-2">
+                Charged to operations = net + commission + aviation profit. Aviation profit is counted from {PROFIT_FROM} (their Net Cost
+                against ours) and from refunds marked AV; before {PROFIT_FROM} their price was the cost.
+              </p>
 
               {recent && (
                 <PriceReview lines={priceLines} explanations={reasons} scope={reqNum} error={priceErr} />
@@ -364,6 +386,10 @@ export const RequestProfile: React.FC<Props> = ({ reqNum, tickets, exchanges, vo
                                 : 'bg-slate-100 text-slate-600'}`}>
                               {typeOf(t)}
                             </span>
+                            {isAviationMarked(t.reqNum) && (
+                              <span title="Marked AV: the aviation team's profit"
+                                className="ml-1 px-1.5 py-0.5 rounded text-micro font-sans font-bold bg-violet-100 text-violet-700">AV</span>
+                            )}
                           </td>
                           <td className="px-3 py-1.5 text-slate-600 max-w-[160px] truncate">
                             {t.passengerName || '—'}

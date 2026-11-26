@@ -9,6 +9,7 @@ import type { ProfitSheetRow } from '../src/core/helpers/aviationProfit';
 import type { Ticket } from '../src/types';
 import { compareTeamSheet } from '../src/core/helpers/teamSheetCompare';
 import { parseTeamSheet } from '../src/core/parsers/teamSheet';
+import { isAviationMarked, withoutAvMark } from '../src/core/helpers/aviationMark';
 
 let passed = 0, failed = 0;
 const check = (label: string, got: unknown, want: unknown) => {
@@ -119,6 +120,28 @@ check('below our net on 20 Nov: not a Price differs, the price review asks why',
 check('...but on 1 Nov it is still one', verdicts('01/11/2026', '700'), ['PRICE_DIFFERS']);
 check('a refund above ours on 20 Nov: the price review, not Refund differs', verdicts('20/11/2026', '1000', '850'), []);
 check('...and on 1 Nov still Refund differs', verdicts('01/11/2026', '1000', '850'), ['REFUND_DIFFERS']);
+
+console.log('\n7. Refunds marked AV: the aviation team\'s hidden profit (KSAML2747-AV)');
+check('the mark', ['KSAML2747-AV', 'KSAML2425 - KSAFM2786 - AV', 'KSAML2747', 'UAEVP771', 'KSAML2747 av'].map(isAviationMarked), [true, true, false, false, true]);
+check('the request under it', ['KSAML2747-AV', 'KSAML2425 - KSAFM2786 - AV', 'KSAML2747'].map(withoutAvMark), ['KSAML2747', 'KSAML2425 - KSAFM2786', 'KSAML2747']);
+{
+  const sale = tk({ ticketNo: '5513727231', amount: 1670, commission: 0, date: '2026-10-25', reqNum: 'KSAML2747' });
+  const av = tk({ ticketNo: '5513727231', amount: -1250, commission: 0, status: 'REFUND', transactionType: 'REFUND', date: '2026-11-09', reqNum: 'KSAML2747-AV' } as Partial<Ticket>);
+  const ls = priceReview([], [sale, av], { requests: ['KSAML2747'] });
+  check('all of it is aviation profit, whatever the date', ls.map(l => [l.result, l.req, l.net, l.toOps, l.markup]), [['AV_PROFIT', 'KSAML2747', 1250, 0, 1250]]);
+  const [t] = priceTotals(ls, false);
+  check('...charged stays, our net drops, aviation rises', [t.charged, t.net, t.commission, t.aviation], [0, -1250, 0, 1250]);
+  check('not in another request', priceReview([], [sale, av], { requests: ['KSAML2771'] }).length, 0);
+  const csv = ['Ticket Number,PNR,Status,Req Num,Net Cost,Issued Date & Time,Total Cost with Currency',
+    '176-5513727231,ABC123,Issued,KSAML2747,1670,25/10/2026,1670 AED'].join('\n');
+  const rep = compareTeamSheet(parseTeamSheet(csv).rows, [sale, av], ['KSAML2747']);
+  check('the sheet check leaves it out of the counts: no refund missing, not misfiled',
+    [rep.findings.map(f => f.verdict).filter(v => v !== 'OK'), rep.docTypes.refunds.ours, rep.aviationMarked.map(x => x.ticketNo)],
+    [[], 0, ['5513727231']]);
+  const unmarked = { ...av, reqNum: 'KSAML2747' };
+  check('...while the same refund unmarked is still one their sheet lacks',
+    compareTeamSheet(parseTeamSheet(csv).rows, [sale, unmarked], ['KSAML2747']).findings.map(f => f.verdict).filter(v => v !== 'OK'), ['REFUND_NOT_ON_SHEET']);
+}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

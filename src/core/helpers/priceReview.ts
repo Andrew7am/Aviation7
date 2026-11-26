@@ -2,6 +2,7 @@ import type { Ticket } from '../../types';
 import { aviationProfit, toCurrency, riyadhDay, PROFIT_FROM, type ProfitSheetRow } from './aviationProfit';
 import { ticketMatchKey, isBookingRef } from './ticketIdentity';
 import { reqTokensOf } from './reqTokens';
+import { isHiddenProfit, withoutAvMark } from './aviationMark';
 
 /**
  * A file's prices, ticket by ticket: what the aviation team gave operations
@@ -22,12 +23,13 @@ export const PRICE_TOLERANCE = 1;
 
 export type PriceResult =
   | 'MARKUP' | 'COMMISSION_ONLY' | 'PART_COMMISSION' | 'EXACTLY_NET' | 'BELOW_NET'
-  | 'REFUND_SAME' | 'REFUND_KEPT' | 'REFUND_ABOVE' | 'NOT_COMPARED';
+  | 'REFUND_SAME' | 'REFUND_KEPT' | 'REFUND_ABOVE' | 'AV_PROFIT' | 'NOT_COMPARED';
 
 export const RESULT_LABEL: Record<PriceResult, string> = {
   MARKUP: 'Markup', COMMISSION_ONLY: 'Commission only', PART_COMMISSION: 'Part of commission',
   EXACTLY_NET: 'Exactly net', BELOW_NET: 'Below net',
   REFUND_SAME: 'Refund as ours', REFUND_KEPT: 'Refund: we kept some', REFUND_ABOVE: 'Refund above ours',
+  AV_PROFIT: 'Aviation profit (AV)',
   NOT_COMPARED: 'Not compared',
 };
 export const RESULT_MEANS: Record<PriceResult, string> = {
@@ -39,6 +41,7 @@ export const RESULT_MEANS: Record<PriceResult, string> = {
   REFUND_SAME: 'Operations got back what the supplier refunded.',
   REFUND_KEPT: 'Operations got back less than the supplier refunded: the rest stays with the aviation team.',
   REFUND_ABOVE: 'Operations got back more than the supplier refunded: a loss.',
+  AV_PROFIT: 'Refunded to us and marked AV: not given back to operations, so the aviation team\u2019s profit. Not on their sheet.',
   NOT_COMPARED: '',
 };
 /** Results somebody should explain. */
@@ -142,7 +145,7 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
     if (!inScope(first.req_num, docs)) continue;
     const currency = (first.currency || '').toUpperCase();
     const given = g.some(r => r.refund_amount != null) ? r2(g.reduce((n, r) => n + (r.refund_amount ?? 0), 0)) : null;
-    const ours = docs.flatMap(d => byDoc.get(d) ?? []).filter(t => (t.amount || 0) < 0);
+    const ours = docs.flatMap(d => byDoc.get(d) ?? []).filter(t => (t.amount || 0) < 0 && !isHiddenProfit(t));
     let back = 0, recalled = 0, converted = false, ok = true;
     for (const t of ours) {
       const cur = (t.currency || currency).toUpperCase();
@@ -164,9 +167,24 @@ export function priceReview(rows: ProfitSheetRow[], ledger: Ticket[], opts: Pric
        commission the supplier took back is commission's, not the team's: a
        full fare returned to operations is no loss of theirs. */
     const gross = r2(back + recalled), team = r2(gross - given!);
-    out.push({ ...base, price: gross, commission: r2(-recalled), net: r2(back), markup: team, profit: r2(back - given!),
+    out.push({ ...base, price: gross, commission: r2(-recalled) || 0, net: r2(back), markup: team, profit: r2(back - given!),
       result: team < -PRICE_TOLERANCE ? 'REFUND_ABOVE' : team > PRICE_TOLERANCE ? 'REFUND_KEPT' : 'REFUND_SAME',
       fingerprint: `${given}|${r2(back)}|${r2(recalled)}` });
+  }
+  /* Refunds marked AV in our books: the airline paid us back and operations
+     was not, so all of it is the aviation team's. On no sheet of theirs, and
+     from whatever day - the mark is a person's, not their Net Cost's. */
+  for (const t of ledger) {
+    if (!isHiddenProfit(t) || ticketMatchKey(t.ticketNo || '') && gone.has(ticketMatchKey(t.ticketNo || ''))) continue;
+    const day = (t.date || '').slice(0, 10);
+    if ((opts.from && day < opts.from) || (opts.to && day > opts.to)) continue;
+    const req = withoutAvMark(t.reqNum);
+    if (want.size && !reqTokensOf(req).some(r => want.has(r))) continue;
+    const back = r2(Math.abs(t.amount || 0)), recalled = r2(Math.abs(Number(t.commission) || 0));
+    out.push({ key: `AV|${t.id}`, kind: 'REFUND', req, member: 'Marked AV', issued: day,
+      docs: [t.ticketNo || t.pnr || ''], currency: (t.currency || '').toUpperCase(), toOps: 0,
+      price: r2(back + recalled), commission: r2(-recalled) || 0, net: back, markup: r2(back + recalled), profit: back,
+      result: 'AV_PROFIT', converted: false, fingerprint: `${back}|${recalled}` });
   }
   return out.sort((a, b) => a.req.localeCompare(b.req) || a.issued.localeCompare(b.issued) || a.kind.localeCompare(b.kind));
 }
